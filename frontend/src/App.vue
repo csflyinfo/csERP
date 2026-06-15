@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import QueryBar from './components/QueryBar.vue'
 import ProTable from './components/ProTable.vue'
 import CustomerPriceAdjust from './views/CustomerPriceAdjust.vue'
@@ -99,10 +99,12 @@ const fallbackMenus = {
   ],
 }
 
+const NAV_STATE_KEY = 'erp-nav-state'
+const savedNavState = loadNavState()
 const menus = ref(fallbackMenus)
-const activeTop = ref('首页')
-const current = ref('dashboard')
-const openTabs = ref(['dashboard'])
+const activeTop = ref(savedNavState.activeTop || '首页')
+const current = ref(savedNavState.current || 'dashboard')
+const openTabs = ref(savedNavState.openTabs?.length ? savedNavState.openTabs : ['dashboard'])
 const toastText = ref('')
 const flowResult = ref(null)
 const dashboardSummary = ref(null)
@@ -136,6 +138,18 @@ const genericColumns = [
 const genericRows = computed(() => [{ code: `${current.value.toUpperCase()}001`, name: `${currentName.value}示例`, group: '默认', status: '正常', action: '编辑' }])
 const currentConfig = computed(() => moduleConfigs[current.value])
 const tabItems = computed(() => openTabs.value.map(code => ({ code, name: moduleConfigs[code]?.title || Object.values(menus.value).flat().find(x => x.code === code)?.name || (code === 'customerPriceEdit' ? '客户价格调整单' : '经营概览') })))
+function loadNavState() {
+  try {
+    return JSON.parse(localStorage.getItem(NAV_STATE_KEY) || '{}')
+  } catch (error) {
+    return {}
+  }
+}
+
+function saveNavState() {
+  localStorage.setItem(NAV_STATE_KEY, JSON.stringify({ current: current.value, activeTop: activeTop.value, openTabs: openTabs.value }))
+}
+
 const dashboardCards = computed(() => {
   const summary = dashboardSummary.value || {}
   return [
@@ -160,6 +174,7 @@ function route(code) {
   Object.entries(menus.value).forEach(([top, items]) => {
     if (items.some(item => item.code === code)) activeTop.value = top
   })
+  saveNavState()
 }
 
 function closeTab(code) {
@@ -172,6 +187,7 @@ function closeTab(code) {
       if (items.some(item => item.code === current.value)) activeTop.value = top
     })
   }
+  saveNavState()
 }
 
 function quickLocate(value) {
@@ -238,6 +254,7 @@ async function logout() {
   authToken.value = ''
   currentUser.value = null
   localStorage.removeItem('erp-demo-token')
+  localStorage.removeItem(NAV_STATE_KEY)
   menus.value = fallbackMenus
   current.value = 'dashboard'
   activeTop.value = '首页'
@@ -293,6 +310,8 @@ function showCreate() {
   else if (current.value === 'customerPrice') route('customerPriceEdit')
   else toast('打开新建页面')
 }
+
+watch([current, activeTop, openTabs], saveNavState, { deep: true })
 
 onMounted(bootstrap)
 </script>

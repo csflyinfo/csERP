@@ -1590,3 +1590,47 @@ V1 dashboard summary test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 前端导航状态持久化
+
+### 已完成
+
+1. 前端页签与当前模块本地持久化：
+   - 存储键：`erp-nav-state`
+   - 保存当前模块、当前一级菜单、已打开页签。
+
+2. 刷新页面后自动恢复上次工作区：
+   - 当前模块恢复。
+   - 已打开页签恢复。
+   - 当前一级菜单高亮恢复。
+
+3. 页签切换、打开、关闭时同步更新本地导航状态。
+
+4. 退出登录时清理导航状态，避免下个登录用户继承旧工作区。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
