@@ -814,3 +814,46 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 查询条件传递接入
+
+### 已完成
+
+1. `QueryBar` 支持收集查询条件：
+   - 输入框、下拉框统一写入查询值。
+   - 回车触发查询。
+   - 重置清空查询值。
+
+2. 通用业务列表接入查询状态：
+   - 查询时将 filters 传给分页接口。
+   - 查询、重置后回到第一页。
+   - 树节点切换时把节点写入 filters。
+
+3. 报表导出任务携带当前查询条件。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+3. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+4. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

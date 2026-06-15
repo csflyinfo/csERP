@@ -20,6 +20,7 @@ const columnSettings = ref({})
 const pageNo = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const queryFilters = ref({})
 
 const columns = computed(() => props.config.columns.map((title, index) => ({
   key: `c${index}`,
@@ -45,7 +46,7 @@ async function loadRows() {
   }
   loading.value = true
   try {
-    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, filters: {} })
+    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, filters: queryFilters.value })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, props.config)) : [buildRow()]
     total.value = data.total || tableRows.value.length
   } catch (error) {
@@ -165,7 +166,7 @@ async function handleAction(action, row = null) {
     const api = moduleApis[props.moduleCode]
     if (api?.export) {
       try {
-        const result = await post(api.export, { moduleCode: props.moduleCode, reportName: props.config.title, filters: {} })
+        const result = await post(api.export, { moduleCode: props.moduleCode, reportName: props.config.title, filters: queryFilters.value })
         show(result?.message || `${props.config.title}已创建导出任务`)
       } catch (error) {
         show(`${props.config.title}导出接口暂不可用，已保留导出任务提示`)
@@ -205,9 +206,9 @@ function buildPayload() {
   }
 }
 
-function selectTreeNode(node) { selectedTreeNode.value = node.trim(); pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
-async function handleQuery() { pageNo.value = 1; await loadRows(); show(`${props.config.title}查询完成`) }
-function handleReset() { pageNo.value = 1; loadRows(); show(`${props.config.title}查询条件已重置`) }
+function selectTreeNode(node) { selectedTreeNode.value = node.trim(); queryFilters.value = { ...queryFilters.value, treeNode: selectedTreeNode.value }; pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
+async function handleQuery(filters = {}) { queryFilters.value = filters; pageNo.value = 1; await loadRows(); show(`${props.config.title}查询完成`) }
+function handleReset() { queryFilters.value = {}; pageNo.value = 1; loadRows(); show(`${props.config.title}查询条件已重置`) }
 function handleMore(fields) { openDialog('more', '更多查询条件', fields.join('、')) }
 function handleRowAction(action, row) { handleAction(action, row) }
 function handlePageChange(nextPageNo) { pageNo.value = Math.max(1, nextPageNo); loadRows() }
