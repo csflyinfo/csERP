@@ -33,6 +33,10 @@ async function main() {
   assert(failures.downloadUrl && failures.downloadUrl.includes(created.taskNo), 'failure download should return task url')
   assert(String(failures.fileName).includes('失败原因'), 'failure download should return failure file name')
 
+  const logs = await post('/system/operation-log/page', { pageNo: 1, pageSize: 20, filters: { keyword: created.taskNo } })
+  assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'CREATE'), 'import create should write operation log')
+  assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'DOWNLOAD_FAILURES'), 'failure download should write operation log')
+
   console.log('V1 import list test passed')
 }
 

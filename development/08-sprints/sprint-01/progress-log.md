@@ -1306,3 +1306,75 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导入导出操作日志补充
+
+### 已完成
+
+1. 导入任务创建写入操作日志：
+   - 模块：`system.import`
+   - 动作：`CREATE`
+   - 业务号：导入任务号
+
+2. 导入失败原因下载写入操作日志：
+   - 模块：`system.import`
+   - 动作：`DOWNLOAD_FAILURES`
+   - 业务号：导入任务号
+
+3. 报表导出任务创建写入操作日志：
+   - 模块：`report.export`
+   - 动作：`EXPORT`
+   - 业务号：导出任务号
+
+4. 导出文件下载写入操作日志：
+   - 模块：`system.export`
+   - 动作：`DOWNLOAD`
+   - 业务号：导出任务号
+
+5. 导入/导出测试补充操作日志断言。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导入列表操作日志测试通过：
+
+```text
+V1 import list test passed
+```
+
+4. 导出中心操作日志测试通过：
+
+```text
+V1 export center test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

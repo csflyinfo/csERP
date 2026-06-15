@@ -283,6 +283,7 @@ public class SystemController {
                 INSERT INTO sys_import_task_runtime(task_id, task_no, module_code, task_name, file_name, success_rows, failed_rows, status, result_text, created_at, finished_at)
                 VALUES (?, ?, ?, ?, ?, 10, 0, 'FINISHED', '导入校验通过并完成入库', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, taskId, taskNo, moduleCode, taskName, fileName);
+        log("system.import", "CREATE", taskNo, "SUCCESS", "创建导入任务：" + taskName);
         return ApiResponse.ok(GenericResult.row(
                 "taskNo", taskNo,
                 "status", "FINISHED",
@@ -303,6 +304,7 @@ public class SystemController {
         if (rows.isEmpty()) throw new IllegalArgumentException("导入任务不存在");
         Map<String, Object> task = rows.get(0);
         String failureFileName = String.valueOf(task.get("FILENAME")).replace(".xlsx", "_失败原因.xlsx");
+        log("system.import", "DOWNLOAD_FAILURES", taskNo, "SUCCESS", "下载导入失败原因");
         return ApiResponse.ok(GenericResult.row(
                 "taskNo", task.get("TASKNO"),
                 "failedRows", task.get("FAILEDROWS"),
@@ -340,6 +342,7 @@ public class SystemController {
         if (rows.isEmpty()) throw new IllegalArgumentException("导出任务不存在");
         Map<String, Object> task = rows.get(0);
         if (!"FINISHED".equals(String.valueOf(task.get("STATUS")))) throw new IllegalArgumentException("导出任务尚未完成");
+        log("system.export", "DOWNLOAD", taskNo, "SUCCESS", "下载导出文件");
         return ApiResponse.ok(GenericResult.row(
                 "taskNo", task.get("TASKNO"),
                 "fileName", task.get("FILENAME"),

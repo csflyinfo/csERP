@@ -127,11 +127,19 @@ public class ReportController {
                 INSERT INTO sys_export_task_runtime(task_id, task_no, report_name, module_code, filter_text, file_name, status, created_at, finished_at)
                 VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, taskId, taskNo, reportName, moduleCode, filterText, fileName);
+        logExport(taskNo, reportName);
         return ApiResponse.ok(GenericResult.row(
                 "taskNo", taskNo,
                 "status", "FINISHED",
                 "fileName", fileName,
                 "message", "报表导出任务已创建，请到导出中心下载"
         ));
+    }
+
+    private void logExport(String taskNo, String reportName) {
+        jdbcTemplate.update("""
+                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
+                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', 'report.export', 'EXPORT', ?, 'SUCCESS', ?)
+                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), taskNo, "导出报表：" + reportName);
     }
 }

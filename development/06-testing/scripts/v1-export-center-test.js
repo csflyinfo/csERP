@@ -33,6 +33,10 @@ async function main() {
   assert(download.downloadUrl && download.downloadUrl.includes(created.taskNo), 'download should return task download url')
   assert(download.fileName === created.fileName, 'download should return created file name')
 
+  const logs = await post('/system/operation-log/page', { pageNo: 1, pageSize: 20, filters: { keyword: created.taskNo } })
+  assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'EXPORT'), 'export create should write operation log')
+  assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'DOWNLOAD'), 'export download should write operation log')
+
   console.log('V1 export center test passed')
 }
 
