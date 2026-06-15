@@ -57,6 +57,47 @@ CREATE TABLE IF NOT EXISTS base_goods (
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
 
+CREATE TABLE IF NOT EXISTS base_customer (
+  customer_id VARCHAR(32) PRIMARY KEY,
+  customer_code VARCHAR(50) NOT NULL UNIQUE,
+  customer_name VARCHAR(100) NOT NULL,
+  channel_type VARCHAR(50),
+  contact_name VARCHAR(100),
+  mobile VARCHAR(30),
+  territory VARCHAR(100),
+  route_line VARCHAR(100),
+  salesman VARCHAR(100),
+  customer_level VARCHAR(50),
+  account_period_type VARCHAR(50),
+  cutoff_day VARCHAR(30),
+  payment_day VARCHAR(30),
+  credit_limit DECIMAL(18,2) DEFAULT 0,
+  ar_balance DECIMAL(18,2) DEFAULT 0,
+  overdue_amount DECIMAL(18,2) DEFAULT 0,
+  invoice_title VARCHAR(200),
+  tax_no VARCHAR(100),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
+);
+
+CREATE TABLE IF NOT EXISTS base_supplier (
+  supplier_id VARCHAR(32) PRIMARY KEY,
+  supplier_code VARCHAR(50) NOT NULL UNIQUE,
+  supplier_name VARCHAR(100) NOT NULL,
+  short_name VARCHAR(100),
+  supplier_type VARCHAR(50),
+  contact_name VARCHAR(100),
+  phone VARCHAR(30),
+  delivery_days INT DEFAULT 0,
+  settlement_method VARCHAR(50),
+  account_period_days INT DEFAULT 0,
+  default_buyer VARCHAR(100),
+  default_receipt_account VARCHAR(200),
+  invoice_title VARCHAR(200),
+  tax_no VARCHAR(100),
+  ap_balance DECIMAL(18,2) DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
+);
+
 CREATE TABLE IF NOT EXISTS base_customer_price_adjust (
   adjust_id VARCHAR(32) PRIMARY KEY,
   adjust_no VARCHAR(50) NOT NULL UNIQUE,

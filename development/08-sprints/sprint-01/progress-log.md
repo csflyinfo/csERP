@@ -1835,3 +1835,74 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 客户供应商真实字段落库
+
+### 已完成
+
+1. 新增真实主数据表：
+   - `base_customer`
+   - `base_supplier`
+
+2. 新增客户/供应商种子数据，覆盖 PRD 字段：
+   - 客户：渠道类型、账期类型、截账日、付款日、发票抬头、税号、信用额度、应收/逾期余额。
+   - 供应商：简称、类型、账期天数、默认采购员、默认收款账户、发票抬头、税号、应付余额。
+
+3. `BaseMasterController` 客户/供应商分页从硬编码改为查询真实表。
+
+4. `BaseMasterController.save/stop` 对客户、供应商走真实表：
+   - 支持新增/更新客户。
+   - 支持新增/更新供应商。
+   - 支持客户/供应商停用并持久化状态。
+
+5. 前端字段映射补充客户/供应商新增字段别名。
+
+6. 新增持久化测试脚本：
+   - `development/06-testing/scripts/v1-base-master-persistence-test.js`
+   - 覆盖种子数据查询、新增、停用、状态持久化。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 客户供应商持久化测试通过：
+
+```text
+V1 base master persistence test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. PRD 配置一致性测试通过：
+
+```text
+V1 module config PRD test passed
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

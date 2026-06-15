@@ -14,6 +14,9 @@ MERGE INTO base_warehouse KEY(warehouse_id) VALUES ('WH002', 'W002', '退货仓'
 MERGE INTO base_goods KEY(goods_id) VALUES ('G001', 'SP001', '农夫山泉500ml*24', '500ml*24', '瓶装水', '农夫山泉', '瓶', '6941410749551', 35.00, 31.20, 30.00, 1200, 'NORMAL');
 MERGE INTO base_goods KEY(goods_id) VALUES ('G002', 'SP002', '康师傅红烧牛肉面', '1*12', '方便食品', '康师傅', '箱', '690000000002', 48.00, 42.50, 40.00, 580, 'NORMAL');
 
+MERGE INTO base_customer KEY(customer_id) VALUES ('CUS001', 'C001', '华联超市', '零售商超', '王店长', '13800008888', '西湖区', '朝阳线', '张三', '金牌', '月结', '25日', '次月5日', 50000.00, 12000.00, 2000.00, '华联超市有限公司', '9133****', 'NORMAL');
+MERGE INTO base_supplier KEY(supplier_id) VALUES ('SUP001', 'G001', '农夫山泉杭州经销', '农夫杭州', '饮料供应商', '赵经理', '0571-8888', 5, '月结', 30, '李四', '工商银行 6222****', '农夫山泉杭州经销有限公司', '9133****', 6600.00, 'NORMAL');
+
 MERGE INTO base_customer_price_adjust KEY(adjust_id) VALUES ('CPA001', 'CPA202606140001', 'C001', '华联超市', DATE '2026-06-14', 'SCHEDULED', TIMESTAMP '2026-06-15 08:00:00', '2026-06-15 ~ 2026-12-31', 2, '管理员 2026-06-14 10:20', '待审核', 'PENDING', '夏季饮品促销调价');
 MERGE INTO base_customer_price_adjust_detail KEY(detail_id) VALUES ('CPAD001', 'CPA001', 'SP001', '农夫山泉500ml*24', '瓶', '500ml*24', '6941410749551', 35.00, 34.50, 31.20, 30.80);
 MERGE INTO base_customer_price KEY(price_id) VALUES ('PRICE001', 'CPA202606010001', 'C001', '华联超市', 'SP001', '农夫山泉500ml*24', '瓶', '500ml*24', '6941410749551', 35.00, 35.00, 31.20, 30.80, 'IMMEDIATE', '长期有效', 'EFFECTIVE');
