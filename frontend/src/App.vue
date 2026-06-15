@@ -1,11 +1,12 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import QueryBar from './components/QueryBar.vue'
 import ProTable from './components/ProTable.vue'
 import CustomerPriceAdjust from './views/CustomerPriceAdjust.vue'
 import CustomerPriceEdit from './views/CustomerPriceEdit.vue'
 import CustomerPriceQuery from './views/CustomerPriceQuery.vue'
 import GenericBusinessList from './views/GenericBusinessList.vue'
+import { get } from './api/client.js'
 import { moduleConfigs } from './module-config.js'
 
 const menus = {
@@ -103,6 +104,9 @@ const current = ref('dashboard')
 const openTabs = ref(['dashboard'])
 const toastText = ref('')
 const flowResult = ref(null)
+const dashboardSummary = ref(null)
+const dashboardLoading = ref(false)
+const dashboardError = ref('')
 
 const currentName = computed(() => moduleConfigs[current.value]?.title || Object.values(menus).flat().find(x => x.code === current.value)?.name || (current.value === 'customerPriceEdit' ? '客户价格调整单' : '经营概览'))
 const currentDesc = computed(() => {
@@ -124,6 +128,17 @@ const genericColumns = [
 const genericRows = computed(() => [{ code: `${current.value.toUpperCase()}001`, name: `${currentName.value}示例`, group: '默认', status: '正常', action: '编辑' }])
 const currentConfig = computed(() => moduleConfigs[current.value])
 const tabItems = computed(() => openTabs.value.map(code => ({ code, name: moduleConfigs[code]?.title || Object.values(menus).flat().find(x => x.code === code)?.name || (code === 'customerPriceEdit' ? '客户价格调整单' : '经营概览') })))
+const dashboardCards = computed(() => {
+  const summary = dashboardSummary.value || {}
+  return [
+    { label: '销售金额', value: money(summary.salesAmount ?? 82450) },
+    { label: '采购金额', value: money(summary.purchaseAmount ?? 3500) },
+    { label: '库存金额', value: money(summary.stockAmount ?? 1420000) },
+    { label: '可用库存', value: numberText(summary.availableQty ?? 1020) },
+    { label: '应收余额', value: money(summary.arBalance ?? 350) },
+    { label: '应付余额', value: money(summary.apBalance ?? 3955) },
+  ]
+})
 
 function route(code) {
   current.value = code
@@ -156,6 +171,26 @@ function toast(message) {
   setTimeout(() => (toastText.value = ''), 1800)
 }
 
+function money(value) {
+  return `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function numberText(value) {
+  return Number(value || 0).toLocaleString('zh-CN')
+}
+
+async function loadDashboardSummary() {
+  dashboardLoading.value = true
+  dashboardError.value = ''
+  try {
+    dashboardSummary.value = await get('/report/dashboard/summary')
+  } catch (error) {
+    dashboardError.value = '经营概览接口加载失败，已显示演示指标'
+  } finally {
+    dashboardLoading.value = false
+  }
+}
+
 async function runCoreFlow() {
   const response = await fetch('/api/flow/v1-core/self-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
   const result = await response.json()
@@ -169,6 +204,8 @@ function showCreate() {
   else if (current.value === 'customerPrice') route('customerPriceEdit')
   else toast('打开新建页面')
 }
+
+onMounted(loadDashboardSummary)
 </script>
 
 <template>
@@ -215,10 +252,15 @@ function showCreate() {
       </div>
       <div class="content">
         <section v-if="current === 'dashboard'">
+          <div class="page-ops">
+            <button class="btn" @click="loadDashboardSummary">刷新经营指标</button>
+            <span v-if="dashboardLoading" class="muted">正在加载经营概览...</span>
+            <span v-else-if="dashboardError" class="muted">{{ dashboardError }}</span>
+          </div>
           <div class="cards">
-            <div v-for="item in [['动销门店数','286'],['订单金额','¥82,450'],['库存金额','¥1.42M'],['待审核','15']]" :key="item[0]" class="card">
-              <div>{{ item[0] }}</div>
-              <div class="value">{{ item[1] }}</div>
+            <div v-for="item in dashboardCards" :key="item.label" class="card">
+              <div>{{ item.label }}</div>
+              <div class="value">{{ item.value }}</div>
             </div>
           </div>
           <div v-if="flowResult" class="tablebox">

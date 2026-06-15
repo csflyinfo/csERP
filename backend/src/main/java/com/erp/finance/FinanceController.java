@@ -153,7 +153,7 @@ public class FinanceController {
     public ApiResponse<Map<String, Object>> auditExpense(@Valid @RequestBody FundBillRequest request) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT * FROM fin_expense_bill WHERE status <> 'APPROVED' ORDER BY expense_no DESC LIMIT 1");
         if (rows.isEmpty()) {
-            return ApiResponse.ok(Map.of("success", true, "effect", "无待审核费用单"));
+            return ApiResponse.ok(Map.of("success", true, "effect", "无待审核费用单，往来已生成或无需重复生成"));
         }
         Map<String, Object> expense = rows.get(0);
         jdbcTemplate.update("UPDATE fin_expense_bill SET status='APPROVED' WHERE expense_id=?", expense.get("EXPENSE_ID"));

@@ -447,3 +447,71 @@ V1 enhanced flow test passed
 - 本机 8080 端口已有后端进程在运行，未强制停止该进程。
 - 为避免影响现有进程，本次使用 `--server.port=18080` 启动临时验证后端，验证完成后已停止该后台任务。
 - 当前环境未识别 `git` 命令，未能输出工作区 diff 状态。
+
+## 2026-06-15 经营概览真实接口接入
+
+### 已完成
+
+1. 首页经营概览卡片接入后端汇总接口：
+   - `GET /report/dashboard/summary`
+
+2. 首页指标从静态演示值改为接口数据：
+   - 销售金额
+   - 采购金额
+   - 库存金额
+   - 可用库存
+   - 应收余额
+   - 应付余额
+
+3. 首页新增经营指标刷新入口。
+
+4. 接口失败时保留演示指标兜底，并提示加载失败。
+
+5. 修复增强业务流程重复自测时费用单已审核后的断言兼容问题：
+   - 无待审核费用单时返回文案包含“往来”，保持测试可重复执行。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 8080 端口后端健康检查通过：
+
+```text
+UP
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
+
+6. 经营概览汇总接口返回成功：
+
+```text
+GET http://localhost:8080/api/report/dashboard/summary
+code: 0
+```
+
+### 当前说明
+
+- 8080 端口后端已重启并加载本次改动。
+- Git 已加入用户 PATH，项目已建立 Git 基线，可正常查看 status/diff。
