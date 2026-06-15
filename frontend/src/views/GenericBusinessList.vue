@@ -16,12 +16,15 @@ const selectedRow = ref(null)
 const tableRows = ref([])
 const loading = ref(false)
 const selectedTreeNode = ref('全部')
+const columnSettings = ref({})
 
 const columns = computed(() => props.config.columns.map((title, index) => ({
   key: `c${index}`,
   title,
   num: /金额|数量|库存|单价|成本|余额|已收|未收|已付|未付|原价|现价|进价|税额|毛利|额度/.test(title),
 })))
+const visibleColumns = computed(() => columns.value.filter(col => columnSettings.value[col.key] !== false || /操作/.test(col.title)))
+const fieldSettingKey = computed(() => `erp-field-setting:${props.moduleCode}`)
 
 const actionColumnIndex = computed(() => props.config.columns.findIndex(title => /操作/.test(title)))
 const statusColumnIndex = computed(() => props.config.columns.findIndex(title => /状态|核销状态|应付生成状态|应收生成|开票状态|勾稽状态/.test(title)))
@@ -52,7 +55,25 @@ function resetRows() {
   loadRows()
 }
 
-watch(() => props.config, resetRows, { immediate: true })
+function loadColumnSettings() {
+  const saved = localStorage.getItem(fieldSettingKey.value)
+  const parsed = saved ? JSON.parse(saved) : {}
+  columnSettings.value = Object.fromEntries(columns.value.map(col => [col.key, parsed[col.key] !== false]))
+}
+
+function saveColumnSettings() {
+  localStorage.setItem(fieldSettingKey.value, JSON.stringify(columnSettings.value))
+  show(`${props.config.title}字段设置已保存`)
+  closeDialog()
+}
+
+function resetColumnSettings() {
+  localStorage.removeItem(fieldSettingKey.value)
+  loadColumnSettings()
+  show(`${props.config.title}字段设置已恢复默认`)
+}
+
+watch(() => props.config, () => { loadColumnSettings(); resetRows() }, { immediate: true })
 
 const formFields = computed(() => {
   if (props.config.formFields?.length) return props.config.formFields
@@ -203,8 +224,8 @@ function handleRowAction(action, row) { handleAction(action, row) }
       </div>
 
       <div v-if="loading" class="tips-inline"><span>正在加载 {{ config.title }} 数据...</span></div>
-      <ProTable :title="config.title + '列表'" :columns="columns" :rows="tableRows" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction">
-        <template v-for="col in columns" #[col.key]="{ row }" :key="col.key">
+      <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction">
+        <template v-for="col in visibleColumns" #[col.key]="{ row }" :key="col.key">
           <span v-if="/状态/.test(col.title)" class="badge wait">{{ row[col.key] }}</span>
           <span v-else-if="/操作/.test(col.title)">
             <button v-for="action in String(row[col.key]).split(' ')" :key="action" class="link link-btn" @click="handleAction(action, row)">{{ action }}</button>
@@ -258,12 +279,21 @@ function handleRowAction(action, row) { handleAction(action, row) }
           <input style="margin-left:8px" type="file" />
           <p style="color:#5d7896">上传后先校验，不直接入库；失败行可下载失败原因。</p>
         </div>
+
+        <div v-if="dialog.type === 'field'" class="field-setting-grid">
+          <label v-for="col in columns" :key="col.key" class="field-check" :class="{ disabled: /操作/.test(col.title) }">
+            <input v-model="columnSettings[col.key]" type="checkbox" :disabled="/操作/.test(col.title)" />
+            <span>{{ col.title }}</span>
+          </label>
+        </div>
       </div>
       <div class="modal-lite-foot">
         <button class="btn" @click="closeDialog">取消</button>
         <button v-if="dialog.type === 'form'" class="btn primary" @click="saveForm">保存</button>
         <button v-else-if="dialog.type === 'confirm'" class="btn primary" @click="confirmAction">确认</button>
         <button v-else-if="dialog.type === 'import'" class="btn primary" @click="show('导入校验通过'); closeDialog()">上传并校验</button>
+        <button v-else-if="dialog.type === 'field'" class="btn" @click="resetColumnSettings">恢复默认</button>
+        <button v-if="dialog.type === 'field'" class="btn primary" @click="saveColumnSettings">保存字段设置</button>
         <button v-else class="btn primary" @click="closeDialog">确定</button>
       </div>
     </div>

@@ -708,3 +708,46 @@ V1 enhanced flow test passed
 V1 core smoke test passed
 V1 system smoke test passed
 ```
+
+## 2026-06-15 通用表格字段设置落地
+
+### 已完成
+
+1. 通用业务列表支持字段显示/隐藏：
+   - 字段设置弹窗列出当前模块全部列表字段。
+   - 操作列固定显示，不允许隐藏。
+
+2. 字段设置按模块本地持久化：
+   - 存储键：`erp-field-setting:<moduleCode>`
+   - 切换模块后自动加载对应模块字段设置。
+
+3. 字段设置支持恢复默认。
+
+4. 通用表格按可见字段渲染表头、单元格和插槽。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
