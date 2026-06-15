@@ -515,3 +515,82 @@ code: 0
 
 - 8080 端口后端已重启并加载本次改动。
 - Git 已加入用户 PATH，项目已建立 Git 基线，可正常查看 status/diff。
+
+## 2026-06-15 登录态与动态权限菜单接入
+
+### 已完成
+
+1. 前端新增登录页：
+   - 演示账号：`admin`
+   - 演示密码：`admin123`
+   - 登录成功后保存 demo token 到 `localStorage`
+
+2. 前端接入登录与退出：
+   - `POST /auth/login`
+   - `POST /auth/logout`
+   - `GET /auth/current-user`
+
+3. 前端菜单从静态硬编码切换为优先读取后端权限菜单：
+   - `GET /system/menu/user-tree`
+   - 接口失败时自动降级为本地菜单
+
+4. 后端用户菜单补齐到当前 V1.0 前端菜单覆盖范围：
+   - 基础资料完整菜单
+   - 采购、销售、库存、财务增强菜单
+   - 报表中心
+   - 系统管理
+
+5. 顶部用户区显示当前用户名称，并支持退出登录。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 8080 端口后端健康检查通过：
+
+```text
+UP
+```
+
+4. 登录接口验证通过：
+
+```text
+POST http://localhost:8080/api/auth/login
+code: 0
+```
+
+5. 用户菜单接口验证通过：
+
+```text
+GET http://localhost:8080/api/system/menu/user-tree
+code: 0
+```
+
+6. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
+
+### 当前说明
+
+- 8080 端口后端已重启并加载动态菜单补齐。
+- 前端现在进入系统前需要先登录，刷新页面后可通过本地 token 保持登录态。

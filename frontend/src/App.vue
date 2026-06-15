@@ -6,10 +6,10 @@ import CustomerPriceAdjust from './views/CustomerPriceAdjust.vue'
 import CustomerPriceEdit from './views/CustomerPriceEdit.vue'
 import CustomerPriceQuery from './views/CustomerPriceQuery.vue'
 import GenericBusinessList from './views/GenericBusinessList.vue'
-import { get } from './api/client.js'
+import { get, post } from './api/client.js'
 import { moduleConfigs } from './module-config.js'
 
-const menus = {
+const fallbackMenus = {
   首页: [{ code: 'dashboard', name: '经营概览' }],
   基础资料: [
     { code: 'goods', name: '商品档案' },
@@ -99,6 +99,7 @@ const menus = {
   ],
 }
 
+const menus = ref(fallbackMenus)
 const activeTop = ref('首页')
 const current = ref('dashboard')
 const openTabs = ref(['dashboard'])
@@ -107,8 +108,14 @@ const flowResult = ref(null)
 const dashboardSummary = ref(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
+const loginForm = ref({ username: 'admin', password: 'admin123' })
+const loginError = ref('')
+const loginLoading = ref(false)
+const currentUser = ref(null)
+const authToken = ref(localStorage.getItem('erp-demo-token') || '')
+const menuLoading = ref(false)
 
-const currentName = computed(() => moduleConfigs[current.value]?.title || Object.values(menus).flat().find(x => x.code === current.value)?.name || (current.value === 'customerPriceEdit' ? '客户价格调整单' : '经营概览'))
+const currentName = computed(() => moduleConfigs[current.value]?.title || Object.values(menus.value).flat().find(x => x.code === current.value)?.name || (current.value === 'customerPriceEdit' ? '客户价格调整单' : '经营概览'))
 const currentDesc = computed(() => {
   if (moduleConfigs[current.value]?.desc) return moduleConfigs[current.value].desc
   const map = {
@@ -127,7 +134,7 @@ const genericColumns = [
 ]
 const genericRows = computed(() => [{ code: `${current.value.toUpperCase()}001`, name: `${currentName.value}示例`, group: '默认', status: '正常', action: '编辑' }])
 const currentConfig = computed(() => moduleConfigs[current.value])
-const tabItems = computed(() => openTabs.value.map(code => ({ code, name: moduleConfigs[code]?.title || Object.values(menus).flat().find(x => x.code === code)?.name || (code === 'customerPriceEdit' ? '客户价格调整单' : '经营概览') })))
+const tabItems = computed(() => openTabs.value.map(code => ({ code, name: moduleConfigs[code]?.title || Object.values(menus.value).flat().find(x => x.code === code)?.name || (code === 'customerPriceEdit' ? '客户价格调整单' : '经营概览') })))
 const dashboardCards = computed(() => {
   const summary = dashboardSummary.value || {}
   return [
@@ -143,7 +150,7 @@ const dashboardCards = computed(() => {
 function route(code) {
   current.value = code
   if (!openTabs.value.includes(code)) openTabs.value.push(code)
-  Object.entries(menus).forEach(([top, items]) => {
+  Object.entries(menus.value).forEach(([top, items]) => {
     if (items.some(item => item.code === code)) activeTop.value = top
   })
 }
@@ -154,14 +161,14 @@ function closeTab(code) {
   openTabs.value = openTabs.value.filter(item => item !== code)
   if (current.value === code) {
     current.value = openTabs.value[Math.max(0, index - 1)] || 'dashboard'
-    Object.entries(menus).forEach(([top, items]) => {
+    Object.entries(menus.value).forEach(([top, items]) => {
       if (items.some(item => item.code === current.value)) activeTop.value = top
     })
   }
 }
 
 function quickLocate(value) {
-  const hit = Object.values(menus).flat().find(item => item.name.includes(value))
+  const hit = Object.values(menus.value).flat().find(item => item.name.includes(value))
   if (hit) route(hit.code)
   else toast('未找到匹配模块')
 }
@@ -169,6 +176,68 @@ function quickLocate(value) {
 function toast(message) {
   toastText.value = message
   setTimeout(() => (toastText.value = ''), 1800)
+}
+
+function normalizeMenus(tree = []) {
+  const result = {}
+  tree.forEach(item => {
+    const children = item.children?.length ? item.children : [item]
+    result[item.name] = children.map(child => ({ code: child.code, name: child.name }))
+  })
+  return Object.keys(result).length ? result : fallbackMenus
+}
+
+async function loadCurrentUser() {
+  try {
+    currentUser.value = await get('/auth/current-user')
+  } catch (error) {
+    currentUser.value = { displayName: '系统管理员', username: 'admin', roles: ['ADMIN'] }
+  }
+}
+
+async function loadUserMenus() {
+  menuLoading.value = true
+  try {
+    menus.value = normalizeMenus(await get('/system/menu/user-tree'))
+    if (!menus.value[activeTop.value]) activeTop.value = Object.keys(menus.value)[0] || '首页'
+  } catch (error) {
+    menus.value = fallbackMenus
+    toast('菜单接口加载失败，已使用本地菜单')
+  } finally {
+    menuLoading.value = false
+  }
+}
+
+async function login() {
+  loginLoading.value = true
+  loginError.value = ''
+  try {
+    const result = await post('/auth/login', loginForm.value)
+    authToken.value = result.token
+    localStorage.setItem('erp-demo-token', result.token)
+    await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
+    toast('登录成功')
+  } catch (error) {
+    loginError.value = error.message || '登录失败'
+  } finally {
+    loginLoading.value = false
+  }
+}
+
+async function logout() {
+  try { await post('/auth/logout') } catch (error) {}
+  authToken.value = ''
+  currentUser.value = null
+  localStorage.removeItem('erp-demo-token')
+  menus.value = fallbackMenus
+  current.value = 'dashboard'
+  activeTop.value = '首页'
+  openTabs.value = ['dashboard']
+}
+
+async function bootstrap() {
+  if (!authToken.value) return
+  await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
 }
 
 function money(value) {
@@ -205,11 +274,22 @@ function showCreate() {
   else toast('打开新建页面')
 }
 
-onMounted(loadDashboardSummary)
+onMounted(bootstrap)
 </script>
 
 <template>
-  <div class="shell">
+  <div v-if="!authToken" class="login-page">
+    <div class="login-card">
+      <div class="brand login-brand"><div class="mark"></div>商贸云 ERP V1.0</div>
+      <p>开发演示账号：admin / admin123</p>
+      <div class="field"><label>账号</label><input v-model="loginForm.username" placeholder="请输入账号" @keydown.enter="login" /></div>
+      <div class="field"><label>密码</label><input v-model="loginForm.password" type="password" placeholder="请输入密码" @keydown.enter="login" /></div>
+      <div v-if="loginError" class="login-error">{{ loginError }}</div>
+      <button class="btn primary login-submit" :disabled="loginLoading" @click="login">{{ loginLoading ? '登录中...' : '登录系统' }}</button>
+    </div>
+  </div>
+
+  <div v-else class="shell">
     <header class="top">
       <div class="brand"><div class="mark"></div>商贸云 ERP V1.0</div>
       <button class="hamb" @click="toast('菜单折叠/展开')">☰</button>
@@ -224,12 +304,14 @@ onMounted(loadDashboardSummary)
       </div>
       <button class="topbtn" @click="toast('导出中心：0个任务')">导出中心</button>
       <button class="topbtn" @click="toast('消息：暂无')">消息</button>
-      <div class="user"><div class="avatar">管</div><span>管理员</span></div>
+      <button class="topbtn" @click="logout">退出</button>
+      <div class="user"><div class="avatar">{{ currentUser?.displayName?.slice(0, 1) || '管' }}</div><span>{{ currentUser?.displayName || '管理员' }}</span></div>
     </header>
 
     <aside class="side">
       <div class="side-search">
         <input class="quick-search" placeholder="模块快捷搜索：客户、商品、供应商、单据号" @keydown.enter="quickLocate($event.target.value)" />
+        <div v-if="menuLoading" class="menu-loading">正在加载权限菜单...</div>
       </div>
       <template v-for="(items, top) in menus" :key="top">
         <div class="lvl1" :class="{ on: activeTop === top }" @click="activeTop = top; route(items[0].code)">
