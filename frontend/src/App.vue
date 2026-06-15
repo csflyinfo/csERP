@@ -305,7 +305,7 @@ onMounted(bootstrap)
         <button class="btn" @click="route(current === 'customerPriceEdit' ? 'customerPrice' : current)">返回列表</button>
         <button class="btn primary" @click="showCreate">新建</button>
       </div>
-      <button class="topbtn" @click="toast('导出中心：0个任务')">导出中心</button>
+      <button class="topbtn" @click="route('exportCenter')">导出中心</button>
       <button class="topbtn" @click="toast('消息：暂无')">消息</button>
       <button class="topbtn" @click="logout">退出</button>
       <div class="user"><div class="avatar">{{ currentUser?.displayName?.slice(0, 1) || '管' }}</div><span>{{ currentUser?.displayName || '管理员' }}</span></div>

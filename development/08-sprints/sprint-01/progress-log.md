@@ -1120,3 +1120,49 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导出中心顶部入口与刷新动作
+
+### 已完成
+
+1. 顶部“导出中心”按钮从提示文案改为真实跳转：
+   - 点击后打开 `exportCenter` 模块页签。
+
+2. 通用列表新增“刷新”动作处理：
+   - 点击刷新回到第一页并重新加载当前列表。
+   - 导出中心配置中的“刷新”按钮 now 可用。
+
+3. 导出中心触发导出后自动刷新列表，便于立即看到新增任务。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 导出中心测试通过：
+
+```text
+V1 export center test passed
+```
+
+3. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

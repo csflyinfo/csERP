@@ -156,7 +156,11 @@ async function confirmAction() {
 }
 
 async function handleAction(action, row = null) {
-  if (/查看|详情|历史|库存|日志|来源/.test(action)) {
+  if (/刷新/.test(action)) {
+    pageNo.value = 1
+    await loadRows()
+    show(`${props.config.title}已刷新`)
+  } else if (/查看|详情|历史|库存|日志|来源/.test(action)) {
     openDialog('view', action, `${props.config.title}详情`, row)
   } else if (/新建|编辑|复制/.test(action)) {
     openDialog('form', action, `${props.config.title}：按PRD打开${props.config.mode === 'modal' ? '小弹窗' : props.config.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
@@ -182,6 +186,7 @@ async function handleAction(action, row = null) {
       try {
         const result = await post(api.export, { moduleCode: props.moduleCode, reportName: props.config.title, filters: queryFilters.value })
         show(result?.message || `${props.config.title}已创建导出任务`)
+        if (props.moduleCode === 'exportCenter') loadRows()
       } catch (error) {
         show(`${props.config.title}导出接口暂不可用，已保留导出任务提示`)
       }
