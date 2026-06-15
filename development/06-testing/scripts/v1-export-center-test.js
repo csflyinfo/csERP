@@ -32,6 +32,8 @@ async function main() {
   const download = await post('/system/export-center/download', { taskNo: created.taskNo })
   assert(download.downloadUrl && download.downloadUrl.includes(created.taskNo), 'download should return task download url')
   assert(download.fileName === created.fileName, 'download should return created file name')
+  assert(download.mimeType && download.mimeType.includes('text/csv'), 'download should return csv mime type')
+  assert(download.fileContent && download.fileContent.includes(created.taskNo), 'download should return file content')
 
   const logs = await post('/system/operation-log/page', { pageNo: 1, pageSize: 20, filters: { keyword: created.taskNo } })
   assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'EXPORT'), 'export create should write operation log')

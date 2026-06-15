@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
-import { post } from '../api/client.js'
+import { post, saveTextFile } from '../api/client.js'
 import { mapRecordToRow, moduleApis } from '../module-api.js'
 
 const props = defineProps({
@@ -189,6 +189,7 @@ async function handleAction(action, row = null) {
     if (api?.download) {
       try {
         const result = await post(api.download, buildPayload())
+        if (result?.fileContent) saveTextFile(result.fileName, result.fileContent, result.mimeType)
         show(result?.message ? `${result.message}：${result.fileName}` : `${props.config.title}下载已准备好`)
       } catch (error) {
         show(`${props.config.title}下载失败：${error.message}`)

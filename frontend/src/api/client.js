@@ -31,3 +31,15 @@ export async function post(path, body = {}) {
 export async function get(path) {
   return request(path)
 }
+
+export function saveTextFile(fileName, content, mimeType = 'text/plain;charset=UTF-8') {
+  const blob = new Blob([content || ''], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName || 'download.txt'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}

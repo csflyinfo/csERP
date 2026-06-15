@@ -1634,3 +1634,73 @@ V1 module coverage test passed: 60 endpoints
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导入导出真实文件下载内容
+
+### 已完成
+
+1. 导出中心下载接口返回可下载内容：
+   - `mimeType: text/csv;charset=UTF-8`
+   - `fileContent` 返回 CSV 文本内容。
+
+2. 导入失败原因下载接口返回可下载内容：
+   - `mimeType: text/csv;charset=UTF-8`
+   - `fileContent` 返回失败原因 CSV 文本内容。
+
+3. 前端 API 客户端新增文本文件下载工具：
+   - `saveTextFile(fileName, content, mimeType)`
+   - 通过 Blob + object URL 触发浏览器下载。
+
+4. 通用列表下载动作接入真实文件生成：
+   - 后端返回 `fileContent` 时自动生成并下载本地文件。
+   - 下载成功后仍保留文件名提示。
+
+5. 导入/导出测试补充文件内容断言：
+   - 校验 `mimeType`。
+   - 校验 `fileContent` 包含对应任务号。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导出中心文件内容测试通过：
+
+```text
+V1 export center test passed
+```
+
+4. 导入失败原因文件内容测试通过：
+
+```text
+V1 import list test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

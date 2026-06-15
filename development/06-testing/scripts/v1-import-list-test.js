@@ -32,6 +32,8 @@ async function main() {
   const failures = await post('/system/import-list/download-failures', { taskNo: created.taskNo })
   assert(failures.downloadUrl && failures.downloadUrl.includes(created.taskNo), 'failure download should return task url')
   assert(String(failures.fileName).includes('失败原因'), 'failure download should return failure file name')
+  assert(failures.mimeType && failures.mimeType.includes('text/csv'), 'failure download should return csv mime type')
+  assert(failures.fileContent && failures.fileContent.includes(created.taskNo), 'failure download should return file content')
 
   const logs = await post('/system/operation-log/page', { pageNo: 1, pageSize: 20, filters: { keyword: created.taskNo } })
   assert(logs.records.some(record => record.bizNo === created.taskNo && record.action === 'CREATE'), 'import create should write operation log')

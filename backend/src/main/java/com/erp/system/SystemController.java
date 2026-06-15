@@ -310,6 +310,8 @@ public class SystemController {
                 "failedRows", task.get("FAILEDROWS"),
                 "fileName", failureFileName,
                 "downloadUrl", "/api/system/import-list/download-failures-file/" + task.get("TASKNO"),
+                "mimeType", "text/csv;charset=UTF-8",
+                "fileContent", "行号,字段,失败原因\n1,商品编码,示例：该任务无失败行\n任务号," + task.get("TASKNO") + "," + task.get("RESULTTEXT"),
                 "message", "失败原因文件已准备好"
         ));
     }
@@ -347,6 +349,8 @@ public class SystemController {
                 "taskNo", task.get("TASKNO"),
                 "fileName", task.get("FILENAME"),
                 "downloadUrl", "/api/system/export-center/download-file/" + task.get("TASKNO"),
+                "mimeType", "text/csv;charset=UTF-8",
+                "fileContent", "任务号,文件名,状态\n" + task.get("TASKNO") + "," + task.get("FILENAME") + ",FINISHED",
                 "message", "导出文件已准备好"
         ));
     }
