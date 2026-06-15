@@ -857,3 +857,61 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 后端通用分页过滤接入
+
+### 已完成
+
+1. `PageResult.of` 支持通用 filters 过滤：
+   - 对 Map 记录的所有字段值做文本匹配。
+   - 多个查询值按 AND 规则匹配。
+   - 空值不参与过滤。
+   - `treeNode=全部*` 不参与过滤。
+
+2. 过滤在分页切片前执行：
+   - `total` 返回过滤后的总数。
+   - `records` 返回过滤后的当前页。
+
+3. 新增分页过滤冒烟脚本：
+   - `development/06-testing/scripts/v1-page-filter-test.js`
+   - 覆盖商品关键字命中、无结果、过滤后分页大小。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 分页过滤测试通过：
+
+```text
+V1 page filter test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+6. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
