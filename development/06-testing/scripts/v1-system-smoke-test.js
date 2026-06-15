@@ -4,7 +4,7 @@ const pageBody = { pageNo: 1, pageSize: 20, filters: {} }
 async function post(path, body = pageBody) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo-token' },
     body: JSON.stringify(body),
   })
   const json = await res.json()
@@ -13,7 +13,7 @@ async function post(path, body = pageBody) {
 }
 
 async function get(path) {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: 'Bearer demo-token' } })
   const json = await res.json()
   if (json.code !== '0') throw new Error(`${path} failed: ${json.message}`)
   return json.data

@@ -1,7 +1,10 @@
 const BASE = process.env.API_BASE || 'http://localhost:8080/api'
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, options)
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers: { Authorization: 'Bearer demo-token', ...(options.headers || {}) },
+  })
   const json = await res.json()
   if (json.code !== '0') throw new Error(`${path} failed: ${json.message}`)
   return json.data

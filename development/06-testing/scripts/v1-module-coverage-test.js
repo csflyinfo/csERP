@@ -67,7 +67,7 @@ const endpoints = [
 async function post(path) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo-token' },
     body: JSON.stringify(body),
   })
   const json = await res.json()

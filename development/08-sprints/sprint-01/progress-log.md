@@ -639,3 +639,72 @@ V1 module coverage test passed: 60 endpoints
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 后端 Demo Token 鉴权接入
+
+### 已完成
+
+1. 新增后端 Demo Token 鉴权过滤器：
+   - `backend/src/main/java/com/erp/auth/DemoAuthFilter.java`
+   - 除登录、登出、健康检查、H2 控制台外，其余接口需携带 `Authorization: Bearer demo-token`
+
+2. 未携带或 token 错误时返回：
+
+```json
+{"code":"401","message":"登录已过期，请重新登录"}
+```
+
+3. 自动化测试脚本补充认证头：
+   - `v1-module-coverage-test.js`
+   - `v1-enhanced-flow-test.js`
+   - `v1-core-smoke-test.js`
+   - `v1-system-smoke-test.js`
+   - `v1-auth-menu-smoke-test.js`
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 未携带 token 访问受保护接口返回 401：
+
+```text
+GET /api/auth/current-user
+401
+```
+
+4. 携带 token 访问受保护接口成功：
+
+```text
+GET /api/auth/current-user
+Authorization: Bearer demo-token
+code: 0
+```
+
+5. 登录接口仍可公开访问：
+
+```text
+POST /api/auth/login
+code: 0
+```
+
+6. 自动化测试全部通过：
+
+```text
+V1 auth menu smoke test passed
+V1 module coverage test passed: 60 endpoints
+V1 enhanced flow test passed
+V1 core smoke test passed
+V1 system smoke test passed
+```

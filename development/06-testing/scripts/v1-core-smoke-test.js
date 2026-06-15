@@ -3,7 +3,7 @@ const BASE = process.env.API_BASE || 'http://localhost:8080/api'
 async function post(path, body = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer demo-token' },
     body: JSON.stringify(body),
   })
   const json = await res.json()
@@ -12,7 +12,7 @@ async function post(path, body = {}) {
 }
 
 async function get(path) {
-  const res = await fetch(`${BASE}${path}`)
+  const res = await fetch(`${BASE}${path}`, { headers: { Authorization: 'Bearer demo-token' } })
   const json = await res.json()
   if (json.code !== '0') throw new Error(`${path} failed: ${json.message}`)
   return json.data
