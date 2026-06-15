@@ -1,0 +1,10 @@
+﻿from pathlib import Path
+p = Path(r"E:\我的工作项目\erp-wms-tms\prototype\v1-erp-complete\product-archive.html")
+s = p.read_text(encoding="utf-8")
+s = s.replace("<span class=\"on\" onclick=\"jumpSec('base')\">基础档案</span><span onclick=\"jumpSec('unit')\">单位设置</span><span onclick=\"jumpSec('price')\">价格设置</span><span onclick=\"jumpSec('warehouse')\">采购与库存</span><span onclick=\"jumpSec('intro')\">商品介绍</span><span onclick=\"jumpSec('history')\">采购/销售历史</span>", "<span class=\"on\" onclick=\"jumpSec('base')\">基础档案</span><span onclick=\"jumpSec('unit')\">单位设置</span><span onclick=\"jumpSec('price')\">价格设置</span><span onclick=\"jumpSec('intro')\">商品介绍</span><span onclick=\"jumpSec('history')\">采购/销售历史</span>")
+old = "<label class=\"field\">商品负责人<select><option>请选择商品负责人</option></select></label><label class=\"field\">状态<select><option>正常</option><option>停用</option></select></label></div></section><section class=\"section\" id=\"unit\">"
+new = "<label class=\"field\">商品负责人<select><option>请选择商品负责人</option></select></label><label class=\"field\">状态<select><option>正常</option><option>停用</option></select></label><label class=\"field\">默认供应商<select><option>请选择默认供应商</option></select></label><label class=\"field\">默认仓库<select><option>总仓</option></select></label><label class=\"field\"><b>*</b> 税率%<span class=\"step\"><button>-</button><input value=\"13\"><button>+</button></span></label><label class=\"field\">起订量<input value=\"1\"></label><label class=\"field\">起订倍数<input value=\"1\"></label><label class=\"field\">库存上限<input value=\"5000\"></label><label class=\"field\">库存下限<input value=\"100\"></label><label class=\"field\">临期预警天数<input value=\"30\"></label></div></section><section class=\"section\" id=\"unit\">"
+s = s.replace(old, new)
+s = s.replace("<section class=\"section\" id=\"warehouse\">${whMatrix()}</section>", "")
+s = s.replace("const secIds=['base','unit','price','warehouse','intro','history'];", "const secIds=['base','unit','price','intro','history'];")
+p.write_text(s, encoding="utf-8")

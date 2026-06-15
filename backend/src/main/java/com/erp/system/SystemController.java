@@ -1,0 +1,278 @@
+package com.erp.system;
+
+import com.erp.common.api.ApiResponse;
+import com.erp.common.api.GenericResult;
+import com.erp.common.api.PageRequest;
+import com.erp.common.api.PageResult;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/system")
+public class SystemController {
+    private final JdbcTemplate jdbcTemplate;
+
+    public SystemController(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    @GetMapping("/menu/user-tree")
+    public ApiResponse<List<Map<String, Object>>> userMenuTree() {
+        return ApiResponse.ok(List.of(
+                menu("dashboard", "首页", "/dashboard"),
+                menu("base", "基础资料", null,
+                        menu("goods", "商品档案", "/base/goods"),
+                        menu("category", "商品分类", "/base/category"),
+                        menu("unit", "单位管理", "/base/unit"),
+                        menu("brand", "品牌管理", "/base/brand"),
+                        menu("customer", "门店/客户资料", "/base/customer"),
+                        menu("supplier", "供应商资料", "/base/supplier"),
+                        menu("warehouse", "仓库资料", "/base/warehouse"),
+                        menu("priceGroup", "价格组设置", "/base/price-group"),
+                        menu("customerPrice", "客户价格调整单", "/base/customer-price-adjust"),
+                        menu("customerPriceQuery", "客户价格查询", "/base/customer-price-query")
+                ),
+                menu("purchase", "采购管理", null,
+                        menu("purchaseOrder", "采购订单", "/purchase/order"),
+                        menu("purchaseInbound", "采购入库", "/purchase/inbound"),
+                        menu("purchaseReceipt", "采购收货单", "/purchase/receipt"),
+                        menu("purchaseReturn", "采购退货单", "/purchase/return"),
+                        menu("purchaseExpense", "采购费用单", "/purchase/expense")
+                ),
+                menu("sales", "销售管理", null,
+                        menu("quickOrder", "销售快速开单", "/sales/quick-order"),
+                        menu("salesOrder", "销售订单", "/sales/order"),
+                        menu("salesOutbound", "销售出库", "/sales/outbound"),
+                        menu("salesReceipt", "销售收货单", "/sales/receipt"),
+                        menu("salesReturn", "销售退货单", "/sales/return")
+                ),
+                menu("inventory", "库存管理", null,
+                        menu("stockBalance", "库存余额", "/inventory/balance"),
+                        menu("stockLedger", "库存流水", "/inventory/ledger"),
+                        menu("stockLock", "库存锁定", "/inventory/lock"),
+                        menu("transfer", "调拨单", "/inventory/transfer"),
+                        menu("damage", "报损单", "/inventory/damage"),
+                        menu("costAdjust", "成本调整单", "/inventory/cost-adjust")
+                ),
+                menu("finance", "财务管理", null,
+                        menu("ar", "应收账款", "/finance/ar"),
+                        menu("ap", "应付账款", "/finance/ap"),
+                        menu("receiptPayment", "收付款单", "/finance/receipt-payment"),
+                        menu("arSettlement", "应收结算", "/finance/ar-settlement"),
+                        menu("apSettlement", "应付结算", "/finance/ap-settlement"),
+                        menu("financeExpense", "费用单", "/finance/expense"),
+                        menu("fundLedger", "资金流水", "/finance/fund-ledger")
+                ),
+                menu("system", "系统管理", null,
+                        menu("user", "用户管理", "/system/user"),
+                        menu("role", "权限组管理", "/system/role"),
+                        menu("param", "系统参数", "/system/param"),
+                        menu("billNo", "单据编号规则", "/system/bill-no-rule"),
+                        menu("precision", "显示精度设置", "/system/precision"),
+                        menu("dictionary", "用户数据字典", "/system/dictionary"),
+                        menu("workflow", "审批流配置", "/system/workflow"),
+                        menu("printTemplate", "打印模板设置", "/system/print-template"),
+                        menu("importList", "导入列表", "/system/import-list"),
+                        menu("exportCenter", "导出中心", "/system/export-center"),
+                        menu("log", "操作日志", "/system/operation-log")
+                )
+        ));
+    }
+
+    @PostMapping("/user/page")
+    public ApiResponse<PageResult<Map<String, Object>>> userPage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT username,
+                       display_name displayName,
+                       mobile,
+                       role_name role,
+                       data_scope dataScope,
+                       CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status
+                FROM sys_user_runtime
+                ORDER BY username
+                """), request));
+    }
+
+    @PostMapping("/user/save")
+    public ApiResponse<Map<String, Object>> saveUser(@RequestBody Map<String, Object> request) {
+        String id = String.valueOf(request.getOrDefault("userId", "U" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
+        jdbcTemplate.update("""
+                MERGE INTO sys_user_runtime KEY(user_id)
+                VALUES (?, ?, ?, ?, ?, ?, 'NORMAL')
+                """, id, request.getOrDefault("username", "user" + System.currentTimeMillis()), request.getOrDefault("displayName", "新用户"),
+                request.getOrDefault("mobile", ""), request.getOrDefault("roleName", "普通用户"), request.getOrDefault("dataScope", "本人"));
+        log("system.user", "SAVE", id, "SUCCESS", "保存用户");
+        return ApiResponse.ok(GenericResult.row("userId", id, "success", true));
+    }
+
+    @PostMapping("/role/page")
+    public ApiResponse<PageResult<Map<String, Object>>> rolePage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT role_code roleCode,
+                       role_name roleName,
+                       user_count userCount,
+                       menu_scope menuScope,
+                       field_scope fieldScope,
+                       CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status
+                FROM sys_role_runtime
+                ORDER BY role_code
+                """), request));
+    }
+
+    @PostMapping("/role/save")
+    public ApiResponse<Map<String, Object>> saveRole(@RequestBody Map<String, Object> request) {
+        String id = String.valueOf(request.getOrDefault("roleId", "R" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
+        jdbcTemplate.update("""
+                MERGE INTO sys_role_runtime KEY(role_id)
+                VALUES (?, ?, ?, 0, ?, ?, 'NORMAL')
+                """, id, request.getOrDefault("roleCode", id), request.getOrDefault("roleName", "新权限组"),
+                request.getOrDefault("menuScope", "按配置"), request.getOrDefault("fieldScope", "按配置"));
+        log("system.role", "SAVE", id, "SUCCESS", "保存权限组");
+        return ApiResponse.ok(GenericResult.row("roleId", id, "success", true));
+    }
+
+    @PostMapping("/param/page")
+    public ApiResponse<PageResult<Map<String, Object>>> paramPage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT param_key paramKey,
+                       param_name paramName,
+                       param_value paramValue,
+                       default_value defaultValue,
+                       param_group paramGroup,
+                       remark
+                FROM sys_param_runtime
+                ORDER BY param_group, param_key
+                """), request));
+    }
+
+    @PostMapping("/param/update")
+    public ApiResponse<Map<String, Object>> updateParam(@RequestBody Map<String, Object> request) {
+        jdbcTemplate.update("UPDATE sys_param_runtime SET param_value = ? WHERE param_key = ?", request.get("paramValue"), request.get("paramKey"));
+        log("system.param", "UPDATE", String.valueOf(request.get("paramKey")), "SUCCESS", "修改系统参数");
+        return ApiResponse.ok(GenericResult.operation("system.param", "UPDATE"));
+    }
+
+    @PostMapping("/bill-no-rule/page")
+    public ApiResponse<PageResult<Map<String, Object>>> billNoRulePage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT bill_type billType,
+                       prefix,
+                       date_format dateFormat,
+                       serial_length serialLength,
+                       reset_cycle resetCycle,
+                       example_no exampleNo,
+                       CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status
+                FROM sys_bill_no_rule_runtime
+                ORDER BY bill_type
+                """), request));
+    }
+
+    @PostMapping("/bill-no-rule/update")
+    public ApiResponse<Map<String, Object>> updateBillNoRule(@RequestBody Map<String, Object> request) {
+        jdbcTemplate.update("UPDATE sys_bill_no_rule_runtime SET prefix = COALESCE(?, prefix), serial_length = COALESCE(?, serial_length) WHERE bill_type = ?",
+                request.get("prefix"), request.get("serialLength"), request.get("billType"));
+        log("system.billNo", "UPDATE", String.valueOf(request.get("billType")), "SUCCESS", "修改编号规则");
+        return ApiResponse.ok(GenericResult.operation("system.billNo", "UPDATE"));
+    }
+
+    @PostMapping("/precision/page")
+    public ApiResponse<PageResult<Map<String, Object>>> precisionPage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "PRECISION", "数量显示位数", "显示精度", "正常", "数量/单价/金额显示位数，只可增大");
+    }
+
+    @PostMapping("/precision/save")
+    public ApiResponse<Map<String, Object>> savePrecision(@RequestBody Map<String, Object> request) {
+        return saveSimpleConfig("system.precision", request);
+    }
+
+    @PostMapping("/dictionary/page")
+    public ApiResponse<PageResult<Map<String, Object>>> dictionaryPage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "DICT", "客户等级", "用户字典", "正常", "客户等级、支付方式、费用方向等业务字典");
+    }
+
+    @PostMapping("/dictionary/save")
+    public ApiResponse<Map<String, Object>> saveDictionary(@RequestBody Map<String, Object> request) {
+        return saveSimpleConfig("system.dictionary", request);
+    }
+
+    @PostMapping("/workflow/page")
+    public ApiResponse<PageResult<Map<String, Object>>> workflowPage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "WF", "低价审批", "审批流", "正常", "超信用、低价、付款审批规则");
+    }
+
+    @PostMapping("/workflow/save")
+    public ApiResponse<Map<String, Object>> saveWorkflow(@RequestBody Map<String, Object> request) {
+        return saveSimpleConfig("system.workflow", request);
+    }
+
+    @PostMapping("/print-template/page")
+    public ApiResponse<PageResult<Map<String, Object>>> printTemplatePage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "PRINT", "销售单模板", "打印模板", "正常", "销售单、采购单、小票模板");
+    }
+
+    @PostMapping("/print-template/save")
+    public ApiResponse<Map<String, Object>> savePrintTemplate(@RequestBody Map<String, Object> request) {
+        return saveSimpleConfig("system.printTemplate", request);
+    }
+
+    @PostMapping("/import-list/page")
+    public ApiResponse<PageResult<Map<String, Object>>> importListPage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "IMP", "商品导入任务", "导入任务", "已完成", "查看导入结果、失败原因下载");
+    }
+
+    @PostMapping("/export-center/page")
+    public ApiResponse<PageResult<Map<String, Object>>> exportCenterPage(@RequestBody PageRequest request) {
+        return simpleSystemPage(request, "EXP", "销售订单导出", "导出任务", "已完成", "异步导出文件下载");
+    }
+
+    @PostMapping("/operation-log/page")
+    public ApiResponse<PageResult<Map<String, Object>>> operationLogPage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT operate_at operateAt,
+                       operator_name operatorName,
+                       module_code moduleCode,
+                       action,
+                       biz_no bizNo,
+                       result,
+                       detail
+                FROM sys_operation_log_runtime
+                ORDER BY operate_at DESC
+                """), request));
+    }
+
+    private ApiResponse<PageResult<Map<String, Object>>> simpleSystemPage(PageRequest request, String codePrefix, String name, String type, String status, String remark) {
+        return ApiResponse.ok(PageResult.of(List.of(GenericResult.row(
+                "code", codePrefix + "001",
+                "name", name,
+                "type", type,
+                "status", status,
+                "remark", remark,
+                "action", "编辑 停用"
+        )), request));
+    }
+
+    private ApiResponse<Map<String, Object>> saveSimpleConfig(String module, Map<String, Object> request) {
+        String bizNo = String.valueOf(request.getOrDefault("bizId", module + System.currentTimeMillis()));
+        log(module, "SAVE", bizNo, "SUCCESS", "保存配置");
+        return ApiResponse.ok(GenericResult.row("success", true, "bizNo", bizNo));
+    }
+
+    private void log(String module, String action, String bizNo, String result, String detail) {
+        jdbcTemplate.update("""
+                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
+                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, ?, ?)
+                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), module, action, bizNo, result, detail);
+    }
+
+    private Map<String, Object> menu(String code, String name, String path, Map<String, Object>... children) {
+        return Map.of("code", code, "name", name, "path", path == null ? "" : path, "children", List.of(children));
+    }
+}

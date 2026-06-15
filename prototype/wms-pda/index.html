@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WMS仓库作业系统 - PDA端</title>
+<style>
+/* ========== PDA Device Simulation ========== */
+:root {
+  --pda-bg: #1a1f2e;
+  --pda-surface: #232940;
+  --pda-surface2: #2a3050;
+  --pda-primary: #00C48C;
+  --pda-primary-glow: rgba(0,196,140,0.3);
+  --pda-warning: #FF8F3F;
+  --pda-danger: #FF5252;
+  --pda-info: #4FC3F7;
+  --pda-text: #E8ECF1;
+  --pda-text-secondary: #8B95A8;
+  --pda-border: #37405A;
+  --pda-radius: 12px;
+  --pda-radius-sm: 8px;
+  --transition: all 0.2s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #0D1117;
+  display: flex; justify-content: center; align-items: center;
+  min-height: 100vh; padding: 20px;
+}
+
+/* PDA Device Frame */
+.pda-device {
+  width: 412px; height: 915px;
+  background: var(--pda-bg);
+  border-radius: 28px;
+  box-shadow: 0 0 0 3px #333, 0 0 0 6px #1a1a1a, 0 0 0 8px #444, 0 20px 60px rgba(0,0,0,0.5);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  position: relative;
+}
+
+/* Status Bar */
+.pda-statusbar {
+  background: var(--pda-bg);
+  padding: 12px 20px 8px;
+  display: flex; justify-content: space-between;
+  font-size: 12px;
+  color: var(--pda-text-secondary);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--pda-border);
+}
+.pda-statusbar .battery { color: var(--pda-primary); }
+.pda-statusbar .wifi { color: var(--pda-primary); margin-left: 6px; }
+.pda-statusbar .time { font-weight: 600; color: var(--pda-text); }
+
+/* App Header */
+.app-header {
+  padding: 12px 16px;
+  background: var(--pda-surface);
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0;
+}
+.app-header h1 { font-size: 16px; color: var(--pda-text); font-weight: 600; flex: 1; }
+.app-header .back-btn {
+  width: 32px; height: 32px; background: transparent; border: none; color: var(--pda-text);
+  font-size: 20px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+}
+.app-header .back-btn:hover { background: rgba(255,255,255,0.1); }
+.app-header .user-tag {
+  font-size: 12px; color: var(--pda-text-secondary); background: var(--pda-surface2);
+  padding: 4px 10px; border-radius: 12px;
+}
+
+/* Screen Content */
+.screen {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: none;
+}
+.screen.active { display: block; }
+
+/* ========== LOGIN ========== */
+.login-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 40px 32px;
+}
+.login-screen.active { display: flex; }
+.login-logo {
+  width: 80px; height: 80px; background: linear-gradient(135deg, var(--pda-primary), #00A8A0);
+  border-radius: 20px; display: flex; align-items: center; justify-content: center;
+  font-size: 40px; margin-bottom: 24px;
+  box-shadow: 0 8px 32px var(--pda-primary-glow);
+}
+.login-screen h2 { font-size: 20px; color: var(--pda-text); margin-bottom: 6px; }
+.login-screen .sub { font-size: 13px; color: var(--pda-text-secondary); margin-bottom: 32px; }
+.login-screen .input-group {
+  width: 100%; margin-bottom: 16px;
+}
+.login-screen .input-group label {
+  display: block; font-size: 13px; color: var(--pda-text-secondary); margin-bottom: 6px;
+}
+.login-screen .input-group input {
+  width: 100%; height: 46px; background: var(--pda-surface); border: 1px solid var(--pda-border);
+  border-radius: var(--pda-radius-sm); padding: 0 16px; font-size: 15px; color: var(--pda-text); outline: none;
+}
+.login-screen .input-group input:focus { border-color: var(--pda-primary); }
+.login-screen .btn {
+  width: 100%; height: 48px; border: none; border-radius: var(--pda-radius-sm);
+  font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px;
+}
+.login-screen .btn-primary {
+  background: linear-gradient(135deg, var(--pda-primary), #00A8A0);
+  color: #fff; box-shadow: 0 4px 16px var(--pda-primary-glow);
+}
+
+/* ========== COMPONENTS ========== */
+.scan-zone {
+  background: var(--pda-surface); border: 2px dashed var(--pda-border);
+  border-radius: var(--pda-radius); padding: 20px; text-align: center; margin-bottom: 16px;
+  cursor: pointer; transition: var(--transition);
+}
+.scan-zone:hover, .scan-zone.active { border-color: var(--pda-primary); background: rgba(0,196,140,0.05); }
+.scan-zone .scan-icon { font-size: 36px; margin-bottom: 8px; }
+.scan-zone .scan-text { font-size: 14px; color: var(--pda-text); font-weight: 500; }
+.scan-zone .scan-hint { font-size: 12px; color: var(--pda-text-secondary); margin-top: 4px; }
+.scan-zone .scan-input {
+  width: 100%; height: 42px; background: var(--pda-surface2); border: 1px solid var(--pda-border);
+  border-radius: var(--pda-radius-sm); padding: 0 14px; font-size: 16px; color: var(--pda-text);
+  text-align: center; outline: none; margin-top: 12px;
+}
+.scan-zone .scan-input:focus { border-color: var(--pda-primary); }
+
+.task-card {
+  background: var(--pda-surface); border-radius: var(--pda-radius); padding: 14px 16px;
+  margin-bottom: 10px; cursor: pointer; border: 1px solid transparent; transition: var(--transition);
+  display: flex; align-items: center; gap: 12px;
+}
+.task-card:hover { border-color: var(--pda-border); }
+.task-card .task-avatar {
+  width: 42px; height: 42px; border-radius: 10px; display: flex;
+  align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0;
+}
+.task-card .task-avatar.receive { background: rgba(0,196,140,0.15); color: var(--pda-primary); }
+.task-card .task-avatar.pick { background: rgba(255,143,63,0.15); color: var(--pda-warning); }
+.task-card .task-avatar.putaway { background: rgba(79,195,247,0.15); color: var(--pda-info); }
+.task-card .task-avatar.check { background: rgba(171,71,188,0.15); color: #AB47BC; }
+.task-card .task-info { flex: 1; min-width: 0; }
+.task-card .task-info .title { font-size: 14px; color: var(--pda-text); font-weight: 500; }
+.task-card .task-info .desc { font-size: 12px; color: var(--pda-text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-card .task-arrow { color: var(--pda-text-secondary); }
+
+.badge {
+  display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600;
+}
+.badge-primary { background: rgba(0,196,140,0.15); color: var(--pda-primary); }
+.badge-warning { background: rgba(255,143,63,0.15); color: var(--pda-warning); }
+.badge-danger { background: rgba(255,82,82,0.15); color: var(--pda-danger); }
+.badge-info { background: rgba(79,195,247,0.15); color: var(--pda-info); }
+
+.btn-row { display: flex; gap: 10px; margin-top: 12px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 44px; padding: 0 20px; border: none; border-radius: var(--pda-radius-sm);
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: var(--transition);
+}
+.btn-primary { background: var(--pda-primary); color: #1a1f2e; flex: 1; }
+.btn-primary:hover { background: #00D89C; }
+.btn-outline { background: transparent; border: 1px solid var(--pda-border); color: var(--pda-text); }
+.btn-outline:hover { border-color: var(--pda-primary); color: var(--pda-primary); }
+.btn-warning { background: var(--pda-warning); color: #fff; }
+.btn-danger { background: var(--pda-danger); color: #fff; }
+
+.stat-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-item {
+  background: var(--pda-surface); border-radius: var(--pda-radius); padding: 14px;
+  text-align: center;
+}
+.stat-item .stat-num { font-size: 28px; font-weight: 700; color: var(--pda-text); }
+.stat-item .stat-label { font-size: 12px; color: var(--pda-text-secondary); margin-top: 4px; }
+.stat-item .stat-num.green { color: var(--pda-primary); }
+.stat-item .stat-num.orange { color: var(--pda-warning); }
+.stat-item .stat-num.blue { color: var(--pda-info); }
+.stat-item .stat-num.red { color: var(--pda-danger); }
+
+.section-title {
+  font-size: 14px; font-weight: 600; color: var(--pda-text); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.product-row {
+  background: var(--pda-surface2); border-radius: var(--pda-radius-sm);
+  padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+  border-left: 3px solid transparent;
+}
+.product-row.scanned { border-left-color: var(--pda-primary); background: rgba(0,196,140,0.08); }
+.product-row.error { border-left-color: var(--pda-danger); background: rgba(255,82,82,0.08); }
+.product-row .prod-icon { font-size: 28px; flex-shrink: 0; }
+.product-row .prod-info { flex: 1; min-width: 0; }
+.product-row .prod-info .name { font-size: 14px; color: var(--pda-text); font-weight: 500; }
+.product-row .prod-info .code { font-size: 11px; color: var(--pda-text-secondary); }
+.product-row .prod-qty { text-align: right; flex-shrink: 0; }
+.product-row .prod-qty .qty { font-size: 18px; font-weight: 700; color: var(--pda-primary); }
+.product-row .prod-qty .unit { font-size: 11px; color: var(--pda-text-secondary); }
+.product-row .prod-status { font-size: 18px; flex-shrink: 0; }
+
+/* Progress bar */
+.progress-wrap { margin: 12px 0; }
+.progress-bar {
+  height: 8px; background: var(--pda-surface2); border-radius: 4px; overflow: hidden;
+}
+.progress-bar .fill {
+  height: 100%; background: linear-gradient(90deg, var(--pda-primary), #00A8A0);
+  border-radius: 4px; transition: width 0.3s ease;
+}
+.progress-info { display: flex; justify-content: space-between; font-size: 12px; color: var(--pda-text-secondary); margin-top: 6px; }
+
+/* Location suggestion */
+.location-card {
+  background: rgba(0,196,140,0.08); border: 1px solid rgba(0,196,140,0.3);
+  border-radius: var(--pda-radius-sm); padding: 14px; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 12px;
+}
+.location-card .loc-icon { font-size: 28px; }
+.location-card .loc-info { flex: 1; }
+.location-card .loc-info .loc-name { font-size: 16px; color: var(--pda-primary); font-weight: 600; }
+.location-card .loc-info .loc-path { font-size: 11px; color: var(--pda-text-secondary); }
+
+/* Alert */
+.alert { padding: 12px 14px; border-radius: var(--pda-radius-sm); font-size: 13px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.alert-success { background: rgba(0,196,140,0.1); color: var(--pda-primary); border: 1px solid rgba(0,196,140,0.3); }
+.alert-warning { background: rgba(255,143,63,0.1); color: var(--pda-warning); border: 1px solid rgba(255,143,63,0.3); }
+.alert-danger { background: rgba(255,82,82,0.1); color: var(--pda-danger); border: 1px solid rgba(255,82,82,0.3); }
+.alert-info { background: rgba(79,195,247,0.1); color: var(--pda-info); border: 1px solid rgba(79,195,247,0.3); }
+
+/* Tab bar */
+.tab-bar {
+  display: flex; background: var(--pda-surface); border-top: 1px solid var(--pda-border); flex-shrink: 0;
+}
+.tab-item {
+  flex: 1; text-align: center; padding: 10px 4px; font-size: 11px;
+  color: var(--pda-text-secondary); cursor: pointer; transition: var(--transition);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.tab-item .tab-icon { font-size: 22px; }
+.tab-item.active { color: var(--pda-primary); }
+
+/* Notification pop */
+.notification {
+  position: absolute; top: 80px; left: 20px; right: 20px; z-index: 999;
+  padding: 14px 16px; border-radius: var(--pda-radius-sm); font-size: 14px;
+  display: flex; align-items: center; gap: 10px;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.notification.success { background: var(--pda-primary); color: #1a1f2e; }
+.notification.error { background: var(--pda-danger); color: #fff; }
+
+input[type="number"] {
+  width: 60px; height: 36px; background: var(--pda-surface2); border: 1px solid var(--pda-border);
+  border-radius: 6px; color: var(--pda-text); text-align: center; font-size: 16px; outline: none;
+}
+input[type="number"]:focus { border-color: var(--pda-primary); }
+
+/* Scrollbar */
+.screen::-webkit-scrollbar { width: 3px; }
+.screen::-webkit-scrollbar-track { background: transparent; }
+.screen::-webkit-scrollbar-thumb { background: var(--pda-border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="pda-device" id="pdaDevice">
+  <!-- Status Bar -->
+  <div class="pda-statusbar">
+    <span><span class="time">14:32</span></span>
+    <span>📶 <span class="wifi">WiFi</span> 🔋 <span class="battery">85%</span></span>
+  </div>
+
+  <!-- App Header -->
+  <div class="app-header" id="appHeader">
+    <button class="back-btn" id="backBtn" onclick="goBack()" style="display:none">←</button>
+    <h1 id="headerTitle">WMS仓库作业</h1>
+    <span class="user-tag">👤 王五</span>
+  </div>
+
+  <!-- ==================== SCREEN: Login ==================== -->
+  <div class="login-screen active" id="screen-login">
+    <div class="login-logo">🏗️</div>
+    <h2>WMS仓库作业系统</h2>
+    <p class="sub">PDA手持终端 · 扫码作业</p>
+    <div class="input-group"><label>操作员工号</label><input type="text" id="loginUser" value="WW001" placeholder="输入工号"></div>
+    <div class="input-group"><label>密码</label><input type="password" id="loginPass" value="123456" placeholder="输入密码"></div>
+    <button class="btn btn-primary" onclick="wmsLogin()">登 录</button>
+    <p style="font-size:11px;color:var(--pda-text-secondary);text-align:center;margin-top:16px">适配：斑马Zebra / 霍尼韦尔Honeywell / 东集Seuic</p>
+  </div>
+
+  <!-- ==================== SCREEN: Home ==================== -->
+  <div class="screen" id="screen-home">
+    <div class="scan-zone" onclick="quickScan()">
+      <div class="scan-icon">📷</div>
+      <div class="scan-text">快速扫码作业</div>
+      <div class="scan-hint">点击扫描条码 / 二维码</div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat-item">
+        <div class="stat-num green" id="statReceive">8</div>
+        <div class="stat-label">📥 待收货</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num orange" id="statPick">5</div>
+        <div class="stat-label">📦 待拣货</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num blue">12</div>
+        <div class="stat-label">📋 待上架</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num red">3</div>
+        <div class="stat-label">✅ 待复核</div>
+      </div>
+    </div>
+
+    <div class="section-title">📋 今日任务 <span style="font-weight:400;font-size:12px;color:var(--pda-text-secondary);margin-left:auto">2026-06-10</span></div>
+
+    <div class="task-card" onclick="navigateTo('receive')">
+      <div class="task-avatar receive">📥</div>
+      <div class="task-info">
+        <div class="title">收货作业 <span class="badge badge-primary">8单待收</span></div>
+        <div class="desc">采购入库扫码确认</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('putaway')">
+      <div class="task-avatar putaway">🏷️</div>
+      <div class="task-info">
+        <div class="title">上架作业 <span class="badge badge-info">12项待上架</span></div>
+        <div class="desc">扫描收货标签，上架到推荐库位</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('pick')">
+      <div class="task-avatar pick">📦</div>
+      <div class="task-info">
+        <div class="title">拣货作业 <span class="badge badge-warning">5单待拣</span></div>
+        <div class="desc">按路径指引拣货，扫描校验</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('verify')">
+      <div class="task-avatar check">✅</div>
+      <div class="task-info">
+        <div class="title">复核出库 <span class="badge badge-warning">3单待复核</span></div>
+        <div class="desc">逐件扫描核对，确保准确出库</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('stocktake')">
+      <div class="task-avatar" style="background:rgba(255,82,82,0.15);color:var(--pda-danger)">🔢</div>
+      <div class="task-info">
+        <div class="title">盘点作业 <span class="badge badge-danger">1计划待盘</span></div>
+        <div class="desc">逐库位扫描盘点（明盘/暗盘/动态盘）</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('move')">
+      <div class="task-avatar" style="background:rgba(79,195,247,0.15);color:var(--pda-info)">🔄</div>
+      <div class="task-info">
+        <div class="title">移库作业 <span class="badge badge-info">2项待移</span></div>
+        <div class="desc">扫描商品+目标库位，完成移库</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('assembly')">
+      <div class="task-avatar" style="background:rgba(171,71,188,0.15);color:#AB47BC">🔧</div>
+      <div class="task-info">
+        <div class="title">组合/拆分 <span class="badge" style="background:rgba(171,71,188,0.15);color:#AB47BC">1单</span></div>
+        <div class="desc">商品组合出库/拆分入库</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('proddate')">
+      <div class="task-avatar" style="background:rgba(255,143,63,0.15);color:var(--pda-warning)">📅</div>
+      <div class="task-info">
+        <div class="title">生产日期修改</div>
+        <div class="desc">修改库位商品的生产日期</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('reject')">
+      <div class="task-avatar" style="background:rgba(255,82,82,0.15);color:var(--pda-danger)">🚫</div>
+      <div class="task-info">
+        <div class="title">拒收入库 <span class="badge badge-danger">1单</span></div>
+        <div class="desc">司机拒收商品入库操作</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+    <div class="task-card" onclick="navigateTo('loading')">
+      <div class="task-avatar" style="background:rgba(0,196,140,0.15);color:var(--pda-primary)">🚛</div>
+      <div class="task-info">
+        <div class="title">装车确认 <span class="badge badge-primary">4单待装</span></div>
+        <div class="desc">扫描配送单，确认装车出库</div>
+      </div>
+      <div class="task-arrow">→</div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Receive ==================== -->
+  <div class="screen" id="screen-receive">
+    <div class="alert alert-info">📋 当前任务：入库单 <b>IN20260610001</b> | 供应商：农夫山泉股份有限公司</div>
+    <div class="scan-zone" onclick="scanBarcodeSim('receive', '6901234567890')">
+      <div class="scan-icon">📷</div>
+      <div class="scan-text">扫描入库单号</div>
+      <div class="scan-hint">或手动输入</div>
+      <input type="text" class="scan-input" placeholder="扫码枪输入..." id="receiveScanInput">
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="fill" style="width:60%"></div></div>
+      <div class="progress-info"><span>已收 5/8 项商品</span><span>60%</span></div>
+    </div>
+    <div class="section-title">📦 收货商品清单</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">6901234567890 · 应收 100箱</div></div>
+      <div class="prod-qty"><div class="qty">100</div><div class="unit">箱 / 实收</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 1.5L</div><div class="code">6901234567891 · 应收 50箱</div></div>
+      <div class="prod-qty"><div class="qty">50</div><div class="unit">箱 / 实收</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🍵</div>
+      <div class="prod-info"><div class="name">东方树叶茉莉花茶 500ml</div><div class="code">6901234567900 · 应收 80箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待扫描</div></div>
+      <div class="prod-status" style="color:var(--pda-text-secondary)">⏳</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🧃</div>
+      <div class="prod-info"><div class="name">农夫果园混合果汁 500ml</div><div class="code">6901234567901 · 应收 60箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待扫描</div></div>
+      <div class="prod-status" style="color:var(--pda-text-secondary)">⏳</div>
+    </div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-outline" onclick="navigateTo('home')">暂存</button>
+      <button class="btn btn-primary" onclick="showNotification('收货完成！已自动生成上架任务', 'success');navigateTo('home')">✅ 确认收货</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Putaway ==================== -->
+  <div class="screen" id="screen-putaway">
+    <div class="alert alert-info">🏷️ 待上架：<b>12项</b> | 来源：收货 IN20260610001</div>
+    <div class="location-card">
+      <div class="loc-icon">📍</div>
+      <div class="loc-info">
+        <div class="loc-name">A-01-02-03</div>
+        <div class="loc-path">仓库：总仓 > A区 > 01排 > 02层 > 03位</div>
+      </div>
+      <div style="font-size:12px;color:var(--pda-primary);font-weight:600">推荐</div>
+    </div>
+    <div class="scan-zone">
+      <div class="scan-icon">🏷️</div>
+      <div class="scan-text">扫描商品/托盘标签</div>
+      <input type="text" class="scan-input" placeholder="扫描条码...">
+    </div>
+    <div class="section-title">当前上架商品</div>
+    <div class="product-row">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">6901234567890 · 100箱</div></div>
+      <div class="prod-qty"><button class="btn btn-primary" style="height:32px;font-size:12px;padding:0 12px" onclick="showNotification('上架成功！库存已更新。', 'success')">确认上架</button></div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Pick ==================== -->
+  <div class="screen" id="screen-pick">
+    <div class="alert alert-warning">📦 波次号：<b>W2026061001</b> | 路线：朝阳线 | 客户：华联超市(建国路店)</div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="fill" style="width:60%"></div></div>
+      <div class="progress-info"><span>已拣 3/5 项商品</span><span>路线：A→B→C→D→E</span></div>
+    </div>
+    <div class="location-card">
+      <div class="loc-icon">📍</div>
+      <div class="loc-info">
+        <div class="loc-name">→ B-03-05 <span style="font-size:12px;color:var(--pda-warning);margin-left:8px">下一库位</span></div>
+        <div class="loc-path">B区 > 03排 > 05层 > 05位</div>
+      </div>
+      <div style="font-size:22px">👆</div>
+    </div>
+    <div class="scan-zone">
+      <div class="scan-icon">📦</div>
+      <div class="scan-text">先扫库位码 → 再扫商品码</div>
+      <input type="text" class="scan-input" placeholder="扫描验证..." id="pickScanInput">
+    </div>
+    <div class="section-title">📋 拣货清单</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">A-01-02 · 应拣10箱</div></div>
+      <div class="prod-qty"><div class="qty">10</div><div class="unit">箱/已拣</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🥤</div>
+      <div class="prod-info"><div class="name">可口可乐 330ml</div><div class="code">B-03-05 · 应拣5箱</div></div>
+      <div class="prod-qty"><div class="qty">5</div><div class="unit">箱/已拣</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row error">
+      <div class="prod-icon">🍜</div>
+      <div class="prod-info"><div class="name">康师傅红烧牛肉面 105g</div><div class="code">B-03-05 · 应拣8箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-danger)">缺货!</div><div class="unit">库存不足</div></div>
+      <div class="prod-status">⚠️</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🧂</div>
+      <div class="prod-info"><div class="name">海天酱油 500ml</div><div class="code">D-02-01 · 应拣6箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待拣</div></div>
+      <div class="prod-status">⏳</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-warning" onclick="showNotification('缺货已标记，继续拣货', 'error')">⚠️ 缺货标记</button>
+      <button class="btn btn-primary" onclick="showNotification('拣货完成！请送至复核区', 'success');navigateTo('home')">✅ 拣货完成</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Verify ==================== -->
+  <div class="screen" id="screen-verify">
+    <div class="alert alert-info">✅ 复核出库 | 波次：W2026061001 | 客户：华联超市(建国路店)</div>
+    <div class="scan-zone">
+      <div class="scan-icon">📷</div>
+      <div class="scan-text">扫描波次/周转箱条码</div>
+      <input type="text" class="scan-input" placeholder="或输入波次号...">
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="fill" style="width:80%"></div></div>
+      <div class="progress-info"><span>已复核 4/5 项</span><span>80%</span></div>
+    </div>
+    <div class="section-title">📋 复核对比 <span style="font-weight:400;font-size:11px;color:var(--pda-text-secondary)">应发 vs 实发</span></div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">10/10 箱</div></div>
+      <div class="prod-qty"><div class="qty">10</div><div class="unit">一致</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🥤</div>
+      <div class="prod-info"><div class="name">可口可乐 330ml</div><div class="code">5/5 箱</div></div>
+      <div class="prod-qty"><div class="qty">5</div><div class="unit">一致</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row error">
+      <div class="prod-icon">🍜</div>
+      <div class="prod-info"><div class="name">康师傅红烧牛肉面 105g</div><div class="code">8/6 箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-danger)">-2</div><div class="unit">少发</div></div>
+      <div class="prod-status">⚠️</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-danger" onclick="showNotification('差异已登记，待仓库主管审核', 'error')">⚠️ 差异处理</button>
+      <button class="btn btn-primary" onclick="showNotification('复核通过！已触发打印面单 🖨️', 'success');navigateTo('home')">✅ 复核通过并打印</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Stocktake ==================== -->
+  <div class="screen" id="screen-stocktake">
+    <div class="alert alert-danger">🔢 盘点计划：<b>ST2026061001</b> | 模式：明盘 | 范围：A区</div>
+    <div class="scan-zone">
+      <div class="scan-icon">📍</div>
+      <div class="scan-text">扫描库位条码</div>
+      <input type="text" class="scan-input" placeholder="或手动输入库位号...">
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="fill" style="width:35%"></div></div>
+      <div class="progress-info"><span>已盘 35/100 库位</span><span>差异：2项</span></div>
+    </div>
+    <div class="section-title">最近盘点记录</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">📍</div>
+      <div class="prod-info"><div class="name">A-01-02</div><div class="code">农夫山泉矿泉水 550ml · 系统100 / 实盘100</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row error">
+      <div class="prod-icon">📍</div>
+      <div class="prod-info"><div class="name">A-05-03</div><div class="code">可口可乐 330ml · 系统60 / 实盘58 ⚠️ 差异-2</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-danger)">-2</div></div>
+      <div class="prod-status">🔴</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">暂存离开</button>
+      <button class="btn btn-primary" onclick="showNotification('盘点完成！差异已提交仓库主管审核', 'success')">✅ 提交盘点</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Move Warehouse ==================== -->
+  <div class="screen" id="screen-move">
+    <div class="alert alert-info">🔄 移库作业 | 从库位迁移商品到目标库位</div>
+    <div class="scan-zone">
+      <div class="scan-icon">📍</div>
+      <div class="scan-text">扫描源库位条码</div>
+      <input type="text" class="scan-input" placeholder="源库位号...">
+    </div>
+    <div class="scan-zone" style="margin-top:8px">
+      <div class="scan-icon">📦</div>
+      <div class="scan-text">扫描商品条码</div>
+      <input type="text" class="scan-input" placeholder="商品条码...">
+    </div>
+    <div class="section-title">当前移库商品</div>
+    <div class="product-row">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">B-03-05 · 批次20260501</div></div>
+      <div class="prod-qty"><div class="qty">20</div><div class="unit">箱</div></div>
+    </div>
+    <div class="location-card">
+      <div class="loc-icon">🎯</div>
+      <div class="loc-info"><div class="loc-name">目标库位：C-02-01-01</div><div class="loc-path">总仓 > C区 > 02排 > 01层 > 01位</div></div>
+      <div style="font-size:12px;color:var(--pda-primary)">推荐</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">取消</button>
+      <button class="btn btn-primary" onclick="showNotification('移库成功！C-02-01-01 库存已更新', 'success');navigateTo('home')">✅ 确认移库</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Assembly/Disassembly ==================== -->
+  <div class="screen" id="screen-assembly">
+    <div class="alert alert-info">🔧 组合作业 | 组合申请单：AS20260610001</div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="fill" style="width:50%"></div></div>
+      <div class="progress-info"><span>进度</span><span>组合出库 → 组合入库</span></div>
+    </div>
+    <div class="section-title">📤 组合商品出库明细</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">A-01-02 · 应出10箱</div></div>
+      <div class="prod-qty"><div class="qty">10</div><div class="unit">箱/已出</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🍜</div>
+      <div class="prod-info"><div class="name">康师傅红烧牛肉面</div><div class="code">B-03-05 · 应出5箱</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待出</div></div>
+      <div class="prod-status">⏳</div>
+    </div>
+    <div class="section-title" style="margin-top:12px">📥 组合后入库商品（待生成）</div>
+    <div class="product-row" style="opacity:0.5">
+      <div class="prod-icon">🎁</div>
+      <div class="prod-info"><div class="name">新春礼包组合装</div><div class="code">10箱水 + 5箱面</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待入库</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">暂存</button>
+      <button class="btn btn-primary" onclick="showNotification('组合出库完成！请进行组合商品入库', 'success')">✅ 确认出库</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Production Date Modify ==================== -->
+  <div class="screen" id="screen-proddate">
+    <div class="alert alert-warning">📅 生产日期修改 | 修改库位商品的生产日期/批次</div>
+    <div class="scan-zone">
+      <div class="scan-icon">📍</div>
+      <div class="scan-text">扫描库位条码</div>
+      <input type="text" class="scan-input" placeholder="库位号...">
+    </div>
+    <div class="scan-zone" style="margin-top:8px">
+      <div class="scan-icon">📦</div>
+      <div class="scan-text">扫描商品条码</div>
+      <input type="text" class="scan-input" placeholder="商品条码...">
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🧴</div>
+      <div class="prod-info"><div class="name">农夫山泉矿泉水 550ml</div><div class="code">当前：2025-12-15 → <input type="date" value="2026-01-15" style="background:var(--pda-surface2);border:1px solid var(--pda-border);color:var(--pda-text);border-radius:4px;padding:2px 6px;font-size:12px"></div></div>
+      <div class="prod-qty"><div class="qty">20</div><div class="unit">箱</div></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">取消</button>
+      <button class="btn btn-primary" onclick="showNotification('生产日期已更新！', 'success');navigateTo('home')">✅ 确认修改</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Reject Inbound ==================== -->
+  <div class="screen" id="screen-reject">
+    <div class="alert alert-danger">🚫 拒收入库 | 司机：张师傅 | 配送单：DL20260609005</div>
+    <div class="scan-zone">
+      <div class="scan-icon">📦</div>
+      <div class="scan-text">扫描拒收商品条码</div>
+      <input type="text" class="scan-input" placeholder="商品条码...">
+    </div>
+    <div class="section-title">拒收商品清单</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">🍜</div>
+      <div class="prod-info"><div class="name">康师傅红烧牛肉面</div><div class="code">拒收 5箱 · 原因：包装破损</div></div>
+      <div class="prod-qty"><div class="qty">5</div><div class="unit">箱/已入库</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">🧂</div>
+      <div class="prod-info"><div class="name">海天酱油</div><div class="code">拒收 2箱 · 原因：临期</div></div>
+      <div class="prod-qty"><div class="qty" style="color:var(--pda-text-secondary)">--</div><div class="unit">待入库</div></div>
+      <div class="prod-status">⏳</div>
+    </div>
+    <div style="padding:12px;background:rgba(255,143,63,0.08);border-radius:8px;margin-top:8px;font-size:12px;color:var(--pda-warning)">
+      💡 拒收商品入库成本 = 原出库单商品成本
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">暂存</button>
+      <button class="btn btn-primary" onclick="showNotification('拒收入库完成！已自动审核', 'success');navigateTo('home')">✅ 确认入库</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Loading Confirmation ==================== -->
+  <div class="screen" id="screen-loading">
+    <div class="alert alert-info">🚛 装车确认 | 司机：张师傅 | 车牌：京A12345</div>
+    <div class="scan-zone">
+      <div class="scan-icon">🚛</div>
+      <div class="scan-text">扫描配送单号</div>
+      <input type="text" class="scan-input" placeholder="配送单号/波次号...">
+    </div>
+    <div class="section-title">待装车配送单</div>
+    <div class="product-row scanned">
+      <div class="prod-icon">📋</div>
+      <div class="prod-info"><div class="name">DL20260610001 华联超市(建国路店)</div><div class="code">5件 · 配送员：张司机</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row scanned">
+      <div class="prod-icon">📋</div>
+      <div class="prod-info"><div class="name">DL20260610003 便利蜂(三里屯店)</div><div class="code">3件 · 配送员：张司机</div></div>
+      <div class="prod-status">✅</div>
+    </div>
+    <div class="product-row">
+      <div class="prod-icon">📋</div>
+      <div class="prod-info"><div class="name">DL20260610002 永辉超市(朝阳店)</div><div class="code">12件 · 配送员：张司机</div></div>
+      <div class="prod-status">⏳</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-outline" onclick="navigateTo('home')">暂存</button>
+      <button class="btn btn-primary" onclick="showNotification('装车确认完成！司机已签收配送任务', 'success');navigateTo('home')">✅ 全部装车确认</button>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar" id="tabBar" style="display:none">
+    <div class="tab-item active" data-tab="home" onclick="switchTab('home')">
+      <span class="tab-icon">🏠</span> 首页
+    </div>
+    <div class="tab-item" data-tab="receive" onclick="switchTab('receive')">
+      <span class="tab-icon">📥</span> 收货
+    </div>
+    <div class="tab-item" data-tab="pick" onclick="switchTab('pick')">
+      <span class="tab-icon">📦</span> 拣货
+    </div>
+    <div class="tab-item" data-tab="verify" onclick="switchTab('verify')">
+      <span class="tab-icon">✅</span> 复核
+    </div>
+    <div class="tab-item" data-tab="stocktake" onclick="switchTab('stocktake')">
+      <span class="tab-icon">🔢</span> 盘点
+    </div>
+    <div class="tab-item" data-tab="move" onclick="switchTab('move')">
+      <span class="tab-icon">🔄</span> 移库
+    </div>
+    <div class="tab-item" data-tab="loading" onclick="switchTab('loading')">
+      <span class="tab-icon">🚛</span> 装车
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== WMS PDA APP STATE ==========
+const wmsState = {
+  loggedIn: false,
+  currentScreen: 'login',
+  screenStack: ['login'],
+  user: null
+};
+
+// Navigation
+function showScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const screen = document.getElementById('screen-' + screenId);
+  if (screen) screen.classList.add('active');
+  wmsState.currentScreen = screenId;
+
+  // Update header
+  const titles = {
+    login: 'WMS仓库作业', home: 'WMS仓库作业',
+    receive: '收货作业', putaway: '上架作业', pick: '拣货作业',
+    verify: '复核出库', stocktake: '盘点作业',
+    move: '移库作业', assembly: '组合/拆分', proddate: '生产日期修改',
+    reject: '拒收入库', loading: '装车确认'
+  };
+  document.getElementById('headerTitle').textContent = titles[screenId] || 'WMS仓库作业';
+  document.getElementById('backBtn').style.display = (screenId === 'home' || screenId === 'login') ? 'none' : 'block';
+
+  // Update tabs
+  if (screenId !== 'login') {
+    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+    const tab = document.querySelector(`.tab-item[data-tab="${screenId}"]`);
+    if (tab) tab.classList.add('active');
+  }
+}
+
+function navigateTo(screenId) {
+  wmsState.screenStack.push(screenId);
+  showScreen(screenId);
+}
+
+function goBack() {
+  if (wmsState.screenStack.length > 1) {
+    wmsState.screenStack.pop();
+    showScreen(wmsState.screenStack[wmsState.screenStack.length - 1]);
+  }
+}
+
+function switchTab(tabId) {
+  wmsState.screenStack = [tabId];
+  showScreen(tabId);
+}
+
+function wmsLogin() {
+  const user = document.getElementById('loginUser').value;
+  if (user) {
+    wmsState.loggedIn = true;
+    wmsState.user = user;
+    wmsState.screenStack = ['home'];
+    document.getElementById('tabBar').style.display = 'flex';
+    showScreen('home');
+  }
+}
+
+function quickScan() {
+  // Simulate scanning an unknown barcode
+  const code = prompt('模拟扫码 - 请输入条码：\n(输入 "PO20260610003" 模拟采购入库单)');
+  if (code && code.startsWith('PO')) {
+    navigateTo('receive');
+    showNotification('已识别采购入库单号: ' + code, 'success');
+  } else if (code) {
+    showNotification('已扫描条码: ' + code, 'success');
+  }
+}
+
+function scanBarcodeSim(who, barcode) {
+  const input = document.getElementById(who + 'ScanInput');
+  if (input) {
+    input.value = barcode;
+    input.focus();
+    showNotification('条码已识别: ' + barcode, 'success');
+  }
+}
+
+function showNotification(msg, type) {
+  const existing = document.querySelector('.notification');
+  if (existing) existing.remove();
+  const notif = document.createElement('div');
+  notif.className = 'notification ' + type;
+  notif.innerHTML = (type === 'success' ? '✅ ' : '⚠️ ') + msg;
+  document.getElementById('pdaDevice').appendChild(notif);
+  setTimeout(() => {
+    notif.style.opacity = '0';
+    notif.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => notif.remove(), 300);
+  }, 2000);
+}
+
+// Handle hardware scan simulation (Enter key)
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'F8') {
+    e.preventDefault();
+    quickScan();
+  }
+});
+
+// Login on Enter
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && wmsState.currentScreen === 'login') {
+    wmsLogin();
+  }
+});
+</script>
+
+</body>
+</html>

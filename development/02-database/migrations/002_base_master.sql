@@ -1,0 +1,120 @@
+-- ERP-WMS-TMS V1.0 基础资料核心表草案
+-- 详细字段以后续 PRD/数据库设计为准，本脚本用于开发启动骨架。
+
+CREATE TABLE IF NOT EXISTS base_category (
+  category_id VARCHAR(32) PRIMARY KEY,
+  parent_id VARCHAR(32) NULL,
+  category_code VARCHAR(50) NOT NULL UNIQUE,
+  category_name VARCHAR(100) NOT NULL,
+  default_tax_rate DECIMAL(8,4) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_by VARCHAR(32) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_by VARCHAR(32) NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='商品分类';
+
+CREATE TABLE IF NOT EXISTS base_unit (
+  unit_id VARCHAR(32) PRIMARY KEY,
+  unit_code VARCHAR(50) NOT NULL UNIQUE,
+  unit_name VARCHAR(100) NOT NULL,
+  can_base_unit TINYINT NOT NULL DEFAULT 1,
+  can_middle_unit TINYINT NOT NULL DEFAULT 0,
+  can_large_unit TINYINT NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='单位管理';
+
+CREATE TABLE IF NOT EXISTS base_brand (
+  brand_id VARCHAR(32) PRIMARY KEY,
+  brand_code VARCHAR(50) NOT NULL UNIQUE,
+  brand_name VARCHAR(100) NOT NULL,
+  simple_code VARCHAR(50) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='品牌管理';
+
+CREATE TABLE IF NOT EXISTS base_goods (
+  goods_id VARCHAR(32) PRIMARY KEY,
+  goods_code VARCHAR(50) NOT NULL UNIQUE,
+  goods_name VARCHAR(200) NOT NULL,
+  spec VARCHAR(200) NULL,
+  category_id VARCHAR(32) NOT NULL,
+  brand_id VARCHAR(32) NULL,
+  base_unit_id VARCHAR(32) NOT NULL,
+  barcode VARCHAR(100) NULL,
+  standard_price DECIMAL(18,2) NOT NULL DEFAULT 0,
+  reference_purchase_price DECIMAL(18,2) NULL,
+  min_sale_price DECIMAL(18,2) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='商品档案';
+
+CREATE TABLE IF NOT EXISTS base_customer (
+  customer_id VARCHAR(32) PRIMARY KEY,
+  customer_code VARCHAR(50) NOT NULL UNIQUE,
+  customer_name VARCHAR(200) NOT NULL,
+  customer_level VARCHAR(50) NULL,
+  contact_name VARCHAR(100) NULL,
+  mobile VARCHAR(30) NULL,
+  settlement_type VARCHAR(50) NULL,
+  credit_limit DECIMAL(18,2) NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT='客户资料';
+
+CREATE TABLE IF NOT EXISTS base_customer_price_adjust (
+  adjust_id VARCHAR(32) PRIMARY KEY,
+  adjust_no VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(32) NOT NULL,
+  bill_date DATE NOT NULL,
+  effective_mode VARCHAR(20) NOT NULL COMMENT 'IMMEDIATE/SCHEDULED',
+  effective_time DATETIME NULL,
+  valid_type VARCHAR(20) NOT NULL COMMENT 'LONG_TERM/RANGE',
+  valid_from DATE NULL,
+  valid_to DATE NULL,
+  remark VARCHAR(500) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' COMMENT 'DRAFT/PENDING/APPROVED/CANCELLED',
+  creator_id VARCHAR(32) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  auditor_id VARCHAR(32) NULL,
+  audit_time DATETIME NULL
+) COMMENT='客户价格调整单';
+
+CREATE TABLE IF NOT EXISTS base_customer_price_adjust_detail (
+  detail_id VARCHAR(32) PRIMARY KEY,
+  adjust_id VARCHAR(32) NOT NULL,
+  goods_id VARCHAR(32) NOT NULL,
+  unit_id VARCHAR(32) NOT NULL,
+  original_price DECIMAL(18,2) NOT NULL,
+  current_price DECIMAL(18,2) NOT NULL,
+  latest_purchase_price DECIMAL(18,2) NULL,
+  cost_price DECIMAL(18,2) NULL,
+  line_remark VARCHAR(500) NULL
+) COMMENT='客户价格调整单明细';
+
+CREATE TABLE IF NOT EXISTS base_customer_price (
+  price_id VARCHAR(32) PRIMARY KEY,
+  adjust_id VARCHAR(32) NOT NULL,
+  adjust_detail_id VARCHAR(32) NOT NULL,
+  customer_id VARCHAR(32) NOT NULL,
+  goods_id VARCHAR(32) NOT NULL,
+  unit_id VARCHAR(32) NOT NULL,
+  original_price DECIMAL(18,2) NOT NULL,
+  price DECIMAL(18,2) NOT NULL,
+  effective_mode VARCHAR(20) NOT NULL,
+  effective_time DATETIME NOT NULL,
+  valid_from DATE NULL,
+  valid_to DATE NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/EFFECTIVE/STOPPED/EXPIRED',
+  stop_reason VARCHAR(500) NULL,
+  stopped_by VARCHAR(32) NULL,
+  stopped_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_customer_goods_status (customer_id, goods_id, unit_id, status)
+) COMMENT='客户生效价格';

@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TMS司机配送系统 - 司机端APP</title>
+<style>
+/* ========== Driver App Styles ========== */
+:root {
+  --tms-primary: #2979FF;
+  --tms-primary-dark: #1565C0;
+  --tms-primary-light: #E3F2FD;
+  --tms-success: #00C853;
+  --tms-warning: #FF9100;
+  --tms-danger: #FF1744;
+  --tms-bg: #F5F6FA;
+  --tms-white: #FFFFFF;
+  --tms-text: #1A1A2E;
+  --tms-text-secondary: #6E7191;
+  --tms-text-muted: #A0A3BD;
+  --tms-border: #E8E9F0;
+  --tms-radius: 16px;
+  --tms-radius-sm: 10px;
+  --tms-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  --tms-shadow-md: 0 6px 24px rgba(0,0,0,0.1);
+  --transition: all 0.25s ease;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #E8EAF0; display: flex; justify-content: center; align-items: center;
+  min-height: 100vh; padding: 20px;
+}
+
+/* Phone Frame */
+.phone-device {
+  width: 390px; height: 844px;
+  background: var(--tms-bg);
+  border-radius: 32px;
+  box-shadow: 0 0 0 3px #222, 0 0 0 6px #1a1a1a, 0 20px 60px rgba(0,0,0,0.4);
+  overflow: hidden; display: flex; flex-direction: column; position: relative;
+}
+
+/* Status Bar */
+.phone-status {
+  background: var(--tms-white); padding: 10px 24px 6px;
+  display: flex; justify-content: space-between; font-size: 12px;
+  color: var(--tms-text); flex-shrink: 0;
+}
+.phone-status .time { font-weight: 700; }
+
+/* Screen Container */
+.screen { flex: 1; overflow-y: auto; display: none; }
+.screen.active { display: block; }
+
+/* ========== LOGIN ========== */
+.login-screen { background: linear-gradient(180deg, #2979FF 0%, #1565C0 100%); }
+.login-screen.active { display: flex; flex-direction: column; }
+.login-top { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+.login-top .logo { width: 80px; height: 80px; background: rgba(255,255,255,0.2); border-radius: 24px; display: flex; align-items: center; justify-content: center; font-size: 42px; margin-bottom: 16px; }
+.login-top h1 { font-size: 22px; font-weight: 700; }
+.login-top p { font-size: 13px; opacity: 0.8; margin-top: 4px; }
+.login-bottom {
+  background: var(--tms-white); border-radius: 28px 28px 0 0; padding: 32px 28px 40px;
+}
+.login-bottom .input-wrap { margin-bottom: 16px; }
+.login-bottom .input-wrap label { display: block; font-size: 13px; color: var(--tms-text-secondary); font-weight: 500; margin-bottom: 6px; }
+.login-bottom .input-wrap input {
+  width: 100%; height: 48px; border: 1.5px solid var(--tms-border); border-radius: var(--tms-radius-sm);
+  padding: 0 16px; font-size: 15px; outline: none; transition: var(--transition); background: var(--tms-bg);
+}
+.login-bottom .input-wrap input:focus { border-color: var(--tms-primary); background: #fff; }
+.login-bottom .btn {
+  width: 100%; height: 50px; border: none; border-radius: var(--tms-radius-sm);
+  font-size: 16px; font-weight: 700; cursor: pointer; transition: var(--transition);
+}
+.login-bottom .btn-primary { background: var(--tms-primary); color: #fff; margin-top: 8px; }
+.login-bottom .btn-primary:hover { background: var(--tms-primary-dark); }
+.login-bottom .btn-outline { background: transparent; color: var(--tms-primary); border: 1.5px solid var(--tms-primary); margin-top: 8px; }
+
+/* ========== HOME SCREEN ========== */
+.home-header {
+  background: linear-gradient(135deg, var(--tms-primary), #448AFF);
+  padding: 20px 20px 30px; color: #fff; border-radius: 0 0 24px 24px;
+}
+.home-header .greeting { font-size: 13px; opacity: 0.85; }
+.home-header .name { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.home-header .quick-stats {
+  display: flex; gap: 12px; margin-top: 18px;
+}
+.home-header .quick-stat {
+  flex: 1; background: rgba(255,255,255,0.18); border-radius: 12px;
+  padding: 14px; text-align: center; backdrop-filter: blur(4px);
+}
+.home-header .quick-stat .num { font-size: 24px; font-weight: 700; }
+.home-header .quick-stat .lbl { font-size: 11px; opacity: 0.85; margin-top: 2px; }
+
+.home-section { padding: 20px; }
+.home-section .section-title {
+  font-size: 16px; font-weight: 700; color: var(--tms-text); margin-bottom: 12px;
+  display: flex; align-items: center; gap: 6px;
+}
+.home-section .section-title .more { margin-left: auto; font-size: 13px; color: var(--tms-primary); font-weight: 400; cursor: pointer; }
+
+.task-mini-card {
+  background: var(--tms-white); border-radius: var(--tms-radius); padding: 16px;
+  margin-bottom: 10px; display: flex; align-items: center; gap: 12px;
+  box-shadow: var(--tms-shadow); cursor: pointer; transition: var(--transition);
+  border-left: 4px solid transparent;
+}
+.task-mini-card:active { transform: scale(0.98); }
+.task-mini-card.urgent { border-left-color: var(--tms-danger); }
+.task-mini-card.normal { border-left-color: var(--tms-primary); }
+.task-mini-card .seq {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--tms-primary-light);
+  color: var(--tms-primary); font-weight: 700; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.task-mini-card.urgent .seq { background: #FFEBEE; color: var(--tms-danger); }
+.task-mini-card .info { flex: 1; min-width: 0; }
+.task-mini-card .info .cust { font-size: 15px; font-weight: 600; color: var(--tms-text); }
+.task-mini-card .info .addr { font-size: 12px; color: var(--tms-text-secondary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-mini-card .info .meta { font-size: 11px; color: var(--tms-text-muted); margin-top: 2px; }
+.task-mini-card .status-badge { flex-shrink: 0; }
+
+.badge {
+  display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+}
+.badge-primary { background: var(--tms-primary-light); color: var(--tms-primary); }
+.badge-warning { background: #FFF3E0; color: var(--tms-warning); }
+.badge-success { background: #E8F5E9; color: var(--tms-success); }
+.badge-danger { background: #FFEBEE; color: var(--tms-danger); }
+
+/* ========== DELIVERY DETAIL SCREEN ========== */
+.detail-header {
+  background: var(--tms-white); padding: 16px 20px;
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--tms-border);
+}
+.detail-header .back-btn {
+  width: 36px; height: 36px; border-radius: 50%; background: var(--tms-bg);
+  border: none; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.detail-header .title { font-size: 16px; font-weight: 700; color: var(--tms-text); flex: 1; }
+.detail-header .seq-num { font-size: 14px; color: var(--tms-primary); font-weight: 600; }
+
+.detail-map {
+  height: 200px; background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.detail-map .map-route {
+  width: 80%; height: 4px; background: var(--tms-primary); border-radius: 2px;
+  position: relative;
+}
+.detail-map .map-route::before {
+  content: '📍'; position: absolute; left: -10px; top: -14px; font-size: 24px;
+}
+.detail-map .map-route::after {
+  content: '🏁'; position: absolute; right: -10px; top: -14px; font-size: 24px;
+}
+.detail-map .map-car { position: absolute; left: 30%; top: 40%; font-size: 36px; }
+
+.detail-content { padding: 16px 20px; }
+.detail-card {
+  background: var(--tms-white); border-radius: var(--tms-radius);
+  padding: 16px; margin-bottom: 12px; box-shadow: var(--tms-shadow);
+}
+.detail-card h4 { font-size: 14px; color: var(--tms-text-secondary); margin-bottom: 8px; font-weight: 500; }
+.detail-card .info-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+.detail-card .info-row .label { color: var(--tms-text-secondary); }
+.detail-card .info-row .value { color: var(--tms-text); font-weight: 500; }
+.detail-card .info-row .value.big { font-size: 20px; font-weight: 700; color: var(--tms-danger); }
+
+.product-mini {
+  display: flex; align-items: center; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--tms-border);
+}
+.product-mini:last-child { border-bottom: none; }
+.product-mini .icon { font-size: 24px; }
+.product-mini .info { flex: 1; }
+.product-mini .info .name { font-size: 13px; color: var(--tms-text); }
+.product-mini .info .spec { font-size: 11px; color: var(--tms-text-muted); }
+.product-mini .qty { font-size: 14px; font-weight: 600; color: var(--tms-text); }
+
+/* ========== BUTTONS ========== */
+.btn-row { display: flex; gap: 10px; padding: 8px 20px 12px; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 12px 20px; border: none; border-radius: var(--tms-radius-sm);
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: var(--transition);
+}
+.btn:active { transform: scale(0.96); }
+.btn-primary { background: var(--tms-primary); color: #fff; flex: 1; }
+.btn-primary:hover { background: var(--tms-primary-dark); }
+.btn-success { background: var(--tms-success); color: #fff; flex: 1; }
+.btn-warning { background: var(--tms-warning); color: #fff; }
+.btn-outline { background: var(--tms-white); color: var(--tms-primary); border: 1.5px solid var(--tms-primary); }
+.btn-danger { background: var(--tms-danger); color: #fff; }
+.btn-lg { height: 50px; font-size: 16px; border-radius: var(--tms-radius); }
+
+/* ========== SIGN MODAL ========== */
+.modal-overlay {
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); z-index: 100; align-items: flex-end;
+}
+.modal-overlay.active { display: flex; }
+.modal-sheet {
+  width: 100%; background: #fff; border-radius: 24px 24px 0 0; padding: 24px 20px 32px;
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.modal-sheet h3 { font-size: 18px; text-align: center; margin-bottom: 16px; }
+.sign-pad {
+  width: 100%; height: 180px; background: #F9FAFB; border: 2px dashed var(--tms-border);
+  border-radius: var(--tms-radius); display: flex; align-items: center; justify-content: center;
+  color: var(--tms-text-muted); font-size: 14px; cursor: pointer; margin-bottom: 12px;
+}
+.modal-sheet .btn { width: 100%; height: 48px; margin-top: 8px; }
+.modal-sheet .photo-row { display: flex; gap: 10px; margin-bottom: 12px; }
+.modal-sheet .photo-box {
+  flex: 1; height: 100px; background: #F9FAFB; border: 2px dashed var(--tms-border);
+  border-radius: var(--tms-radius-sm); display: flex; align-items: center; justify-content: center;
+  font-size: 28px; cursor: pointer; color: var(--tms-text-muted);
+}
+
+/* ========== MY SCREEN ========== */
+.my-header {
+  background: linear-gradient(135deg, var(--tms-primary), #448AFF);
+  padding: 30px 20px; color: #fff; text-align: center;
+}
+.my-avatar {
+  width: 72px; height: 72px; border-radius: 50%; background: rgba(255,255,255,0.25);
+  margin: 0 auto 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 36px;
+}
+.my-header .my-name { font-size: 18px; font-weight: 700; }
+.my-header .my-id { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+
+.my-stats {
+  display: flex; margin: -20px 16px 0; position: relative; z-index: 1; gap: 8px;
+}
+.my-stat {
+  flex: 1; background: #fff; border-radius: var(--tms-radius); padding: 16px 12px;
+  text-align: center; box-shadow: var(--tms-shadow-md);
+}
+.my-stat .num { font-size: 22px; font-weight: 700; color: var(--tms-primary); }
+.my-stat .lbl { font-size: 11px; color: var(--tms-text-secondary); margin-top: 2px; }
+
+.my-menu { padding: 28px 16px 16px; }
+.menu-item {
+  background: #fff; border-radius: var(--tms-radius-sm); padding: 16px;
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  box-shadow: var(--tms-shadow); cursor: pointer; transition: var(--transition);
+}
+.menu-item:active { transform: scale(0.98); }
+.menu-item .menu-icon { font-size: 24px; width: 30px; text-align: center; }
+.menu-item .menu-text { flex: 1; font-size: 14px; font-weight: 500; color: var(--tms-text); }
+.menu-item .menu-arrow { color: var(--tms-text-muted); }
+
+/* Notification */
+.toast {
+  position: absolute; top: 80px; left: 20px; right: 20px; z-index: 200;
+  padding: 14px 16px; border-radius: 12px; font-size: 14px; font-weight: 500;
+  display: flex; align-items: center; gap: 10px;
+  animation: slideDown 0.3s ease;
+}
+@keyframes slideDown {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.toast.success { background: #00C853; color: #fff; }
+.toast.error { background: #FF1744; color: #fff; }
+.toast.info { background: #2979FF; color: #fff; }
+
+/* Scrollbar */
+.screen::-webkit-scrollbar { width: 0; }
+
+/* Bottom padding for home screen cards */
+.home-section:last-child { padding-bottom: 100px; }
+</style>
+</head>
+<body>
+
+<div class="phone-device" id="phoneDevice">
+  <!-- Status Bar -->
+  <div class="phone-status">
+    <span class="time">9:41</span>
+    <span>📶 🔋 92%</span>
+  </div>
+
+  <!-- ==================== SCREEN: Login ==================== -->
+  <div class="login-screen active" id="screen-login">
+    <div class="login-top">
+      <div class="logo">🚚</div>
+      <h1>TMS司机配送</h1>
+      <p>高效配送 · 智能路线 · 实时追踪</p>
+    </div>
+    <div class="login-bottom">
+      <div class="input-wrap"><label>手机号</label><input type="text" placeholder="请输入手机号" value="138****6789"></div>
+      <div class="input-wrap"><label>验证码</label><input type="text" placeholder="请输入验证码" value="888888"></div>
+      <button class="btn btn-primary" onclick="driverLogin()">登 录</button>
+      <button class="btn btn-outline">📞 联系调度员</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Home ==================== -->
+  <div class="screen" id="screen-home">
+    <div class="home-header">
+      <div class="greeting">☀️ 早上好！</div>
+      <div class="name">张师傅 (京A·12345)</div>
+      <div class="quick-stats">
+        <div class="quick-stat"><div class="num" id="homeToday">12</div><div class="lbl">📦 今日任务</div></div>
+        <div class="quick-stat"><div class="num" id="homeDone">5</div><div class="lbl">✅ 已完成</div></div>
+        <div class="quick-stat"><div class="num">¥1,280</div><div class="lbl">💰 今日收款</div></div>
+      </div>
+    </div>
+    <div style="padding:16px 16px 0">
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" style="flex:1;height:40px;font-size:13px" onclick="startTodayWork()">🚀 开始今日配送</button>
+        <button class="btn btn-outline" style="height:40px;font-size:13px" onclick="switchScreen('my')">👤 我的</button>
+      </div>
+    </div>
+    <div class="home-section">
+      <div class="section-title">📋 今日配送任务 <span class="more" onclick="switchScreen('tasks')">全部 →</span></div>
+      <div class="task-mini-card normal" onclick="navigateToDelivery(0)">
+        <div class="seq">1</div>
+        <div class="info">
+          <div class="cust">华联超市(建国路店)</div>
+          <div class="addr">朝阳区建国路88号建外SOHO东区</div>
+          <div class="meta">💰 现结 ¥588 · 📦 5件 · 🕐 预计 10:30</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-primary">待配送</span></div>
+      </div>
+      <div class="task-mini-card urgent" onclick="navigateToDelivery(1)">
+        <div class="seq">2</div>
+        <div class="info">
+          <div class="cust">便利蜂(三里屯店)</div>
+          <div class="addr">朝阳区工体北路甲2号</div>
+          <div class="meta">💰 现结 ¥326 · 📦 3件 · 🕐 预计 11:15</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-danger">加急</span></div>
+      </div>
+      <div class="task-mini-card normal" onclick="navigateToDelivery(2)">
+        <div class="seq">3</div>
+        <div class="info">
+          <div class="cust">永辉超市(朝阳店)</div>
+          <div class="addr">朝阳区朝阳路8号</div>
+          <div class="meta">💰 月结 · 📦 12件 · 🕐 预计 12:00</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-primary">待配送</span></div>
+      </div>
+    </div>
+    <div class="home-section">
+      <div class="section-title">🔄 退货回收任务 <span class="more" onclick="switchScreen('return')">进入 →</span></div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="switchScreen('return')">
+        <div class="seq" style="background:#FFF3E0;color:var(--tms-warning)">🔄</div>
+        <div class="info">
+          <div class="cust">永辉超市(朝阳店)</div>
+          <div class="addr">朝阳区朝阳路8号 · 退货2项共5箱</div>
+          <div class="meta">RT20260610001 · 退货回收入库</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-warning">待回收</span></div>
+      </div>
+    </div>
+    <div class="home-section">
+      <div class="section-title">✅ 已完成配送</div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.8" onclick="switchScreen('history')">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div>
+        <div class="info">
+          <div class="cust">物美超市(海淀店)</div>
+          <div class="addr">海淀区中关村大街1号</div>
+          <div class="meta">💰 ¥1,280 已收 · 签收 09:45</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-success">已签收</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Task List ==================== -->
+  <div class="screen" id="screen-tasks">
+    <div style="background:#fff;padding:16px 20px;border-bottom:1px solid var(--tms-border);display:flex;align-items:center;gap:12px">
+      <button class="back-btn" onclick="switchScreen('home')" style="width:36px;height:36px;border-radius:50%;background:var(--tms-bg);border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">←</button>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">今日配送清单</div><div style="font-size:12px;color:var(--tms-text-secondary)">路线：朝阳线 · 共12单</div></div>
+    </div>
+    <div style="padding:16px">
+      <div style="font-size:12px;color:var(--tms-text-secondary);margin-bottom:8px">按最优路线排序 ↓</div>
+      <div class="task-mini-card normal" onclick="navigateToDelivery(0)">
+        <div class="seq">1</div><div class="info"><div class="cust">华联超市(建国路店)</div><div class="addr">朝阳区建国路88号</div><div class="meta">💰 现结 ¥588 · 📦 5件</div></div>
+        <div class="status-badge"><span class="badge badge-primary">待配送</span></div>
+      </div>
+      <div class="task-mini-card urgent" onclick="navigateToDelivery(1)">
+        <div class="seq">2</div><div class="info"><div class="cust">便利蜂(三里屯店)</div><div class="addr">朝阳区工体北路甲2号</div><div class="meta">💰 现结 ¥326 · 📦 3件</div></div>
+        <div class="status-badge"><span class="badge badge-danger">加急</span></div>
+      </div>
+      <div class="task-mini-card normal" onclick="navigateToDelivery(2)">
+        <div class="seq">3</div><div class="info"><div class="cust">永辉超市(朝阳店)</div><div class="addr">朝阳区朝阳路8号</div><div class="meta">💰 月结 · 📦 12件</div></div>
+        <div class="status-badge"><span class="badge badge-primary">待配送</span></div>
+      </div>
+      <div class="task-mini-card normal" onclick="navigateToDelivery(3)">
+        <div class="seq">4</div><div class="info"><div class="cust">京东便利店(望京店)</div><div class="addr">朝阳区望京街道阜通西大街</div><div class="meta">💰 赊账 ¥2,150 · 📦 8件</div></div>
+        <div class="status-badge"><span class="badge badge-warning">待配送</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.7">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div><div class="info"><div class="cust">物美超市(海淀店)</div><div class="addr">海淀区中关村大街1号</div><div class="meta">💰 ¥1,280 已收款 · 09:45签收</div></div>
+        <div class="status-badge"><span class="badge badge-success">已完成</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Delivery Detail ==================== -->
+  <div class="screen" id="screen-delivery">
+    <div class="detail-header">
+      <button class="back-btn" id="deliveryBackBtn" onclick="switchScreen('home')">←</button>
+      <div class="title" id="deliveryTitle">华联超市(建国路店)</div>
+      <div class="seq-num" id="deliverySeq">第1/12站</div>
+    </div>
+    <div class="detail-map">
+      <div style="text-align:center;">
+        <div style="font-size:48px">📍</div>
+        <div style="font-size:13px;color:var(--tms-text-secondary);margin-top:8px">距下一站约 <b>3.2公里</b> · 预计 <b>12分钟</b></div>
+        <div style="font-size:11px;color:var(--tms-text-muted)">GPS实时定位中...</div>
+      </div>
+    </div>
+    <div class="detail-content">
+      <div class="detail-card">
+        <h4>🏢 客户信息</h4>
+        <div class="info-row"><span class="label">客户名称</span><span class="value">华联超市(建国路店)</span></div>
+        <div class="info-row"><span class="label">联系人</span><span class="value">陈经理 138****6789</span></div>
+        <div class="info-row"><span class="label">地址</span><span class="value">朝阳区建国路88号建外SOHO东区1层</span></div>
+        <div class="info-row"><span class="label">结算方式</span><span class="value"><span class="badge badge-warning">现结</span></span></div>
+        <div class="info-row"><span class="label">应收金额</span><span class="value big">¥588.00</span></div>
+      </div>
+      <div class="detail-card">
+        <h4>📦 配送商品 (5件)</h4>
+        <div class="product-mini"><span class="icon">🧴</span><div class="info"><div class="name">农夫山泉矿泉水 550ml</div><div class="spec">1箱×24瓶</div></div><div class="qty">×10</div></div>
+        <div class="product-mini"><span class="icon">🍜</span><div class="info"><div class="name">康师傅红烧牛肉面</div><div class="spec">105g×24</div></div><div class="qty">×5</div></div>
+        <div class="product-mini"><span class="icon">🥤</span><div class="info"><div class="name">可口可乐 330ml</div><div class="spec">330ml×24</div></div><div class="qty">×3</div></div>
+        <div class="product-mini"><span class="icon">🧂</span><div class="info"><div class="name">海天酱油 500ml</div><div class="spec">500ml×12</div></div><div class="qty">×6</div></div>
+        <div class="product-mini"><span class="icon">🧃</span><div class="info"><div class="name">农夫果园混合果汁</div><div class="spec">500ml×15</div></div><div class="qty">×4</div></div>
+      </div>
+    </div>
+    <div class="btn-row" style="position:sticky;bottom:0;background:var(--tms-bg);padding:12px 20px 20px">
+      <button class="btn btn-outline" style="flex:1" onclick="showToast('📞 正在呼叫陈经理...', 'info')">📞 联系客户</button>
+      <button class="btn btn-primary btn-lg" style="flex:1.5" onclick="openSignModal()">🗺️ 导航前往</button>
+    </div>
+    <div class="btn-row" style="padding-top:0">
+      <button class="btn btn-outline" style="flex:1" onclick="reportException()">⚠️ 异常上报</button>
+      <button class="btn btn-success" style="flex:1.5" onclick="openSignModal()">✅ 确认签收</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: My Profile ==================== -->
+  <div class="screen" id="screen-my">
+    <div class="my-header">
+      <div class="my-avatar">👨‍✈️</div>
+      <div class="my-name">张师傅</div>
+      <div class="my-id">工号：DRV001 · 京A·12345</div>
+    </div>
+    <div class="my-stats">
+      <div class="my-stat"><div class="num">1,286</div><div class="lbl">📦 累计配送</div></div>
+      <div class="my-stat"><div class="num">98.5%</div><div class="lbl">⏰ 准时率</div></div>
+      <div class="my-stat"><div class="num">4.9</div><div class="lbl">⭐ 评分</div></div>
+    </div>
+    <div class="my-menu">
+      <div class="menu-item" onclick="switchScreen('history')"><span class="menu-icon">📋</span><span class="menu-text">配送历史</span><span class="menu-arrow">›</span></div>
+      <div class="menu-item"><span class="menu-icon">💰</span><span class="menu-text">收款记录</span><span class="menu-arrow">›</span></div>
+      <div class="menu-item"><span class="menu-icon">📊</span><span class="menu-text">绩效统计</span><span class="menu-arrow">›</span></div>
+      <div class="menu-item"><span class="menu-icon">🗺️</span><span class="menu-text">我的轨迹</span><span class="menu-arrow">›</span></div>
+      <div class="menu-item"><span class="menu-icon">⚙️</span><span class="menu-text">设置</span><span class="menu-arrow">›</span></div>
+      <div class="menu-item" onclick="switchScreen('home')"><span class="menu-icon">🏠</span><span class="menu-text">返回首页</span><span class="menu-arrow">›</span></div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: History ==================== -->
+  <div class="screen" id="screen-history">
+    <div style="background:#fff;padding:16px 20px;border-bottom:1px solid var(--tms-border);display:flex;align-items:center;gap:12px">
+      <button class="back-btn" onclick="switchScreen('my')" style="width:36px;height:36px;border-radius:50%;background:var(--tms-bg);border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">←</button>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">配送历史</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.85">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div>
+        <div class="info"><div class="cust">物美超市(海淀店)</div><div class="addr">海淀区中关村大街1号</div><div class="meta">2026-06-10 · ¥1,280 · 签收</div></div>
+        <div class="status-badge"><span class="badge badge-success">已签收</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.85">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div>
+        <div class="info"><div class="cust">超市发(学院路店)</div><div class="addr">海淀区学院路15号</div><div class="meta">2026-06-09 · ¥890 · 签收</div></div>
+        <div class="status-badge"><span class="badge badge-success">已签收</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-danger);opacity:0.85">
+        <div class="seq" style="background:#FFEBEE;color:var(--tms-danger)">✕</div>
+        <div class="info"><div class="cust">全家便利店(望京店)</div><div class="addr">朝阳区望京街</div><div class="meta">2026-06-09 · 客户拒收</div></div>
+        <div class="status-badge"><span class="badge badge-danger">已退回</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.85">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div>
+        <div class="info"><div class="cust">711便利店(三里屯店)</div><div class="addr">朝阳区三里屯路</div><div class="meta">2026-06-08 · ¥432 · 签收</div></div>
+        <div class="status-badge"><span class="badge badge-success">已签收</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Return Collection ==================== -->
+  <div class="screen" id="screen-return">
+    <div style="background:#fff;padding:16px 20px;border-bottom:1px solid var(--tms-border);display:flex;align-items:center;gap:12px">
+      <button class="back-btn" onclick="switchScreen('home')" style="width:36px;height:36px;border-radius:50%;background:var(--tms-bg);border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">←</button>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">退货回收</div><div style="font-size:12px;color:var(--tms-text-muted)">从客户处回收退货商品</div></div>
+    </div>
+    <div class="detail-content">
+      <div class="detail-card">
+        <h4>📋 退货申请单</h4>
+        <div class="info-row"><span class="label">退货单号</span><span class="value">RT20260610001</span></div>
+        <div class="info-row"><span class="label">客户</span><span class="value">永辉超市(朝阳店)</span></div>
+        <div class="info-row"><span class="label">原销售单</span><span class="value">SO20260609008</span></div>
+      </div>
+      <div class="detail-card">
+        <h4>📦 待回收商品 (2项)</h4>
+        <div class="product-mini"><span class="icon">🍜</span><div class="info"><div class="name">康师傅红烧牛肉面</div><div class="spec">批次20251201 · 退货3箱</div></div><div class="qty" style="color:var(--tms-warning)">×3</div></div>
+        <div class="product-mini"><span class="icon">🧂</span><div class="info"><div class="name">海天酱油</div><div class="spec">批次20260301 · 退货2箱</div></div><div class="qty" style="color:var(--tms-warning)">×2</div></div>
+      </div>
+    </div>
+    <div class="btn-row" style="padding:12px 20px 20px">
+      <button class="btn btn-outline" style="flex:1" onclick="switchScreen('home')">暂不回收</button>
+      <button class="btn btn-success" style="flex:1.5" onclick="showToast('✅ 退货回收确认！共5箱已装车，请送回仓库', 'success');switchScreen('home')">✅ 确认回收装车</button>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Rejection ==================== -->
+  <div class="screen" id="screen-reject">
+    <div style="background:#fff;padding:16px 20px;border-bottom:1px solid var(--tms-border);display:flex;align-items:center;gap:12px">
+      <button class="back-btn" onclick="switchScreen('home')" style="width:36px;height:36px;border-radius:50%;background:var(--tms-bg);border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">←</button>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">拒收处理</div></div>
+    </div>
+    <div class="detail-content">
+      <div class="alert alert-warning" style="margin-bottom:12px;background:#FFF3E0;color:var(--tms-warning);border:1px solid rgba(255,145,0,0.3);border-radius:10px;padding:12px;font-size:13px;display:flex;align-items:center;gap:8px">
+        ⚠️ 拒收商品将由司机带回仓库进行拒收入库，成本按原出库单计算。
+      </div>
+      <div class="detail-card">
+        <h4>选择拒收原因</h4>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1.5px solid var(--tms-border);border-radius:8px;cursor:pointer">
+            <input type="radio" name="reject-reason" checked> 🔴 包装破损
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1.5px solid var(--tms-border);border-radius:8px;cursor:pointer">
+            <input type="radio" name="reject-reason"> ⏰ 商品临期/过期
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1.5px solid var(--tms-border);border-radius:8px;cursor:pointer">
+            <input type="radio" name="reject-reason"> 📦 商品错发
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1.5px solid var(--tms-border);border-radius:8px;cursor:pointer">
+            <input type="radio" name="reject-reason"> 🙅 客户直接拒收
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;padding:10px;border:1.5px solid var(--tms-border);border-radius:8px;cursor:pointer">
+            <input type="radio" name="reject-reason"> 📝 其他
+          </label>
+        </div>
+        <textarea placeholder="备注说明..." style="width:100%;height:60px;margin-top:8px;border:1px solid var(--tms-border);border-radius:8px;padding:10px;font-size:13px;resize:none"></textarea>
+      </div>
+      <div class="detail-card">
+        <h4>📦 拒收商品明细</h4>
+        <div class="product-mini"><span class="icon">🍜</span><div class="info"><div class="name">康师傅红烧牛肉面</div><div class="spec">105g×24 · 数量5箱</div></div><div class="qty" style="color:var(--tms-danger)">拒收</div></div>
+      </div>
+    </div>
+    <div class="btn-row" style="padding:12px 20px 20px">
+      <button class="btn btn-outline" style="flex:1" onclick="switchScreen('home')">取消</button>
+      <button class="btn btn-danger btn-lg" style="flex:1.5" onclick="showToast('🚫 已拒收！商品将随车带回仓库入库', 'error');switchScreen('home')">🚫 确认拒收</button>
+    </div>
+  </div>
+
+  <!-- ==================== SIGN MODAL ==================== -->
+  <div class="modal-overlay" id="signModal">
+    <div class="modal-sheet">
+      <h3>📝 签收确认</h3>
+      <div class="photo-row">
+        <div class="photo-box" onclick="this.innerHTML='📸<div style=font-size:10px>已拍照</div>'">📷<br><span style="font-size:10px">货物照片</span></div>
+        <div class="photo-box" onclick="this.innerHTML='📸<div style=font-size:10px>已拍照</div>'">📷<br><span style="font-size:10px">签收单</span></div>
+      </div>
+      <div class="sign-pad" id="signPad" onclick="signHere()">
+        ✍️ 点击此处电子签名
+      </div>
+      <div class="detail-card" style="box-shadow:none;background:var(--tms-bg)">
+        <h4>收款登记</h4>
+        <div class="info-row"><span class="label">应收</span><span class="value" id="signAmount">¥588.00</span></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <select style="flex:1;height:40px;border:1px solid var(--tms-border);border-radius:8px;padding:0 10px;font-size:14px"><option>现金</option><option>微信</option><option>支付宝</option><option>赊账</option></select>
+          <input type="text" value="588.00" style="width:100px;height:40px;text-align:right;border:1px solid var(--tms-border);border-radius:8px;padding:0 10px;font-size:14px">
+        </div>
+      </div>
+      <button class="btn btn-success btn-lg" onclick="confirmSign()">✅ 确认签收并完成</button>
+      <button class="btn btn-outline btn-lg" onclick="closeSignModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom Nav Bar (visible when logged in) -->
+<div id="bottomNav" style="display:none;position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--tms-border);display:none;padding:8px 16px 20px;display:none;gap:0">
+  <div style="flex:1;text-align:center;cursor:pointer;color:var(--tms-primary);font-size:12px" onclick="switchScreen('home')">
+    <div style="font-size:22px">🏠</div>首页
+  </div>
+  <div style="flex:1;text-align:center;cursor:pointer;color:var(--tms-text-secondary);font-size:12px" onclick="switchScreen('tasks')">
+    <div style="font-size:22px">📋</div>任务
+  </div>
+  <div style="flex:1;text-align:center;cursor:pointer;color:var(--tms-text-secondary);font-size:12px" onclick="switchScreen('delivery')">
+    <div style="font-size:22px">🗺️</div>配送
+  </div>
+  <div style="flex:1;text-align:center;cursor:pointer;color:var(--tms-text-secondary);font-size:12px" onclick="switchScreen('my')">
+    <div style="font-size:22px">👤</div>我的
+  </div>
+</div>
+
+<script>
+// ========== TMS APP STATE ==========
+const tmsState = {
+  loggedIn: false,
+  currentScreen: 'login',
+  currentDelivery: 0,
+  deliveries: [
+    { cust: '华联超市(建国路店)', addr: '朝阳区建国路88号建外SOHO东区', amount: '¥588.00', payment: '现结', items: 5, status: 'pending', urgent: false },
+    { cust: '便利蜂(三里屯店)', addr: '朝阳区工体北路甲2号', amount: '¥326.00', payment: '现结', items: 3, status: 'pending', urgent: true },
+    { cust: '永辉超市(朝阳店)', addr: '朝阳区朝阳路8号', amount: '¥3,560.00', payment: '月结', items: 12, status: 'pending', urgent: false },
+    { cust: '京东便利店(望京店)', addr: '朝阳区望京街道阜通西大街', amount: '¥2,150.00', payment: '赊账', items: 8, status: 'pending', urgent: false },
+  ]
+};
+
+function switchScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const screen = document.getElementById('screen-' + screenId);
+  if (screen) screen.classList.add('active');
+  tmsState.currentScreen = screenId;
+
+  // Show/hide bottom nav
+  const nav = document.getElementById('bottomNav');
+  if (tmsState.loggedIn && screenId !== 'login') {
+    nav.style.display = 'flex';
+  } else {
+    nav.style.display = 'none';
+  }
+}
+
+function driverLogin() {
+  tmsState.loggedIn = true;
+  document.getElementById('bottomNav').style.display = 'flex';
+  switchScreen('home');
+  showToast('✅ 登录成功！已上报GPS位置', 'success');
+}
+
+function navigateToDelivery(index) {
+  tmsState.currentDelivery = index;
+  const d = tmsState.deliveries[index];
+  document.getElementById('deliveryTitle').textContent = d.cust;
+  document.getElementById('deliverySeq').textContent = `第${index + 1}/${tmsState.deliveries.length}站`;
+  document.getElementById('signAmount').textContent = d.amount;
+  switchScreen('delivery');
+}
+
+function startTodayWork() {
+  showToast('🚀 已开始今日配送！轨迹上报已开启', 'info');
+}
+
+function openSignModal() {
+  document.getElementById('signModal').classList.add('active');
+}
+
+function closeSignModal() {
+  document.getElementById('signModal').classList.remove('active');
+  document.getElementById('signPad').innerHTML = '✍️ 点击此处电子签名';
+}
+
+function signHere() {
+  document.getElementById('signPad').innerHTML = '<span style="font-size:32px;color:#333;font-family:cursive">陈经理</span><div style="font-size:10px;color:var(--tms-text-muted)">签名时间：2026-06-10 10:45</div>';
+}
+
+function confirmSign() {
+  closeSignModal();
+  const d = tmsState.deliveries[tmsState.currentDelivery];
+  d.status = 'completed';
+  // Update stats
+  const done = parseInt(document.getElementById('homeDone').textContent);
+  document.getElementById('homeDone').textContent = done + 1;
+  showToast(`✅ ${d.cust} 签收成功！已拍照上传`, 'success');
+  setTimeout(() => switchScreen('home'), 800);
+}
+
+function reportException() {
+  const reason = prompt('选择异常类型:\n1. 客户拒收\n2. 无人收货\n3. 地址不符\n4. 货物破损\n\n输入序号或描述:');
+  if (reason) {
+    showToast('⚠️ 异常已上报，调度员将联系您', 'error');
+  }
+}
+
+function showToast(msg, type) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.textContent = msg;
+  document.getElementById('phoneDevice').appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+</script>
+
+</body>
+</html>

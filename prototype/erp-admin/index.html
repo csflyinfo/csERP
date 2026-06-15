@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP后台管理系统 - 商贸经销商管理平台</title>
+<style>
+/* ========== CSS Reset & Variables ========== */
+:root {
+  --primary: #2B5AED;
+  --primary-hover: #1E4BD8;
+  --primary-light: #EBF0FF;
+  --success: #00A870;
+  --success-light: #E8F8F2;
+  --warning: #ED7B2F;
+  --warning-light: #FFF3E8;
+  --danger: #E34D59;
+  --danger-light: #FFEBED;
+  --info: #6B7280;
+  --bg: #F0F2F5;
+  --bg-white: #FFFFFF;
+  --border: #E5E7EB;
+  --text-primary: #1F2937;
+  --text-secondary: #6B7280;
+  --text-muted: #9CA3AF;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --transition: all 0.2s ease;
+  --sidebar-w: 232px;
+  --header-h: 56px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ========== Login Page ========== */
+.login-page {
+  display: flex; height: 100vh; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.login-card {
+  width: 420px; background: #fff; border-radius: 16px; padding: 48px 40px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+}
+.login-card .logo { text-align:center; margin-bottom:32px; }
+.login-card .logo h1 { font-size: 24px; color: var(--primary); font-weight:700; }
+.login-card .logo p { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+.login-card .form-item { margin-bottom: 20px; }
+.login-card label { display:block; font-size:14px; font-weight:500; margin-bottom:6px; color: var(--text-primary); }
+.login-card input[type="text"],
+.login-card input[type="password"] {
+  width: 100%; height: 42px; border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0 14px; font-size: 14px; transition: var(--transition); outline: none;
+}
+.login-card input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(43,90,237,0.1); }
+.login-card .btn-primary {
+  width: 100%; height: 44px; background: var(--primary); color: #fff; font-size: 16px;
+  font-weight: 600; border: none; border-radius: var(--radius); cursor: pointer; transition: var(--transition);
+}
+.login-card .btn-primary:hover { background: var(--primary-hover); }
+.login-card .extra { text-align:center; margin-top:16px; font-size:12px; color: var(--text-muted); }
+
+/* ========== Main Layout ========== */
+.app-layout { display: none; height: 100vh; }
+.app-layout.active { display: flex; }
+.sidebar {
+  width: var(--sidebar-w); background: #1E293B; color: #fff; height: 100vh;
+  display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+}
+.sidebar-header {
+  padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; gap: 10px;
+}
+.sidebar-header .logo-icon { width:36px; height:36px; background: var(--primary); border-radius: 8px; display:flex; align-items:center; justify-content:center; font-size:18px; }
+.sidebar-header h2 { font-size: 16px; font-weight: 600; }
+.sidebar-nav { flex:1; padding: 12px 0; }
+.nav-group { margin-bottom: 4px; }
+.nav-group-title {
+  padding: 10px 20px 6px; font-size: 11px; text-transform: uppercase;
+  color: rgba(255,255,255,0.35); letter-spacing: 0.5px; font-weight: 600;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+  color: rgba(255,255,255,0.7); cursor: pointer; transition: var(--transition);
+  font-size: 14px; margin: 0 8px; border-radius: var(--radius-sm);
+}
+.nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.nav-item.active { background: var(--primary); color: #fff; }
+.nav-item .icon { font-size: 18px; width: 22px; text-align: center; }
+.nav-item .badge { margin-left: auto; background: var(--danger); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+
+.main-wrapper { flex:1; display:flex; flex-direction: column; overflow: hidden; }
+.header {
+  height: var(--header-h); background: #fff; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 24px; gap: 16px; flex-shrink: 0;
+}
+.header .breadcrumb { font-size: 14px; color: var(--text-secondary); }
+.header .breadcrumb span { color: var(--text-primary); font-weight: 500; }
+.header .header-right { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.header .search-box input {
+  width: 240px; height: 34px; border: 1px solid var(--border); border-radius: 20px;
+  padding: 0 16px; font-size: 13px; outline: none; background: var(--bg);
+}
+.header .search-box input:focus { border-color: var(--primary); background: #fff; }
+.header .header-icon { font-size: 20px; cursor: pointer; position: relative; color: var(--text-secondary); }
+.header .header-icon .dot { position:absolute; top:-2px; right:-4px; width:8px; height:8px; background:var(--danger); border-radius:50%; }
+.header .user-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; cursor:pointer; }
+
+.content { flex:1; overflow-y: auto; padding: 24px; }
+
+/* ========== Dashboard ========== */
+.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.stat-card {
+  background: #fff; border-radius: var(--radius-lg); padding: 20px 24px;
+  box-shadow: var(--shadow-sm); display: flex; justify-content: space-between; align-items: flex-start;
+}
+.stat-card .stat-info h3 { font-size: 13px; color: var(--text-secondary); font-weight: 400; margin-bottom: 8px; }
+.stat-card .stat-info .value { font-size: 28px; font-weight: 700; color: var(--text-primary); }
+.stat-card .stat-info .change { font-size: 12px; margin-top: 4px; }
+.stat-card .stat-info .change.up { color: var(--success); }
+.stat-card .stat-info .change.down { color: var(--danger); }
+.stat-card .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+.stat-card .stat-icon.blue { background: var(--primary-light); color: var(--primary); }
+.stat-card .stat-icon.green { background: var(--success-light); color: var(--success); }
+.stat-card .stat-icon.orange { background: var(--warning-light); color: var(--warning); }
+.stat-card .stat-icon.red { background: var(--danger-light); color: var(--danger); }
+
+.chart-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+.panel {
+  background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.panel-header {
+  padding: 16px 24px; border-bottom: 1px solid var(--border);
+  font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: space-between;
+}
+.panel-body { padding: 20px 24px; }
+.panel-header .action { font-size: 13px; color: var(--primary); cursor: pointer; font-weight: 400; }
+
+.chart-placeholder {
+  height: 280px; background: linear-gradient(180deg, rgba(43,90,237,0.03) 0%, rgba(43,90,237,0) 100%);
+  border-radius: var(--radius); display: flex; align-items: flex-end; padding: 20px; gap: 12px;
+}
+.chart-bar {
+  flex:1; background: linear-gradient(180deg, var(--primary) 0%, rgba(43,90,237,0.3) 100%);
+  border-radius: 4px 4px 0 0; min-height: 20px; position: relative;
+}
+.chart-bar .bar-label { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--text-muted); }
+
+/* ========== Tables ========== */
+.table-wrapper { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+table th, table td { padding: 12px 16px; text-align: left; font-size: 13px; }
+table th { background: #F9FAFB; color: var(--text-secondary); font-weight: 500; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table td { border-bottom: 1px solid var(--border); }
+table tbody tr:hover { background: #F9FAFB; }
+table tbody tr { cursor: pointer; }
+
+.tag {
+  display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500;
+}
+.tag-primary { background: var(--primary-light); color: var(--primary); }
+.tag-success { background: var(--success-light); color: var(--success); }
+.tag-warning { background: var(--warning-light); color: var(--warning); }
+.tag-danger { background: var(--danger-light); color: var(--danger); }
+.tag-default { background: #F3F4F6; color: #6B7280; }
+
+/* ========== Buttons & Inputs ========== */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: var(--transition); white-space: nowrap; }
+.btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-outline { background: #fff; color: var(--primary); border-color: var(--primary); }
+.btn-outline:hover { background: var(--primary-light); }
+.btn-success { background: var(--success); color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-group { display: flex; gap: 8px; }
+
+.toolbar {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.toolbar input[type="text"],
+.toolbar select {
+  height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0 12px; font-size: 13px; outline: none; background: #fff;
+}
+.toolbar input[type="text"]:focus,
+.toolbar select:focus { border-color: var(--primary); }
+.toolbar input[type="text"] { width: 200px; }
+.toolbar input[type="date"] {
+  height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0 12px; font-size: 13px; outline: none;
+}
+
+.pagination {
+  display: flex; align-items: center; justify-content: space-between; padding: 16px 0; font-size: 13px;
+}
+.pagination .page-info { color: var(--text-secondary); }
+.pagination .page-btns { display: flex; gap: 4px; }
+.pagination .page-btns button {
+  width:32px; height:32px; border: 1px solid var(--border); background: #fff; border-radius: 4px; cursor: pointer; font-size:13px;
+}
+.pagination .page-btns button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* ========== Modal ========== */
+.modal-overlay { display: none; position: fixed; top:0;left:0;right:0;bottom:0; background: rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; }
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #fff; border-radius: var(--radius-lg); width: 720px; max-height: 80vh;
+  display: flex; flex-direction: column; box-shadow: var(--shadow-lg);
+}
+.modal-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+.modal-header h3 { font-size: 16px; }
+.modal-close { width:28px; height:28px; border:none; background:none; cursor:pointer; font-size:18px; color: var(--text-muted); border-radius:4px; }
+.modal-close:hover { background: var(--bg); }
+.modal-body { padding: 24px; overflow-y: auto; flex:1; }
+.modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display:flex; justify-content:flex-end; gap:8px; }
+
+.form-row { display: flex; gap: 16px; margin-bottom: 16px; }
+.form-col { flex: 1; }
+.form-col label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: var(--text-secondary); }
+.form-col input, .form-col select {
+  width: 100%; height: 38px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 0 12px; font-size: 13px; outline: none;
+}
+.form-col input:focus, .form-col select:focus { border-color: var(--primary); }
+
+/* ========== Page Content (hidden by default) ========== */
+.page { display: none; }
+.page.active { display: block; }
+
+/* Quick Order Panel */
+.quick-order {
+  display: grid; grid-template-columns: 3fr 2fr; gap: 16px;
+}
+.order-products { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 20px; }
+.order-summary { background: #fff; border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 20px; }
+.order-summary .summary-row { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; }
+.order-summary .summary-row.total { border-top:2px solid var(--border); margin-top:8px; padding-top:12px; font-size:18px; font-weight:700; color: var(--danger); }
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-row { grid-template-columns: 1fr; }
+  .quick-order { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== LOGIN PAGE ==================== -->
+<div class="login-page" id="loginPage">
+  <div class="login-card">
+    <div class="logo">
+      <h1>📦 商贸ERP管理系统</h1>
+      <p>ERP + WMS + TMS 一体化管理平台</p>
+    </div>
+    <div class="form-item">
+      <label>用户名</label>
+      <input type="text" id="loginUser" placeholder="请输入用户名" value="admin">
+    </div>
+    <div class="form-item">
+      <label>密码</label>
+      <input type="password" id="loginPass" placeholder="请输入密码" value="123456">
+    </div>
+    <button class="btn-primary" onclick="login()">登 录</button>
+    <div class="extra">演示系统 · 点击登录即可体验</div>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP ==================== -->
+<div class="app-layout" id="appLayout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">📦</div>
+      <h2>商贸ERP</h2>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group">
+        <div class="nav-group-title">核心功能</div>
+        <div class="nav-item active" data-page="dashboard" onclick="switchPage('dashboard', this)">
+          <span class="icon">📊</span> 经营概览
+        </div>
+        <div class="nav-item" data-page="sales" onclick="switchPage('sales', this)">
+          <span class="icon">🛒</span> 销售开单
+          <span class="badge">高频</span>
+        </div>
+        <div class="nav-item" data-page="sales-order" onclick="switchPage('sales-order', this)">
+          <span class="icon">📋</span> 销售订单
+        </div>
+        <div class="nav-item" data-page="sales-receive" onclick="switchPage('sales-receive', this)">
+          <span class="icon">📝</span> 销售收货单
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">进销存</div>
+        <div class="nav-item" data-page="purchase" onclick="switchPage('purchase', this)">
+          <span class="icon">📥</span> 采购管理
+        </div>
+        <div class="nav-item" data-page="purchase-predict" onclick="switchPage('purchase-predict', this)">
+          <span class="icon">🤖</span> AI采购预测
+        </div>
+        <div class="nav-item" data-page="inventory" onclick="switchPage('inventory', this)">
+          <span class="icon">🏗️</span> 库存管理
+        </div>
+        <div class="nav-item" data-page="wms" onclick="switchPage('wms', this)">
+          <span class="icon">🔍</span> WMS仓库作业
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">财务</div>
+        <div class="nav-item" data-page="finance" onclick="switchPage('finance', this)">
+          <span class="icon">💰</span> 应收应付
+        </div>
+        <div class="nav-item" data-page="voucher" onclick="switchPage('voucher', this)">
+          <span class="icon">📜</span> 凭证管理
+        </div>
+        <div class="nav-item" data-page="tms" onclick="switchPage('tms', this)">
+          <span class="icon">🚚</span> TMS配送
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">基础数据</div>
+        <div class="nav-item" data-page="products" onclick="switchPage('products', this)">
+          <span class="icon">📦</span> 商品档案
+        </div>
+        <div class="nav-item" data-page="customers" onclick="switchPage('customers', this)">
+          <span class="icon">👥</span> 客户管理
+        </div>
+        <div class="nav-item" data-page="suppliers" onclick="switchPage('suppliers', this)">
+          <span class="icon">🏭</span> 供应商管理
+        </div>
+        <div class="nav-item" data-page="personnel" onclick="switchPage('personnel', this)">
+          <span class="icon">👤</span> 人员信息
+        </div>
+        <div class="nav-item" data-page="area-line" onclick="switchPage('area-line', this)">
+          <span class="icon">🗺️</span> 片区/线路
+        </div>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">系统管理</div>
+        <div class="nav-item" data-page="sys-perm" onclick="switchPage('sys-perm', this)">
+          <span class="icon">🔐</span> 权限组管理
+        </div>
+        <div class="nav-item" data-page="sys-users" onclick="switchPage('sys-users', this)">
+          <span class="icon">👨‍💻</span> 用户管理
+        </div>
+        <div class="nav-item" data-page="sys-params" onclick="switchPage('sys-params', this)">
+          <span class="icon">⚙️</span> 系统参数
+        </div>
+        <div class="nav-item" data-page="sys-logs" onclick="switchPage('sys-logs', this)">
+          <span class="icon">📝</span> 操作日志
+        </div>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="main-wrapper">
+    <header class="header">
+      <div class="breadcrumb" id="breadcrumb">🏠 / <span>经营概览</span></div>
+      <div class="header-right">
+        <div class="search-box"><input type="text" placeholder="全局搜索 商品/订单/客户..."></div>
+        <div class="header-icon" title="消息">🔔<span class="dot"></span></div>
+        <div class="user-avatar" title="管理员">管</div>
+      </div>
+    </header>
+    <div class="content" id="mainContent">
+      <!-- Pages loaded here dynamically -->
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SALE ORDER MODAL ==================== -->
+<div class="modal-overlay" id="saleModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🛒 新建销售单</h3>
+      <button class="modal-close" onclick="closeModal('saleModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-col"><label>客户 *</label><select><option>选择客户...</option><option>华联超市(建国路店)</option><option>永辉超市(朝阳店)</option><option>便利蜂(三里屯店)</option></select></div>
+        <div class="form-col"><label>发货仓库</label><select><option>总仓</option><option>东区前置仓</option></select></div>
+        <div class="form-col"><label>单据日期</label><input type="date" value="2026-06-10"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-col"><label>业务员</label><select><option>张三</option><option>李四</option></select></div>
+        <div class="form-col"><label>结算方式</label><select><option>现结</option><option>月结30天</option><option>月结60天</option></select></div>
+      </div>
+      <table style="margin-top:12px">
+        <thead>
+          <tr><th>#</th><th>商品编码</th><th>商品名称</th><th>规格</th><th>库存</th><th>单价(元)</th><th>数量</th><th>折扣</th><th>小计(元)</th><th></th></tr>
+        </thead>
+        <tbody id="saleItems">
+          <tr>
+            <td>1</td><td>SP001</td><td>农夫山泉矿泉水</td><td>550ml×24</td><td><span style="color:var(--success)">1,250</span></td>
+            <td>36.00</td><td><input type="number" value="10" style="width:60px;height:30px;text-align:center"></td>
+            <td>98%</td><td>352.80</td>
+            <td><button class="btn btn-sm btn-danger">删除</button></td>
+          </tr>
+          <tr>
+            <td>2</td><td>SP002</td><td>康师傅红烧牛肉面</td><td>105g×24</td><td><span style="color:var(--success)">890</span></td>
+            <td>48.00</td><td><input type="number" value="5" style="width:60px;height:30px;text-align:center"></td>
+            <td>100%</td><td>240.00</td>
+            <td><button class="btn btn-sm btn-danger">删除</button></td>
+          </tr>
+          <tr>
+            <td colspan="10" style="text-align:center;padding:12px">
+              <button class="btn btn-outline btn-sm" style="cursor:pointer">+ 添加商品 (扫码/搜索)</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <div style="margin-right:auto;font-size:20px;font-weight:700;color:var(--danger)">应收合计: ¥592.80</div>
+      <button class="btn btn-outline" onclick="closeModal('saleModal')">取消</button>
+      <button class="btn btn-outline">保存草稿</button>
+      <button class="btn btn-primary" onclick="alert('开单成功！已生成销售出库单 #SO20260610001');closeModal('saleModal')">确认开单并打印</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ========== APP STATE ==========
+const appState = {
+  currentPage: 'dashboard',
+  user: null
+};
+
+// ========== PAGE CONTENT RENDERERS ==========
+const pageContent = {
+  dashboard: `
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-info">
+          <h3>今日销售额</h3>
+          <div class="value">¥128,350</div>
+          <div class="change up">↑ 12.5% 较昨日</div>
+        </div>
+        <div class="stat-icon blue">💵</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <h3>今日订单数</h3>
+          <div class="value">156</div>
+          <div class="change up">↑ 8.3% 较昨日</div>
+        </div>
+        <div class="stat-icon green">📝</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <h3>库存总值</h3>
+          <div class="value">¥2,850,600</div>
+          <div class="change down">↓ 2.1% 较月初</div>
+        </div>
+        <div class="stat-icon orange">📦</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info">
+          <h3>应收未收</h3>
+          <div class="value">¥486,200</div>
+          <div class="change down">↓ 5.3% 较上月</div>
+        </div>
+        <div class="stat-icon red">📊</div>
+      </div>
+    </div>
+
+    <div class="chart-row">
+      <div class="panel">
+        <div class="panel-header">📈 近7天销售趋势 <span class="action">查看详情 →</span></div>
+        <div class="panel-body">
+          <div class="chart-placeholder">
+            <div class="chart-bar" style="height:60%"><span class="bar-label">6/4</span></div>
+            <div class="chart-bar" style="height:75%"><span class="bar-label">6/5</span></div>
+            <div class="chart-bar" style="height:45%"><span class="bar-label">6/6</span></div>
+            <div class="chart-bar" style="height:90%"><span class="bar-label">6/7</span></div>
+            <div class="chart-bar" style="height:55%"><span class="bar-label">6/8</span></div>
+            <div class="chart-bar" style="height:95%"><span class="bar-label">6/9</span></div>
+            <div class="chart-bar" style="height:88%"><span class="bar-label">6/10</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">🏆 今日销售排行 <span class="action">更多 →</span></div>
+        <div class="panel-body" style="padding-top:12px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px;background:var(--primary-light);border-radius:6px">
+            <span style="font-size:20px">🥇</span>
+            <span style="flex:1;font-weight:500">农夫山泉矿泉水 550ml</span>
+            <span style="font-weight:600">¥18,200</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px;">
+            <span style="font-size:20px">🥈</span>
+            <span style="flex:1">康师傅红烧牛肉面 105g</span>
+            <span style="font-weight:600">¥12,800</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px;">
+            <span style="font-size:20px">🥉</span>
+            <span style="flex:1">可口可乐 330ml×24</span>
+            <span style="font-weight:600">¥9,560</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px;">
+            <span style="font-size:20px">4</span>
+            <span style="flex:1">海天酱油 500ml</span>
+            <span style="font-weight:600">¥7,340</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">⏰ 待处理事项</div>
+      <div class="panel-body" style="display:flex;gap:16px;">
+        <div style="flex:1;padding:16px;background:#FFF3E8;border-radius:8px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:var(--warning)">3</div>
+          <div style="font-size:13px;color:var(--text-secondary)">待审批采购单</div>
+        </div>
+        <div style="flex:1;padding:16px;background:#FFEBED;border-radius:8px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:var(--danger)">12</div>
+          <div style="font-size:13px;color:var(--text-secondary)">库存预警商品</div>
+        </div>
+        <div style="flex:1;padding:16px;background:#EBF0FF;border-radius:8px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:var(--primary)">5</div>
+          <div style="font-size:13px;color:var(--text-secondary)">待处理退货</div>
+        </div>
+        <div style="flex:1;padding:16px;background:#E8F8F2;border-radius:8px;text-align:center">
+          <div style="font-size:28px;font-weight:700;color:var(--success)">8</div>
+          <div style="font-size:13px;color:var(--text-secondary)">配送中订单</div>
+        </div>
+      </div>
+    </div>
+  `,
+
+  sales: `
+    <div class="toolbar">
+      <button class="btn btn-primary" onclick="openModal('saleModal')">➕ 新建销售单</button>
+      <button class="btn btn-outline">📋 挂单列表 (2)</button>
+      <input type="text" placeholder="搜索商品/条码/拼音首字母...">
+      <select><option>全部仓库</option><option>总仓</option><option>东区前置仓</option></select>
+    </div>
+    <div class="quick-order">
+      <div class="order-products">
+        <h4 style="margin-bottom:12px">🛒 快速开单</h4>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input type="text" placeholder="🔍 扫码或搜索商品..." style="flex:1;height:38px;border:1px solid var(--border);border-radius:6px;padding:0 12px;font-size:14px">
+          <button class="btn btn-primary">搜索</button>
+        </div>
+        <table>
+          <thead><tr><th>商品编码</th><th>商品名称</th><th>规格</th><th>可用库存</th><th>单价</th><th>数量</th><th>小计</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>SP001</td><td>农夫山泉矿泉水</td><td>550ml×24</td><td>1,250</td><td>¥36.00</td><td><input type="number" value="10" style="width:60px;height:30px;text-align:center;border:1px solid var(--border);border-radius:4px"></td><td>¥360.00</td><td><button class="btn btn-sm" style="color:var(--danger)">✕</button></td></tr>
+            <tr><td>SP002</td><td>康师傅红烧牛肉面</td><td>105g×24</td><td>890</td><td>¥48.00</td><td><input type="number" value="5" style="width:60px;height:30px;text-align:center;border:1px solid var(--border);border-radius:4px"></td><td>¥240.00</td><td><button class="btn btn-sm" style="color:var(--danger)">✕</button></td></tr>
+            <tr><td colspan="8" style="text-align:center"><button class="btn btn-outline btn-sm">+ 添加商品</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="order-summary">
+        <h4 style="margin-bottom:12px">📋 订单信息</h4>
+        <div style="margin-bottom:12px">
+          <label style="font-size:13px;color:var(--text-secondary)">客户</label>
+          <select style="width:100%;height:38px;border:1px solid var(--border);border-radius:6px;padding:0 12px;margin-top:4px">
+            <option>华联超市(建国路店)</option>
+            <option>永辉超市(朝阳店)</option>
+          </select>
+        </div>
+        <div class="summary-row"><span>商品总数</span><span>15</span></div>
+        <div class="summary-row"><span>商品金额</span><span>¥600.00</span></div>
+        <div class="summary-row"><span>整单折扣</span><span>98%</span></div>
+        <div class="summary-row total"><span>应收金额</span><span>¥588.00</span></div>
+        <div style="margin-top:12px">
+          <label style="font-size:13px;color:var(--text-secondary)">收款方式</label>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <select style="flex:1;height:38px;border:1px solid var(--border);border-radius:6px;padding:0 12px"><option>现金</option><option>微信</option><option>支付宝</option><option>赊账</option></select>
+            <input type="text" value="588.00" style="width:100px;height:38px;text-align:right;border:1px solid var(--border);border-radius:6px;padding:0 12px">
+          </div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:16px;height:44px;font-size:15px" onclick="alert('开单成功！打印小票...')">💳 确认收款并开单</button>
+        <button class="btn btn-outline" style="width:100%;margin-top:8px">💾 挂单</button>
+      </div>
+    </div>
+  `,
+
+  'sales-order': `
+    <div class="toolbar">
+      <input type="date" value="2026-06-01"> <span>至</span> <input type="date" value="2026-06-10">
+      <input type="text" placeholder="订单号/客户名称...">
+      <select><option>全部状态</option><option>待出库</option><option>已出库</option><option>配送中</option><option>已签收</option><option>已完成</option></select>
+      <button class="btn btn-primary">🔍 查询</button>
+      <button class="btn btn-outline">📥 导出Excel</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>订单号</th><th>日期</th><th>客户</th><th>商品数</th><th>金额</th><th>收款状态</th><th>订单状态</th><th>仓库</th><th>操作</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">SO20260610001</a></td><td>2026-06-10 14:30</td>
+              <td>华联超市(建国路店)</td><td>5</td><td>¥1,280.00</td>
+              <td><span class="tag tag-success">已收款</span></td>
+              <td><span class="tag tag-warning">待出库</span></td><td>总仓</td>
+              <td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-success">生成出库</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">SO20260610002</a></td><td>2026-06-10 13:15</td>
+              <td>永辉超市(朝阳店)</td><td>12</td><td>¥3,560.00</td>
+              <td><span class="tag tag-warning">部分收款</span></td>
+              <td><span class="tag tag-primary">配送中</span></td><td>总仓</td>
+              <td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-outline">物流</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">SO20260609015</a></td><td>2026-06-09 16:45</td>
+              <td>便利蜂(三里屯店)</td><td>3</td><td>¥680.00</td>
+              <td><span class="tag tag-success">已收款</span></td>
+              <td><span class="tag tag-success">已完成</span></td><td>东区前置仓</td>
+              <td><button class="btn btn-sm btn-outline">详情</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">SO20260609012</a></td><td>2026-06-09 10:20</td>
+              <td>京东便利店(望京店)</td><td>8</td><td>¥2,150.00</td>
+              <td><span class="tag tag-danger">未收款</span></td>
+              <td><span class="tag tag-warning">待出库</span></td><td>总仓</td>
+              <td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-outline">催款</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">SO20260608008</a></td><td>2026-06-08 09:30</td>
+              <td>物美超市(海淀店)</td><td>20</td><td>¥8,920.00</td>
+              <td><span class="tag tag-success">已收款</span></td>
+              <td><span class="tag tag-success">已完成</span></td><td>总仓</td>
+              <td><button class="btn btn-sm btn-outline">详情</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <div class="page-info">共 156 条记录，第 1/16 页</div>
+        <div class="page-btns">
+          <button>‹</button><button class="active">1</button><button>2</button><button>3</button><button>...</button><button>16</button><button>›</button>
+        </div>
+      </div>
+    </div>
+  `,
+
+  purchase: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建采购单</button>
+      <input type="text" placeholder="采购单号/供应商...">
+      <select><option>全部状态</option><option>待审批</option><option>已审批</option><option>部分入库</option><option>已完成</option></select>
+      <input type="date" value="2026-06-01"><span>至</span><input type="date" value="2026-06-10">
+      <button class="btn btn-primary">🔍 查询</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>采购单号</th><th>日期</th><th>供应商</th><th>商品数</th><th>金额</th><th>状态</th><th>入库进度</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">PO20260610003</a></td><td>2026-06-10</td><td>农夫山泉股份有限公司</td><td>8</td><td>¥45,000</td>
+              <td><span class="tag tag-primary">已审批</span></td><td>0/8</td>
+              <td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-success">生成入库</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">PO20260609002</a></td><td>2026-06-09</td><td>康师傅控股有限公司</td><td>12</td><td>¥78,200</td>
+              <td><span class="tag tag-warning">部分入库</span></td><td>8/12</td>
+              <td><button class="btn btn-sm btn-outline">详情</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">PO20260608001</a></td><td>2026-06-08</td><td>中粮可口可乐饮料有限公司</td><td>5</td><td>¥23,500</td>
+              <td><span class="tag tag-success">已完成</span></td><td>5/5</td>
+              <td><button class="btn btn-sm btn-outline">详情</button></td>
+            </tr>
+            <tr>
+              <td><a href="#" style="color:var(--primary)">PO20260607004</a></td><td>2026-06-07</td><td>海天味业股份有限公司</td><td>3</td><td>¥12,800</td>
+              <td><span class="tag tag-default">待审批</span></td><td>0/3</td>
+              <td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-primary">审批</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination"><div class="page-info">共 42 条记录，第 1/5 页</div></div>
+    </div>
+  `,
+
+  inventory: `
+    <div class="toolbar">
+      <input type="text" placeholder="🔍 搜索商品/条码/编码...">
+      <select><option>全部仓库</option><option>总仓</option><option>东区前置仓</option></select>
+      <select><option>全部商品分类</option><option>饮料</option><option>食品</option><option>调味品</option></select>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+        <input type="checkbox"> 仅看预警
+      </label>
+      <button class="btn btn-primary">查询</button>
+      <button class="btn btn-outline">📥 导出</button>
+      <button class="btn btn-outline">🔄 库存盘点</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>商品编码</th><th>商品名称</th><th>规格</th><th>仓库</th><th>库位</th><th>实物库存</th><th>可用库存</th><th>冻结库存</th><th>库存上限</th><th>库存下限</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>SP001</td><td>农夫山泉矿泉水</td><td>550ml×24</td><td>总仓</td><td>A-01-02</td><td>1,250</td><td>1,230</td><td>20</td><td>2,000</td><td>100</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">流水</button></td></tr>
+            <tr><td>SP002</td><td>康师傅红烧牛肉面</td><td>105g×24</td><td>总仓</td><td>B-03-05</td><td>890</td><td>880</td><td>10</td><td>1,500</td><td>50</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">流水</button></td></tr>
+            <tr><td>SP003</td><td>可口可乐</td><td>330ml×24</td><td>总仓</td><td>C-01-03</td><td><span style="color:var(--warning);font-weight:600">45</span></td><td>45</td><td>0</td><td>800</td><td>50</td><td><span class="tag tag-warning">低于下限</span></td><td><button class="btn btn-sm btn-outline">流水</button> <button class="btn btn-sm btn-primary">补货</button></td></tr>
+            <tr><td>SP005</td><td>海天酱油</td><td>500ml×12</td><td>总仓</td><td>D-02-01</td><td><span style="color:var(--danger);font-weight:600">8</span></td><td>8</td><td>0</td><td>500</td><td>20</td><td><span class="tag tag-danger">库存告急</span></td><td><button class="btn btn-sm btn-outline">流水</button> <button class="btn btn-sm btn-primary">紧急补货</button></td></tr>
+            <tr><td>SP012</td><td>元气森林气泡水</td><td>480ml×15</td><td>东区前置仓</td><td>A-01-01</td><td>320</td><td>310</td><td>10</td><td>500</td><td>30</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">流水</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination"><div class="page-info">共 586 条记录，第 1/59 页</div></div>
+    </div>
+  `,
+
+  wms: `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px">
+      <div class="stat-card">
+        <div class="stat-info"><h3>今日待收货</h3><div class="value">8</div></div>
+        <div class="stat-icon blue">📥</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><h3>今日待拣货</h3><div class="value">23</div></div>
+        <div class="stat-icon orange">📦</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><h3>今日待复核</h3><div class="value">15</div></div>
+        <div class="stat-icon green">✅</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">📋 任务监控看板 <span class="action">刷新</span></div>
+      <div class="panel-body">
+        <h4 style="margin-bottom:12px">📥 入库任务</h4>
+        <table>
+          <thead><tr><th>入库单号</th><th>来源</th><th>供应商</th><th>商品数</th><th>状态</th><th>操作员</th><th>进度</th></tr></thead>
+          <tbody>
+            <tr><td>IN20260610001</td><td>采购入库</td><td>农夫山泉股份有限公司</td><td>8</td><td><span class="tag tag-warning">收货中</span></td><td>王五</td><td><progress value="60" max="100" style="width:100px;height:6px;border-radius:3px"></progress> 60%</td></tr>
+            <tr><td>IN20260610002</td><td>采购入库</td><td>康师傅控股有限公司</td><td>12</td><td><span class="tag tag-default">待收货</span></td><td>-</td><td>-</td></tr>
+          </tbody>
+        </table>
+        <h4 style="margin:16px 0 12px">📤 出库任务</h4>
+        <table>
+          <thead><tr><th>波次号</th><th>出库单号</th><th>客户</th><th>商品数</th><th>拣货员</th><th>复核员</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td>W2026061001</td><td>OUT20260610001</td><td>华联超市(建国路店)</td><td>5</td><td>赵六</td><td>-</td><td><span class="tag tag-primary">拣货中</span></td></tr>
+            <tr><td>W2026061001</td><td>OUT20260610002</td><td>永辉超市(朝阳店)</td><td>12</td><td>-</td><td>-</td><td><span class="tag tag-default">待拣货</span></td></tr>
+            <tr><td>W2026061002</td><td>OUT20260610003</td><td>便利蜂(三里屯店)</td><td>3</td><td>赵六</td><td>孙七</td><td><span class="tag tag-warning">复核中</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  finance: `
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-info"><h3>应收账款</h3><div class="value">¥486,200</div><div class="change down">↓ 5.3%</div></div>
+        <div class="stat-icon red">📈</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><h3>应付账款</h3><div class="value">¥158,400</div><div class="change down">↓ 2.1%</div></div>
+        <div class="stat-icon orange">📉</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><h3>本月收款</h3><div class="value">¥325,800</div><div class="change up">↑ 18.3%</div></div>
+        <div class="stat-icon green">💵</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-info"><h3>本月毛利</h3><div class="value">¥186,500</div><div class="change up">↑ 8.7%</div></div>
+        <div class="stat-icon blue">💰</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-header">⏰ 应收账款账龄分析</div>
+      <div class="panel-body">
+        <table>
+          <thead><tr><th>客户名称</th><th>应收总额</th><th>未逾期</th><th>30天以内</th><th>30-60天</th><th>60-90天</th><th>90天以上</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>华联超市(建国路店)</td><td>¥86,200</td><td>¥45,000</td><td>¥25,000</td><td>¥16,200</td><td>¥0</td><td>¥0</td><td><button class="btn btn-sm btn-outline">催款</button></td></tr>
+            <tr><td>永辉超市(朝阳店)</td><td>¥156,800</td><td>¥120,000</td><td>¥20,000</td><td>¥10,800</td><td>¥6,000</td><td>¥0</td><td><button class="btn btn-sm btn-outline">催款</button></td></tr>
+            <tr><td>京东便利店(望京店)</td><td><span style="color:var(--danger);font-weight:600">¥62,500</span></td><td>¥0</td><td>¥15,000</td><td>¥25,000</td><td>¥22,500</td><td>¥0</td><td><button class="btn btn-sm btn-danger">紧急催款</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  tms: `
+    <div class="toolbar">
+      <button class="btn btn-primary">🚚 生成派送计划</button>
+      <input type="text" placeholder="司机/车牌号...">
+      <select><option>全部状态</option><option>待分配</option><option>已装车</option><option>配送中</option><option>已签收</option></select>
+      <button class="btn btn-primary">查询</button>
+    </div>
+    <div class="panel" style="margin-bottom:20px">
+      <div class="panel-header">🗺️ 实时配送监控 <span style="font-size:13px;font-weight:400;color:var(--text-muted)">共 8 辆车配送中</span></div>
+      <div class="panel-body">
+        <div style="height:300px;background:linear-gradient(135deg,#e8f4fd 0%,#f0e6ff 100%);border-radius:8px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+          <div style="position:absolute;top:30%;left:20%;font-size:32px">🚚</div><div style="position:absolute;top:30%;left:20%;font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;margin-left:30px;white-space:nowrap">张司机·京A12345</div>
+          <div style="position:absolute;top:50%;left:50%;font-size:32px">🚚</div><div style="position:absolute;top:50%;left:50%;font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;margin-left:30px;white-space:nowrap">李司机·京B67890</div>
+          <div style="position:absolute;top:20%;left:65%;font-size:32px">🚚</div><div style="position:absolute;top:20%;left:65%;font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;margin-left:30px;white-space:nowrap">王司机·京C11111</div>
+          <div style="position:absolute;top:65%;left:35%;font-size:32px">🚚</div><div style="position:absolute;top:65%;left:35%;font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;margin-left:30px;white-space:nowrap">赵司机·京D22222</div>
+          <div style="text-align:center;color:var(--text-muted)"><div style="font-size:48px">📍</div><div>GPS实时轨迹监控中...</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">📋 配送单列表</div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>配送单号</th><th>销售单号</th><th>客户</th><th>地址</th><th>司机</th><th>状态</th><th>预计到达</th><th>签收</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>DL20260610001</td><td>SO20260610001</td><td>华联超市(建国路店)</td><td>朝阳区建国路88号</td><td>张司机</td><td><span class="tag tag-warning">配送中</span></td><td>15:30</td><td>-</td><td><button class="btn btn-sm btn-outline">轨迹</button></td></tr>
+            <tr><td>DL20260610002</td><td>SO20260610003</td><td>便利蜂(三里屯店)</td><td>朝阳区工体北路</td><td>李司机</td><td><span class="tag tag-primary">已装车</span></td><td>16:00</td><td>-</td><td><button class="btn btn-sm btn-outline">轨迹</button></td></tr>
+            <tr><td>DL20260609005</td><td>SO20260609008</td><td>永辉超市(朝阳店)</td><td>朝阳区朝阳路</td><td>张司机</td><td><span class="tag tag-success">已签收</span></td><td>-</td><td>15:20</td><td><button class="btn btn-sm btn-outline">回单</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  products: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建商品</button>
+      <button class="btn btn-outline">📥 批量导入</button>
+      <input type="text" placeholder="搜索商品名称/条码/编码...">
+      <select><option>全部分类</option><option>饮料</option><option>食品</option><option>调味品</option></select>
+      <button class="btn btn-primary">查询</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>商品编码</th><th>商品图片</th><th>商品名称</th><th>规格</th><th>单位</th><th>分类</th><th>品牌</th><th>进价</th><th>批发价</th><th>零售价</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>SP001</td><td>🧴</td><td>农夫山泉矿泉水</td><td>550ml×24</td><td>箱</td><td>饮料/水</td><td>农夫山泉</td><td>¥28.00</td><td>¥34.00</td><td>¥42.00</td><td><span class="tag tag-success">启用</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>SP002</td><td>🍜</td><td>康师傅红烧牛肉面</td><td>105g×24</td><td>箱</td><td>食品/方便面</td><td>康师傅</td><td>¥42.00</td><td>¥48.00</td><td>¥58.00</td><td><span class="tag tag-success">启用</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>SP003</td><td>🥤</td><td>可口可乐</td><td>330ml×24</td><td>箱</td><td>饮料/碳酸</td><td>可口可乐</td><td>¥38.00</td><td>¥45.00</td><td>¥55.00</td><td><span class="tag tag-success">启用</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>SP008</td><td>🧂</td><td>海天酱油金标生抽</td><td>500ml×12</td><td>箱</td><td>调味品/酱油</td><td>海天</td><td>¥75.00</td><td>¥88.00</td><td>¥108.00</td><td><span class="tag tag-default">停用</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  customers: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建客户</button>
+      <button class="btn btn-outline">📥 批量导入</button>
+      <input type="text" placeholder="搜索客户名称/编码/电话...">
+      <select><option>全部等级</option><option>VIP客户</option><option>普通客户</option><option>零星客户</option></select>
+      <select><option>全部区域</option><option>朝阳区</option><option>海淀区</option><option>丰台区</option></select>
+      <button class="btn btn-primary">查询</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>客户编码</th><th>客户名称</th><th>联系人</th><th>电话</th><th>区域</th><th>等级</th><th>信用额度</th><th>应收余额</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>KH001</td><td>华联超市(建国路店)</td><td>陈经理</td><td>138****6789</td><td>朝阳区</td><td><span class="tag tag-primary">VIP</span></td><td>¥200,000</td><td>¥86,200</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">详情</button></td></tr>
+            <tr><td>KH002</td><td>永辉超市(朝阳店)</td><td>刘店长</td><td>139****8901</td><td>朝阳区</td><td><span class="tag tag-primary">VIP</span></td><td>¥300,000</td><td>¥156,800</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">详情</button></td></tr>
+            <tr><td>KH015</td><td>京东便利店(望京店)</td><td>王老板</td><td>136****3456</td><td>朝阳区</td><td><span class="tag tag-default">普通</span></td><td>¥50,000</td><td><span style="color:var(--danger)">¥62,500</span></td><td><span class="tag tag-danger">超额</span></td><td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-danger">冻结</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  'sales-receive': `
+    <div class="toolbar">
+      <input type="date" value="2026-06-01"><span>至</span><input type="date" value="2026-06-10">
+      <input type="text" placeholder="收货单号/客户...">
+      <select><option>全部状态</option><option>待签收</option><option>已签收</option></select>
+      <button class="btn btn-primary">🔍 查询</button>
+      <button class="btn btn-outline">📥 导出</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>收货单号</th><th>销售单号</th><th>日期</th><th>客户</th><th>商品数</th><th>金额</th><th>签收日期</th><th>签收单价</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>SR20260610001</td><td>SO20260610001</td><td>2026-06-10</td><td>华联超市(建国路店)</td><td>5</td><td>¥588.00</td><td>2026-06-10</td><td>¥36.00/箱</td><td><span class="tag tag-success">已签收</span></td><td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-outline">修改价格</button></td></tr>
+            <tr><td>SR20260610002</td><td>SO20260610002</td><td>2026-06-10</td><td>永辉超市(朝阳店)</td><td>12</td><td>¥3,560.00</td><td>2026-06-10</td><td>-</td><td><span class="tag tag-warning">待签收</span></td><td><button class="btn btn-sm btn-outline">详情</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  'purchase-predict': `
+    <div class="toolbar">
+      <select><option>预测模式：按日均销量</option><option>按库存上下限</option></select>
+      <input type="number" value="20" style="width:80px" placeholder="天数"><span>计划销售天数</span>
+      <select><option>全部商品分类</option></select>
+      <select><option>全部品牌</option></select>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" checked> 仅看需要采购</label>
+      <button class="btn btn-primary">🤖 智能分析</button>
+    </div>
+    <div class="panel">
+      <div class="panel-header">📊 AI采购预测 <span style="font-size:13px;font-weight:400;color:var(--text-muted)">公式：(日均销量 × 计划天数) - 可用库存 - 采购在途</span></div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>商品编码</th><th>商品名称</th><th>7天销量</th><th>15天销量</th><th>30天销量</th><th>30天日均</th><th>可用库存</th><th>采购在途</th><th>建议采购</th><th>默认供应商</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>SP003</td><td>可口可乐 330ml</td><td>280</td><td>620</td><td>1,250</td><td>42</td><td style="color:var(--warning);font-weight:600">45</td><td>0</td><td style="color:var(--primary);font-weight:700">795</td><td>中粮可口可乐</td><td><button class="btn btn-sm btn-primary">生成采购单</button></td></tr>
+            <tr><td>SP005</td><td>海天酱油 500ml</td><td>95</td><td>220</td><td>430</td><td>14</td><td style="color:var(--danger);font-weight:600">8</td><td>50</td><td style="color:var(--primary);font-weight:700">222</td><td>海天味业</td><td><button class="btn btn-sm btn-primary">生成采购单</button></td></tr>
+            <tr><td>SP012</td><td>元气森林气泡水</td><td>150</td><td>340</td><td>680</td><td>23</td><td>320</td><td>100</td><td style="color:var(--success)">40</td><td>元气森林</td><td><button class="btn btn-sm btn-outline">生成采购单</button></td></tr>
+            <tr><td>SP001</td><td>农夫山泉矿泉水</td><td>420</td><td>980</td><td>1,980</td><td>66</td><td>1,250</td><td>0</td><td style="color:var(--text-muted)">0</td><td>农夫山泉股份</td><td><span style="font-size:12px;color:var(--text-muted)">库存充足</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:12px">
+        <button class="btn btn-primary">📦 批量生成采购订单 (选中3项)</button>
+      </div>
+    </div>
+  `,
+
+  suppliers: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建供应商</button>
+      <input type="text" placeholder="搜索供应商名称/编号...">
+      <button class="btn btn-primary">查询</button>
+      <button class="btn btn-outline">📥 导入</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>供应商编号</th><th>供应商名称</th><th>联系人</th><th>电话</th><th>到货天数</th><th>账期类型</th><th>应付余额</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>G00001</td><td>农夫山泉股份有限公司</td><td>李经理</td><td>139****6789</td><td>3天</td><td>月结30天</td><td>¥28,500</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">详情</button> <button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>G00002</td><td>康师傅控股有限公司</td><td>王总</td><td>138****8901</td><td>5天</td><td>月结60天</td><td>¥0</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">详情</button></td></tr>
+            <tr><td>G00003</td><td>中粮可口可乐饮料有限公司</td><td>赵经理</td><td>136****4567</td><td>2天</td><td>现结</td><td>¥12,800</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">详情</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  personnel: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建人员</button>
+      <input type="text" placeholder="搜索姓名/编号/手机...">
+      <select><option>全部部门</option></select>
+      <select><option>全部角色</option><option>业务员</option><option>采购员</option><option>库管员</option><option>配送员</option></select>
+      <button class="btn btn-primary">查询</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>人员编号</th><th>姓名</th><th>性别</th><th>部门</th><th>手机号</th><th>业务员</th><th>采购员</th><th>库管员</th><th>配送员</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>E00001</td><td>张三</td><td>男</td><td>销售部</td><td>138****1234</td><td><span class="tag tag-primary">是</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>E00002</td><td>王五</td><td>男</td><td>仓储部</td><td>139****5678</td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-primary">是</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>E00003</td><td>张师傅</td><td>男</td><td>配送部</td><td>136****9012</td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-default">否</span></td><td><span class="tag tag-primary">是</span></td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  'area-line': `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="panel">
+        <div class="panel-header">🗺️ 片区管理 <button class="btn btn-sm btn-primary">+ 新增片区</button></div>
+        <div class="panel-body">
+          <div style="padding:8px 0">
+            <div style="padding:8px;border-left:3px solid var(--primary);margin-bottom:4px;font-weight:600">📁 北京区域</div>
+            <div style="padding:6px 16px;margin-left:20px;cursor:pointer">📍 朝阳片区 <span style="color:var(--text-muted);font-size:12px">(末级)</span></div>
+            <div style="padding:6px 16px;margin-left:20px;cursor:pointer">📍 海淀片区 <span style="color:var(--text-muted);font-size:12px">(末级)</span></div>
+            <div style="padding:6px 16px;margin-left:20px;cursor:pointer">📍 丰台片区 <span style="color:var(--text-muted);font-size:12px">(末级)</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">🛣️ 线路管理 <button class="btn btn-sm btn-primary">+ 新增线路</button></div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>线路编号</th><th>线路名称</th><th>默认司机</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>L001</td><td>朝阳线</td><td>张司机(京A12345)</td><td><span class="tag tag-success">启用</span></td></tr>
+              <tr><td>L002</td><td>海淀线</td><td>李司机(京B67890)</td><td><span class="tag tag-success">启用</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `,
+
+  voucher: `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建凭证</button>
+      <input type="date" value="2026-06-01"><span>至</span><input type="date" value="2026-06-10">
+      <select><option>全部凭证类型</option><option>记账凭证</option><option>转账凭证</option></select>
+      <button class="btn btn-primary">查询</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>凭证号</th><th>日期</th><th>凭证类型</th><th>摘要</th><th>借方金额</th><th>贷方金额</th><th>制单人</th><th>审核人</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>PZ20260610001</td><td>2026-06-10</td><td>记账凭证</td><td>销售收款-华联超市</td><td>¥588.00</td><td>¥588.00</td><td>王会计</td><td>-</td><td><span class="tag tag-warning">待审核</span></td><td><button class="btn btn-sm btn-outline">查看</button> <button class="btn btn-sm btn-primary">审核</button></td></tr>
+            <tr><td>PZ20260610002</td><td>2026-06-10</td><td>记账凭证</td><td>采购入库-农夫山泉</td><td>¥45,000.00</td><td>¥45,000.00</td><td>王会计</td><td>李主管</td><td><span class="tag tag-success">已审核</span></td><td><button class="btn btn-sm btn-outline">查看</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="panel">
+        <div class="panel-header">📋 科目管理 <button class="btn btn-sm btn-outline">+ 新增科目</button></div>
+        <div class="panel-body">
+          <div style="padding:6px;font-weight:600">📁 资产类</div>
+          <div style="padding:6px 20px;font-size:13px">1001 库存现金</div>
+          <div style="padding:6px 20px;font-size:13px">1002 银行存款</div>
+          <div style="padding:6px 20px;font-size:13px">1405 库存商品</div>
+          <div style="padding:6px;font-weight:600;margin-top:8px">📁 负债类</div>
+          <div style="padding:6px 20px;font-size:13px">2202 应付账款</div>
+          <div style="padding:6px;font-weight:600;margin-top:8px">📁 损益类</div>
+          <div style="padding:6px 20px;font-size:13px">6001 主营业务收入</div>
+          <div style="padding:6px 20px;font-size:13px">6401 主营业务成本</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">🏢 固定资产管理</div>
+        <div class="panel-body">
+          <table>
+            <thead><tr><th>资产编号</th><th>资产名称</th><th>原值</th><th>月折旧</th><th>净残值</th></tr></thead>
+            <tbody>
+              <tr><td>FA001</td><td>配送货车(京A12345)</td><td>¥120,000</td><td>¥1,900</td><td>¥96,000</td></tr>
+              <tr><td>FA002</td><td>仓库货架A区</td><td>¥50,000</td><td>¥400</td><td>¥45,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `,
+
+  'sys-perm': `
+    <div style="display:grid;grid-template-columns:250px 1fr 280px;gap:16px;height:calc(100vh - 140px)">
+      <div class="panel" style="overflow-y:auto">
+        <div class="panel-header">👥 权限组列表 <button class="btn btn-sm btn-primary">+ 新建</button></div>
+        <div class="panel-body">
+          <div style="padding:10px;background:var(--primary-light);border-radius:6px;margin-bottom:4px;cursor:pointer;font-weight:600">🔑 管理员组</div>
+          <div style="padding:10px;border-radius:6px;margin-bottom:4px;cursor:pointer">💼 销售组</div>
+          <div style="padding:10px;border-radius:6px;margin-bottom:4px;cursor:pointer">📦 仓库组</div>
+          <div style="padding:10px;border-radius:6px;margin-bottom:4px;cursor:pointer">💰 财务组</div>
+          <div style="padding:10px;border-radius:6px;margin-bottom:4px;cursor:pointer">🚚 司机组</div>
+        </div>
+      </div>
+      <div class="panel" style="overflow-y:auto">
+        <div class="panel-header">📋 模块权限设置 <span style="font-size:12px;color:var(--text-muted)">选中=授权</span></div>
+        <div class="panel-body">
+          <div style="font-weight:600;padding:8px 0;border-bottom:1px solid var(--border)">📊 经营概览 <label style="float:right"><input type="checkbox" checked> 授权</label></div>
+          <div style="font-weight:600;padding:8px 0;border-bottom:1px solid var(--border)">🛒 销售管理 <label style="float:right"><input type="checkbox" checked> 授权</label></div>
+          <div style="padding:4px 0 4px 20px;font-size:13px">新增 <input type="checkbox" checked style="margin-left:8px"> 修改 <input type="checkbox" checked style="margin-left:8px"> 删除 <input type="checkbox" style="margin-left:8px"> 审核 <input type="checkbox" checked style="margin-left:8px"> 导出 <input type="checkbox" checked style="margin-left:8px"></div>
+          <div style="font-weight:600;padding:8px 0;border-bottom:1px solid var(--border)">📥 采购管理 <label style="float:right"><input type="checkbox" checked> 授权</label></div>
+          <div style="padding:4px 0 4px 20px;font-size:13px">新增 <input type="checkbox" checked style="margin-left:8px"> 修改 <input type="checkbox" style="margin-left:8px"> 删除 <input type="checkbox" style="margin-left:8px"> 审核 <input type="checkbox" checked style="margin-left:8px"></div>
+          <div style="font-weight:600;padding:8px 0;border-bottom:1px solid var(--border)">💰 财务管理 <label style="float:right"><input type="checkbox"> 授权</label></div>
+        </div>
+      </div>
+      <div class="panel" style="overflow-y:auto">
+        <div class="panel-header">🔒 数据权限设置</div>
+        <div class="panel-body">
+          <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:500">可查看商品大类</label><select style="width:100%;height:36px;margin-top:4px"><option>全部</option></select></div>
+          <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:500">可查看品牌</label><select style="width:100%;height:36px;margin-top:4px"><option>全部</option></select></div>
+          <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:500">可查看业务员数据</label><select style="width:100%;height:36px;margin-top:4px"><option>全部</option></select></div>
+          <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:500">操作仓库</label><select style="width:100%;height:36px;margin-top:4px"><option>全部</option></select></div>
+          <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:500">关联货主</label><select style="width:100%;height:36px;margin-top:4px"><option>全部</option></select></div>
+          <label style="font-size:13px;font-weight:500">查看金额 <input type="checkbox" checked style="margin-left:8px"></label><br>
+          <label style="font-size:13px;font-weight:500">查看成本 <input type="checkbox" checked style="margin-left:8px"></label><br>
+          <label style="font-size:13px;font-weight:500">查看毛利 <input type="checkbox" checked style="margin-left:8px"></label>
+        </div>
+      </div>
+    </div>
+  `,
+
+  'sys-users': `
+    <div class="toolbar">
+      <button class="btn btn-primary">➕ 新建用户</button>
+      <input type="text" placeholder="搜索账号/名称/手机...">
+      <select><option>全部权限组</option><option>管理员组</option><option>销售组</option></select>
+      <button class="btn btn-primary">查询</button>
+      <button class="btn btn-outline">📥 导入</button>
+      <button class="btn btn-outline">📤 导出</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>账号</th><th>账号名称</th><th>对应员工</th><th>手机号</th><th>权限组</th><th>可查看仓库</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>admin</td><td>系统管理员</td><td>张总</td><td>138****0000</td><td>管理员组</td><td>全部</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">编辑</button> <button class="btn btn-sm btn-outline">权限</button></td></tr>
+            <tr><td>sales01</td><td>销售员李四</td><td>李四</td><td>139****1111</td><td>销售组</td><td>总仓/东区仓</td><td><span class="tag tag-success">正常</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+            <tr><td>wh01</td><td>仓管员王五</td><td>王五</td><td>136****2222</td><td>仓库组</td><td>总仓</td><td><span class="tag tag-default">停用</span></td><td><button class="btn btn-sm btn-outline">编辑</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  'sys-params': `
+    <div class="toolbar">
+      <input type="text" placeholder="搜索参数名称/键...">
+      <button class="btn btn-primary">查询</button>
+      <button class="btn btn-outline">📤 导出</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>参数键</th><th>参数名称</th><th>参数值</th><th>说明</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>GOODS_CODE_RULE</td><td>商品编号生成规则</td><td><select style="height:30px"><option>分类编号+4位流水</option><option>手工录入</option><option>流水号</option></select></td><td>新建商品时编号的生成方式</td><td><button class="btn btn-sm btn-primary">保存</button></td></tr>
+            <tr><td>PRICE_MODIFY_DAYS</td><td>采购单据可修改天数</td><td><input type="number" value="30" style="width:80px;height:30px;text-align:center"> 天</td><td>采购改价单可修改多久前的单据</td><td><button class="btn btn-sm btn-primary">保存</button></td></tr>
+            <tr><td>RETURN_GEN_MODE</td><td>销售退货单生成方式</td><td><select style="height:30px"><option>按仓库入库生成</option><option>按司机回收生成</option></select></td><td>控制销售退货单的生成逻辑</td><td><button class="btn btn-sm btn-primary">保存</button></td></tr>
+            <tr><td>DEFAULT_WAREHOUSE</td><td>系统默认仓库</td><td><select style="height:30px"><option>总仓</option></select></td><td>新建商品/单据时的默认仓库</td><td><button class="btn btn-sm btn-primary">保存</button></td></tr>
+            <tr><td>AUTO_DAY_END</td><td>日结自动执行时间</td><td><input type="time" value="02:00" style="height:30px"></td><td>每日定时生成日结数据的时间</td><td><button class="btn btn-sm btn-primary">保存</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
+  'sys-logs': `
+    <div class="toolbar">
+      <input type="date" value="2026-06-08"><span>至</span><input type="date" value="2026-06-10">
+      <input type="text" placeholder="操作账户/模块/单据号...">
+      <select><option>全部操作类型</option><option>登录</option><option>新建</option><option>修改</option><option>删除</option><option>审核</option><option>打印</option><option>导出</option></select>
+      <button class="btn btn-primary">查询</button>
+      <button class="btn btn-outline">📤 导出</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>时间</th><th>操作账户</th><th>模块</th><th>操作类型</th><th>操作内容</th><th>单据号</th><th>IP地址</th></tr></thead>
+          <tbody>
+            <tr><td>2026-06-10 14:30:25</td><td>sales01</td><td>销售开单</td><td><span class="tag tag-primary">新建</span></td><td>新建销售单</td><td>SO20260610001</td><td>192.168.1.100</td></tr>
+            <tr><td>2026-06-10 14:31:10</td><td>sales01</td><td>销售开单</td><td><span class="tag tag-success">审核</span></td><td>审核销售单</td><td>SO20260610001</td><td>192.168.1.100</td></tr>
+            <tr><td>2026-06-10 14:35:02</td><td>wh01</td><td>WMS收货</td><td><span class="tag tag-primary">新建</span></td><td>PDA收货确认</td><td>IN20260610001</td><td>192.168.1.50</td></tr>
+            <tr><td>2026-06-10 14:40:18</td><td>finance01</td><td>财务管理</td><td><span class="tag tag-warning">导出</span></td><td>导出应收报表</td><td>-</td><td>192.168.1.80</td></tr>
+            <tr><td>2026-06-10 15:00:00</td><td>driver01</td><td>TMS司机APP</td><td><span class="tag tag-primary">新建</span></td><td>签收确认+拍照</td><td>DL20260610001</td><td>114.246.1.25</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination"><div class="page-info">默认近3天 · 共 328 条记录</div></div>
+    </div>
+  `
+};
+
+// ========== FUNCTIONS ==========
+function login() {
+  const user = document.getElementById('loginUser').value;
+  const pass = document.getElementById('loginPass').value;
+  if (user && pass) {
+    appState.user = user;
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('appLayout').classList.add('active');
+    switchPage('dashboard', document.querySelector('.nav-item[data-page="dashboard"]'));
+  }
+}
+
+function switchPage(page, el) {
+  appState.currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  if (el) el.classList.add('active');
+  const bc = document.getElementById('breadcrumb');
+  const pageNames = {
+    dashboard:'经营概览', sales:'销售开单', 'sales-order':'销售订单', 'sales-receive':'销售收货单',
+    purchase:'采购管理', 'purchase-predict':'AI采购预测', inventory:'库存管理', wms:'WMS仓库作业',
+    finance:'应收应付', voucher:'凭证管理', tms:'TMS配送管理',
+    products:'商品档案', customers:'客户管理', suppliers:'供应商管理', personnel:'人员信息', 'area-line':'片区/线路',
+    'sys-perm':'权限组管理', 'sys-users':'用户管理', 'sys-params':'系统参数', 'sys-logs':'操作日志'
+  };
+  bc.innerHTML = `🏠 / <span>${pageNames[page] || page}</span>`;
+  document.getElementById('mainContent').innerHTML = pageContent[page] || '';
+}
+
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// Enter key login
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && document.getElementById('loginPage').style.display !== 'none') {
+    login();
+  }
+});
+</script>
+
+</body>
+</html>

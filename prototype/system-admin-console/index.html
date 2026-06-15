@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>系统方管理后台 · ERP+WMS+TMS+B2B</title>
+  <style>
+    :root{
+      --bg:#07100e;
+      --panel:#0d1b18;
+      --panel2:#10231f;
+      --card:#f4efe3;
+      --card2:#e6dfcf;
+      --ink:#16221e;
+      --muted:#7b877f;
+      --line:rgba(244,239,227,.16);
+      --gold:#d9ae61;
+      --green:#4fe0a1;
+      --blue:#67b7ff;
+      --red:#ff6f61;
+      --orange:#f7a23b;
+      --purple:#9d7cff;
+      --shadow:0 24px 80px rgba(0,0,0,.35);
+      --radius:22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 10% 0%,rgba(217,174,97,.18),transparent 32%),radial-gradient(circle at 100% 20%,rgba(79,224,161,.12),transparent 30%),var(--bg);color:#f4efe3;font-family:"Microsoft YaHei","Noto Sans SC",sans-serif;overflow:hidden}
+    body:before{content:"";position:fixed;inset:0;background-image:linear-gradient(rgba(244,239,227,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(244,239,227,.035) 1px,transparent 1px);background-size:28px 28px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.85),transparent);pointer-events:none}
+    .app{display:grid;grid-template-columns:288px 1fr;height:100vh}
+    aside{border-right:1px solid var(--line);background:linear-gradient(180deg,rgba(13,27,24,.96),rgba(7,16,14,.96));padding:22px 18px;position:relative;z-index:2}
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:26px}
+    .seal{width:48px;height:48px;border:1px solid rgba(217,174,97,.55);border-radius:16px;background:linear-gradient(145deg,#d9ae61,#805d2b);display:grid;place-items:center;color:#08100e;font-weight:900;box-shadow:0 12px 30px rgba(217,174,97,.22)}
+    .brand h1{font-size:18px;margin:0;letter-spacing:.08em}.brand p{font-size:11px;color:#b7aa90;margin:4px 0 0;letter-spacing:.18em;text-transform:uppercase}
+    .nav-title{font-size:12px;color:#8c9a91;margin:20px 10px 10px}.nav button{width:100%;border:0;background:transparent;color:#d8d0bf;display:flex;align-items:center;gap:10px;padding:12px 12px;border-radius:14px;cursor:pointer;font-size:14px;text-align:left;margin:4px 0;transition:.18s}.nav button:hover{background:rgba(244,239,227,.06);transform:translateX(2px)}.nav button.active{background:linear-gradient(90deg,rgba(217,174,97,.24),rgba(79,224,161,.08));color:#fff;border:1px solid rgba(217,174,97,.26)}.ico{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:rgba(244,239,227,.08);font-size:15px}
+    main{padding:18px 22px 22px;overflow:auto;position:relative}.topbar{height:64px;border:1px solid var(--line);background:rgba(13,27,24,.72);backdrop-filter:blur(18px);border-radius:22px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;margin-bottom:18px;position:sticky;top:18px;z-index:5}.search{display:flex;align-items:center;gap:10px;background:rgba(244,239,227,.08);border:1px solid rgba(244,239,227,.09);border-radius:999px;padding:10px 16px;width:420px;color:#b7aa90}.search input{background:transparent;border:0;outline:0;color:#fff;width:100%;font-size:14px}.top-actions{display:flex;gap:10px;align-items:center}.pill{border:1px solid rgba(244,239,227,.15);border-radius:999px;padding:9px 12px;background:rgba(244,239,227,.06);color:#e9dfca;font-size:13px}.danger-dot{width:8px;height:8px;background:var(--red);border-radius:50%;box-shadow:0 0 0 5px rgba(255,111,97,.13)}
+    .page{display:none;animation:rise .35s ease}.page.active{display:block}@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+    .hero{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;margin-bottom:18px}.hero-card{background:linear-gradient(145deg,#f4efe3,#d8cdb7);color:var(--ink);border-radius:30px;padding:28px;box-shadow:var(--shadow);position:relative;overflow:hidden}.hero-card:after{content:"";position:absolute;right:-80px;top:-80px;width:240px;height:240px;border:36px solid rgba(217,174,97,.35);border-radius:50%}.eyebrow{font-size:12px;letter-spacing:.22em;color:#66746b;text-transform:uppercase}.hero h2{font-size:38px;line-height:1.08;margin:10px 0 8px;letter-spacing:-.04em}.hero p{color:#66746b;line-height:1.7;margin:0;max-width:620px}.hero-side{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{background:rgba(244,239,227,.08);border:1px solid var(--line);border-radius:24px;padding:18px}.metric label{color:#9aa89f;font-size:12px}.metric strong{display:block;font-size:30px;margin-top:8px}.metric span{font-size:12px;color:var(--green)}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}.panel{background:rgba(13,27,24,.78);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:0 12px 50px rgba(0,0,0,.18)}.span-4{grid-column:span 4}.span-5{grid-column:span 5}.span-7{grid-column:span 7}.span-8{grid-column:span 8}.span-12{grid-column:span 12}.panel h3{margin:0 0 14px;font-size:17px}.toolbar{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px}.btn{border:0;border-radius:14px;padding:10px 14px;background:#f4efe3;color:#10231f;font-weight:700;cursor:pointer;box-shadow:0 10px 24px rgba(244,239,227,.12)}.btn.secondary{background:rgba(244,239,227,.08);color:#efe7d8;border:1px solid rgba(244,239,227,.14);box-shadow:none}.btn.gold{background:linear-gradient(135deg,#f0c879,#b57a2e);color:#0b1512}.btn.red{background:rgba(255,111,97,.16);color:#ffb1a9;border:1px solid rgba(255,111,97,.22)}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:13px}th{color:#9aa89f;font-weight:500;text-align:left;padding:0 12px 6px}td{background:rgba(244,239,227,.06);padding:12px;border-top:1px solid rgba(244,239,227,.05);border-bottom:1px solid rgba(244,239,227,.05)}td:first-child{border-left:1px solid rgba(244,239,227,.05);border-radius:14px 0 0 14px}td:last-child{border-right:1px solid rgba(244,239,227,.05);border-radius:0 14px 14px 0}.badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:12px}.ok{background:rgba(79,224,161,.16);color:#76ffc0}.wait{background:rgba(247,162,59,.16);color:#ffc176}.bad{background:rgba(255,111,97,.16);color:#ff9a90}.blue{background:rgba(103,183,255,.16);color:#9ed0ff}.gray{background:rgba(244,239,227,.12);color:#c9c0b2}
+    .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.field label{display:block;color:#9aa89f;font-size:12px;margin-bottom:7px}.field input,.field select,.field textarea{width:100%;background:rgba(244,239,227,.08);border:1px solid rgba(244,239,227,.13);border-radius:14px;color:#fff;padding:11px;outline:0}.field textarea{min-height:86px;resize:vertical}.wide{grid-column:span 2}.full{grid-column:1/-1}.split{display:grid;grid-template-columns:320px 1fr;gap:16px}.tree{background:rgba(244,239,227,.05);border-radius:18px;padding:12px}.tree-item{padding:10px 12px;border-radius:12px;color:#d8d0bf;margin:4px 0}.tree-item.active,.tree-item:hover{background:rgba(217,174,97,.16);color:#fff}.tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}.tab{padding:9px 13px;border-radius:999px;background:rgba(244,239,227,.07);color:#b8c0ba;cursor:pointer}.tab.active{background:#f4efe3;color:#10231f;font-weight:800}.timeline{display:grid;gap:10px}.event{display:flex;gap:12px;align-items:flex-start}.event:before{content:"";width:10px;height:10px;border-radius:50%;background:var(--gold);margin-top:6px;box-shadow:0 0 0 5px rgba(217,174,97,.13)}.event b{display:block}.event span{color:#9aa89f;font-size:12px}.kbd{font-family:ui-monospace,Consolas,monospace;background:#07100e;border:1px solid rgba(244,239,227,.18);padding:2px 6px;border-radius:6px;color:#f0c879}.modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.55);z-index:20}.modal.show{display:grid}.dialog{width:560px;background:#f4efe3;color:#13201c;border-radius:26px;padding:24px;box-shadow:var(--shadow)}.dialog h3{margin:0 0 12px}.dialog p{color:#66746b}.dialog .field input,.dialog .field select,.dialog .field textarea{background:#fff;color:#13201c;border-color:#d8cdb7}.drawer{position:fixed;right:-720px;top:0;height:100vh;width:720px;background:#0d1b18;border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:18;transition:.28s;padding:22px;overflow:auto}.drawer.show{right:0}.drawer-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.close{background:rgba(244,239,227,.1);border:0;color:#fff;border-radius:12px;width:36px;height:36px;cursor:pointer}.wire{border:1px dashed rgba(217,174,97,.42);border-radius:18px;padding:14px;color:#bfc8c1;background:rgba(217,174,97,.06)}
+    @media(max-width:1100px){.app{grid-template-columns:86px 1fr}.brand h1,.brand p,.nav-title,.nav button span{display:none}.nav button{justify-content:center}.hero{grid-template-columns:1fr}.span-4,.span-5,.span-7,.span-8{grid-column:span 12}.search{width:260px}.split{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><div class="seal">SYS</div><div><h1>系统方管理后台</h1><p>operator console</p></div></div>
+    <div class="nav-title">平台治理</div>
+    <div class="nav" id="nav">
+      <button class="active" data-page="dashboard"><i class="ico">⌁</i><span>工作台</span></button>
+      <button data-page="tenant"><i class="ico">企</i><span>租户管理</span></button>
+      <button data-page="account"><i class="ico">人</i><span>系统方账号</span></button>
+      <button data-page="menu"><i class="ico">目</i><span>菜单与功能</span></button>
+      <button data-page="auth"><i class="ico">权</i><span>授权模板</span></button>
+      <button data-page="config"><i class="ico">参</i><span>系统配置</span></button>
+      <button data-page="dict"><i class="ico">典</i><span>系统字典</span></button>
+      <button data-page="print"><i class="ico">印</i><span>默认打印横版</span></button>
+      <button data-page="audit"><i class="ico">审</i><span>审计日志</span></button>
+      <button data-page="release"><i class="ico">版</i><span>版本发布</span></button>
+    </div>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div class="search">⌕ <input placeholder="搜索租户 / 菜单 / 功能编码 / 操作日志" /></div>
+      <div class="top-actions"><span class="pill"><span class="danger-dot" style="display:inline-block;margin-right:8px"></span> 6个接口异常</span><span class="pill">超级管理员 · 只允许系统方登录</span></div>
+    </div>
+
+    <section class="page active" id="dashboard">
+      <div class="hero">
+        <div class="hero-card"><div class="eyebrow">system governance</div><h2>一个只属于系统方的控制台</h2><p>开户、授权、菜单、默认字典、打印横版、系统配置、审计日志集中管理。租户业务用户不可进入，所有敏感操作全链路审计。</p></div>
+        <div class="hero-side">
+          <div class="metric"><label>今日新增租户</label><strong>12</strong><span>+18% 较昨日</span></div>
+          <div class="metric"><label>待初始化</label><strong>7</strong><span class="bad">2个失败</span></div>
+          <div class="metric"><label>待发布配置</label><strong>19</strong><span>菜单/字典/模板</span></div>
+          <div class="metric"><label>风险账号</label><strong>4</strong><span class="bad">异地登录</span></div>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="panel span-7"><h3>待办队列</h3><table><thead><tr><th>类型</th><th>对象</th><th>风险</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td>租户初始化</td><td>华南快消经销商</td><td>打印模板下发失败</td><td><span class="badge wait">待处理</span></td><td><button class="btn secondary" onclick="openDrawer('初始化诊断')">诊断</button></td></tr><tr><td>菜单发布</td><td>V1.0-ERP核心包</td><td>影响 38 个租户</td><td><span class="badge blue">待发布</span></td><td><button class="btn secondary">预览</button></td></tr><tr><td>敏感操作</td><td>重置租户管理员</td><td>需审计复核</td><td><span class="badge bad">高风险</span></td><td><button class="btn secondary">查看</button></td></tr></tbody></table></div>
+        <div class="panel span-5"><h3>系统运行脉搏</h3><div class="timeline"><div class="event"><div><b>09:12 菜单包发布成功</b><span>V1.0标准ERP模板 → 12个新租户</span></div></div><div class="event"><div><b>10:05 接口失败告警</b><span>B2B库存同步接口失败3次</span></div></div><div class="event"><div><b>11:22 字典变更</b><span>新增发票状态：已红冲</span></div></div></div></div>
+        <div class="panel span-12"><h3>模块启用热力图</h3><div class="wire">ERP核心 100%　WMS 68%　TMS 42%　B2B商城 31%　多入驻商 14%　发票管理 76%　供应商费用 22%</div></div>
+      </div>
+    </section>
+
+    <section class="page" id="tenant">
+      <div class="toolbar"><h2>租户管理</h2><div><button class="btn gold" onclick="openDrawer('新建租户开户')">+ 新建租户</button> <button class="btn secondary">导出</button></div></div>
+      <div class="grid"><div class="panel span-12"><table><thead><tr><th>租户编码</th><th>租户名称</th><th>版本套餐</th><th>启用模块</th><th>用户数</th><th>到期</th><th>初始化</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td>T202606001</td><td>华南快消经销商</td><td>ERP+WMS</td><td>ERP/WMS/财务</td><td>36/80</td><td>2027-06-30</td><td><span class="badge ok">完成</span></td><td><span class="badge ok">正常</span></td><td><button class="btn secondary" onclick="openDrawer('租户详情')">详情</button></td></tr><tr><td>T202606002</td><td>省级B2B运营商</td><td>全链路旗舰版</td><td>ERP/WMS/TMS/B2B/入驻商</td><td>108/300</td><td>2027-12-31</td><td><span class="badge wait">初始化中</span></td><td><span class="badge blue">试运行</span></td><td><button class="btn secondary">功能开关</button></td></tr><tr><td>T202606003</td><td>北区食品批发</td><td>ERP标准版</td><td>ERP/财务</td><td>12/30</td><td>2026-11-30</td><td><span class="badge bad">失败</span></td><td><span class="badge wait">待初始化</span></td><td><button class="btn secondary">重试</button></td></tr></tbody></table></div></div>
+    </section>
+
+    <section class="page" id="account"><div class="toolbar"><h2>系统方账号</h2><button class="btn gold" onclick="openModal('新增系统方账号')">+ 新增账号</button></div><div class="panel"><table><thead><tr><th>账号</th><th>姓名</th><th>角色</th><th>MFA</th><th>最后登录</th><th>状态</th><th>操作</th></tr></thead><tbody><tr><td>superadmin</td><td>平台超管</td><td>超级管理员</td><td><span class="badge ok">已开启</span></td><td>今天 10:33</td><td><span class="badge ok">正常</span></td><td><button class="btn secondary">编辑</button></td></tr><tr><td>impl_zhang</td><td>张实施</td><td>实施管理员</td><td><span class="badge wait">未开启</span></td><td>昨天 18:20</td><td><span class="badge ok">正常</span></td><td><button class="btn secondary">锁定</button></td></tr></tbody></table></div></section>
+
+    <section class="page" id="menu"><div class="toolbar"><h2>菜单与功能管理</h2><div><button class="btn secondary">导入菜单JSON</button> <button class="btn gold">发布菜单包</button></div></div><div class="split"><div class="tree"><div class="tree-item active">ERP后台</div><div class="tree-item">├─ 基础资料</div><div class="tree-item">├─ 采购管理</div><div class="tree-item">├─ 销售管理</div><div class="tree-item">├─ 库存管理</div><div class="tree-item">B2B后台</div><div class="tree-item">司机APP</div><div class="tree-item">客户小程序</div></div><div class="panel"><div class="tabs"><span class="tab active">菜单信息</span><span class="tab">按钮功能</span><span class="tab">数据权限</span><span class="tab">API绑定</span></div><div class="form-grid"><div class="field"><label>菜单编码 *</label><input value="purchase.order" /></div><div class="field"><label>菜单名称 *</label><input value="采购订单" /></div><div class="field"><label>所属端</label><select><option>ERP后台</option></select></div><div class="field wide"><label>路由路径</label><input value="/purchase/order" /></div><div class="field"><label>状态</label><select><option>正常</option><option>停用</option></select></div><div class="full wire">按钮权限：新增 / 编辑 / 删除 / 审核 / 反审核 / 终止 / 导入 / 导出 / 打印 / 查看金额 / 查看成本</div></div></div></div></section>
+
+    <section class="page" id="auth"><div class="toolbar"><h2>授权模板管理</h2><button class="btn gold" onclick="openDrawer('新建授权模板')">+ 新建模板</button></div><div class="grid"><div class="panel span-4"><h3>模板列表</h3><div class="tree-item active">标准经销商ERP模板</div><div class="tree-item">仓库WMS模板</div><div class="tree-item">B2B运营模板</div><div class="tree-item">入驻商模板</div></div><div class="panel span-8"><h3>模板权限预览</h3><table><thead><tr><th>模块</th><th>查看</th><th>新增</th><th>审核</th><th>导出</th><th>金额</th><th>成本</th></tr></thead><tbody><tr><td>采购订单</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr><tr><td>销售订单</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr><tr><td>库存余额</td><td>✓</td><td></td><td></td><td>✓</td><td></td><td></td></tr></tbody></table><button class="btn gold">下发到租户</button></div></div></section>
+
+    <section class="page" id="config"><div class="toolbar"><h2>系统配置</h2><button class="btn gold">发布配置</button></div><div class="panel"><table><thead><tr><th>参数键</th><th>名称</th><th>范围</th><th>默认值</th><th>租户可改</th><th>影响</th><th>操作</th></tr></thead><tbody><tr><td>ENABLE_B2B</td><td>B2B商城开关</td><td>租户</td><td>NO</td><td>否</td><td>B2B菜单/API</td><td><button class="btn secondary">编辑</button></td></tr><tr><td>AUTO_AUDIT_PURCHASE_RECEIPT</td><td>采购收货自动审核</td><td>租户</td><td>YES</td><td>是</td><td>应付生成</td><td><button class="btn secondary">编辑</button></td></tr></tbody></table></div></section>
+
+    <section class="page" id="dict"><div class="toolbar"><h2>系统默认字典</h2><button class="btn gold" onclick="openModal('新增字典项')">+ 新增字典项</button></div><div class="split"><div class="tree"><div class="tree-item active">BILL_STATUS 单据状态</div><div class="tree-item">INVOICE_STATUS 发票状态</div><div class="tree-item">DELIVERY_STATUS 配送状态</div><div class="tree-item">PROMOTION_TYPE 促销类型</div></div><div class="panel"><table><thead><tr><th>编码</th><th>名称</th><th>颜色</th><th>排序</th><th>租户可扩展</th><th>状态</th></tr></thead><tbody><tr><td>DRAFT</td><td>草稿</td><td><span class="badge gray">灰色</span></td><td>1</td><td>否</td><td>正常</td></tr><tr><td>APPROVED</td><td>已审核</td><td><span class="badge blue">蓝色</span></td><td>3</td><td>否</td><td>正常</td></tr><tr><td>RED_FLUSHED</td><td>已红冲</td><td><span class="badge bad">红色</span></td><td>9</td><td>否</td><td>正常</td></tr></tbody></table></div></div></section>
+
+    <section class="page" id="print"><div class="toolbar"><h2>系统默认打印横版</h2><div><button class="btn secondary">变量库</button> <button class="btn gold">+ 新建模板</button></div></div><div class="grid"><div class="panel span-5"><table><thead><tr><th>模板</th><th>模块</th><th>纸张</th><th>版本</th><th>状态</th></tr></thead><tbody><tr><td>销售送货单-横版</td><td>销售</td><td>A4横版</td><td>v1.3</td><td><span class="badge ok">启用</span></td></tr><tr><td>采购订单-横版</td><td>采购</td><td>A4横版</td><td>v1.1</td><td><span class="badge ok">启用</span></td></tr></tbody></table></div><div class="panel span-7"><h3>模板预览</h3><div class="wire" style="height:310px;background:#f4efe3;color:#13201c"><b>销售送货单</b><br><br>客户：${customerName}　单号：${orderNo}<br><br><table style="color:#13201c"><tr><td>商品</td><td>数量</td><td>单价</td><td>金额</td></tr><tr><td>${goodsName}</td><td>${qty}</td><td>${price}</td><td>${amount}</td></tr></table><br><br>签收人：__________　日期：__________</div></div></div></section>
+
+    <section class="page" id="audit"><div class="toolbar"><h2>审计与日志</h2><button class="btn secondary">导出日志</button></div><div class="tabs"><span class="tab active">敏感操作</span><span class="tab">操作日志</span><span class="tab">登录日志</span><span class="tab">接口日志</span></div><div class="panel"><table><thead><tr><th>时间</th><th>操作人</th><th>操作类型</th><th>对象</th><th>原因</th><th>IP</th><th>结果</th></tr></thead><tbody><tr><td>10:22</td><td>superadmin</td><td>重置租户管理员</td><td>华南快消经销商</td><td>客户授权</td><td>10.0.1.22</td><td><span class="badge ok">成功</span></td></tr><tr><td>11:03</td><td>prod_li</td><td>发布菜单包</td><td>V1.0标准包</td><td>版本发布</td><td>10.0.1.18</td><td><span class="badge wait">部分成功</span></td></tr></tbody></table></div></section>
+
+    <section class="page" id="release"><div class="toolbar"><h2>版本与发布</h2><button class="btn gold">创建发布</button></div><div class="panel"><table><thead><tr><th>发布单</th><th>内容</th><th>范围</th><th>影响租户</th><th>状态</th><th>发布时间</th></tr></thead><tbody><tr><td>REL20260613001</td><td>菜单包+字典+打印模板</td><td>灰度租户</td><td>3</td><td><span class="badge ok">成功</span></td><td>今天 09:12</td></tr><tr><td>REL20260613002</td><td>发票状态字典</td><td>全部租户</td><td>82</td><td><span class="badge blue">待发布</span></td><td>-</td></tr></tbody></table></div></section>
+  </main>
+</div>
+
+<div class="modal" id="modal"><div class="dialog"><h3 id="modalTitle">新增</h3><p>系统方后台的轻量新增/编辑使用小弹窗，危险操作必须填写原因并记录敏感日志。</p><div class="field"><label>名称 *</label><input placeholder="请输入名称" /></div><br><div class="field"><label>备注</label><textarea placeholder="请输入说明"></textarea></div><br><div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn secondary" onclick="closeModal()">取消</button><button class="btn gold" onclick="closeModal();toast('保存成功，已写入审计日志')">保存</button></div></div></div>
+<div class="drawer" id="drawer"><div class="drawer-head"><h2 id="drawerTitle">详情</h2><button class="close" onclick="closeDrawer()">×</button></div><div class="tabs"><span class="tab active">基本信息</span><span class="tab">授权/模块</span><span class="tab">初始化</span><span class="tab">操作日志</span></div><div class="form-grid"><div class="field"><label>租户/对象编码 *</label><input value="T202606001" /></div><div class="field"><label>名称 *</label><input value="华南快消经销商" /></div><div class="field"><label>状态</label><select><option>正常</option><option>停用</option><option>冻结</option></select></div><div class="field"><label>版本套餐</label><select><option>ERP+WMS</option><option>全链路旗舰版</option></select></div><div class="field"><label>联系人</label><input value="王总" /></div><div class="field"><label>联系电话</label><input value="138****8888" /></div><div class="full wire">影响预览：本次修改将影响菜单授权、系统字典、打印横版模板和租户初始化状态。</div></div><br><div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn secondary" onclick="closeDrawer()">取消</button><button class="btn gold" onclick="closeDrawer();toast('保存成功')">保存</button></div></div>
+
+<script>
+  const nav=document.querySelectorAll('#nav button');
+  nav.forEach(btn=>btn.addEventListener('click',()=>{nav.forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById(btn.dataset.page).classList.add('active')}));
+  function openModal(t){document.getElementById('modalTitle').innerText=t;document.getElementById('modal').classList.add('show')}
+  function closeModal(){document.getElementById('modal').classList.remove('show')}
+  function openDrawer(t){document.getElementById('drawerTitle').innerText=t;document.getElementById('drawer').classList.add('show')}
+  function closeDrawer(){document.getElementById('drawer').classList.remove('show')}
+  function toast(msg){const el=document.createElement('div');el.textContent=msg;el.style.cssText='position:fixed;right:28px;bottom:28px;background:#f4efe3;color:#10231f;padding:14px 18px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.35);z-index:50;font-weight:800';document.body.appendChild(el);setTimeout(()=>el.remove(),2200)}
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeDrawer()} if(e.ctrlKey&&e.key.toLowerCase()==='s'){e.preventDefault();toast('Ctrl+S：保存当前配置草稿')}})
+</script>
+</body>
+</html>
