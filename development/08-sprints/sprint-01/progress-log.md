@@ -1704,3 +1704,79 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 PRD 列表字段与操作自查优化
+
+### 自查结论
+
+1. 已按 PRD 自查 `docs/PRD-版本化产品需求/V1.0-ERP核心经营版/` 与 `frontend/src/module-config.js`。
+2. 主要缺口集中在：
+   - 系统管理模块配置缺失：用户、权限组、系统参数、单据编号规则、操作日志。
+   - 客户价格调整单、客户价格查询配置缺失。
+   - 调拨单未体现调出/调入仓库、调拨模式、在途数量。
+   - 采购费用单、采购发票、费用单字段过粗。
+   - 应收/应付操作缺少结算、预收/预付抵扣、核销记录。
+
+### 已优化
+
+1. 补齐系统管理 P0 模块配置：
+   - `user`
+   - `role`
+   - `param`
+   - `billNo`
+   - `log`
+
+2. 补齐客户价格相关配置：
+   - `customerPrice`
+   - `customerPriceQuery`
+
+3. 细化关键业务模块字段与操作：
+   - `transfer`
+   - `purchaseExpense`
+   - `purchaseInvoice`
+   - `financeExpense`
+   - `ar`
+   - `ap`
+
+4. 新增 PRD 配置一致性测试：
+   - `development/06-testing/scripts/v1-module-config-prd-test.js`
+   - 覆盖 P0/P1 字段和操作配置。
+
+### 验证结果
+
+1. PRD 配置一致性测试通过：
+
+```text
+V1 module config PRD test passed
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+5. 经营概览汇总测试通过：
+
+```text
+V1 dashboard summary test passed
+```
+
+6. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
