@@ -1463,3 +1463,69 @@ V1 module coverage test passed: 60 endpoints
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 经营概览指标扩展
+
+### 已完成
+
+1. 后端经营概览接口扩展：
+   - `GET /report/dashboard/summary`
+   - 新增销售单数、采购单数、未核销应收数、未核销应付数、导入完成数、导出完成数、操作日志数。
+
+2. 前端首页指标卡扩展展示：
+   - 销售单数
+   - 采购单数
+   - 未核销应收
+   - 未核销应付
+   - 导入完成
+   - 导出完成
+
+3. 新增经营概览汇总测试脚本：
+   - `development/06-testing/scripts/v1-dashboard-summary-test.js`
+   - 校验经营概览关键指标完整返回。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 经营概览汇总测试通过：
+
+```text
+V1 dashboard summary test passed
+```
+
+4. 核心闭环冒烟测试通过：
+
+```text
+V1 core smoke test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

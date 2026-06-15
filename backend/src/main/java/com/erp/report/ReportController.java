@@ -26,11 +26,16 @@ public class ReportController {
 
     @GetMapping("/dashboard/summary")
     public ApiResponse<Map<String, Object>> dashboardSummary() {
-        Map<String, Object> sales = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) salesAmount, COALESCE(SUM(unpaid_amount),0) unpaidAmount FROM sales_order");
-        Map<String, Object> purchase = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) purchaseAmount FROM pur_order");
+        Map<String, Object> sales = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) salesAmount, COALESCE(SUM(unpaid_amount),0) unpaidAmount, COUNT(*) salesOrderCount FROM sales_order");
+        Map<String, Object> purchase = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) purchaseAmount, COUNT(*) purchaseOrderCount FROM pur_order");
         Map<String, Object> stock = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(stock_amount),0) stockAmount, COALESCE(SUM(available_qty),0) availableQty FROM inv_stock_balance");
-        Map<String, Object> finance = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unreceived_amount),0) arBalance FROM fin_ar");
-        Map<String, Object> ap = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unpaid_amount),0) apBalance FROM fin_ap");
+        Map<String, Object> finance = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unreceived_amount),0) arBalance, COUNT(*) arCount FROM fin_ar WHERE status <> 'VERIFIED'");
+        Map<String, Object> ap = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unpaid_amount),0) apBalance, COUNT(*) apCount FROM fin_ap WHERE status <> 'VERIFIED'");
+        Map<String, Object> tasks = jdbcTemplate.queryForMap("""
+                SELECT (SELECT COUNT(*) FROM sys_import_task_runtime WHERE status='FINISHED') importFinishedCount,
+                       (SELECT COUNT(*) FROM sys_export_task_runtime WHERE status='FINISHED') exportFinishedCount,
+                       (SELECT COUNT(*) FROM sys_operation_log_runtime) operationLogCount
+                """);
         return ApiResponse.ok(GenericResult.row(
                 "salesAmount", sales.get("SALESAMOUNT"),
                 "purchaseAmount", purchase.get("PURCHASEAMOUNT"),
@@ -38,7 +43,14 @@ public class ReportController {
                 "availableQty", stock.get("AVAILABLEQTY"),
                 "arBalance", finance.get("ARBALANCE"),
                 "apBalance", ap.get("APBALANCE"),
-                "unpaidAmount", sales.get("UNPAIDAMOUNT")
+                "unpaidAmount", sales.get("UNPAIDAMOUNT"),
+                "salesOrderCount", sales.get("SALESORDERCOUNT"),
+                "purchaseOrderCount", purchase.get("PURCHASEORDERCOUNT"),
+                "arCount", finance.get("ARCOUNT"),
+                "apCount", ap.get("APCOUNT"),
+                "importFinishedCount", tasks.get("IMPORTFINISHEDCOUNT"),
+                "exportFinishedCount", tasks.get("EXPORTFINISHEDCOUNT"),
+                "operationLogCount", tasks.get("OPERATIONLOGCOUNT")
         ));
     }
 
