@@ -17,6 +17,9 @@ const tableRows = ref([])
 const loading = ref(false)
 const selectedTreeNode = ref('全部')
 const columnSettings = ref({})
+const pageNo = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 const columns = computed(() => props.config.columns.map((title, index) => ({
   key: `c${index}`,
@@ -37,14 +40,17 @@ async function loadRows() {
   const api = moduleApis[props.moduleCode]
   if (!api?.page) {
     tableRows.value = [buildRow()]
+    total.value = tableRows.value.length
     return
   }
   loading.value = true
   try {
-    const data = await post(api.page, { pageNo: 1, pageSize: 20, filters: {} })
+    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, filters: {} })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, props.config)) : [buildRow()]
+    total.value = data.total || tableRows.value.length
   } catch (error) {
     tableRows.value = [buildRow()]
+    total.value = tableRows.value.length
     show(`${props.config.title}接口加载失败，已显示示例数据`)
   } finally {
     loading.value = false
@@ -199,11 +205,13 @@ function buildPayload() {
   }
 }
 
-function selectTreeNode(node) { selectedTreeNode.value = node.trim(); loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
-async function handleQuery() { await loadRows(); show(`${props.config.title}查询完成`) }
-function handleReset() { loadRows(); show(`${props.config.title}查询条件已重置`) }
+function selectTreeNode(node) { selectedTreeNode.value = node.trim(); pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
+async function handleQuery() { pageNo.value = 1; await loadRows(); show(`${props.config.title}查询完成`) }
+function handleReset() { pageNo.value = 1; loadRows(); show(`${props.config.title}查询条件已重置`) }
 function handleMore(fields) { openDialog('more', '更多查询条件', fields.join('、')) }
 function handleRowAction(action, row) { handleAction(action, row) }
+function handlePageChange(nextPageNo) { pageNo.value = Math.max(1, nextPageNo); loadRows() }
+function handlePageSizeChange(nextPageSize) { pageSize.value = nextPageSize; pageNo.value = 1; loadRows() }
 </script>
 
 <template>
@@ -224,7 +232,7 @@ function handleRowAction(action, row) { handleAction(action, row) }
       </div>
 
       <div v-if="loading" class="tips-inline"><span>正在加载 {{ config.title }} 数据...</span></div>
-      <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction">
+      <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" :page-no="pageNo" :page-size="pageSize" :total="total" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction" @page-change="handlePageChange" @page-size-change="handlePageSizeChange">
         <template v-for="col in visibleColumns" #[col.key]="{ row }" :key="col.key">
           <span v-if="/状态/.test(col.title)" class="badge wait">{{ row[col.key] }}</span>
           <span v-else-if="/操作/.test(col.title)">

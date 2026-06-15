@@ -58,7 +58,10 @@ button, input, select, textarea { font: inherit; }
 .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 8px 20px rgba(21,56,95,.05); }
 .tablebox { background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 26px rgba(22,119,255,.06); overflow: hidden; }
 .toolbar { height: 36px; display: flex; align-items: center; border-bottom: 1px solid var(--line-soft); padding: 0 10px; gap: 8px; }
-.scroll { overflow: auto; max-height: calc(100vh - 203px); }
+.pager { height: 38px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line-soft); padding: 0 10px; color: var(--muted); }
+.pager select { height: 28px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: #174b7d; }
+.pager .btn:disabled { opacity: .45; cursor: not-allowed; }
+.scroll { overflow: auto; max-height: calc(100vh - 241px); }
 table { border-collapse: collapse; min-width: 1200px; width: 100%; }
 th, td { border-right: 1px solid var(--line-soft); border-bottom: 1px solid #eef3f8; height: 32px; padding: 0 8px; white-space: nowrap; text-align: left; }
 th { background: #f7fbff; color: #24415f; font-weight: 900; position: sticky; top: 0; z-index: 1; }

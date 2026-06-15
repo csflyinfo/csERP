@@ -751,3 +751,66 @@ V1 module coverage test passed: 60 endpoints
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 通用分页能力接入
+
+### 已完成
+
+1. 后端 `PageResult.of` 从只返回全部记录改为按 `pageNo/pageSize` 切片：
+   - `records` 返回当前页数据。
+   - `total` 保留切片前总记录数。
+   - `pageNo/pageSize` 使用安全值。
+
+2. 前端 `ProTable` 新增分页条：
+   - 总数显示
+   - 每页 10/20/50 条切换
+   - 上一页/下一页
+   - 当前页/总页数
+
+3. 通用业务列表接入分页状态：
+   - 请求后端时携带当前 `pageNo/pageSize`。
+   - 查询、重置、树节点切换时回到第一页。
+   - 接口失败降级示例数据时同步总数。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 分页接口验证通过：
+
+```text
+POST /api/system/operation-log/page
+pageNo=1&pageSize=1
+records.length=1
+total=9
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+6. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
