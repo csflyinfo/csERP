@@ -36,8 +36,12 @@ public class PurchaseController {
                        buyer,
                        warehouse,
                        bill_date billDate,
+                       owner_name ownerName,
+                       expected_arrival_date expectedArrivalDate,
+                       settlement_method settlementMethod,
                        amount,
                        inbound_amount inboundAmount,
+                       cost_amount costAmount,
                        payment_status paymentStatus,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status,
                        arrival_status arrivalStatus,
@@ -54,7 +58,11 @@ public class PurchaseController {
             return ApiResponse.ok(GenericResult.row("orderId", orderId, "details", List.of()));
         }
         Map<String, Object> head = rows.get(0);
-        head.put("details", List.of(GenericResult.row("goodsCode", "SP001", "goodsName", "农夫山泉500ml*24", "unit", "箱", "qty", "100", "price", "35.00", "amount", "3500.00")));
+        head.put("details", jdbcTemplate.queryForList("""
+                SELECT line_type lineType, goods_code goodsCode, goods_name goodsName, unit_name unit,
+                       qty, price, tax_rate taxRate, amount, cost_price costPrice, cost_amount costAmount
+                FROM pur_order_detail WHERE order_id = ? ORDER BY detail_id
+                """, head.get("ORDER_ID")));
         return ApiResponse.ok(head);
     }
 
@@ -62,11 +70,22 @@ public class PurchaseController {
     public ApiResponse<Map<String, Object>> createOrder(@Valid @RequestBody PurchaseOrderRequest request) {
         String id = "PO" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String no = "PO" + LocalDate.now().toString().replace("-", "") + String.format("%04d", (int) (System.currentTimeMillis() % 10000));
+        BigDecimal amount = request.details().stream().map(detail -> detail.qty().multiply(detail.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costAmount = request.details().stream().map(detail -> detail.qty().multiply(detail.price()).multiply(new BigDecimal("0.90"))).reduce(BigDecimal.ZERO, BigDecimal::add);
         jdbcTemplate.update("""
-                INSERT INTO pur_order(order_id, order_no, supplier, buyer, warehouse, bill_date, amount, inbound_amount, payment_status, arrival_status, status, creator_info)
-                VALUES (?, ?, '农夫山泉杭州经销', '李四', '总仓', CURRENT_DATE, 3500.00, 0.00, '未付款', '未到货', 'PENDING', '管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm'))
-                """, id, no);
-        return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING"));
+                INSERT INTO pur_order(order_id, order_no, supplier, buyer, warehouse, bill_date, amount, inbound_amount, payment_status, arrival_status, status, creator_info, owner_name, expected_arrival_date, settlement_method, cost_amount)
+                VALUES (?, ?, ?, ?, ?, CURRENT_DATE, ?, 0.00, '未付款', '未到货', 'PENDING', '管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm'), ?, DATEADD('DAY', 3, CURRENT_DATE), ?, ?)
+                """, id, no, request.supplierId(), request.buyer(), request.warehouseId(), amount, request.ownerName(), request.settlementMethod(), costAmount);
+        for (PurchaseOrderDetailRequest detail : request.details()) {
+            BigDecimal lineAmount = detail.qty().multiply(detail.price());
+            BigDecimal lineCostAmount = lineAmount.multiply(new BigDecimal("0.90"));
+            jdbcTemplate.update("""
+                    INSERT INTO pur_order_detail(detail_id, order_id, line_type, goods_code, goods_name, unit_name, qty, price, tax_rate, amount, cost_price, cost_amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, "POD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id,
+                    detail.lineType(), detail.goodsId(), detail.goodsName(), detail.unitId(), detail.qty(), detail.price(), detail.taxRate(), lineAmount, detail.price().multiply(new BigDecimal("0.90")), lineCostAmount);
+        }
+        return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING", "amount", amount, "costAmount", costAmount));
     }
 
     @PostMapping("/order/audit")
@@ -140,7 +159,7 @@ public class PurchaseController {
     @PostMapping("/invoice/page")
     public ApiResponse<PageResult<Map<String, Object>>> invoicePage(@RequestBody PageRequest request) { return ApiResponse.ok(PageResult.of(List.of(Map.of("invoiceNo", "PINV202606140001", "supplier", "农夫山泉杭州经销", "invoiceCode", "3300****", "invoiceAmount", "3955.00", "matchStatus", "未勾稽", "certStatus", "未认证", "status", "正常")), request)); }
 
-    public record PurchaseOrderRequest(@NotBlank String supplierId, @NotBlank String warehouseId, @NotEmpty List<PurchaseOrderDetailRequest> details) {}
-    public record PurchaseOrderDetailRequest(@NotBlank String goodsId, @NotBlank String unitId, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
+    public record PurchaseOrderRequest(@NotBlank String supplierId, @NotBlank String warehouseId, String buyer, String ownerName, String settlementMethod, @NotEmpty List<PurchaseOrderDetailRequest> details) {}
+    public record PurchaseOrderDetailRequest(@NotBlank String goodsId, String goodsName, @NotBlank String unitId, String lineType, String taxRate, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
     public record AuditRequest(@NotBlank String bizId, String remark) {}
 }

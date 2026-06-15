@@ -1982,3 +1982,80 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 采购销售订单明细真实落库
+
+### 已完成
+
+1. 采购订单表补充扩展字段：
+   - 货主
+   - 预计到货日期
+   - 结算方式
+   - 成本金额
+   - 审核信息
+
+2. 销售订单表补充扩展字段：
+   - 行类型
+   - 成本金额
+   - 创建人
+   - 审核信息
+
+3. 新增订单明细表：
+   - `pur_order_detail`
+   - `sales_order_detail`
+
+4. 采购订单创建接口改为按请求明细落库：
+   - 自动计算订单金额和成本金额。
+   - 写入采购订单明细。
+
+5. 采购订单详情接口改为从真实明细表读取。
+
+6. 销售订单创建接口改为按请求明细落库：
+   - 自动计算订单金额、未收金额和成本金额。
+   - 写入销售订单明细。
+
+7. 采购/销售订单分页接口返回新增扩展字段。
+
+8. 新增订单持久化测试脚本：
+   - `development/06-testing/scripts/v1-order-persistence-test.js`
+   - 覆盖采购订单创建、详情明细、销售订单创建、分页扩展字段。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 采购销售订单持久化测试通过：
+
+```text
+V1 order persistence test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```

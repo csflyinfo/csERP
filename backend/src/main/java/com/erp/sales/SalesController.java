@@ -37,14 +37,17 @@ public class SalesController {
                        salesman,
                        warehouse,
                        bill_date billDate,
+                       line_type lineType,
                        amount,
                        paid_amount paidAmount,
                        unpaid_amount unpaidAmount,
+                       cost_amount costAmount,
                        credit_check creditCheck,
                        stock_check stockCheck,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status,
                        outbound_status outboundStatus,
-                       sign_status signStatus
+                       sign_status signStatus,
+                       creator_name creatorName
                 FROM sales_order
                 ORDER BY order_no DESC
                 """), request));
@@ -54,11 +57,22 @@ public class SalesController {
     public ApiResponse<Map<String, Object>> createOrder(@Valid @RequestBody SalesOrderRequest request) {
         String id = "SO" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String no = "SO" + LocalDate.now().toString().replace("-", "") + String.format("%04d", (int) (System.currentTimeMillis() % 10000));
+        BigDecimal amount = request.details().stream().map(detail -> detail.qty().multiply(detail.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costAmount = amount.multiply(new BigDecimal("0.90"));
         jdbcTemplate.update("""
-                INSERT INTO sales_order(order_id, order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, credit_check, stock_check, outbound_status, sign_status, status)
-                VALUES (?, ?, '华联超市', '张三', '总仓', CURRENT_DATE, 350.00, 0.00, 350.00, '通过', '通过', '未出库', '未签收', 'PENDING')
-                """, id, no);
-        return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING"));
+                INSERT INTO sales_order(order_id, order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, credit_check, stock_check, outbound_status, sign_status, status, line_type, cost_amount, creator_name)
+                VALUES (?, ?, ?, ?, ?, CURRENT_DATE, ?, 0.00, ?, '通过', '通过', '未出库', '未签收', 'PENDING', ?, ?, '管理员')
+                """, id, no, request.customerId(), request.salesman(), request.warehouseId(), amount, amount, request.lineType(), costAmount);
+        for (SalesOrderDetailRequest detail : request.details()) {
+            BigDecimal lineAmount = detail.qty().multiply(detail.price());
+            BigDecimal lineCostAmount = lineAmount.multiply(new BigDecimal("0.90"));
+            jdbcTemplate.update("""
+                    INSERT INTO sales_order_detail(detail_id, order_id, line_type, goods_code, goods_name, unit_name, qty, price, discount_rate, tax_rate, amount, cost_price, cost_amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, "SOD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id,
+                    detail.lineType(), detail.goodsId(), detail.goodsName(), detail.unitId(), detail.qty(), detail.price(), detail.discountRate(), detail.taxRate(), lineAmount, detail.price().multiply(new BigDecimal("0.90")), lineCostAmount);
+        }
+        return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING", "amount", amount, "costAmount", costAmount));
     }
 
     @PostMapping("/order/audit")
@@ -138,7 +152,7 @@ public class SalesController {
                 """), request));
     }
 
-    public record SalesOrderRequest(@NotBlank String customerId, @NotBlank String warehouseId, @NotEmpty List<SalesOrderDetailRequest> details) {}
-    public record SalesOrderDetailRequest(@NotBlank String goodsId, @NotBlank String unitId, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
+    public record SalesOrderRequest(@NotBlank String customerId, @NotBlank String warehouseId, String salesman, String lineType, @NotEmpty List<SalesOrderDetailRequest> details) {}
+    public record SalesOrderDetailRequest(@NotBlank String goodsId, String goodsName, @NotBlank String unitId, String lineType, String discountRate, String taxRate, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
     public record AuditRequest(@NotBlank String bizId, String remark) {}
 }

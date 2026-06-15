@@ -24,8 +24,10 @@ MERGE INTO base_customer_price KEY(price_id) VALUES ('PRICE001', 'CPA20260601000
 MERGE INTO inv_stock_balance KEY(balance_id) VALUES ('SB001', 'SP001', '农夫山泉500ml*24', '总仓', 'B202606', 1200, 180, 0, 1020, 100, 30.80, 36960.00, TIMESTAMP '2026-06-14 10:20:00');
 MERGE INTO inv_stock_ledger KEY(ledger_id) VALUES ('SL001', 'INV202606140001', TIMESTAMP '2026-06-14 10:20:00', 'PI202606140001', 'SP001', '农夫山泉500ml*24', '总仓', 'B202606', 'IN', 100, 30.80, 3080.00, 1200, '管理员');
 
-MERGE INTO pur_order KEY(order_id) VALUES ('PO001', 'PO202606140001', '农夫山泉杭州经销', '李四', '总仓', DATE '2026-06-14', 3500.00, 0.00, '未付款', '未到货', 'PENDING', '管理员 2026-06-14 10:20');
-MERGE INTO sales_order KEY(order_id) VALUES ('SO001', 'SO202606140001', '华联超市', '张三', '总仓', DATE '2026-06-14', 350.00, 0.00, 350.00, '通过', '通过', '未出库', '未签收', 'PENDING');
+MERGE INTO pur_order (order_id, order_no, supplier, buyer, warehouse, bill_date, amount, inbound_amount, payment_status, arrival_status, status, creator_info, owner_name, expected_arrival_date, settlement_method, cost_amount, audit_info) KEY(order_id) VALUES ('PO001', 'PO202606140001', '农夫山泉杭州经销', '李四', '总仓', DATE '2026-06-14', 3500.00, 0.00, '未付款', '未到货', 'PENDING', '管理员 2026-06-14 10:20', '平台货主', DATE '2026-06-18', '月结30天', 3120.00, NULL);
+MERGE INTO pur_order_detail KEY(detail_id) VALUES ('POD001', 'PO001', '正常', 'SP001', '农夫山泉500ml*24', '箱', 100, 35.00, '13%', 3500.00, 31.20, 3120.00);
+MERGE INTO sales_order (order_id, order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, credit_check, stock_check, outbound_status, sign_status, status, line_type, cost_amount, creator_name, audit_info) KEY(order_id) VALUES ('SO001', 'SO202606140001', '华联超市', '张三', '总仓', DATE '2026-06-14', 350.00, 0.00, 350.00, '通过', '通过', '未出库', '未签收', 'PENDING', '正常', 312.00, '管理员', NULL);
+MERGE INTO sales_order_detail KEY(detail_id) VALUES ('SOD001', 'SO001', '正常', 'SP001', '农夫山泉500ml*24', '箱', 10, 35.00, '100%', '13%', 350.00, 31.20, 312.00);
 
 MERGE INTO fin_ar KEY(ar_id) VALUES ('AR001', 'AR202606140001', 'SR202606140001', '华联超市', '张三', 350.00, 0.00, 350.00, DATE '2026-07-14', 0, '未开票', 'UNVERIFIED');
 MERGE INTO fin_ap KEY(ap_id) VALUES ('AP001', 'AP202606140001', 'PR202606140001', '农夫山泉杭州经销', 3955.00, 0.00, 3955.00, DATE '2026-07-14', 'UNVERIFIED');

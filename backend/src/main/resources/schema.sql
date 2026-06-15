@@ -211,7 +211,33 @@ CREATE TABLE IF NOT EXISTS pur_order (
   payment_status VARCHAR(50),
   arrival_status VARCHAR(50),
   status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-  creator_info VARCHAR(200)
+  creator_info VARCHAR(200),
+  owner_name VARCHAR(100),
+  expected_arrival_date DATE,
+  settlement_method VARCHAR(50),
+  cost_amount DECIMAL(18,2) DEFAULT 0,
+  audit_info VARCHAR(200)
+);
+
+ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS owner_name VARCHAR(100);
+ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS expected_arrival_date DATE;
+ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);
+ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS cost_amount DECIMAL(18,2) DEFAULT 0;
+ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS audit_info VARCHAR(200);
+
+CREATE TABLE IF NOT EXISTS pur_order_detail (
+  detail_id VARCHAR(32) PRIMARY KEY,
+  order_id VARCHAR(32) NOT NULL,
+  line_type VARCHAR(50) DEFAULT '正常',
+  goods_code VARCHAR(50),
+  goods_name VARCHAR(200),
+  unit_name VARCHAR(50),
+  qty DECIMAL(18,2) DEFAULT 0,
+  price DECIMAL(18,2) DEFAULT 0,
+  tax_rate VARCHAR(20),
+  amount DECIMAL(18,2) DEFAULT 0,
+  cost_price DECIMAL(18,2) DEFAULT 0,
+  cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sales_order (
@@ -228,7 +254,32 @@ CREATE TABLE IF NOT EXISTS sales_order (
   stock_check VARCHAR(50),
   outbound_status VARCHAR(50),
   sign_status VARCHAR(50),
-  status VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  line_type VARCHAR(50) DEFAULT '正常',
+  cost_amount DECIMAL(18,2) DEFAULT 0,
+  creator_name VARCHAR(100),
+  audit_info VARCHAR(200)
+);
+
+ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS line_type VARCHAR(50) DEFAULT '正常';
+ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS cost_amount DECIMAL(18,2) DEFAULT 0;
+ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS creator_name VARCHAR(100);
+ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS audit_info VARCHAR(200);
+
+CREATE TABLE IF NOT EXISTS sales_order_detail (
+  detail_id VARCHAR(32) PRIMARY KEY,
+  order_id VARCHAR(32) NOT NULL,
+  line_type VARCHAR(50) DEFAULT '正常',
+  goods_code VARCHAR(50),
+  goods_name VARCHAR(200),
+  unit_name VARCHAR(50),
+  qty DECIMAL(18,2) DEFAULT 0,
+  price DECIMAL(18,2) DEFAULT 0,
+  discount_rate VARCHAR(20),
+  tax_rate VARCHAR(20),
+  amount DECIMAL(18,2) DEFAULT 0,
+  cost_price DECIMAL(18,2) DEFAULT 0,
+  cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS fin_ar (
