@@ -1529,3 +1529,64 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 登录登出操作日志补充
+
+### 已完成
+
+1. 登录成功写入操作日志：
+   - 模块：`auth`
+   - 动作：`LOGIN`
+   - 结果：`SUCCESS`
+
+2. 登录失败写入操作日志：
+   - 模块：`auth`
+   - 动作：`LOGIN`
+   - 结果：`FAIL`
+
+3. 退出登录写入操作日志：
+   - 模块：`auth`
+   - 动作：`LOGOUT`
+   - 结果：`SUCCESS`
+
+4. 认证菜单冒烟测试补充登录/登出操作日志断言。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 经营概览汇总测试通过：
+
+```text
+V1 dashboard summary test passed
+```
+
+6. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

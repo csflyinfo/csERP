@@ -36,6 +36,16 @@ async function main() {
   const base = menus.find(item => item.code === 'base')
   assert(base.children.some(item => item.code === 'fundAccount'), 'base menu should include fund account')
 
+  await request('/auth/logout', { method: 'POST' })
+
+  const logs = await request('/system/operation-log/page', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pageNo: 1, pageSize: 20, filters: { keyword: 'auth' } }),
+  })
+  assert(logs.records.some(record => record.moduleCode === 'auth' && record.action === 'LOGIN'), 'login should write operation log')
+  assert(logs.records.some(record => record.moduleCode === 'auth' && record.action === 'LOGOUT'), 'logout should write operation log')
+
   console.log('V1 auth menu smoke test passed')
 }
 
