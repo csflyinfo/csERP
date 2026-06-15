@@ -38,12 +38,16 @@ public class GoodsController {
         String id = "G" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         jdbcTemplate.update("""
                 INSERT INTO base_goods(goods_id, goods_code, goods_name, spec, category_name, brand_name, base_unit, barcode,
-                                       standard_price, latest_purchase_price, min_sale_price, current_stock, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'NORMAL')
+                                       standard_price, latest_purchase_price, min_sale_price, goods_type, shelf_life_days, storage_property,
+                                       suggested_retail_price, stock_upper_limit, stock_lower_limit, default_supplier, default_warehouse, can_return, current_stock, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'NORMAL')
                 """, id, request.getOrDefault("goodsCode", id), request.getOrDefault("goodsName", "新商品"),
                 request.getOrDefault("spec", ""), request.getOrDefault("categoryName", "默认分类"), request.getOrDefault("brandName", ""),
                 request.getOrDefault("baseUnit", "瓶"), request.getOrDefault("barcode", ""),
-                request.getOrDefault("standardPrice", 0), request.getOrDefault("latestPurchasePrice", 0), request.getOrDefault("minSalePrice", 0));
+                request.getOrDefault("standardPrice", 0), request.getOrDefault("latestPurchasePrice", 0), request.getOrDefault("minSalePrice", 0),
+                request.getOrDefault("goodsType", "正常商品"), request.getOrDefault("shelfLifeDays", 0), request.getOrDefault("storageProperty", "常温"),
+                request.getOrDefault("suggestedRetailPrice", 0), request.getOrDefault("stockUpperLimit", 0), request.getOrDefault("stockLowerLimit", 0),
+                request.getOrDefault("defaultSupplier", ""), request.getOrDefault("defaultWarehouse", ""), request.getOrDefault("canReturn", true));
         return ApiResponse.ok(GenericResult.row("goodsId", id, "status", "NORMAL"));
     }
 
@@ -60,6 +64,16 @@ public class GoodsController {
                        latest_purchase_price latestPurchasePrice,
                        latest_purchase_price referencePurchasePrice,
                        min_sale_price minSalePrice,
+                       goods_type goodsType,
+                       shelf_life_days shelfLifeDays,
+                       storage_property storageProperty,
+                       suggested_retail_price suggestedRetailPrice,
+                       stock_upper_limit stockUpperLimit,
+                       stock_lower_limit stockLowerLimit,
+                       default_supplier defaultSupplier,
+                       default_warehouse defaultWarehouse,
+                       can_return canReturn,
+                       CASE can_return WHEN TRUE THEN '是/是/是' ELSE '是/是/否' END salePurchaseReturnFlag,
                        current_stock physicalQty,
                        current_stock currentStock,
                        CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status

@@ -16,6 +16,44 @@ function assert(condition, message) {
 }
 
 async function main() {
+  const goods = await post('/base/goods/page')
+  const seedGoods = goods.records.find(record => record.goodsCode === 'SP001')
+  assert(seedGoods, 'seed goods SP001 should exist')
+  assert(seedGoods.goodsType === '正常商品', 'goods should include goods type')
+  assert(Number(seedGoods.shelfLifeDays) === 365, 'goods should include shelf life days')
+  assert(seedGoods.storageProperty === '常温', 'goods should include storage property')
+  assert(seedGoods.defaultSupplier, 'goods should include default supplier')
+
+  const goodsCode = `GD${Date.now()}`
+  await post('/base/goods/create', {
+    goodsCode,
+    goodsName: '自动化商品',
+    spec: '1*6',
+    categoryName: '测试分类',
+    brandName: '测试品牌',
+    baseUnit: '箱',
+    barcode: `69${Date.now()}`,
+    standardPrice: 66,
+    latestPurchasePrice: 55,
+    minSalePrice: 50,
+    goodsType: '赠品',
+    shelfLifeDays: 90,
+    storageProperty: '冷藏',
+    suggestedRetailPrice: 88,
+    stockUpperLimit: 500,
+    stockLowerLimit: 50,
+    defaultSupplier: '自动化供应商',
+    defaultWarehouse: '总仓',
+    canReturn: false,
+  })
+  const savedGoods = await post('/base/goods/page', { pageNo: 1, pageSize: 20, filters: { keyword: goodsCode } })
+  const createdGoods = savedGoods.records.find(record => record.goodsCode === goodsCode)
+  assert(createdGoods && createdGoods.goodsType === '赠品', 'created goods should persist goods type')
+  assert(Number(createdGoods.shelfLifeDays) === 90, 'created goods should persist shelf life')
+  assert(createdGoods.storageProperty === '冷藏', 'created goods should persist storage property')
+  assert(Number(createdGoods.stockLowerLimit) === 50, 'created goods should persist stock lower limit')
+  assert(createdGoods.salePurchaseReturnFlag === '是/是/否', 'created goods should persist can return flag')
+
   const customers = await post('/base/master/customer/page')
   assert(customers.records.length >= 1, 'customer page should return persisted records')
   const customer = customers.records.find(record => record.customerCode === 'C001')

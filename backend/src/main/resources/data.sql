@@ -11,8 +11,8 @@ MERGE INTO base_brand KEY(brand_id) VALUES ('BR002', 'B002', '康师傅', 'KSF',
 MERGE INTO base_warehouse KEY(warehouse_id) VALUES ('WH001', 'W001', '总仓', '正常仓', '平台主仓', 'CG01', '王五', 'NORMAL');
 MERGE INTO base_warehouse KEY(warehouse_id) VALUES ('WH002', 'W002', '退货仓', '退货仓', '平台主仓', 'CG01', '赵六', 'NORMAL');
 
-MERGE INTO base_goods KEY(goods_id) VALUES ('G001', 'SP001', '农夫山泉500ml*24', '500ml*24', '瓶装水', '农夫山泉', '瓶', '6941410749551', 35.00, 31.20, 30.00, 1200, 'NORMAL');
-MERGE INTO base_goods KEY(goods_id) VALUES ('G002', 'SP002', '康师傅红烧牛肉面', '1*12', '方便食品', '康师傅', '箱', '690000000002', 48.00, 42.50, 40.00, 580, 'NORMAL');
+MERGE INTO base_goods (goods_id, goods_code, goods_name, spec, category_name, brand_name, base_unit, barcode, standard_price, latest_purchase_price, min_sale_price, goods_type, shelf_life_days, storage_property, suggested_retail_price, stock_upper_limit, stock_lower_limit, default_supplier, default_warehouse, can_return, current_stock, status) KEY(goods_id) VALUES ('G001', 'SP001', '农夫山泉500ml*24', '500ml*24', '瓶装水', '农夫山泉', '瓶', '6941410749551', 35.00, 31.20, 30.00, '正常商品', 365, '常温', 39.00, 2000, 200, '农夫山泉杭州经销', '总仓', TRUE, 1200, 'NORMAL');
+MERGE INTO base_goods (goods_id, goods_code, goods_name, spec, category_name, brand_name, base_unit, barcode, standard_price, latest_purchase_price, min_sale_price, goods_type, shelf_life_days, storage_property, suggested_retail_price, stock_upper_limit, stock_lower_limit, default_supplier, default_warehouse, can_return, current_stock, status) KEY(goods_id) VALUES ('G002', 'SP002', '康师傅红烧牛肉面', '1*12', '方便食品', '康师傅', '箱', '690000000002', 48.00, 42.50, 40.00, '正常商品', 180, '常温', 55.00, 1000, 100, '康师傅杭州经销', '总仓', TRUE, 580, 'NORMAL');
 
 MERGE INTO base_customer KEY(customer_id) VALUES ('CUS001', 'C001', '华联超市', '零售商超', '王店长', '13800008888', '西湖区', '朝阳线', '张三', '金牌', '月结', '25日', '次月5日', 50000.00, 12000.00, 2000.00, '华联超市有限公司', '9133****', 'NORMAL');
 MERGE INTO base_supplier KEY(supplier_id) VALUES ('SUP001', 'G001', '农夫山泉杭州经销', '农夫杭州', '饮料供应商', '赵经理', '0571-8888', 5, '月结', 30, '李四', '工商银行 6222****', '农夫山泉杭州经销有限公司', '9133****', 6600.00, 'NORMAL');

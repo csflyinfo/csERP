@@ -1906,3 +1906,79 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 商品档案真实扩展字段落库
+
+### 已完成
+
+1. `base_goods` 表补充 PRD 扩展字段：
+   - 商品类型
+   - 保质期天数
+   - 存储属性
+   - 建议零售价
+   - 库存上限/下限
+   - 默认供应商
+   - 默认仓库
+   - 是否可退
+
+2. 新增兼容既有 H2 文件库的 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，避免历史本地库启动失败。
+
+3. 商品种子数据补充扩展字段，并修复 `MERGE INTO base_goods` 使用显式字段列表，避免表结构扩展后列数量不匹配。
+
+4. 商品创建接口保存扩展字段：
+   - `POST /base/goods/create`
+
+5. 商品分页接口返回扩展字段：
+   - `POST /base/goods/page`
+
+6. 前端字段映射补充商品扩展字段别名。
+
+7. `v1-base-master-persistence-test.js` 扩展商品档案断言：
+   - 种子商品扩展字段存在。
+   - 新增商品扩展字段可落库并查询。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 商品/客户/供应商持久化测试通过：
+
+```text
+V1 base master persistence test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. PRD 配置一致性测试通过：
+
+```text
+V1 module config PRD test passed
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

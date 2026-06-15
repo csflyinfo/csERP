@@ -53,9 +53,28 @@ CREATE TABLE IF NOT EXISTS base_goods (
   standard_price DECIMAL(18,2) DEFAULT 0,
   latest_purchase_price DECIMAL(18,2) DEFAULT 0,
   min_sale_price DECIMAL(18,2) DEFAULT 0,
+  goods_type VARCHAR(50) DEFAULT '正常商品',
+  shelf_life_days INT DEFAULT 0,
+  storage_property VARCHAR(50) DEFAULT '常温',
+  suggested_retail_price DECIMAL(18,2) DEFAULT 0,
+  stock_upper_limit DECIMAL(18,2) DEFAULT 0,
+  stock_lower_limit DECIMAL(18,2) DEFAULT 0,
+  default_supplier VARCHAR(100),
+  default_warehouse VARCHAR(100),
+  can_return BOOLEAN DEFAULT TRUE,
   current_stock DECIMAL(18,2) DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
+
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS goods_type VARCHAR(50) DEFAULT '正常商品';
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS shelf_life_days INT DEFAULT 0;
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS storage_property VARCHAR(50) DEFAULT '常温';
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS suggested_retail_price DECIMAL(18,2) DEFAULT 0;
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS stock_upper_limit DECIMAL(18,2) DEFAULT 0;
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS stock_lower_limit DECIMAL(18,2) DEFAULT 0;
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS default_supplier VARCHAR(100);
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS default_warehouse VARCHAR(100);
+ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS can_return BOOLEAN DEFAULT TRUE;
 
 CREATE TABLE IF NOT EXISTS base_customer (
   customer_id VARCHAR(32) PRIMARY KEY,
