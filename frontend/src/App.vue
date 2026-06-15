@@ -108,6 +108,7 @@ const flowResult = ref(null)
 const dashboardSummary = ref(null)
 const dashboardLoading = ref(false)
 const dashboardError = ref('')
+const recentLogs = ref([])
 const loginForm = ref({ username: 'admin', password: 'admin123' })
 const loginError = ref('')
 const loginLoading = ref(false)
@@ -215,7 +216,7 @@ async function login() {
     const result = await post('/auth/login', loginForm.value)
     authToken.value = result.token
     localStorage.setItem('erp-demo-token', result.token)
-    await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
+    await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary(), loadRecentLogs()])
     toast('登录成功')
   } catch (error) {
     authToken.value = ''
@@ -240,7 +241,16 @@ async function logout() {
 async function bootstrap() {
   window.addEventListener('erp-auth-expired', logout)
   if (!authToken.value) return
-  await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
+  await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary(), loadRecentLogs()])
+}
+
+async function loadRecentLogs() {
+  try {
+    const data = await post('/system/operation-log/page', { pageNo: 1, pageSize: 6, sortField: 'operateAt', sortOrder: 'desc', filters: {} })
+    recentLogs.value = data.records || []
+  } catch (error) {
+    recentLogs.value = []
+  }
 }
 
 function money(value) {
@@ -307,7 +317,7 @@ onMounted(bootstrap)
         <button class="btn primary" @click="showCreate">新建</button>
       </div>
       <button class="topbtn" @click="route('exportCenter')">导出中心</button>
-      <button class="topbtn" @click="toast('消息：暂无')">消息</button>
+      <button class="topbtn" @click="route('log')">消息</button>
       <button class="topbtn" @click="logout">退出</button>
       <div class="user"><div class="avatar">{{ currentUser?.displayName?.slice(0, 1) || '管' }}</div><span>{{ currentUser?.displayName || '管理员' }}</span></div>
     </header>
@@ -348,6 +358,17 @@ onMounted(bootstrap)
             <div v-for="item in dashboardCards" :key="item.label" class="card">
               <div>{{ item.label }}</div>
               <div class="value">{{ item.value }}</div>
+            </div>
+          </div>
+          <div class="tablebox" style="margin-bottom:8px">
+            <div class="toolbar"><b>最近操作动态</b><div class="spacer"></div><button class="btn" @click="loadRecentLogs">刷新动态</button></div>
+            <div style="padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+              <div v-for="log in recentLogs" :key="log.bizNo + log.action + log.operateAt" class="card">
+                <b>{{ log.action }} · {{ log.moduleCode }}</b>
+                <p>{{ log.detail || log.bizNo }}</p>
+                <span class="muted">{{ log.operatorName }} {{ log.operateAt }}</span>
+              </div>
+              <div v-if="!recentLogs.length" class="card"><b>暂无操作动态</b><p>导入、导出、系统配置等操作会显示在这里。</p></div>
             </div>
           </div>
           <div v-if="flowResult" class="tablebox">

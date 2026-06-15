@@ -1422,3 +1422,44 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 首页最近操作动态接入
+
+### 已完成
+
+1. 首页新增“最近操作动态”卡片区：
+   - 读取 `POST /system/operation-log/page`。
+   - 默认展示最近 6 条操作日志。
+   - 支持刷新动态。
+
+2. 登录初始化时同步加载最近操作日志。
+
+3. 顶部“消息”按钮从提示文案改为真实跳转：
+   - 点击后打开系统管理下的“操作日志”模块。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
