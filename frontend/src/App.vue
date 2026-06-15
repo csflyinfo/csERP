@@ -264,11 +264,12 @@ async function loadDashboardSummary() {
 }
 
 async function runCoreFlow() {
-  const response = await fetch('/api/flow/v1-core/self-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-  const result = await response.json()
-  if (result.code !== '0') throw new Error(result.message)
-  flowResult.value = result.data
-  toast('V1.0核心闭环自测通过')
+  try {
+    flowResult.value = await post('/flow/v1-core/self-test', {})
+    toast('V1.0核心闭环自测通过')
+  } catch (error) {
+    toast(`核心闭环自测失败：${error.message}`)
+  }
 }
 
 function showCreate() {
@@ -339,6 +340,7 @@ onMounted(bootstrap)
         <section v-if="current === 'dashboard'">
           <div class="page-ops">
             <button class="btn" @click="loadDashboardSummary">刷新经营指标</button>
+            <button class="btn primary" @click="runCoreFlow">核心闭环自测</button>
             <span v-if="dashboardLoading" class="muted">正在加载经营概览...</span>
             <span v-else-if="dashboardError" class="muted">{{ dashboardError }}</span>
           </div>

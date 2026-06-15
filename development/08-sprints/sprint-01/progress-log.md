@@ -1378,3 +1378,47 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 首页核心闭环自测入口修复
+
+### 已完成
+
+1. 首页“核心闭环自测”按钮显式展示在经营概览操作区。
+
+2. 前端核心闭环自测从原生 `fetch` 改为统一 API 客户端：
+   - 自动携带 `Authorization: Bearer demo-token`。
+   - 复用统一错误处理。
+   - 失败时显示错误提示，不再静默抛错。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 核心闭环冒烟测试通过：
+
+```text
+V1 core smoke test passed
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+5. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
