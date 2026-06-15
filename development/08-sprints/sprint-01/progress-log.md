@@ -1051,3 +1051,72 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导出中心下载接口与前端下载操作
+
+### 已完成
+
+1. 导出中心新增下载接口：
+   - `POST /system/export-center/download`
+   - 按任务号查询导出任务。
+   - 校验任务存在且状态为已完成。
+   - 返回模拟下载地址、文件名和提示信息。
+
+2. 导出中心前端配置细化：
+   - 列表字段改为任务号、报表名称、模块编码、状态、文件名、筛选条件、创建时间、完成时间、操作。
+   - 导出中心接口映射新增 `download`。
+
+3. 通用列表新增“下载”操作处理：
+   - 有下载接口时调用后端下载接口。
+   - 下载成功后提示文件名。
+
+4. 导出中心测试扩展：
+   - 创建导出任务。
+   - 查询导出中心。
+   - 调用下载接口并校验下载地址与文件名。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导出中心下载测试通过：
+
+```text
+V1 export center test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 分页排序测试通过：
+
+```text
+V1 page sort test passed
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

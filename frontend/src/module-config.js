@@ -162,6 +162,15 @@ systemExtra.forEach(code => {
   }
 })
 
+moduleConfigs.exportCenter = {
+  ...moduleConfigs.exportCenter,
+  mode: 'readonly',
+  desc: '导出中心：查看异步导出任务状态，已完成任务可下载文件',
+  columns: ['任务号', '报表名称', '模块编码', '状态', '文件名', '筛选条件', '创建时间', '完成时间', '操作'],
+  row: ['EXP202606150001', '销售订单导出', 'salesOrder', '已完成', '销售订单导出_EXP202606150001.xlsx', '{}', '2026-06-15 09:10:00', '2026-06-15 09:10:05', '下载'],
+  actions: ['刷新', '导出'],
+}
+
 const reportExtra = ['salesReport','purchaseReport','stockReport','financeReport']
 reportExtra.forEach(code => {
   const names = { salesReport:'销售报表', purchaseReport:'采购报表', stockReport:'库存报表', financeReport:'财务报表' }

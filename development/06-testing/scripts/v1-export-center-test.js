@@ -29,6 +29,10 @@ async function main() {
   assert(center.total >= 1, 'export center should contain created task')
   assert(center.records.some(record => record.code === created.taskNo), 'created export task should be queryable')
 
+  const download = await post('/system/export-center/download', { taskNo: created.taskNo })
+  assert(download.downloadUrl && download.downloadUrl.includes(created.taskNo), 'download should return task download url')
+  assert(download.fileName === created.fileName, 'download should return created file name')
+
   console.log('V1 export center test passed')
 }
 

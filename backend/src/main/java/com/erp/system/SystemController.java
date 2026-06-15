@@ -275,6 +275,25 @@ public class SystemController {
                 """), request));
     }
 
+    @PostMapping("/export-center/download")
+    public ApiResponse<Map<String, Object>> downloadExport(@RequestBody Map<String, Object> request) {
+        String taskNo = String.valueOf(request.getOrDefault("taskNo", request.getOrDefault("bizId", "")));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT task_no taskNo, file_name fileName, status
+                FROM sys_export_task_runtime
+                WHERE task_no = ?
+                """, taskNo);
+        if (rows.isEmpty()) throw new IllegalArgumentException("导出任务不存在");
+        Map<String, Object> task = rows.get(0);
+        if (!"FINISHED".equals(String.valueOf(task.get("STATUS")))) throw new IllegalArgumentException("导出任务尚未完成");
+        return ApiResponse.ok(GenericResult.row(
+                "taskNo", task.get("TASKNO"),
+                "fileName", task.get("FILENAME"),
+                "downloadUrl", "/api/system/export-center/download-file/" + task.get("TASKNO"),
+                "message", "导出文件已准备好"
+        ));
+    }
+
     @PostMapping("/operation-log/page")
     public ApiResponse<PageResult<Map<String, Object>>> operationLogPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
