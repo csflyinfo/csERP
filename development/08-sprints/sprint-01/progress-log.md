@@ -594,3 +594,48 @@ V1 enhanced flow test passed
 
 - 8080 端口后端已重启并加载动态菜单补齐。
 - 前端现在进入系统前需要先登录，刷新页面后可通过本地 token 保持登录态。
+
+## 2026-06-15 前端 API 认证头与菜单自测补充
+
+### 已完成
+
+1. 前端 API 客户端统一处理认证头：
+   - 从 `localStorage.erp-demo-token` 读取 token。
+   - 自动附加 `Authorization: Bearer <token>`。
+
+2. 前端 API 客户端统一处理异常响应：
+   - 非 JSON 响应返回“服务响应异常”。
+   - 401 响应清理本地 token 并触发登录过期事件。
+
+3. 登录失败时清理本地 token，避免残留登录态。
+
+4. 新增认证与菜单冒烟脚本：
+   - `development/06-testing/scripts/v1-auth-menu-smoke-test.js`
+   - 覆盖登录、当前用户、动态菜单、报表中心菜单、基础资料菜单关键项。
+
+### 验证结果
+
+1. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+2. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+3. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+4. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

@@ -218,6 +218,8 @@ async function login() {
     await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
     toast('登录成功')
   } catch (error) {
+    authToken.value = ''
+    localStorage.removeItem('erp-demo-token')
     loginError.value = error.message || '登录失败'
   } finally {
     loginLoading.value = false
@@ -236,6 +238,7 @@ async function logout() {
 }
 
 async function bootstrap() {
+  window.addEventListener('erp-auth-expired', logout)
   if (!authToken.value) return
   await Promise.all([loadCurrentUser(), loadUserMenus(), loadDashboardSummary()])
 }
