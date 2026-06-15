@@ -70,7 +70,7 @@ export const moduleApis = {
   dictionary: { page: '/system/dictionary/page', save: '/system/dictionary/save' },
   workflow: { page: '/system/workflow/page', save: '/system/workflow/save' },
   printTemplate: { page: '/system/print-template/page', save: '/system/print-template/save' },
-  importList: { page: '/system/import-list/page', import: '/system/import-list/create' },
+  importList: { page: '/system/import-list/page', import: '/system/import-list/create', download: '/system/import-list/download-failures' },
   exportCenter: { page: '/system/export-center/page', download: '/system/export-center/download' },
   log: { page: '/system/operation-log/page' },
 

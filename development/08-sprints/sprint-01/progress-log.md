@@ -1240,3 +1240,69 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导入失败原因下载接口
+
+### 已完成
+
+1. 导入列表新增失败原因下载接口：
+   - `POST /system/import-list/download-failures`
+   - 按任务号查询导入任务。
+   - 返回模拟失败原因文件名、下载地址、失败行数和提示信息。
+
+2. 导入列表前端接口映射新增 `download`。
+
+3. 通用列表“下载失败原因”操作复用下载逻辑：
+   - 点击后调用导入列表下载接口。
+   - 下载成功后提示失败原因文件名。
+
+4. 导入列表测试扩展：
+   - 创建导入任务。
+   - 查询导入列表。
+   - 调用失败原因下载接口并校验下载地址与文件名。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导入失败原因下载测试通过：
+
+```text
+V1 import list test passed
+```
+
+4. 导出中心测试通过：
+
+```text
+V1 export center test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

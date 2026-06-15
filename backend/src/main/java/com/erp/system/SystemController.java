@@ -292,6 +292,26 @@ public class SystemController {
         ));
     }
 
+    @PostMapping("/import-list/download-failures")
+    public ApiResponse<Map<String, Object>> downloadImportFailures(@RequestBody Map<String, Object> request) {
+        String taskNo = String.valueOf(request.getOrDefault("taskNo", request.getOrDefault("bizId", "")));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT task_no taskNo, file_name fileName, failed_rows failedRows, result_text resultText
+                FROM sys_import_task_runtime
+                WHERE task_no = ?
+                """, taskNo);
+        if (rows.isEmpty()) throw new IllegalArgumentException("导入任务不存在");
+        Map<String, Object> task = rows.get(0);
+        String failureFileName = String.valueOf(task.get("FILENAME")).replace(".xlsx", "_失败原因.xlsx");
+        return ApiResponse.ok(GenericResult.row(
+                "taskNo", task.get("TASKNO"),
+                "failedRows", task.get("FAILEDROWS"),
+                "fileName", failureFileName,
+                "downloadUrl", "/api/system/import-list/download-failures-file/" + task.get("TASKNO"),
+                "message", "失败原因文件已准备好"
+        ));
+    }
+
     @PostMapping("/export-center/page")
     public ApiResponse<PageResult<Map<String, Object>>> exportCenterPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""

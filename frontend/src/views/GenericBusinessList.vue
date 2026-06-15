@@ -184,7 +184,7 @@ async function handleAction(action, row = null) {
     openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
   } else if (/导入/.test(action)) {
     openDialog('import', action, `${props.config.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
-  } else if (/下载/.test(action)) {
+  } else if (/下载|失败原因/.test(action)) {
     const api = moduleApis[props.moduleCode]
     if (api?.download) {
       try {

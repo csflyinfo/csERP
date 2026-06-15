@@ -29,6 +29,10 @@ async function main() {
   assert(list.total >= 1, 'import list should contain created task')
   assert(list.records.some(record => record.code === created.taskNo), 'created import task should be queryable')
 
+  const failures = await post('/system/import-list/download-failures', { taskNo: created.taskNo })
+  assert(failures.downloadUrl && failures.downloadUrl.includes(created.taskNo), 'failure download should return task url')
+  assert(String(failures.fileName).includes('失败原因'), 'failure download should return failure file name')
+
   console.log('V1 import list test passed')
 }
 
