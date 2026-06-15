@@ -31,8 +31,21 @@ function main() {
 
   hasAll('ar', 'actions', ['应收结算', '预收抵扣', '查看核销记录'])
   hasAll('ap', 'actions', ['应付结算', '预付抵扣', '查看核销记录'])
-  hasAll('purchaseOrder', 'actions', ['新建采购订单', '导入', '导出主单', '导出明细', '打印'])
-  hasAll('salesOrder', 'actions', ['新建销售订单', '导入', '导出主单', '导出明细', '打印'])
+  hasAll('purchaseOrder', 'actions', ['新建采购订单', '保存草稿', '审核', '反审核', '终止', '删除', '导入', '导出主单', '导出明细', '打印'])
+  hasAll('purchaseOrder', 'columns', ['货主', '预计到货日期', '结算方式', '成本金额'])
+  hasAll('purchaseInbound', 'columns', ['库位', '应入数量', '实收数量', '批次号', '生产日期', '到期日期', '入库前成本', '入库后成本', '分摊费用'])
+  hasAll('salesOrder', 'actions', ['新建销售订单', '保存草稿', '审核', '反审核', '关闭', '删除', '导入', '导出主单', '导出明细', '打印'])
+  hasAll('salesOrder', 'columns', ['创建人', '行类型', '成本金额'])
+
+  hasAll('goods', 'columns', ['商品类型', '保质期', '存储属性', '建议零售价', '库存上限', '库存下限', '默认供应商', '默认仓库', '可售/可采购/可退'])
+  hasAll('customer', 'columns', ['渠道类型', '账期类型', '截账日', '付款日', '发票抬头', '税号'])
+  hasAll('customer', 'actions', ['冻结', '解冻', '导入修改'])
+  hasAll('supplier', 'columns', ['供应商简称', '账期天数', '发票抬头', '税号'])
+  hasAll('warehouse', 'columns', ['货主', '地址', '是否默认'])
+  hasAll('quickOrder', 'columns', ['折扣'])
+  hasAll('quickOrder', 'actions', ['历史订单', '组合收款'])
+  hasAll('salesOutbound', 'columns', ['批次号', '成本金额'])
+  hasAll('salesReceipt', 'actions', ['修改签收单价', '反审核', '查看应收'])
 
   console.log('V1 module config PRD test passed')
 }
