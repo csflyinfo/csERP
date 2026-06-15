@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/report")
@@ -116,9 +117,20 @@ public class ReportController {
 
     @PostMapping("/export")
     public ApiResponse<Map<String, Object>> exportReport(@RequestBody Map<String, Object> request) {
+        String taskId = "EXP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String taskNo = "EXP" + System.currentTimeMillis();
+        String reportName = String.valueOf(request.getOrDefault("reportName", "报表导出"));
+        String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "report"));
+        String filterText = String.valueOf(request.getOrDefault("filters", Map.of()));
+        String fileName = reportName + "_" + taskNo + ".xlsx";
+        jdbcTemplate.update("""
+                INSERT INTO sys_export_task_runtime(task_id, task_no, report_name, module_code, filter_text, file_name, status, created_at, finished_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, taskId, taskNo, reportName, moduleCode, filterText, fileName);
         return ApiResponse.ok(GenericResult.row(
-                "taskNo", "EXP" + System.currentTimeMillis(),
-                "status", "CREATED",
+                "taskNo", taskNo,
+                "status", "FINISHED",
+                "fileName", fileName,
                 "message", "报表导出任务已创建，请到导出中心下载"
         ));
     }

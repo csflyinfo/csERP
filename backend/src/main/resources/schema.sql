@@ -287,3 +287,15 @@ CREATE TABLE IF NOT EXISTS sys_operation_log_runtime (
   result VARCHAR(20),
   detail VARCHAR(1000)
 );
+
+CREATE TABLE IF NOT EXISTS sys_export_task_runtime (
+  task_id VARCHAR(32) PRIMARY KEY,
+  task_no VARCHAR(50) NOT NULL UNIQUE,
+  report_name VARCHAR(100),
+  module_code VARCHAR(100),
+  filter_text VARCHAR(1000),
+  file_name VARCHAR(200),
+  status VARCHAR(20) DEFAULT 'CREATED',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP
+);

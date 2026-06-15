@@ -260,7 +260,19 @@ public class SystemController {
 
     @PostMapping("/export-center/page")
     public ApiResponse<PageResult<Map<String, Object>>> exportCenterPage(@RequestBody PageRequest request) {
-        return simpleSystemPage(request, "EXP", "销售订单导出", "导出任务", "已完成", "异步导出文件下载");
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT task_no code,
+                       report_name name,
+                       module_code type,
+                       CASE status WHEN 'FINISHED' THEN '已完成' ELSE '处理中' END status,
+                       file_name fileName,
+                       filter_text remark,
+                       created_at createdAt,
+                       finished_at finishedAt,
+                       '下载' action
+                FROM sys_export_task_runtime
+                ORDER BY created_at DESC
+                """), request));
     }
 
     @PostMapping("/operation-log/page")

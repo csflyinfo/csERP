@@ -983,3 +983,71 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导出中心任务落库
+
+### 已完成
+
+1. 新增导出任务运行表：
+   - `sys_export_task_runtime`
+   - 记录任务号、报表名称、模块编码、筛选条件、文件名、状态、创建/完成时间。
+
+2. 报表导出接口从仅返回提示改为创建导出任务：
+   - `POST /report/export`
+   - Demo 模式下任务立即完成并生成模拟文件名。
+
+3. 导出中心改为查询真实导出任务表：
+   - `POST /system/export-center/page`
+   - 支持分页、过滤、排序的通用能力。
+
+4. 初始化数据新增一条导出任务样例。
+
+5. 新增导出中心冒烟脚本：
+   - `development/06-testing/scripts/v1-export-center-test.js`
+   - 覆盖创建导出任务、按任务号查询导出中心。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导出中心测试通过：
+
+```text
+V1 export center test passed
+```
+
+4. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+5. 分页排序测试通过：
+
+```text
+V1 page sort test passed
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```
