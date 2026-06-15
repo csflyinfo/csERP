@@ -1,5 +1,7 @@
 package com.erp.common.api;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -12,7 +14,7 @@ public record PageResult<T>(
         Map<String, Object> summary
 ) {
     public static <T> PageResult<T> of(List<T> records, PageRequest request) {
-        List<T> filteredRecords = filter(records, request.filters());
+        List<T> filteredRecords = sort(filter(records, request.filters()), request.sortField(), request.sortOrder());
         int pageNo = request.safePageNo();
         int pageSize = request.safePageSize();
         int fromIndex = Math.min((pageNo - 1) * pageSize, filteredRecords.size());
@@ -42,5 +44,34 @@ public record PageResult<T>(
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .reduce("", (left, right) -> left + " " + right);
         return values.stream().allMatch(rowText::contains);
+    }
+
+    private static <T> List<T> sort(List<T> records, String sortField, String sortOrder) {
+        if (sortField == null || sortField.isBlank()) return records;
+        List<T> sortedRecords = new ArrayList<>(records);
+        Comparator<T> comparator = (left, right) -> compareSortValues(sortValue(left, sortField), sortValue(right, sortField));
+        if ("desc".equalsIgnoreCase(sortOrder) || "descending".equalsIgnoreCase(sortOrder)) {
+            comparator = comparator.reversed();
+        }
+        sortedRecords.sort(comparator);
+        return sortedRecords;
+    }
+
+    private static Comparable<?> sortValue(Object record, String sortField) {
+        if (!(record instanceof Map<?, ?> map)) return null;
+        Object value = map.get(sortField);
+        if (value == null) return null;
+        if (value instanceof Number number) return number.doubleValue();
+        return String.valueOf(value).toLowerCase(Locale.ROOT);
+    }
+
+    private static int compareSortValues(Comparable<?> left, Comparable<?> right) {
+        if (left == null && right == null) return 0;
+        if (left == null) return 1;
+        if (right == null) return -1;
+        if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
+            return Double.compare(leftNumber.doubleValue(), rightNumber.doubleValue());
+        }
+        return String.valueOf(left).compareTo(String.valueOf(right));
     }
 }

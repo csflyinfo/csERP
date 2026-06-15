@@ -21,6 +21,8 @@ const pageNo = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const queryFilters = ref({})
+const sortField = ref('')
+const sortOrder = ref('')
 
 const columns = computed(() => props.config.columns.map((title, index) => ({
   key: `c${index}`,
@@ -46,7 +48,7 @@ async function loadRows() {
   }
   loading.value = true
   try {
-    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, filters: queryFilters.value })
+    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: queryFilters.value })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, props.config)) : [buildRow()]
     total.value = data.total || tableRows.value.length
   } catch (error) {
@@ -213,6 +215,19 @@ function handleMore(fields) { openDialog('more', '更多查询条件', fields.jo
 function handleRowAction(action, row) { handleAction(action, row) }
 function handlePageChange(nextPageNo) { pageNo.value = Math.max(1, nextPageNo); loadRows() }
 function handlePageSizeChange(nextPageSize) { pageSize.value = nextPageSize; pageNo.value = 1; loadRows() }
+function handleSortChange(field) {
+  if (sortField.value !== field) {
+    sortField.value = field
+    sortOrder.value = 'asc'
+  } else if (sortOrder.value === 'asc') {
+    sortOrder.value = 'desc'
+  } else {
+    sortField.value = ''
+    sortOrder.value = ''
+  }
+  pageNo.value = 1
+  loadRows()
+}
 </script>
 
 <template>
@@ -233,7 +248,7 @@ function handlePageSizeChange(nextPageSize) { pageSize.value = nextPageSize; pag
       </div>
 
       <div v-if="loading" class="tips-inline"><span>正在加载 {{ config.title }} 数据...</span></div>
-      <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" :page-no="pageNo" :page-size="pageSize" :total="total" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction" @page-change="handlePageChange" @page-size-change="handlePageSizeChange">
+      <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" :page-no="pageNo" :page-size="pageSize" :total="total" :sort-field="sortField" :sort-order="sortOrder" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction" @page-change="handlePageChange" @page-size-change="handlePageSizeChange" @sort-change="handleSortChange">
         <template v-for="col in visibleColumns" #[col.key]="{ row }" :key="col.key">
           <span v-if="/状态/.test(col.title)" class="badge wait">{{ row[col.key] }}</span>
           <span v-else-if="/操作/.test(col.title)">

@@ -915,3 +915,71 @@ V1 auth menu smoke test passed
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 通用排序能力接入
+
+### 已完成
+
+1. 后端 `PageResult.of` 支持通用排序：
+   - 支持 `sortField` / `sortOrder`。
+   - 排序在 filters 过滤后、分页切片前执行。
+   - 支持字符串字段和数值字段排序。
+   - `sortOrder=asc/desc/descending` 均可识别。
+
+2. 前端表格表头支持点击排序：
+   - 第一次点击升序。
+   - 第二次点击降序。
+   - 第三次点击取消排序。
+   - 当前排序列展示 ↑ / ↓。
+
+3. 通用业务列表请求分页接口时携带排序参数。
+
+4. 新增分页排序冒烟脚本：
+   - `development/06-testing/scripts/v1-page-sort-test.js`
+   - 覆盖字符串排序、数值排序、排序后分页大小。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 分页排序测试通过：
+
+```text
+V1 page sort test passed
+```
+
+4. 分页过滤测试通过：
+
+```text
+V1 page filter test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

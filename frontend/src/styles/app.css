@@ -65,6 +65,8 @@ button, input, select, textarea { font: inherit; }
 table { border-collapse: collapse; min-width: 1200px; width: 100%; }
 th, td { border-right: 1px solid var(--line-soft); border-bottom: 1px solid #eef3f8; height: 32px; padding: 0 8px; white-space: nowrap; text-align: left; }
 th { background: #f7fbff; color: #24415f; font-weight: 900; position: sticky; top: 0; z-index: 1; }
+.sortable-th { cursor: pointer; user-select: none; }
+.sortable-th:hover { color: var(--primary); background: #eaf4ff; }
 .num { text-align: right; font-family: Consolas, monospace; }
 .link { color: var(--primary); font-weight: 800; cursor: pointer; margin-right: 10px; }.link-btn{border:0;background:transparent;padding:0;font:inherit}
 .badge { border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 800; }

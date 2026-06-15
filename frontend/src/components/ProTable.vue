@@ -6,9 +6,11 @@ defineProps({
   pageNo: { type: Number, default: 1 },
   pageSize: { type: Number, default: 20 },
   total: { type: Number, default: 0 },
+  sortField: { type: String, default: '' },
+  sortOrder: { type: String, default: '' },
 })
 
-const emit = defineEmits(['field-setting', 'export', 'row-action', 'page-change', 'page-size-change'])
+const emit = defineEmits(['field-setting', 'export', 'row-action', 'page-change', 'page-size-change', 'sort-change'])
 </script>
 
 <template>
@@ -22,7 +24,10 @@ const emit = defineEmits(['field-setting', 'export', 'row-action', 'page-change'
     <div class="scroll">
       <table>
         <tr>
-          <th v-for="col in columns" :key="col.key">{{ col.title }}</th>
+          <th v-for="col in columns" :key="col.key" class="sortable-th" @click="emit('sort-change', col.key)">
+            {{ col.title }}
+            <span v-if="sortField === col.key">{{ sortOrder === 'desc' ? '↓' : '↑' }}</span>
+          </th>
         </tr>
         <tr v-for="(row, index) in rows" :key="index" @dblclick="emit('row-action', '查看', row)">
           <td v-for="col in columns" :key="col.key" :class="col.num ? 'num' : ''">
