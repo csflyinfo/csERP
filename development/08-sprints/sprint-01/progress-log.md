@@ -1166,3 +1166,77 @@ V1 module coverage test passed: 60 endpoints
 ```text
 V1 enhanced flow test passed
 ```
+
+## 2026-06-15 导入列表任务落库
+
+### 已完成
+
+1. 新增导入任务运行表：
+   - `sys_import_task_runtime`
+   - 记录任务号、模块编码、任务名称、文件名、成功/失败行数、状态、结果说明、创建/完成时间。
+
+2. 初始化数据新增一条导入任务样例。
+
+3. 导入列表改为查询真实导入任务表：
+   - `POST /system/import-list/page`
+   - 支持分页、过滤、排序的通用能力。
+
+4. 新增导入任务创建接口：
+   - `POST /system/import-list/create`
+   - Demo 模式下任务立即完成并返回成功/失败行数。
+
+5. 前端导入列表配置细化：
+   - 列表字段改为任务号、任务名称、模块编码、状态、文件名、成功行数、失败行数、结果说明、创建时间、完成时间、操作。
+   - 导入列表接口映射新增 `import`。
+
+6. 通用导入弹窗接入后端导入任务创建接口。
+
+7. 新增导入列表冒烟脚本：
+   - `development/06-testing/scripts/v1-import-list-test.js`
+   - 覆盖创建导入任务、按任务号查询导入列表。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f backend/pom.xml -DskipTests compile
+BUILD SUCCESS
+```
+
+2. 前端构建：成功。
+
+```text
+npm run build --prefix frontend
+✓ built
+```
+
+3. 导入列表测试通过：
+
+```text
+V1 import list test passed
+```
+
+4. 导出中心测试通过：
+
+```text
+V1 export center test passed
+```
+
+5. 模块覆盖测试通过：
+
+```text
+V1 module coverage test passed: 60 endpoints
+```
+
+6. 认证与菜单冒烟测试通过：
+
+```text
+V1 auth menu smoke test passed
+```
+
+7. 增强业务流程测试通过：
+
+```text
+V1 enhanced flow test passed
+```

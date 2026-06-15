@@ -155,6 +155,22 @@ async function confirmAction() {
   closeDialog()
 }
 
+async function uploadImport() {
+  const api = moduleApis[props.moduleCode]
+  if (api?.import) {
+    try {
+      const result = await post(api.import, { ...buildPayload(), taskName: `${props.config.title}导入任务`, fileName: `${props.config.title}导入模板.xlsx` })
+      show(result?.message || `导入完成：成功${result?.successRows ?? 0}行，失败${result?.failedRows ?? 0}行`)
+      if (props.moduleCode === 'importList') await loadRows()
+    } catch (error) {
+      show(`${props.config.title}导入接口暂不可用，已保留校验结果`)
+    }
+  } else {
+    show('导入校验通过')
+  }
+  closeDialog()
+}
+
 async function handleAction(action, row = null) {
   if (/刷新/.test(action)) {
     pageNo.value = 1
@@ -333,7 +349,7 @@ function handleSortChange(field) {
         <button class="btn" @click="closeDialog">取消</button>
         <button v-if="dialog.type === 'form'" class="btn primary" @click="saveForm">保存</button>
         <button v-else-if="dialog.type === 'confirm'" class="btn primary" @click="confirmAction">确认</button>
-        <button v-else-if="dialog.type === 'import'" class="btn primary" @click="show('导入校验通过'); closeDialog()">上传并校验</button>
+        <button v-else-if="dialog.type === 'import'" class="btn primary" @click="uploadImport">上传并校验</button>
         <button v-else-if="dialog.type === 'field'" class="btn" @click="resetColumnSettings">恢复默认</button>
         <button v-if="dialog.type === 'field'" class="btn primary" @click="saveColumnSettings">保存字段设置</button>
         <button v-else class="btn primary" @click="closeDialog">确定</button>

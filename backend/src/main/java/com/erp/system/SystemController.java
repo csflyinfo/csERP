@@ -255,7 +255,41 @@ public class SystemController {
 
     @PostMapping("/import-list/page")
     public ApiResponse<PageResult<Map<String, Object>>> importListPage(@RequestBody PageRequest request) {
-        return simpleSystemPage(request, "IMP", "商品导入任务", "导入任务", "已完成", "查看导入结果、失败原因下载");
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT task_no code,
+                       task_name name,
+                       module_code type,
+                       CASE status WHEN 'FINISHED' THEN '已完成' ELSE '处理中' END status,
+                       file_name fileName,
+                       success_rows successRows,
+                       failed_rows failedRows,
+                       result_text remark,
+                       created_at createdAt,
+                       finished_at finishedAt,
+                       '查看 下载失败原因' action
+                FROM sys_import_task_runtime
+                ORDER BY created_at DESC
+                """), request));
+    }
+
+    @PostMapping("/import-list/create")
+    public ApiResponse<Map<String, Object>> createImportTask(@RequestBody Map<String, Object> request) {
+        String taskId = "IMP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String taskNo = "IMP" + System.currentTimeMillis();
+        String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "import"));
+        String taskName = String.valueOf(request.getOrDefault("taskName", "导入任务"));
+        String fileName = String.valueOf(request.getOrDefault("fileName", taskName + ".xlsx"));
+        jdbcTemplate.update("""
+                INSERT INTO sys_import_task_runtime(task_id, task_no, module_code, task_name, file_name, success_rows, failed_rows, status, result_text, created_at, finished_at)
+                VALUES (?, ?, ?, ?, ?, 10, 0, 'FINISHED', '导入校验通过并完成入库', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, taskId, taskNo, moduleCode, taskName, fileName);
+        return ApiResponse.ok(GenericResult.row(
+                "taskNo", taskNo,
+                "status", "FINISHED",
+                "successRows", 10,
+                "failedRows", 0,
+                "message", "导入任务已完成"
+        ));
     }
 
     @PostMapping("/export-center/page")

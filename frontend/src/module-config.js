@@ -162,6 +162,15 @@ systemExtra.forEach(code => {
   }
 })
 
+moduleConfigs.importList = {
+  ...moduleConfigs.importList,
+  mode: 'readonly',
+  desc: '导入列表：查看导入任务状态、成功/失败行数，失败任务可下载原因',
+  columns: ['任务号', '任务名称', '模块编码', '状态', '文件名', '成功行数', '失败行数', '结果说明', '创建时间', '完成时间', '操作'],
+  row: ['IMP202606150001', '商品导入任务', 'goods', '已完成', '商品导入模板.xlsx', '120', '0', '导入成功', '2026-06-15 09:20:00', '2026-06-15 09:20:08', '查看 下载失败原因'],
+  actions: ['刷新', '导入'],
+}
+
 moduleConfigs.exportCenter = {
   ...moduleConfigs.exportCenter,
   mode: 'readonly',

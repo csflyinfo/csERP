@@ -299,3 +299,17 @@ CREATE TABLE IF NOT EXISTS sys_export_task_runtime (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   finished_at TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS sys_import_task_runtime (
+  task_id VARCHAR(32) PRIMARY KEY,
+  task_no VARCHAR(50) NOT NULL UNIQUE,
+  module_code VARCHAR(100),
+  task_name VARCHAR(100),
+  file_name VARCHAR(200),
+  success_rows INT DEFAULT 0,
+  failed_rows INT DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'CREATED',
+  result_text VARCHAR(1000),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  finished_at TIMESTAMP
+);

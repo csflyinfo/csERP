@@ -48,3 +48,4 @@ MERGE INTO sys_bill_no_rule_runtime KEY(rule_id) VALUES ('BN002', '采购订单'
 MERGE INTO sys_bill_no_rule_runtime KEY(rule_id) VALUES ('BN003', '客户价格调整单', 'CPA', 'yyyyMMdd', 4, 'DAY', 'CPA202606150001', 'NORMAL');
 MERGE INTO sys_operation_log_runtime KEY(log_id) VALUES ('LOG001', TIMESTAMP '2026-06-15 09:00:00', '系统管理员', 'system', 'INIT', 'INIT', 'SUCCESS', '系统初始化');
 MERGE INTO sys_export_task_runtime KEY(task_id) VALUES ('EXP001', 'EXP202606150001', '销售订单导出', 'salesOrder', '{}', '销售订单导出_EXP202606150001.xlsx', 'FINISHED', TIMESTAMP '2026-06-15 09:10:00', TIMESTAMP '2026-06-15 09:10:05');
+MERGE INTO sys_import_task_runtime KEY(task_id) VALUES ('IMP001', 'IMP202606150001', 'goods', '商品导入任务', '商品导入模板.xlsx', 120, 0, 'FINISHED', '导入成功', TIMESTAMP '2026-06-15 09:20:00', TIMESTAMP '2026-06-15 09:20:08');
