@@ -17,6 +17,7 @@ const feedback = ref('')
 const dialog = ref(null)
 const selectedRow = ref(null)
 const detailData = ref(null)
+const formModel = ref({})
 const tableRows = ref([])
 const loading = ref(false)
 const selectedTreeNode = ref('全部')
@@ -110,6 +111,7 @@ function show(message) {
 
 function openDialog(type, title, message, row = null) {
   selectedRow.value = row
+  formModel.value = type === 'form' ? initFormModel(row) : {}
   dialog.value = { type, title, message }
 }
 
@@ -117,6 +119,16 @@ function closeDialog() {
   dialog.value = null
   selectedRow.value = null
   detailData.value = null
+  formModel.value = {}
+}
+
+function initFormModel(row) {
+  return Object.fromEntries(formFields.value.map(field => [field, valueByTitle(field, row)]))
+}
+
+function valueByTitle(title, row = selectedRow.value) {
+  const index = columns.value.findIndex(col => col.title === title)
+  return index >= 0 ? row?.[`c${index}`] || '' : ''
 }
 
 async function saveForm() {
@@ -125,6 +137,7 @@ async function saveForm() {
   if (endpoint) {
     try {
       await post(endpoint, buildPayload())
+      await loadRows()
     } catch (error) {
       show(`${dialog.value.title}接口暂不可用，已保留前端操作`)
     }
@@ -257,7 +270,7 @@ async function handleAction(action, row = null) {
 }
 
 function buildPayload() {
-  return {
+  const base = {
     moduleCode: props.moduleCode,
     bizId: selectedRow.value?.c0 || `${props.moduleCode}-demo`,
     orderId: selectedRow.value?.c0,
@@ -279,6 +292,106 @@ function buildPayload() {
     priceIds: ['PRICE001'],
     reason: '页面操作停用',
   }
+  return { ...base, ...modulePayload() }
+}
+
+function modulePayload() {
+  if (props.moduleCode === 'goods') {
+    const code = text('商品编码') || selectedRow.value?.c1 || `GD${Date.now()}`
+    return {
+      goodsCode: code,
+      goodsId: selectedRow.value?.c1 || code,
+      goodsName: text('商品名称') || '新商品',
+      goodsType: text('商品类型') || '正常商品',
+      spec: text('规格'),
+      categoryName: text('分类') || '默认分类',
+      brandName: text('品牌'),
+      baseUnit: text('基本单位') || '箱',
+      barcode: text('条码'),
+      shelfLifeDays: numberValue('保质期', 0),
+      storageProperty: text('存储属性') || '常温',
+      standardPrice: numberValue('标准售价', 0),
+      suggestedRetailPrice: numberValue('建议零售价', 0),
+      latestPurchasePrice: numberValue('参考进价', 0),
+      minSalePrice: numberValue('最低售价', 0),
+      stockUpperLimit: numberValue('库存上限', 0),
+      stockLowerLimit: numberValue('库存下限', 0),
+      defaultSupplier: text('默认供应商'),
+      defaultWarehouse: text('默认仓库'),
+      canReturn: !/否/.test(text('可售/可采购/可退')),
+    }
+  }
+  if (props.moduleCode === 'customer') {
+    const code = text('客户编码') || selectedRow.value?.c0 || `CT${Date.now()}`
+    return {
+      customerId: selectedRow.value?.c0 || code,
+      customerCode: code,
+      customerName: text('客户名称') || '新客户',
+      channelType: text('渠道类型') || '零售商超',
+      contactName: text('联系人'),
+      mobile: text('手机号'),
+      territory: text('片区'),
+      routeLine: text('线路'),
+      salesman: text('业务员'),
+      customerLevel: text('客户等级') || '普通',
+      accountPeriodType: text('账期类型') || text('结算方式') || '现结',
+      cutoffDay: text('截账日'),
+      paymentDay: text('付款日'),
+      creditLimit: numberValue('信用额度', 0),
+      invoiceTitle: text('发票抬头'),
+      taxNo: text('税号'),
+    }
+  }
+  if (props.moduleCode === 'supplier') {
+    const code = text('供应商编码') || selectedRow.value?.c0 || `SP${Date.now()}`
+    return {
+      supplierId: selectedRow.value?.c0 || code,
+      supplierCode: code,
+      supplierName: text('供应商名称') || '新供应商',
+      shortName: text('供应商简称'),
+      supplierType: text('供应商类型') || text('类型') || '普通供应商',
+      contactName: text('联系人'),
+      phone: text('电话'),
+      deliveryDays: numberValue('到货天数', 0),
+      settlementMethod: text('结算方式') || '现结',
+      accountPeriodDays: numberValue('账期天数', 0),
+      defaultBuyer: text('默认采购员'),
+      defaultReceiptAccount: text('默认收款账户'),
+      invoiceTitle: text('发票抬头'),
+      taxNo: text('税号'),
+    }
+  }
+  if (props.moduleCode === 'purchaseOrder') {
+    return {
+      orderId: selectedRow.value?.c0,
+      supplierId: text('供应商') || '农夫山泉杭州经销',
+      warehouseId: text('收货仓库') || text('仓库') || '总仓',
+      buyer: text('采购员') || '李四',
+      ownerName: text('货主') || '平台货主',
+      settlementMethod: text('结算方式') || '月结30天',
+      details: [{ goodsId: 'SP001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: '正常', taxRate: '13%', qty: 1, price: 35 }],
+    }
+  }
+  if (props.moduleCode === 'salesOrder') {
+    return {
+      orderId: selectedRow.value?.c0,
+      customerId: text('客户') || '华联超市',
+      warehouseId: text('仓库') || '总仓',
+      salesman: text('业务员') || '张三',
+      lineType: text('行类型') || '正常',
+      details: [{ goodsId: 'SP001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: text('行类型') || '正常', discountRate: '100%', taxRate: '13%', qty: 1, price: 35 }],
+    }
+  }
+  return {}
+}
+
+function text(field) {
+  return String(formModel.value[field] ?? '').trim()
+}
+
+function numberValue(field, fallback = 0) {
+  const value = Number(String(formModel.value[field] ?? '').replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(value) ? value : fallback
 }
 
 function selectTreeNode(node) { selectedTreeNode.value = node.trim(); queryFilters.value = { ...queryFilters.value, treeNode: selectedTreeNode.value }; pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
@@ -345,9 +458,9 @@ function handleSortChange(field) {
           <div :class="config.mode === 'modal' ? 'form-vertical' : 'grid4'">
             <div v-for="field in formFields" :key="field" class="field">
               <label>{{ field }}<span v-if="/编码|名称|单号|客户|供应商|仓库|日期|数量|单价|金额|状态/.test(field)" style="color:#ef4444"> *</span></label>
-              <select v-if="/状态|类型|方式|仓库|客户|供应商|单位|分类|品牌|业务员|采购员/.test(field)"><option>{{ field }}</option></select>
-              <textarea v-else-if="/备注|说明|原因/.test(field)" :placeholder="field"></textarea>
-              <input v-else :value="selectedRow?.[`c${columns.findIndex(c => c.title === field)}`] || ''" :placeholder="field" />
+              <select v-if="/状态|类型|方式|仓库|客户|供应商|单位|分类|品牌|业务员|采购员/.test(field)" v-model="formModel[field]"><option>{{ formModel[field] || field }}</option></select>
+              <textarea v-else-if="/备注|说明|原因/.test(field)" v-model="formModel[field]" :placeholder="field"></textarea>
+              <input v-else v-model="formModel[field]" :placeholder="field" />
             </div>
           </div>
 

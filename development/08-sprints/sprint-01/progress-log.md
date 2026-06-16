@@ -2228,3 +2228,47 @@ V1 permission scope test passed
 V1 module coverage test passed: 60 endpoints
 V1 auth menu smoke test passed
 ```
+
+## 2026-06-16 通用表单真实 Payload 映射
+
+### 已完成
+
+1. 通用表单模型落地：
+   - `GenericBusinessList.vue` 新增 `formModel`。
+   - 打开新建/编辑表单时按当前模块字段初始化表单数据。
+   - 表单输入、下拉、文本域统一使用 `v-model` 写入 `formModel`。
+
+2. 基础资料保存 Payload 真实化：
+   - 商品表单字段映射为 `goodsCode/goodsName/goodsType/spec/categoryName/...`。
+   - 客户表单字段映射为 `customerCode/customerName/channelType/contactName/...`。
+   - 供应商表单字段映射为 `supplierCode/supplierName/shortName/supplierType/...`。
+
+3. 订单保存 Payload 真实化：
+   - 采购订单表单字段映射为 `supplierId/warehouseId/buyer/ownerName/settlementMethod/details`。
+   - 销售订单表单字段映射为 `customerId/warehouseId/salesman/lineType/details`。
+   - 编辑保存成功后自动刷新列表，避免前端列表仍显示旧数据。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f erp-wms-tms/backend/pom.xml -DskipTests package
+```
+
+2. 前端构建：成功。
+
+```text
+npm --prefix erp-wms-tms/frontend run build
+✓ built
+```
+
+3. 基础资料、订单和权限关键回归测试通过：
+
+```text
+V1 base master persistence test passed
+V1 order edit detail test passed
+V1 order lifecycle test passed
+V1 permission scope test passed
+V1 auth menu smoke test passed
+```
