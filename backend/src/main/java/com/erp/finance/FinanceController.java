@@ -193,7 +193,7 @@ public class FinanceController {
 
     private void insertFundLedger(String direction, BigDecimal amount, String sourceBill, String balanceAfter) {
         String id = "FL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
-        String no = "FUND" + System.currentTimeMillis();
+        String no = "FUND" + System.currentTimeMillis() + UUID.randomUUID().toString().replace("-", "").substring(0, 4);
         jdbcTemplate.update("""
                 INSERT INTO fin_fund_ledger(ledger_id, ledger_no, fund_account, direction, amount, source_bill, balance_after, occurred_at, operator_name)
                 VALUES (?, ?, '工行基本户', ?, ?, ?, ?, CURRENT_TIMESTAMP, '管理员')

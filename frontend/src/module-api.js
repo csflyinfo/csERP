@@ -1,11 +1,11 @@
 export const moduleApis = {
-  goods: { page: '/base/goods/page', save: '/base/master/save', stop: '/base/master/stop' },
+  goods: { page: '/base/goods/page', save: '/base/goods/create', update: '/base/goods/update', stop: '/base/goods/stop', freeze: '/base/goods/freeze', delete: '/base/goods/delete' },
   category: { page: '/base/category/page', save: '/base/category/create', stop: '/base/master/stop' },
   brand: { page: '/base/brand/page', save: '/base/master/save', stop: '/base/master/stop' },
   unit: { page: '/base/unit/page', save: '/base/master/save', stop: '/base/master/stop' },
   warehouse: { page: '/base/warehouse/page', save: '/base/master/save', stop: '/base/master/stop' },
-  customer: { page: '/base/master/customer/page', save: '/base/master/save', stop: '/base/master/stop' },
-  supplier: { page: '/base/master/supplier/page', save: '/base/master/save', stop: '/base/master/stop' },
+  customer: { page: '/base/master/customer/page', save: '/base/master/save', update: '/base/master/save', stop: '/base/master/stop', freeze: '/base/master/freeze', unfreeze: '/base/master/unfreeze' },
+  supplier: { page: '/base/master/supplier/page', save: '/base/master/save', update: '/base/master/save', stop: '/base/master/stop', freeze: '/base/master/freeze', unfreeze: '/base/master/unfreeze' },
   priceGroup: { page: '/base/master/price-group/page', save: '/base/master/save', stop: '/base/master/stop' },
   counterparty: { page: '/base/master/counterparty/page', save: '/base/master/save', stop: '/base/master/stop' },
   fundAccount: { page: '/base/master/fund-account/page', save: '/base/master/save', stop: '/base/master/stop' },
@@ -32,7 +32,7 @@ export const moduleApis = {
   otherOutbound: { page: '/inventory/ledger/page', audit: '/inventory/damage/audit' },
   stockTake: { page: '/inventory/balance/page', audit: '/inventory/cost-adjust/audit' },
 
-  purchaseOrder: { page: '/purchase/order/page', save: '/purchase/order/create', audit: '/purchase/order/audit' },
+  purchaseOrder: { page: '/purchase/order/page', save: '/purchase/order/create', detail: '/purchase/order/detail', audit: '/purchase/order/audit', reverseAudit: '/purchase/order/reverse-audit', close: '/purchase/order/close', delete: '/purchase/order/delete' },
   purchaseInbound: { page: '/purchase/inbound/page', audit: '/purchase/inbound/audit' },
   purchaseReceipt: { page: '/purchase/receipt/page', audit: '/purchase/receipt/audit' },
   purchaseReturn: { page: '/purchase/return/page', audit: '/purchase/return/audit' },
@@ -40,7 +40,7 @@ export const moduleApis = {
   purchaseInvoice: { page: '/purchase/invoice/page' },
 
   quickOrder: { page: '/sales/order/page', save: '/sales/quick-order/create-and-audit', audit: '/sales/quick-order/create-and-audit' },
-  salesOrder: { page: '/sales/order/page', save: '/sales/order/create', audit: '/sales/order/audit' },
+  salesOrder: { page: '/sales/order/page', save: '/sales/order/create', detail: '/sales/order/detail', audit: '/sales/order/audit', reverseAudit: '/sales/order/reverse-audit', close: '/sales/order/close', delete: '/sales/order/delete' },
   salesOutbound: { page: '/sales/outbound/page', audit: '/sales/outbound/audit' },
   salesReceipt: { page: '/sales/receipt/page', audit: '/sales/receipt/audit' },
   salesReturn: { page: '/sales/return/page', audit: '/sales/return/audit' },

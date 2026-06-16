@@ -9,10 +9,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -25,8 +28,8 @@ public class SystemController {
     }
 
     @GetMapping("/menu/user-tree")
-    public ApiResponse<List<Map<String, Object>>> userMenuTree() {
-        return ApiResponse.ok(List.of(
+    public ApiResponse<List<Map<String, Object>>> userMenuTree(@RequestParam(defaultValue = "ADMIN") String roleCode) {
+        return ApiResponse.ok(filterMenus(roleCode, List.of(
                 menu("dashboard", "首页", "/dashboard"),
                 menu("base", "基础资料", null,
                         menu("goods", "商品档案", "/base/goods"),
@@ -114,7 +117,15 @@ public class SystemController {
                         menu("exportCenter", "导出中心", "/system/export-center"),
                         menu("log", "操作日志", "/system/operation-log")
                 )
-        ));
+        )));
+    }
+
+    @PostMapping("/field-scope")
+    public ApiResponse<Map<String, Object>> fieldScope(@RequestBody Map<String, Object> request) {
+        String moduleCode = String.valueOf(request.getOrDefault("moduleCode", ""));
+        String roleCode = String.valueOf(request.getOrDefault("roleCode", "ADMIN"));
+        Set<String> hidden = hiddenFields(roleCode, moduleCode);
+        return ApiResponse.ok(GenericResult.row("moduleCode", moduleCode, "roleCode", roleCode, "hiddenFields", hidden));
     }
 
     @PostMapping("/user/page")
@@ -151,6 +162,7 @@ public class SystemController {
                        user_count userCount,
                        menu_scope menuScope,
                        field_scope fieldScope,
+                       data_scope dataScope,
                        CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status
                 FROM sys_role_runtime
                 ORDER BY role_code
@@ -162,9 +174,9 @@ public class SystemController {
         String id = String.valueOf(request.getOrDefault("roleId", "R" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
         jdbcTemplate.update("""
                 MERGE INTO sys_role_runtime KEY(role_id)
-                VALUES (?, ?, ?, 0, ?, ?, 'NORMAL')
+                VALUES (?, ?, ?, 0, ?, ?, ?, 'NORMAL')
                 """, id, request.getOrDefault("roleCode", id), request.getOrDefault("roleName", "新权限组"),
-                request.getOrDefault("menuScope", "按配置"), request.getOrDefault("fieldScope", "按配置"));
+                request.getOrDefault("menuScope", "按配置"), request.getOrDefault("fieldScope", "按配置"), request.getOrDefault("dataScope", "ALL"));
         log("system.role", "SAVE", id, "SUCCESS", "保存权限组");
         return ApiResponse.ok(GenericResult.row("roleId", id, "success", true));
     }
@@ -392,6 +404,46 @@ public class SystemController {
                 INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
                 VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, ?, ?)
                 """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), module, action, bizNo, result, detail);
+    }
+
+    private List<Map<String, Object>> filterMenus(String roleCode, List<Map<String, Object>> source) {
+        Set<String> allowed = menuScope(roleCode);
+        if (allowed.contains("*")) return source;
+        return source.stream()
+                .map(menu -> filterMenu(menu, allowed))
+                .filter(menu -> menu != null)
+                .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> filterMenu(Map<String, Object> menu, Set<String> allowed) {
+        List<Map<String, Object>> children = ((List<Map<String, Object>>) menu.getOrDefault("children", List.of())).stream()
+                .map(child -> filterMenu(child, allowed))
+                .filter(child -> child != null)
+                .toList();
+        boolean visible = allowed.contains(String.valueOf(menu.get("code"))) || !children.isEmpty();
+        return visible ? Map.of("code", menu.get("code"), "name", menu.get("name"), "path", menu.get("path"), "children", children) : null;
+    }
+
+    private Set<String> menuScope(String roleCode) {
+        if ("SALE".equalsIgnoreCase(roleCode)) {
+            return Set.of("dashboard", "sales", "quickOrder", "salesOrder", "salesOutbound", "salesReceipt", "salesReturn", "salesInvoice", "inventory", "stockBalance", "stockLedger", "stockLock", "exportCenter", "log");
+        }
+        if ("PURCHASE".equalsIgnoreCase(roleCode)) {
+            return Set.of("dashboard", "base", "goods", "supplier", "purchase", "purchaseOrder", "purchaseInbound", "purchaseReceipt", "purchaseReturn", "purchaseExpense", "purchaseInvoice", "stockBalance", "exportCenter", "log");
+        }
+        return Set.of("*");
+    }
+
+    private Set<String> hiddenFields(String roleCode, String moduleCode) {
+        Set<String> hidden = new HashSet<>();
+        if ("SALE".equalsIgnoreCase(roleCode) && ("goods".equals(moduleCode) || "salesOrder".equals(moduleCode))) {
+            hidden.add("成本价");
+            hidden.add("成本金额");
+            hidden.add("参考进价");
+            hidden.add("最新进价");
+        }
+        return hidden;
     }
 
     private Map<String, Object> menu(String code, String name, String path, Map<String, Object>... children) {

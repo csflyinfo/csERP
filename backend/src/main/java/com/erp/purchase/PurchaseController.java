@@ -30,6 +30,7 @@ public class PurchaseController {
 
     @PostMapping("/order/page")
     public ApiResponse<PageResult<Map<String, Object>>> orderPage(@RequestBody PageRequest request) {
+        String roleCode = String.valueOf(request.filters() == null ? "ADMIN" : request.filters().getOrDefault("roleCode", "ADMIN"));
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT order_no orderNo,
                        supplier,
@@ -43,12 +44,13 @@ public class PurchaseController {
                        inbound_amount inboundAmount,
                        cost_amount costAmount,
                        payment_status paymentStatus,
-                       CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status,
+                       CASE status WHEN 'APPROVED' THEN '已审核' WHEN 'CLOSED' THEN '已关闭' WHEN 'DELETED' THEN '已删除' ELSE '待审核' END status,
                        arrival_status arrivalStatus,
                        creator_info creatorInfo
                 FROM pur_order
+                WHERE (? = 'ADMIN' OR ? = 'PURCHASE' OR buyer = '系统管理员')
                 ORDER BY order_no DESC
-                """), request));
+                """, roleCode, roleCode), request));
     }
 
     @GetMapping("/order/detail")
@@ -90,9 +92,43 @@ public class PurchaseController {
 
     @PostMapping("/order/audit")
     public ApiResponse<Map<String, Object>> auditOrder(@Valid @RequestBody AuditRequest request) {
-        int updated = jdbcTemplate.update("UPDATE pur_order SET status='APPROVED', arrival_status='采购在途' WHERE order_id = ? OR order_no = ?", request.bizId(), request.bizId());
-        if (updated == 0) jdbcTemplate.update("UPDATE pur_order SET status='APPROVED', arrival_status='采购在途' WHERE order_no = (SELECT order_no FROM pur_order ORDER BY order_no DESC LIMIT 1)");
+        int updated = jdbcTemplate.update("UPDATE pur_order SET status='APPROVED', arrival_status='采购在途', audit_info='系统管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm') WHERE (order_id = ? OR order_no = ?) AND status<>'DELETED'", request.bizId(), request.bizId());
+        if (updated == 0) jdbcTemplate.update("UPDATE pur_order SET status='APPROVED', arrival_status='采购在途', audit_info='系统管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm') WHERE order_no = (SELECT order_no FROM pur_order WHERE status<>'DELETED' ORDER BY order_no DESC LIMIT 1)");
+        log("purchase.order", "AUDIT", request.bizId(), "采购订单审核");
         return ApiResponse.ok(Map.of("orderId", request.bizId(), "status", "APPROVED", "effect", "已形成采购在途", "auditTime", LocalDateTime.now().toString()));
+    }
+
+    @PostMapping("/order/reverse-audit")
+    public ApiResponse<Map<String, Object>> reverseAuditOrder(@Valid @RequestBody AuditRequest request) {
+        int updated = jdbcTemplate.update("""
+                UPDATE pur_order SET status='PENDING', arrival_status='未到货', audit_info=NULL
+                WHERE (order_id=? OR order_no=?) AND status='APPROVED' AND inbound_amount=0
+                """, request.bizId(), request.bizId());
+        if (updated == 0) throw new IllegalArgumentException("采购订单已入库或状态不允许反审核");
+        log("purchase.order", "REVERSE_AUDIT", request.bizId(), "采购订单反审核");
+        return ApiResponse.ok(Map.of("orderId", request.bizId(), "status", "PENDING", "effect", "已反审核，采购在途已取消"));
+    }
+
+    @PostMapping("/order/close")
+    public ApiResponse<Map<String, Object>> closeOrder(@Valid @RequestBody AuditRequest request) {
+        int updated = jdbcTemplate.update("""
+                UPDATE pur_order SET status='CLOSED', arrival_status='已终止'
+                WHERE (order_id=? OR order_no=?) AND status IN ('PENDING', 'APPROVED')
+                """, request.bizId(), request.bizId());
+        if (updated == 0) throw new IllegalArgumentException("采购订单状态不允许关闭");
+        log("purchase.order", "CLOSE", request.bizId(), "采购订单关闭");
+        return ApiResponse.ok(Map.of("orderId", request.bizId(), "status", "CLOSED", "effect", "采购订单已关闭"));
+    }
+
+    @PostMapping("/order/delete")
+    public ApiResponse<Map<String, Object>> deleteOrder(@Valid @RequestBody AuditRequest request) {
+        int updated = jdbcTemplate.update("""
+                UPDATE pur_order SET status='DELETED', arrival_status='已删除'
+                WHERE (order_id=? OR order_no=?) AND status='PENDING'
+                """, request.bizId(), request.bizId());
+        if (updated == 0) throw new IllegalArgumentException("仅待审核采购订单允许删除");
+        log("purchase.order", "DELETE", request.bizId(), "采购订单删除");
+        return ApiResponse.ok(Map.of("orderId", request.bizId(), "status", "DELETED", "effect", "采购订单已删除"));
     }
 
     @PostMapping("/inbound/page")
@@ -158,6 +194,13 @@ public class PurchaseController {
     }
     @PostMapping("/invoice/page")
     public ApiResponse<PageResult<Map<String, Object>>> invoicePage(@RequestBody PageRequest request) { return ApiResponse.ok(PageResult.of(List.of(Map.of("invoiceNo", "PINV202606140001", "supplier", "农夫山泉杭州经销", "invoiceCode", "3300****", "invoiceAmount", "3955.00", "matchStatus", "未勾稽", "certStatus", "未认证", "status", "正常")), request)); }
+
+    private void log(String moduleCode, String action, String bizNo, String detail) {
+        jdbcTemplate.update("""
+                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
+                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
+                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), moduleCode, action, bizNo, detail);
+    }
 
     public record PurchaseOrderRequest(@NotBlank String supplierId, @NotBlank String warehouseId, String buyer, String ownerName, String settlementMethod, @NotEmpty List<PurchaseOrderDetailRequest> details) {}
     public record PurchaseOrderDetailRequest(@NotBlank String goodsId, String goodsName, @NotBlank String unitId, String lineType, String taxRate, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}

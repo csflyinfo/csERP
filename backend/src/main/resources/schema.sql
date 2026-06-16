@@ -364,8 +364,10 @@ CREATE TABLE IF NOT EXISTS sys_role_runtime (
   user_count INT DEFAULT 0,
   menu_scope VARCHAR(200),
   field_scope VARCHAR(200),
+  data_scope VARCHAR(100) DEFAULT 'ALL',
   status VARCHAR(20) DEFAULT 'NORMAL'
 );
+ALTER TABLE sys_role_runtime ADD COLUMN IF NOT EXISTS data_scope VARCHAR(100) DEFAULT 'ALL';
 
 CREATE TABLE IF NOT EXISTS sys_param_runtime (
   param_id VARCHAR(32) PRIMARY KEY,

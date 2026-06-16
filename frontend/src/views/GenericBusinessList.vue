@@ -3,13 +3,16 @@ import { computed, ref, watch } from 'vue'
 import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
 import { post, saveTextFile } from '../api/client.js'
+import { usePermission } from '../composables/usePermission.js'
 import { mapRecordToRow, moduleApis } from '../module-api.js'
 
 const props = defineProps({
   config: { type: Object, required: true },
   moduleCode: { type: String, required: true },
+  roleCode: { type: String, default: 'ADMIN' },
 })
 
+const { loadFieldScope, canViewField } = usePermission()
 const feedback = ref('')
 const dialog = ref(null)
 const selectedRow = ref(null)
@@ -29,7 +32,7 @@ const columns = computed(() => props.config.columns.map((title, index) => ({
   title,
   num: /金额|数量|库存|单价|成本|余额|已收|未收|已付|未付|原价|现价|进价|税额|毛利|额度/.test(title),
 })))
-const visibleColumns = computed(() => columns.value.filter(col => columnSettings.value[col.key] !== false || /操作/.test(col.title)))
+const visibleColumns = computed(() => columns.value.filter(col => (columnSettings.value[col.key] !== false || /操作/.test(col.title)) && canViewField(props.moduleCode, col.title)))
 const fieldSettingKey = computed(() => `erp-field-setting:${props.moduleCode}`)
 
 const actionColumnIndex = computed(() => props.config.columns.findIndex(title => /操作/.test(title)))
@@ -48,7 +51,7 @@ async function loadRows() {
   }
   loading.value = true
   try {
-    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: queryFilters.value })
+    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: props.roleCode } })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, props.config)) : [buildRow()]
     total.value = data.total || tableRows.value.length
   } catch (error) {
@@ -82,7 +85,7 @@ function resetColumnSettings() {
   show(`${props.config.title}字段设置已恢复默认`)
 }
 
-watch(() => props.config, () => { loadColumnSettings(); resetRows() }, { immediate: true })
+watch(() => [props.config, props.roleCode], () => { loadColumnSettings(); loadFieldScope(props.moduleCode, props.roleCode); resetRows() }, { immediate: true })
 
 const formFields = computed(() => {
   if (props.config.formFields?.length) return props.config.formFields
@@ -116,9 +119,10 @@ function closeDialog() {
 
 async function saveForm() {
   const api = moduleApis[props.moduleCode]
-  if (api?.save) {
+  const endpoint = dialog.value?.title?.includes('编辑') && api?.update ? api.update : api?.save
+  if (endpoint) {
     try {
-      await post(api.save, buildPayload())
+      await post(endpoint, buildPayload())
     } catch (error) {
       show(`${dialog.value.title}接口暂不可用，已保留前端操作`)
     }
@@ -138,7 +142,7 @@ async function saveForm() {
 async function confirmAction() {
   const action = dialog.value?.title || '操作'
   const api = moduleApis[props.moduleCode]
-  const endpoint = /核销/.test(action) ? api?.reconcile : /停用/.test(action) ? api?.stop : /作废/.test(action) ? api?.cancel : api?.audit
+  const endpoint = resolveEndpoint(api, action)
   if (endpoint) {
     try {
       await post(endpoint, buildPayload())
@@ -147,12 +151,29 @@ async function confirmAction() {
     }
   }
   if (selectedRow.value && statusColumnIndex.value >= 0) {
-    if (/审核|确认/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已审核'
+    if (/反审核/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '待审核'
+    else if (/审核|确认/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已审核'
     if (/停用|作废|终止/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = action.replace('确认', '')
+    if (/冻结/.test(action) && !/解冻/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '冻结'
+    if (/解冻/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '正常'
+    if (/关闭/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已关闭'
+    if (/删除/.test(action)) tableRows.value = tableRows.value.filter(row => row !== selectedRow.value)
     if (/核销/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已核销'
   }
   show(`${props.config.title}${action}成功`)
   closeDialog()
+}
+
+function resolveEndpoint(api, action) {
+  if (/反审核/.test(action)) return api?.reverseAudit
+  if (/关闭/.test(action)) return api?.close
+  if (/删除/.test(action)) return api?.delete
+  if (/解冻/.test(action)) return api?.unfreeze
+  if (/冻结/.test(action)) return api?.freeze
+  if (/核销/.test(action)) return api?.reconcile
+  if (/停用/.test(action)) return api?.stop
+  if (/作废/.test(action)) return api?.cancel
+  return api?.audit
 }
 
 async function uploadImport() {
@@ -180,7 +201,7 @@ async function handleAction(action, row = null) {
     openDialog('view', action, `${props.config.title}详情`, row)
   } else if (/新建|编辑|复制/.test(action)) {
     openDialog('form', action, `${props.config.title}：按PRD打开${props.config.mode === 'modal' ? '小弹窗' : props.config.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
-  } else if (/审核|确认签收|停用|作废|终止|核销|反审核/.test(action)) {
+  } else if (/审核|确认签收|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
     openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
   } else if (/导入/.test(action)) {
     openDialog('import', action, `${props.config.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)

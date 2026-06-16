@@ -2059,3 +2059,116 @@ V1 enhanced flow test passed
 ```text
 V1 auth menu smoke test passed
 ```
+
+## 2026-06-16 业务操作真实接口、前端拆分与权限范围
+
+### 已完成
+
+1. 基础资料生命周期操作细化：
+   - 商品新增编辑、停用、冻结、软删除接口。
+   - 客户/供应商新增冻结、解冻接口。
+   - 客户/供应商保存时保留既有状态，避免编辑后误恢复为正常。
+   - 基础资料变更写入操作日志。
+
+2. 采购/销售订单生命周期补齐：
+   - 采购订单新增反审核、关闭、软删除接口。
+   - 销售订单新增详情、反审核、关闭、软删除接口。
+   - 采购/销售订单分页状态补充已关闭、已删除展示。
+   - 订单审核、反审核、关闭、删除写入操作日志。
+
+3. 前端通用操作接入真实接口：
+   - `module-api.js` 补充基础资料和订单新增动作映射。
+   - `GenericBusinessList.vue` 支持编辑优先调用 update。
+   - `GenericBusinessList.vue` 支持冻结、解冻、反审核、关闭、删除动作路由。
+
+4. `App.vue` 拆分：
+   - 新增 `fallback-menus.js`。
+   - 新增 `useAuth`、`useNavigation`、`useDashboard`、`useToast`、`usePermission`。
+   - 新增 `AppShell`、`AppHeader`、`AppSidebar`、`AppTabBar`。
+   - 新增 `LoginPage`、`DashboardPage`、`FallbackBusinessList`。
+   - `App.vue` 改为应用编排入口，保留现有页签/伪路由机制，未引入大规模路由改造。
+
+5. 权限范围基础能力：
+   - 角色运行表补充 `data_scope`。
+   - 登录和当前用户接口返回角色、菜单范围、字段范围、数据范围。
+   - 菜单接口支持按 `roleCode` 过滤演示菜单范围。
+   - 新增字段范围接口：`POST /system/field-scope`。
+   - 通用列表字段可见性同时受本地字段设置和字段权限控制。
+
+6. 兼容性修复：
+   - 库存流水号和资金流水号增加随机后缀，避免高频自动化测试下唯一键冲突。
+
+7. 新增/扩展测试脚本：
+   - 扩展 `v1-base-master-persistence-test.js`，覆盖商品编辑/冻结/停用、客户冻结/解冻/保留状态。
+   - 新增 `v1-order-lifecycle-test.js`，覆盖采购/销售订单审核、反审核、关闭、软删除和销售详情。
+   - 新增 `v1-permission-scope-test.js`，覆盖当前用户权限信息、菜单范围、字段范围。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f erp-wms-tms/backend/pom.xml -DskipTests package
+```
+
+2. 前端构建：成功。
+
+```text
+npm --prefix erp-wms-tms/frontend run build
+✓ built
+```
+
+3. 新增和关键回归测试通过：
+
+```text
+V1 base master persistence test passed
+V1 order persistence test passed
+V1 order lifecycle test passed
+V1 permission scope test passed
+V1 module coverage test passed: 60 endpoints
+V1 enhanced flow test passed
+V1 auth menu smoke test passed
+```
+
+## 2026-06-16 权限上下文与数据范围继续增强
+
+### 已完成
+
+1. 前端权限上下文贯通：
+   - 登录后先加载当前用户，再按 `currentUser.roleCode` 拉取菜单。
+   - `GenericBusinessList` 接收当前用户 `roleCode`。
+   - 字段权限请求按当前 `roleCode` 和 `moduleCode` 获取隐藏字段。
+   - 分页请求在 `filters.roleCode` 中携带当前角色，供后端做数据范围演示过滤。
+
+2. 后端订单数据范围演示过滤：
+   - 采购订单分页按 `roleCode` 区分可见范围。
+   - 销售订单分页按 `roleCode` 区分可见范围。
+   - ADMIN 查看全部；采购/销售角色查看对应业务范围；跨域角色只查看演示本人数据。
+
+3. 权限测试扩展：
+   - `v1-permission-scope-test.js` 增加采购/销售订单数据范围断言。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f erp-wms-tms/backend/pom.xml -DskipTests package
+```
+
+2. 前端构建：成功。
+
+```text
+npm --prefix erp-wms-tms/frontend run build
+✓ built
+```
+
+3. 权限、订单和关键回归测试通过：
+
+```text
+V1 permission scope test passed
+V1 order lifecycle test passed
+V1 module coverage test passed: 60 endpoints
+V1 enhanced flow test passed
+V1 auth menu smoke test passed
+```

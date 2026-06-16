@@ -45,7 +45,9 @@ MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_EMPTY_001', 'EMPTY_ADJUST'
 MERGE INTO fin_expense_bill KEY(expense_id) VALUES ('FE001', 'FE202606140001', 'OUT', '房租', '物业公司', 5000.00, 0.00, TRUE, FALSE, 'PENDING');
 
 MERGE INTO sys_user_runtime KEY(user_id) VALUES ('U0001', 'admin', '系统管理员', '13800000000', '管理员组', '全部', 'NORMAL');
-MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0001', 'ADMIN', '管理员组', 1, '全部菜单', '全部字段', 'NORMAL');
+MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0001', 'ADMIN', '管理员组', 1, '*', '*', 'ALL', 'NORMAL');
+MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0002', 'SALE', '销售员组', 1, 'dashboard,sales,inventory,exportCenter,log', '隐藏成本字段', 'SELF', 'NORMAL');
+MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0003', 'PURCHASE', '采购员组', 1, 'dashboard,base,purchase,stockBalance,exportCenter,log', '*', 'DEPARTMENT', 'NORMAL');
 MERGE INTO sys_param_runtime KEY(param_id) VALUES ('P0001', 'CREDIT_CHECK_MODE', '信用控制', 'REMIND', 'REMIND', '销售', '可选 REMIND/BLOCK/APPROVAL');
 MERGE INTO sys_param_runtime KEY(param_id) VALUES ('P0002', 'STOCK_NEGATIVE_ALLOWED', '允许负库存', 'false', 'false', '库存', 'V1.0默认不允许负库存');
 MERGE INTO sys_bill_no_rule_runtime KEY(rule_id) VALUES ('BN001', '销售订单', 'SO', 'yyyyMMdd', 4, 'DAY', 'SO202606150001', 'NORMAL');

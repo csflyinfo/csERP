@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/base/master")
@@ -70,7 +71,7 @@ public class BaseMasterController {
                        invoice_title invoiceTitle,
                        tax_no taxNo,
                        ap_balance apBalance,
-                       CASE status WHEN 'NORMAL' THEN '正常' ELSE '停用' END status
+                       CASE status WHEN 'NORMAL' THEN '正常' WHEN 'FROZEN' THEN '冻结' ELSE '停用' END status
                 FROM base_supplier
                 ORDER BY supplier_code
                 """), request));
@@ -126,43 +127,76 @@ public class BaseMasterController {
 
     @PostMapping("/stop")
     public ApiResponse<Map<String, Object>> stop(@RequestBody Map<String, Object> request) {
+        return updateMasterStatus(request, "STOPPED", "STOP", "停用基础资料");
+    }
+
+    @PostMapping("/freeze")
+    public ApiResponse<Map<String, Object>> freeze(@RequestBody Map<String, Object> request) {
+        return updateMasterStatus(request, "FROZEN", "FREEZE", "冻结基础资料");
+    }
+
+    @PostMapping("/unfreeze")
+    public ApiResponse<Map<String, Object>> unfreeze(@RequestBody Map<String, Object> request) {
+        return updateMasterStatus(request, "NORMAL", "UNFREEZE", "解冻基础资料");
+    }
+
+    private ApiResponse<Map<String, Object>> updateMasterStatus(Map<String, Object> request, String status, String action, String detail) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
         String bizId = String.valueOf(request.getOrDefault("bizId", ""));
+        int updated = 0;
         if ("customer".equals(moduleCode)) {
-            jdbcTemplate.update("UPDATE base_customer SET status='STOPPED' WHERE customer_id=? OR customer_code=?", bizId, bizId);
+            updated = jdbcTemplate.update("UPDATE base_customer SET status=? WHERE customer_id=? OR customer_code=?", status, bizId, bizId);
         } else if ("supplier".equals(moduleCode)) {
-            jdbcTemplate.update("UPDATE base_supplier SET status='STOPPED' WHERE supplier_id=? OR supplier_code=?", bizId, bizId);
+            updated = jdbcTemplate.update("UPDATE base_supplier SET status=? WHERE supplier_id=? OR supplier_code=?", status, bizId, bizId);
         }
-        return ApiResponse.ok(GenericResult.operation(moduleCode, "STOP"));
+        if (updated == 0) throw new IllegalArgumentException("基础资料不存在，无法" + detail);
+        log("base." + moduleCode, action, bizId, detail);
+        return ApiResponse.ok(GenericResult.operation(moduleCode, action));
     }
 
     private ApiResponse<Map<String, Object>> saveCustomer(Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("customerId", "CUS" + System.currentTimeMillis()));
         String code = String.valueOf(request.getOrDefault("customerCode", request.getOrDefault("code", id)));
+        String status = existingStatus("base_customer", "customer_id", "customer_code", id, code);
         jdbcTemplate.update("""
                 MERGE INTO base_customer KEY(customer_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NORMAL')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, id, code, request.getOrDefault("customerName", request.getOrDefault("name", "新客户")),
                 request.getOrDefault("channelType", "零售商超"), request.getOrDefault("contactName", ""), request.getOrDefault("mobile", ""),
                 request.getOrDefault("territory", ""), request.getOrDefault("routeLine", ""), request.getOrDefault("salesman", ""),
                 request.getOrDefault("customerLevel", "普通"), request.getOrDefault("accountPeriodType", "现结"), request.getOrDefault("cutoffDay", ""),
                 request.getOrDefault("paymentDay", ""), request.getOrDefault("creditLimit", 0), request.getOrDefault("arBalance", 0),
-                request.getOrDefault("overdueAmount", 0), request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""));
+                request.getOrDefault("overdueAmount", 0), request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""), request.getOrDefault("status", status));
+        log("base.customer", "SAVE", code, "保存客户资料");
         return ApiResponse.ok(GenericResult.row("customerId", id, "customerCode", code, "success", true));
     }
 
     private ApiResponse<Map<String, Object>> saveSupplier(Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("supplierId", "SUP" + System.currentTimeMillis()));
         String code = String.valueOf(request.getOrDefault("supplierCode", request.getOrDefault("code", id)));
+        String status = existingStatus("base_supplier", "supplier_id", "supplier_code", id, code);
         jdbcTemplate.update("""
                 MERGE INTO base_supplier KEY(supplier_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NORMAL')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, id, code, request.getOrDefault("supplierName", request.getOrDefault("name", "新供应商")),
                 request.getOrDefault("shortName", ""), request.getOrDefault("supplierType", "普通供应商"), request.getOrDefault("contactName", ""),
                 request.getOrDefault("phone", ""), request.getOrDefault("deliveryDays", 0), request.getOrDefault("settlementMethod", "现结"),
                 request.getOrDefault("accountPeriodDays", 0), request.getOrDefault("defaultBuyer", ""), request.getOrDefault("defaultReceiptAccount", ""),
-                request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""), request.getOrDefault("apBalance", 0));
+                request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""), request.getOrDefault("apBalance", 0), request.getOrDefault("status", status));
+        log("base.supplier", "SAVE", code, "保存供应商资料");
         return ApiResponse.ok(GenericResult.row("supplierId", id, "supplierCode", code, "success", true));
+    }
+
+    private String existingStatus(String tableName, String idColumn, String codeColumn, String id, String code) {
+        List<String> rows = jdbcTemplate.queryForList("SELECT status FROM " + tableName + " WHERE " + idColumn + "=? OR " + codeColumn + "=? LIMIT 1", String.class, id, code);
+        return rows.isEmpty() ? "NORMAL" : rows.get(0);
+    }
+
+    private void log(String moduleCode, String action, String bizNo, String detail) {
+        jdbcTemplate.update("""
+                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
+                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
+                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), moduleCode, action, bizNo, detail);
     }
 
     private ApiResponse<PageResult<Map<String, Object>>> page(PageRequest request, Map<String, Object> row) {

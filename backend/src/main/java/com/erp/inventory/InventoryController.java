@@ -113,8 +113,8 @@ public class InventoryController {
     @PostMapping("/transfer/audit")
     public ApiResponse<Map<String, Object>> auditTransfer(@RequestBody Map<String, Object> request) {
         jdbcTemplate.update("UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_type='TRANSFER' AND (bill_id=? OR bill_no=? OR bill_no=(SELECT bill_no FROM biz_simple_bill WHERE bill_type='TRANSFER' ORDER BY bill_no DESC LIMIT 1))", request.get("bizId"), request.get("bizId"));
-        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'TR202606140001', 'SP001', '农夫山泉500ml*24', '总仓', 'B202606', 'OUT', 100, 30.80, 3080.00, 1100, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), "INV" + System.currentTimeMillis());
-        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'TR202606140001', 'SP001', '农夫山泉500ml*24', '东区仓', 'B202606', 'IN', 100, 30.80, 3080.00, 100, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), "INV" + (System.currentTimeMillis() + 1));
+        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'TR202606140001', 'SP001', '农夫山泉500ml*24', '总仓', 'B202606', 'OUT', 100, 30.80, 3080.00, 1100, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), ledgerNo());
+        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'TR202606140001', 'SP001', '农夫山泉500ml*24', '东区仓', 'B202606', 'IN', 100, 30.80, 3080.00, 100, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), ledgerNo());
         return ApiResponse.ok(Map.of("status", "APPROVED", "effect", "调拨已审核，生成调出和调入库存流水"));
     }
 
@@ -131,7 +131,7 @@ public class InventoryController {
     public ApiResponse<Map<String, Object>> auditDamage(@RequestBody Map<String, Object> request) {
         jdbcTemplate.update("UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_type='DAMAGE' AND (bill_id=? OR bill_no=? OR bill_no=(SELECT bill_no FROM biz_simple_bill WHERE bill_type='DAMAGE' ORDER BY bill_no DESC LIMIT 1))", request.get("bizId"), request.get("bizId"));
         jdbcTemplate.update("UPDATE inv_stock_balance SET physical_qty=physical_qty-20, available_qty=available_qty-20, stock_amount=(physical_qty-20)*cost_price, last_inout_time=CURRENT_TIMESTAMP WHERE balance_id='SB001'");
-        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'DO202606140001', 'SP001', '农夫山泉500ml*24', '冷藏仓', 'B202606', 'OUT', 20, 30.80, 616.00, 1180, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), "INV" + System.currentTimeMillis());
+        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'DO202606140001', 'SP001', '农夫山泉500ml*24', '冷藏仓', 'B202606', 'OUT', 20, 30.80, 616.00, 1180, '管理员')", "SL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12), ledgerNo());
         return ApiResponse.ok(Map.of("status", "APPROVED", "effect", "报损已审核，库存扣减并生成出库流水"));
     }
 
@@ -149,5 +149,9 @@ public class InventoryController {
         jdbcTemplate.update("UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_type='COST_ADJUST' AND (bill_id=? OR bill_no=? OR bill_no=(SELECT bill_no FROM biz_simple_bill WHERE bill_type='COST_ADJUST' ORDER BY bill_no DESC LIMIT 1))", request.get("bizId"), request.get("bizId"));
         jdbcTemplate.update("UPDATE inv_stock_balance SET cost_price=cost_price+0.28, stock_amount=physical_qty*(cost_price+0.28), last_inout_time=CURRENT_TIMESTAMP WHERE balance_id='SB001'");
         return ApiResponse.ok(Map.of("status", "APPROVED", "effect", "成本调整已审核，只调整成本不改变库存数量"));
+    }
+
+    private String ledgerNo() {
+        return "INV" + System.currentTimeMillis() + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 4);
     }
 }
