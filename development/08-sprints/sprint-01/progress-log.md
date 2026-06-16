@@ -2272,3 +2272,64 @@ V1 order lifecycle test passed
 V1 permission scope test passed
 V1 auth menu smoke test passed
 ```
+
+## 2026-06-16 PRD 核心入库出库真实落库
+
+### 已完成
+
+1. 采购入库真实表结构：
+   - 新增 `pur_inbound`。
+   - 新增 `pur_inbound_detail`。
+   - 种子数据补充采购入库单和入库明细。
+
+2. 销售出库真实表结构：
+   - 新增 `sales_outbound`。
+   - 新增 `sales_outbound_detail`。
+   - 种子数据补充销售出库单和出库明细。
+
+3. 采购入库接口改造：
+   - `POST /purchase/inbound/page` 改为查询真实入库表。
+   - `GET /purchase/inbound/detail` 返回真实入库明细。
+   - `POST /purchase/inbound/create` 支持按采购订单生成入库单和明细。
+   - `POST /purchase/inbound/audit` 按入库明细增加库存、写库存流水、更新采购订单入库金额和到货状态。
+
+4. 销售出库接口改造：
+   - `POST /sales/outbound/page` 改为查询真实出库表。
+   - `GET /sales/outbound/detail` 返回真实出库明细。
+   - `POST /sales/outbound/create` 支持按销售订单生成出库单和明细。
+   - `POST /sales/outbound/audit` 按出库明细扣减库存、释放锁定、写库存流水、更新销售订单出库状态。
+
+5. 前端动作接入：
+   - `purchaseInbound` 增加 `save/detail` API 映射。
+   - `salesOutbound` 增加 `save/detail` API 映射。
+   - 通用列表将“引入采购订单 / 引入销售订单”纳入表单保存动作。
+   - 通用表单为入库/出库组装 `sourceOrder` payload。
+
+6. 新增持久化测试：
+   - `development/06-testing/scripts/v1-inbound-outbound-persistence-test.js`
+   - 覆盖采购订单生成采购入库、入库详情、入库审核。
+   - 覆盖销售订单生成销售出库、出库详情、出库审核。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f erp-wms-tms/backend/pom.xml -DskipTests package
+```
+
+2. 前端构建：成功。
+
+```text
+npm --prefix erp-wms-tms/frontend run build
+✓ built
+```
+
+3. 入库出库持久化与关键回归测试通过：
+
+```text
+V1 inbound outbound persistence test passed
+V1 order lifecycle test passed
+V1 module coverage test passed: 60 endpoints
+V1 enhanced flow test passed
+```

@@ -282,6 +282,71 @@ CREATE TABLE IF NOT EXISTS sales_order_detail (
   cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS pur_inbound (
+  inbound_id VARCHAR(32) PRIMARY KEY,
+  inbound_no VARCHAR(50) NOT NULL UNIQUE,
+  source_order VARCHAR(50),
+  supplier VARCHAR(100),
+  warehouse VARCHAR(100),
+  bill_date DATE NOT NULL,
+  qty DECIMAL(18,2) DEFAULT 0,
+  amount DECIMAL(18,2) DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'PENDING',
+  stock_updated BOOLEAN DEFAULT FALSE,
+  receipt_generated BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pur_inbound_detail (
+  detail_id VARCHAR(32) PRIMARY KEY,
+  inbound_id VARCHAR(32) NOT NULL,
+  goods_code VARCHAR(50),
+  goods_name VARCHAR(200),
+  warehouse VARCHAR(100),
+  unit_name VARCHAR(50),
+  expected_qty DECIMAL(18,2) DEFAULT 0,
+  received_qty DECIMAL(18,2) DEFAULT 0,
+  batch_no VARCHAR(100),
+  production_date DATE,
+  expiry_date DATE,
+  price DECIMAL(18,2) DEFAULT 0,
+  amount DECIMAL(18,2) DEFAULT 0,
+  before_cost DECIMAL(18,2) DEFAULT 0,
+  after_cost DECIMAL(18,2) DEFAULT 0,
+  allocated_expense DECIMAL(18,2) DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS sales_outbound (
+  outbound_id VARCHAR(32) PRIMARY KEY,
+  outbound_no VARCHAR(50) NOT NULL UNIQUE,
+  source_order VARCHAR(50),
+  customer VARCHAR(100),
+  warehouse VARCHAR(100),
+  bill_date DATE NOT NULL,
+  qty DECIMAL(18,2) DEFAULT 0,
+  amount DECIMAL(18,2) DEFAULT 0,
+  cost_amount DECIMAL(18,2) DEFAULT 0,
+  status VARCHAR(20) DEFAULT 'PENDING',
+  stock_updated BOOLEAN DEFAULT FALSE,
+  receipt_generated BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sales_outbound_detail (
+  detail_id VARCHAR(32) PRIMARY KEY,
+  outbound_id VARCHAR(32) NOT NULL,
+  goods_code VARCHAR(50),
+  goods_name VARCHAR(200),
+  warehouse VARCHAR(100),
+  unit_name VARCHAR(50),
+  qty DECIMAL(18,2) DEFAULT 0,
+  batch_no VARCHAR(100),
+  price DECIMAL(18,2) DEFAULT 0,
+  amount DECIMAL(18,2) DEFAULT 0,
+  cost_price DECIMAL(18,2) DEFAULT 0,
+  cost_amount DECIMAL(18,2) DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS fin_ar (
   ar_id VARCHAR(32) PRIMARY KEY,
   ar_no VARCHAR(50) NOT NULL UNIQUE,

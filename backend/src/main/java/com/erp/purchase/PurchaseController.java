@@ -159,14 +159,83 @@ public class PurchaseController {
 
     @PostMapping("/inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> inboundPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(List.of(Map.of("inboundNo", "PI202606140001", "sourceOrder", "PO202606140001", "supplier", "农夫山泉杭州经销", "warehouse", "总仓", "billDate", "2026-06-14", "qty", "100", "amount", "3500.00", "status", "待审核")), request));
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT inbound_no inboundNo,
+                       source_order sourceOrder,
+                       supplier,
+                       warehouse,
+                       bill_date billDate,
+                       qty,
+                       amount,
+                       CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status,
+                       CASE stock_updated WHEN TRUE THEN '是' ELSE '否' END stockUpdated,
+                       CASE receipt_generated WHEN TRUE THEN '是' ELSE '否' END receiptGenerated
+                FROM pur_inbound
+                ORDER BY inbound_no DESC
+                """), request));
+    }
+
+    @GetMapping("/inbound/detail")
+    public ApiResponse<Map<String, Object>> inboundDetail(@RequestParam String inboundId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT * FROM pur_inbound WHERE inbound_id=? OR inbound_no=? LIMIT 1", inboundId, inboundId);
+        if (rows.isEmpty()) return ApiResponse.ok(GenericResult.row("inboundId", inboundId, "details", List.of()));
+        Map<String, Object> head = rows.get(0);
+        head.put("details", jdbcTemplate.queryForList("""
+                SELECT goods_code goodsCode, goods_name goodsName, warehouse, unit_name unit, expected_qty expectedQty, received_qty receivedQty,
+                       batch_no batchNo, production_date productionDate, expiry_date expiryDate, price, amount, before_cost beforeCost, after_cost afterCost, allocated_expense allocatedExpense
+                FROM pur_inbound_detail WHERE inbound_id=? ORDER BY detail_id
+                """, head.get("INBOUND_ID")));
+        return ApiResponse.ok(head);
+    }
+
+    @PostMapping("/inbound/create")
+    public ApiResponse<Map<String, Object>> createInbound(@RequestBody Map<String, Object> request) {
+        String sourceOrder = String.valueOf(request.getOrDefault("sourceOrder", request.getOrDefault("bizId", "PO202606140001")));
+        List<Map<String, Object>> orders = jdbcTemplate.queryForList("SELECT * FROM pur_order WHERE order_no=? OR order_id=? ORDER BY order_no DESC LIMIT 1", sourceOrder, sourceOrder);
+        Map<String, Object> order = orders.isEmpty() ? Map.of("ORDER_NO", sourceOrder, "SUPPLIER", "默认供应商", "WAREHOUSE", "总仓") : orders.get(0);
+        String orderId = String.valueOf(order.getOrDefault("ORDER_ID", ""));
+        List<Map<String, Object>> details = orderId.isBlank() ? List.of() : jdbcTemplate.queryForList("SELECT * FROM pur_order_detail WHERE order_id=?", orderId);
+        BigDecimal qty = details.stream().map(row -> (BigDecimal) row.get("QTY")).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal amount = details.stream().map(row -> (BigDecimal) row.get("AMOUNT")).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (details.isEmpty()) {
+            qty = new BigDecimal("1");
+            amount = new BigDecimal("35.00");
+        }
+        String id = "PI" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String no = "PI" + LocalDate.now().toString().replace("-", "") + String.format("%04d", (int) (System.currentTimeMillis() % 10000));
+        jdbcTemplate.update("""
+                INSERT INTO pur_inbound(inbound_id, inbound_no, source_order, supplier, warehouse, bill_date, qty, amount, status, stock_updated, receipt_generated, created_at)
+                VALUES (?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, 'PENDING', FALSE, FALSE, CURRENT_TIMESTAMP)
+                """, id, no, order.get("ORDER_NO"), order.get("SUPPLIER"), order.get("WAREHOUSE"), qty, amount);
+        if (details.isEmpty()) {
+            jdbcTemplate.update("INSERT INTO pur_inbound_detail(detail_id, inbound_id, goods_code, goods_name, warehouse, unit_name, expected_qty, received_qty, batch_no, price, amount, before_cost, after_cost, allocated_expense) VALUES (?, ?, 'SP001', '农夫山泉500ml*24', ?, '箱', 1, 1, 'B' || FORMATDATETIME(CURRENT_DATE, 'yyyyMM'), 35.00, 35.00, 30.80, 31.20, 0)", "PID" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id, order.get("WAREHOUSE"));
+        } else {
+            for (Map<String, Object> detail : details) {
+                jdbcTemplate.update("""
+                        INSERT INTO pur_inbound_detail(detail_id, inbound_id, goods_code, goods_name, warehouse, unit_name, expected_qty, received_qty, batch_no, price, amount, before_cost, after_cost, allocated_expense)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'B' || FORMATDATETIME(CURRENT_DATE, 'yyyyMM'), ?, ?, ?, ?, 0)
+                        """, "PID" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id, detail.get("GOODS_CODE"), detail.get("GOODS_NAME"), order.get("WAREHOUSE"), detail.get("UNIT_NAME"), detail.get("QTY"), detail.get("QTY"), detail.get("PRICE"), detail.get("AMOUNT"), detail.get("COST_PRICE"), detail.get("COST_PRICE"));
+            }
+        }
+        log("purchase.inbound", "CREATE", no, "创建采购入库单");
+        return ApiResponse.ok(GenericResult.row("inboundId", id, "inboundNo", no, "sourceOrder", order.get("ORDER_NO"), "status", "PENDING"));
     }
 
     @PostMapping("/inbound/audit")
     public ApiResponse<Map<String, Object>> auditInbound(@Valid @RequestBody AuditRequest request) {
-        jdbcTemplate.update("UPDATE inv_stock_balance SET physical_qty=physical_qty+100, available_qty=available_qty+100, stock_amount=(physical_qty+100)*cost_price, last_inout_time=CURRENT_TIMESTAMP WHERE balance_id='SB001'");
-        jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, 'PI202606140001', 'SP001', '农夫山泉500ml*24', '总仓', 'B202606', 'IN', 100, 31.20, 3120.00, 1300, '管理员')", "SL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12), "INV" + System.currentTimeMillis());
-        return ApiResponse.ok(Map.of("inboundId", request.bizId(), "status", "APPROVED", "effect", "库存增加，生成库存流水，重算成本，生成采购收货单"));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT * FROM pur_inbound WHERE (inbound_id=? OR inbound_no=?) AND status='PENDING' ORDER BY inbound_no DESC LIMIT 1", request.bizId(), request.bizId());
+        if (rows.isEmpty()) rows = jdbcTemplate.queryForList("SELECT * FROM pur_inbound WHERE status='PENDING' ORDER BY inbound_no DESC LIMIT 1");
+        if (rows.isEmpty()) throw new IllegalArgumentException("没有可审核的采购入库单");
+        Map<String, Object> inbound = rows.get(0);
+        List<Map<String, Object>> details = jdbcTemplate.queryForList("SELECT * FROM pur_inbound_detail WHERE inbound_id=?", inbound.get("INBOUND_ID"));
+        for (Map<String, Object> detail : details) {
+            jdbcTemplate.update("UPDATE inv_stock_balance SET physical_qty=physical_qty+?, available_qty=available_qty+?, stock_amount=(physical_qty+?)*cost_price, last_inout_time=CURRENT_TIMESTAMP WHERE goods_code=? AND warehouse=?", detail.get("RECEIVED_QTY"), detail.get("RECEIVED_QTY"), detail.get("RECEIVED_QTY"), detail.get("GOODS_CODE"), detail.get("WAREHOUSE"));
+            jdbcTemplate.update("INSERT INTO inv_stock_ledger(ledger_id, ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse, batch_no, direction, qty, cost_price, amount, balance_qty, operator_name) VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, 'IN', ?, ?, ?, ?, '管理员')", "SL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12), ledgerNo(), inbound.get("INBOUND_NO"), detail.get("GOODS_CODE"), detail.get("GOODS_NAME"), detail.get("WAREHOUSE"), detail.get("BATCH_NO"), detail.get("RECEIVED_QTY"), detail.get("AFTER_COST"), detail.get("AMOUNT"), detail.get("RECEIVED_QTY"));
+        }
+        jdbcTemplate.update("UPDATE pur_inbound SET status='APPROVED', stock_updated=TRUE, receipt_generated=TRUE WHERE inbound_id=?", inbound.get("INBOUND_ID"));
+        jdbcTemplate.update("UPDATE pur_order SET inbound_amount=inbound_amount+?, arrival_status='已到货' WHERE order_no=?", inbound.get("AMOUNT"), inbound.get("SOURCE_ORDER"));
+        log("purchase.inbound", "AUDIT", String.valueOf(inbound.get("INBOUND_NO")), "采购入库审核");
+        return ApiResponse.ok(Map.of("inboundId", inbound.get("INBOUND_ID"), "status", "APPROVED", "effect", "库存增加，生成库存流水，重算成本，生成采购收货单"));
     }
 
     @PostMapping("/receipt/page")
@@ -226,6 +295,10 @@ public class PurchaseController {
                 INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
                 VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
                 """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), moduleCode, action, bizNo, detail);
+    }
+
+    private String ledgerNo() {
+        return "INV" + System.currentTimeMillis() + UUID.randomUUID().toString().replace("-", "").substring(0, 4);
     }
 
     public record PurchaseOrderRequest(@NotBlank String supplierId, @NotBlank String warehouseId, String buyer, String ownerName, String settlementMethod, @NotEmpty List<PurchaseOrderDetailRequest> details) {}

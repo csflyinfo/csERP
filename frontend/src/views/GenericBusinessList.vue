@@ -228,7 +228,7 @@ async function handleAction(action, row = null) {
     show(`${props.config.title}已刷新`)
   } else if (/查看|详情|历史|库存|日志|来源/.test(action)) {
     await openDetail(action, row)
-  } else if (/新建|编辑|复制/.test(action)) {
+  } else if (/新建|编辑|复制|引入/.test(action)) {
     openDialog('form', action, `${props.config.title}：按PRD打开${props.config.mode === 'modal' ? '小弹窗' : props.config.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
   } else if (/审核|确认签收|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
     openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
@@ -381,6 +381,12 @@ function modulePayload() {
       lineType: text('行类型') || '正常',
       details: [{ goodsId: 'SP001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: text('行类型') || '正常', discountRate: '100%', taxRate: '13%', qty: 1, price: 35 }],
     }
+  }
+  if (props.moduleCode === 'purchaseInbound') {
+    return { sourceOrder: text('采购单号') || selectedRow.value?.c2 || selectedRow.value?.c0 || 'PO202606140001' }
+  }
+  if (props.moduleCode === 'salesOutbound') {
+    return { sourceOrder: text('销售单号') || selectedRow.value?.c1 || selectedRow.value?.c0 || 'SO202606140001' }
   }
   return {}
 }

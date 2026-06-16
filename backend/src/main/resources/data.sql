@@ -28,6 +28,10 @@ MERGE INTO pur_order (order_id, order_no, supplier, buyer, warehouse, bill_date,
 MERGE INTO pur_order_detail KEY(detail_id) VALUES ('POD001', 'PO001', '正常', 'SP001', '农夫山泉500ml*24', '箱', 100, 35.00, '13%', 3500.00, 31.20, 3120.00);
 MERGE INTO sales_order (order_id, order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, credit_check, stock_check, outbound_status, sign_status, status, line_type, cost_amount, creator_name, audit_info) KEY(order_id) VALUES ('SO001', 'SO202606140001', '华联超市', '张三', '总仓', DATE '2026-06-14', 350.00, 0.00, 350.00, '通过', '通过', '未出库', '未签收', 'PENDING', '正常', 312.00, '管理员', NULL);
 MERGE INTO sales_order_detail KEY(detail_id) VALUES ('SOD001', 'SO001', '正常', 'SP001', '农夫山泉500ml*24', '箱', 10, 35.00, '100%', '13%', 350.00, 31.20, 312.00);
+MERGE INTO pur_inbound KEY(inbound_id) VALUES ('PI001', 'PI202606140001', 'PO202606140001', '农夫山泉杭州经销', '总仓', DATE '2026-06-14', 100, 3500.00, 'PENDING', FALSE, FALSE, CURRENT_TIMESTAMP);
+MERGE INTO pur_inbound_detail KEY(detail_id) VALUES ('PID001', 'PI001', 'SP001', '农夫山泉500ml*24', '总仓', '箱', 100, 100, 'B202606', DATE '2026-06-01', DATE '2027-06-01', 35.00, 3500.00, 30.80, 31.20, 100.00);
+MERGE INTO sales_outbound KEY(outbound_id) VALUES ('SOU001', 'SOU202606140001', 'SO202606140001', '华联超市', '总仓', DATE '2026-06-14', 10, 350.00, 312.00, 'PENDING', FALSE, FALSE, CURRENT_TIMESTAMP);
+MERGE INTO sales_outbound_detail KEY(detail_id) VALUES ('SOUD001', 'SOU001', 'SP001', '农夫山泉500ml*24', '总仓', '箱', 10, 'B202606', 35.00, 350.00, 31.20, 312.00);
 
 MERGE INTO fin_ar KEY(ar_id) VALUES ('AR001', 'AR202606140001', 'SR202606140001', '华联超市', '张三', 350.00, 0.00, 350.00, DATE '2026-07-14', 0, '未开票', 'UNVERIFIED');
 MERGE INTO fin_ap KEY(ap_id) VALUES ('AP001', 'AP202606140001', 'PR202606140001', '农夫山泉杭州经销', 3955.00, 0.00, 3955.00, DATE '2026-07-14', 'UNVERIFIED');
