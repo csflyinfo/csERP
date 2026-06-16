@@ -2172,3 +2172,59 @@ V1 module coverage test passed: 60 endpoints
 V1 enhanced flow test passed
 V1 auth menu smoke test passed
 ```
+
+## 2026-06-16 订单编辑与详情接口增强
+
+### 已完成
+
+1. 采购订单编辑接口：
+   - 新增 `POST /purchase/order/update`。
+   - 仅待审核采购订单允许编辑。
+   - 支持更新供应商、采购员、仓库、货主、结算方式。
+   - 编辑时重算订单金额、成本金额。
+   - 编辑时删除旧明细并重写采购订单明细。
+   - 编辑操作写入操作日志。
+
+2. 销售订单编辑接口：
+   - 新增 `POST /sales/order/update`。
+   - 仅待审核销售订单允许编辑。
+   - 支持更新客户、业务员、仓库、行类型。
+   - 编辑时重算订单金额、未收金额、成本金额。
+   - 编辑时删除旧明细并重写销售订单明细。
+   - 编辑操作写入操作日志。
+
+3. 前端通用列表详情增强：
+   - `purchaseOrder`、`salesOrder` 新增 `update` API 映射。
+   - 通用列表“编辑”优先调用 `update` 接口。
+   - 通用列表“查看/详情”动作会调用模块 `detail` 接口。
+   - 详情弹窗展示后端返回的订单明细。
+
+4. 新增订单编辑详情测试：
+   - `development/06-testing/scripts/v1-order-edit-detail-test.js`
+   - 覆盖采购订单编辑后表头与明细替换。
+   - 覆盖销售订单编辑后表头、行类型与明细替换。
+
+### 验证结果
+
+1. 后端编译：成功。
+
+```text
+mvn -f erp-wms-tms/backend/pom.xml -DskipTests package
+```
+
+2. 前端构建：成功。
+
+```text
+npm --prefix erp-wms-tms/frontend run build
+✓ built
+```
+
+3. 订单编辑详情与关键回归测试通过：
+
+```text
+V1 order edit detail test passed
+V1 order lifecycle test passed
+V1 permission scope test passed
+V1 module coverage test passed: 60 endpoints
+V1 auth menu smoke test passed
+```

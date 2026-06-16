@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
-import { post, saveTextFile } from '../api/client.js'
+import { get, post, saveTextFile } from '../api/client.js'
 import { usePermission } from '../composables/usePermission.js'
 import { mapRecordToRow, moduleApis } from '../module-api.js'
 
@@ -16,6 +16,7 @@ const { loadFieldScope, canViewField } = usePermission()
 const feedback = ref('')
 const dialog = ref(null)
 const selectedRow = ref(null)
+const detailData = ref(null)
 const tableRows = ref([])
 const loading = ref(false)
 const selectedTreeNode = ref('全部')
@@ -115,6 +116,7 @@ function openDialog(type, title, message, row = null) {
 function closeDialog() {
   dialog.value = null
   selectedRow.value = null
+  detailData.value = null
 }
 
 async function saveForm() {
@@ -176,6 +178,20 @@ function resolveEndpoint(api, action) {
   return api?.audit
 }
 
+async function openDetail(action, row) {
+  const api = moduleApis[props.moduleCode]
+  detailData.value = null
+  if (api?.detail && row?.c0) {
+    try {
+      const separator = api.detail.includes('?') ? '&' : '?'
+      detailData.value = await get(`${api.detail}${separator}orderId=${encodeURIComponent(row.c0)}`)
+    } catch (error) {
+      show(`${props.config.title}详情接口暂不可用，已显示列表字段`)
+    }
+  }
+  openDialog('view', action, detailData.value ? `${props.config.title}详情已加载` : `${props.config.title}详情`, row)
+}
+
 async function uploadImport() {
   const api = moduleApis[props.moduleCode]
   if (api?.import) {
@@ -198,7 +214,7 @@ async function handleAction(action, row = null) {
     await loadRows()
     show(`${props.config.title}已刷新`)
   } else if (/查看|详情|历史|库存|日志|来源/.test(action)) {
-    openDialog('view', action, `${props.config.title}详情`, row)
+    await openDetail(action, row)
   } else if (/新建|编辑|复制/.test(action)) {
     openDialog('form', action, `${props.config.title}：按PRD打开${props.config.mode === 'modal' ? '小弹窗' : props.config.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
   } else if (/审核|确认签收|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
@@ -244,6 +260,7 @@ function buildPayload() {
   return {
     moduleCode: props.moduleCode,
     bizId: selectedRow.value?.c0 || `${props.moduleCode}-demo`,
+    orderId: selectedRow.value?.c0,
     taskNo: selectedRow.value?.c0,
     remark: `${props.config.title}操作`,
     customerId: 'CUS001',
@@ -258,7 +275,7 @@ function buildPayload() {
     categoryName: `${props.config.title}新增`,
     effectiveMode: 'IMMEDIATE',
     validType: 'LONG_TERM',
-    details: [{ goodsId: 'G001', unitId: 'UNIT001', qty: 1, price: 1, currentPrice: 1 }],
+    details: [{ goodsId: 'G001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: '正常', discountRate: '100%', taxRate: '13%', qty: 1, price: 1, currentPrice: 1 }],
     priceIds: ['PRICE001'],
     reason: '页面操作停用',
   }
@@ -349,6 +366,17 @@ function handleSortChange(field) {
         <div v-if="dialog.type === 'view'" class="section-block">
           <div class="grid4">
             <div v-for="col in columns.filter(c => !/操作/.test(c.title))" :key="col.key" class="field"><label>{{ col.title }}</label><input readonly :value="selectedRow?.[col.key] || ''" /></div>
+          </div>
+          <div v-if="detailData?.details?.length" class="section-block">
+            <b>后端明细</b>
+            <div class="scroll mini-scroll">
+              <table>
+                <tr><th>商品编码</th><th>商品名称</th><th>单位</th><th>数量</th><th>单价</th><th>金额</th><th>成本金额</th></tr>
+                <tr v-for="detail in detailData.details" :key="detail.goodsCode + detail.goodsName + detail.qty">
+                  <td>{{ detail.goodsCode }}</td><td>{{ detail.goodsName }}</td><td>{{ detail.unit }}</td><td>{{ detail.qty }}</td><td>{{ detail.price }}</td><td>{{ detail.amount }}</td><td>{{ detail.costAmount }}</td>
+                </tr>
+              </table>
+            </div>
           </div>
         </div>
 

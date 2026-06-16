@@ -32,7 +32,7 @@ export const moduleApis = {
   otherOutbound: { page: '/inventory/ledger/page', audit: '/inventory/damage/audit' },
   stockTake: { page: '/inventory/balance/page', audit: '/inventory/cost-adjust/audit' },
 
-  purchaseOrder: { page: '/purchase/order/page', save: '/purchase/order/create', detail: '/purchase/order/detail', audit: '/purchase/order/audit', reverseAudit: '/purchase/order/reverse-audit', close: '/purchase/order/close', delete: '/purchase/order/delete' },
+  purchaseOrder: { page: '/purchase/order/page', save: '/purchase/order/create', update: '/purchase/order/update', detail: '/purchase/order/detail', audit: '/purchase/order/audit', reverseAudit: '/purchase/order/reverse-audit', close: '/purchase/order/close', delete: '/purchase/order/delete' },
   purchaseInbound: { page: '/purchase/inbound/page', audit: '/purchase/inbound/audit' },
   purchaseReceipt: { page: '/purchase/receipt/page', audit: '/purchase/receipt/audit' },
   purchaseReturn: { page: '/purchase/return/page', audit: '/purchase/return/audit' },
@@ -40,7 +40,7 @@ export const moduleApis = {
   purchaseInvoice: { page: '/purchase/invoice/page' },
 
   quickOrder: { page: '/sales/order/page', save: '/sales/quick-order/create-and-audit', audit: '/sales/quick-order/create-and-audit' },
-  salesOrder: { page: '/sales/order/page', save: '/sales/order/create', detail: '/sales/order/detail', audit: '/sales/order/audit', reverseAudit: '/sales/order/reverse-audit', close: '/sales/order/close', delete: '/sales/order/delete' },
+  salesOrder: { page: '/sales/order/page', save: '/sales/order/create', update: '/sales/order/update', detail: '/sales/order/detail', audit: '/sales/order/audit', reverseAudit: '/sales/order/reverse-audit', close: '/sales/order/close', delete: '/sales/order/delete' },
   salesOutbound: { page: '/sales/outbound/page', audit: '/sales/outbound/audit' },
   salesReceipt: { page: '/sales/receipt/page', audit: '/sales/receipt/audit' },
   salesReturn: { page: '/sales/return/page', audit: '/sales/return/audit' },

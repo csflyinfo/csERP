@@ -90,6 +90,32 @@ public class PurchaseController {
         return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING", "amount", amount, "costAmount", costAmount));
     }
 
+    @PostMapping("/order/update")
+    public ApiResponse<Map<String, Object>> updateOrder(@Valid @RequestBody PurchaseOrderUpdateRequest request) {
+        BigDecimal amount = request.details().stream().map(detail -> detail.qty().multiply(detail.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costAmount = request.details().stream().map(detail -> detail.qty().multiply(detail.price()).multiply(new BigDecimal("0.90"))).reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT order_id FROM pur_order WHERE (order_id=? OR order_no=?) AND status='PENDING' LIMIT 1", request.orderId(), request.orderId());
+        if (rows.isEmpty()) throw new IllegalArgumentException("仅待审核采购订单允许编辑");
+        String id = String.valueOf(rows.get(0).get("ORDER_ID"));
+        jdbcTemplate.update("""
+                UPDATE pur_order
+                SET supplier=?, buyer=?, warehouse=?, amount=?, settlement_method=?, owner_name=?, cost_amount=?
+                WHERE order_id=?
+                """, request.supplierId(), request.buyer(), request.warehouseId(), amount, request.settlementMethod(), request.ownerName(), costAmount, id);
+        jdbcTemplate.update("DELETE FROM pur_order_detail WHERE order_id=?", id);
+        for (PurchaseOrderDetailRequest detail : request.details()) {
+            BigDecimal lineAmount = detail.qty().multiply(detail.price());
+            BigDecimal lineCostAmount = lineAmount.multiply(new BigDecimal("0.90"));
+            jdbcTemplate.update("""
+                    INSERT INTO pur_order_detail(detail_id, order_id, line_type, goods_code, goods_name, unit_name, qty, price, tax_rate, amount, cost_price, cost_amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, "POD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id,
+                    detail.lineType(), detail.goodsId(), detail.goodsName(), detail.unitId(), detail.qty(), detail.price(), detail.taxRate(), lineAmount, detail.price().multiply(new BigDecimal("0.90")), lineCostAmount);
+        }
+        log("purchase.order", "UPDATE", request.orderId(), "采购订单编辑");
+        return ApiResponse.ok(Map.of("orderId", id, "status", "PENDING", "amount", amount, "costAmount", costAmount));
+    }
+
     @PostMapping("/order/audit")
     public ApiResponse<Map<String, Object>> auditOrder(@Valid @RequestBody AuditRequest request) {
         int updated = jdbcTemplate.update("UPDATE pur_order SET status='APPROVED', arrival_status='采购在途', audit_info='系统管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm') WHERE (order_id = ? OR order_no = ?) AND status<>'DELETED'", request.bizId(), request.bizId());
@@ -203,6 +229,7 @@ public class PurchaseController {
     }
 
     public record PurchaseOrderRequest(@NotBlank String supplierId, @NotBlank String warehouseId, String buyer, String ownerName, String settlementMethod, @NotEmpty List<PurchaseOrderDetailRequest> details) {}
+    public record PurchaseOrderUpdateRequest(@NotBlank String orderId, @NotBlank String supplierId, @NotBlank String warehouseId, String buyer, String ownerName, String settlementMethod, @NotEmpty List<PurchaseOrderDetailRequest> details) {}
     public record PurchaseOrderDetailRequest(@NotBlank String goodsId, String goodsName, @NotBlank String unitId, String lineType, String taxRate, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
     public record AuditRequest(@NotBlank String bizId, String remark) {}
 }

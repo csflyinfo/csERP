@@ -89,6 +89,32 @@ public class SalesController {
         return ApiResponse.ok(Map.of("orderId", id, "orderNo", no, "status", "PENDING", "amount", amount, "costAmount", costAmount));
     }
 
+    @PostMapping("/order/update")
+    public ApiResponse<Map<String, Object>> updateOrder(@Valid @RequestBody SalesOrderUpdateRequest request) {
+        BigDecimal amount = request.details().stream().map(detail -> detail.qty().multiply(detail.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costAmount = amount.multiply(new BigDecimal("0.90"));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT order_id FROM sales_order WHERE (order_id=? OR order_no=?) AND status='PENDING' LIMIT 1", request.orderId(), request.orderId());
+        if (rows.isEmpty()) throw new IllegalArgumentException("仅待审核销售订单允许编辑");
+        String id = String.valueOf(rows.get(0).get("ORDER_ID"));
+        jdbcTemplate.update("""
+                UPDATE sales_order
+                SET customer=?, salesman=?, warehouse=?, amount=?, unpaid_amount=?, line_type=?, cost_amount=?
+                WHERE order_id=?
+                """, request.customerId(), request.salesman(), request.warehouseId(), amount, amount, request.lineType(), costAmount, id);
+        jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id=?", id);
+        for (SalesOrderDetailRequest detail : request.details()) {
+            BigDecimal lineAmount = detail.qty().multiply(detail.price());
+            BigDecimal lineCostAmount = lineAmount.multiply(new BigDecimal("0.90"));
+            jdbcTemplate.update("""
+                    INSERT INTO sales_order_detail(detail_id, order_id, line_type, goods_code, goods_name, unit_name, qty, price, discount_rate, tax_rate, amount, cost_price, cost_amount)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, "SOD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), id,
+                    detail.lineType(), detail.goodsId(), detail.goodsName(), detail.unitId(), detail.qty(), detail.price(), detail.discountRate(), detail.taxRate(), lineAmount, detail.price().multiply(new BigDecimal("0.90")), lineCostAmount);
+        }
+        log("sales.order", "UPDATE", request.orderId(), "销售订单编辑");
+        return ApiResponse.ok(Map.of("orderId", id, "status", "PENDING", "amount", amount, "costAmount", costAmount));
+    }
+
     @PostMapping("/order/audit")
     public ApiResponse<Map<String, Object>> auditOrder(@Valid @RequestBody AuditRequest request) {
         int updated = jdbcTemplate.update("UPDATE sales_order SET status='APPROVED', audit_info='系统管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm') WHERE (order_id = ? OR order_no = ?) AND status<>'DELETED'", request.bizId(), request.bizId());
@@ -209,6 +235,7 @@ public class SalesController {
     }
 
     public record SalesOrderRequest(@NotBlank String customerId, @NotBlank String warehouseId, String salesman, String lineType, @NotEmpty List<SalesOrderDetailRequest> details) {}
+    public record SalesOrderUpdateRequest(@NotBlank String orderId, @NotBlank String customerId, @NotBlank String warehouseId, String salesman, String lineType, @NotEmpty List<SalesOrderDetailRequest> details) {}
     public record SalesOrderDetailRequest(@NotBlank String goodsId, String goodsName, @NotBlank String unitId, String lineType, String discountRate, String taxRate, @NotNull @Positive BigDecimal qty, @NotNull @Positive BigDecimal price) {}
     public record AuditRequest(@NotBlank String bizId, String remark) {}
 }
