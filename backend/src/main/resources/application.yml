@@ -6,8 +6,17 @@ server:
 spring:
   application:
     name: erp-wms-tms-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+---
+# 开发环境配置
+spring:
+  config:
+    activate:
+      on-profile: dev
   datasource:
-    url: jdbc:h2:file:./data/erp-v1;MODE=MySQL;DATABASE_TO_UPPER=false;AUTO_SERVER=TRUE
+    url: jdbc:h2:file:./data/erp-v1;DB_CLOSE_DELAY=-1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password:
@@ -18,14 +27,96 @@ spring:
   sql:
     init:
       mode: always
-      encoding: UTF-8
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+  redis:
+    host: localhost
+    port: 6379
+    password: erp_redis_2024
+    database: 0
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+  mybatis-plus:
+    mapper-locations: classpath:/mapper/**/*.xml
+    type-aliases-package: com.erp
+    configuration:
+      map-underscore-to-camel-case: true
+      log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    global-config:
+      db-config:
+        id-type: assign_id
+        logic-delete-field: deleted
+        logic-delete-value: 1
+        logic-not-delete-value: 0
+
+logging:
+  level:
+    com.erp: debug
+
+---
+# 生产环境配置
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://mysql:3306/erp_v1?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${SPRING_DATASOURCE_USERNAME:erp_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:erp_pass_2024}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  redis:
+    host: ${SPRING_REDIS_HOST:redis}
+    port: ${SPRING_REDIS_PORT:6379}
+    password: ${SPRING_REDIS_PASSWORD:erp_redis_2024}
+    database: 0
+    lettuce:
+      pool:
+        max-active: 16
+        max-idle: 16
+        min-idle: 4
+  mybatis-plus:
+    mapper-locations: classpath:/mapper/**/*.xml
+    type-aliases-package: com.erp
+    configuration:
+      map-underscore-to-camel-case: true
+    global-config:
+      db-config:
+        id-type: assign_id
+        logic-delete-field: deleted
+        logic-delete-value: 1
+        logic-not-delete-value: 0
+
+logging:
+  level:
+    root: warn
+    com.erp: info
+  file:
+    name: /app/logs/app.log
+    max-size: 100MB
+    max-history: 30
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info
+  endpoint:
+    health:
+      show-details: always
 
-app:
-  security:
-    demo-token: demo-token
+---
+# JWT 配置
+jwt:
+  secret: ${JWT_SECRET:erp_jwt_secret_key_2024_change_in_production}
+  expiration: 86400000  # 24小时
+  header: Authorization
+  prefix: Bearer

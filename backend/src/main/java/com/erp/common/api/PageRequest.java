@@ -16,4 +16,13 @@ public record PageRequest(
     public int safePageSize() {
         return pageSize == null || pageSize < 1 ? 20 : Math.min(pageSize, 200);
     }
+
+    public String keyword() {
+        if (filters == null) return null;
+        Object kw = filters.get("keyword");
+        if (kw == null) {
+            kw = filters.get("_keyword");
+        }
+        return kw == null ? null : kw.toString().trim();
+    }
 }

@@ -1,5 +1,11 @@
 package com.erp.base;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.erp.base.entity.BaseCustomer;
+import com.erp.base.entity.BaseSupplier;
+import com.erp.base.service.BaseCustomerService;
+import com.erp.base.service.BaseSupplierService;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
@@ -17,64 +23,20 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/base/master")
 public class BaseMasterController {
-    private final JdbcTemplate jdbcTemplate;
 
-    public BaseMasterController(JdbcTemplate jdbcTemplate) {
+    private final JdbcTemplate jdbcTemplate;
+    private final BaseCustomerService customerService;
+    private final BaseSupplierService supplierService;
+
+    public BaseMasterController(JdbcTemplate jdbcTemplate, BaseCustomerService customerService, BaseSupplierService supplierService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.customerService = customerService;
+        this.supplierService = supplierService;
     }
 
     @PostMapping("/price-group/page")
     public ApiResponse<PageResult<Map<String, Object>>> priceGroupPage(@RequestBody PageRequest request) {
         return page(request, row("PRICE1", "批发价", "销售价格组", "默认客户等级价", "正常"));
-    }
-
-    @PostMapping("/customer/page")
-    public ApiResponse<PageResult<Map<String, Object>>> customerPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT customer_code customerCode,
-                       customer_name customerName,
-                       channel_type channelType,
-                       contact_name contactName,
-                       mobile,
-                       territory,
-                       route_line routeLine,
-                       salesman,
-                       customer_level customerLevel,
-                       account_period_type accountPeriodType,
-                       cutoff_day cutoffDay,
-                       payment_day paymentDay,
-                       credit_limit creditLimit,
-                       ar_balance arBalance,
-                       overdue_amount overdueAmount,
-                       invoice_title invoiceTitle,
-                       tax_no taxNo,
-                       CASE status WHEN 'NORMAL' THEN '正常' WHEN 'FROZEN' THEN '冻结' ELSE '停用' END status
-                FROM base_customer
-                ORDER BY customer_code
-                """), request));
-    }
-
-    @PostMapping("/supplier/page")
-    public ApiResponse<PageResult<Map<String, Object>>> supplierPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT supplier_code supplierCode,
-                       supplier_name supplierName,
-                       short_name shortName,
-                       supplier_type supplierType,
-                       contact_name contactName,
-                       phone,
-                       delivery_days deliveryDays,
-                       settlement_method settlementMethod,
-                       account_period_days accountPeriodDays,
-                       default_buyer defaultBuyer,
-                       default_receipt_account defaultReceiptAccount,
-                       invoice_title invoiceTitle,
-                       tax_no taxNo,
-                       ap_balance apBalance,
-                       CASE status WHEN 'NORMAL' THEN '正常' WHEN 'FROZEN' THEN '冻结' ELSE '停用' END status
-                FROM base_supplier
-                ORDER BY supplier_code
-                """), request));
     }
 
     @PostMapping("/counterparty/page")
@@ -143,13 +105,17 @@ public class BaseMasterController {
     private ApiResponse<Map<String, Object>> updateMasterStatus(Map<String, Object> request, String status, String action, String detail) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
         String bizId = String.valueOf(request.getOrDefault("bizId", ""));
-        int updated = 0;
+        boolean updated = false;
         if ("customer".equals(moduleCode)) {
-            updated = jdbcTemplate.update("UPDATE base_customer SET status=? WHERE customer_id=? OR customer_code=?", status, bizId, bizId);
+            updated = customerService.update(new UpdateWrapper<BaseCustomer>()
+                    .eq("customer_id", bizId).or().eq("customer_code", bizId)
+                    .set("status", status));
         } else if ("supplier".equals(moduleCode)) {
-            updated = jdbcTemplate.update("UPDATE base_supplier SET status=? WHERE supplier_id=? OR supplier_code=?", status, bizId, bizId);
+            updated = supplierService.update(new UpdateWrapper<BaseSupplier>()
+                    .eq("supplier_id", bizId).or().eq("supplier_code", bizId)
+                    .set("status", status));
         }
-        if (updated == 0) throw new IllegalArgumentException("基础资料不存在，无法" + detail);
+        if (!updated) throw new IllegalArgumentException("基础资料不存在，无法" + detail);
         log("base." + moduleCode, action, bizId, detail);
         return ApiResponse.ok(GenericResult.operation(moduleCode, action));
     }
@@ -157,16 +123,38 @@ public class BaseMasterController {
     private ApiResponse<Map<String, Object>> saveCustomer(Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("customerId", "CUS" + System.currentTimeMillis()));
         String code = String.valueOf(request.getOrDefault("customerCode", request.getOrDefault("code", id)));
-        String status = existingStatus("base_customer", "customer_id", "customer_code", id, code);
-        jdbcTemplate.update("""
-                MERGE INTO base_customer KEY(customer_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, code, request.getOrDefault("customerName", request.getOrDefault("name", "新客户")),
-                request.getOrDefault("channelType", "零售商超"), request.getOrDefault("contactName", ""), request.getOrDefault("mobile", ""),
-                request.getOrDefault("territory", ""), request.getOrDefault("routeLine", ""), request.getOrDefault("salesman", ""),
-                request.getOrDefault("customerLevel", "普通"), request.getOrDefault("accountPeriodType", "现结"), request.getOrDefault("cutoffDay", ""),
-                request.getOrDefault("paymentDay", ""), request.getOrDefault("creditLimit", 0), request.getOrDefault("arBalance", 0),
-                request.getOrDefault("overdueAmount", 0), request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""), request.getOrDefault("status", status));
+        BaseCustomer existing = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_id", id).or().eq("customer_code", code));
+        if (existing != null) {
+            // 更新
+            existing.setCustomerName((String) request.getOrDefault("customerName", request.getOrDefault("name", existing.getCustomerName())));
+            existing.setChannelType((String) request.getOrDefault("channelType", existing.getChannelType()));
+            existing.setContactName((String) request.getOrDefault("contactName", existing.getContactName()));
+            existing.setMobile((String) request.getOrDefault("mobile", existing.getMobile()));
+            existing.setTerritory((String) request.getOrDefault("territory", existing.getTerritory()));
+            existing.setRouteLine((String) request.getOrDefault("routeLine", existing.getRouteLine()));
+            existing.setSalesman((String) request.getOrDefault("salesman", existing.getSalesman()));
+            existing.setCustomerLevel((String) request.getOrDefault("customerLevel", existing.getCustomerLevel()));
+            existing.setAccountPeriodType((String) request.getOrDefault("accountPeriodType", existing.getAccountPeriodType()));
+            existing.setCutoffDay((String) request.getOrDefault("cutoffDay", existing.getCutoffDay()));
+            existing.setPaymentDay((String) request.getOrDefault("paymentDay", existing.getPaymentDay()));
+            customerService.updateById(existing);
+        } else {
+            // 新建
+            BaseCustomer entity = new BaseCustomer();
+            entity.setCustomerId(id);
+            entity.setCustomerCode(code);
+            entity.setCustomerName((String) request.getOrDefault("customerName", request.getOrDefault("name", "新客户")));
+            entity.setChannelType((String) request.getOrDefault("channelType", "零售商超"));
+            entity.setContactName((String) request.getOrDefault("contactName", ""));
+            entity.setMobile((String) request.getOrDefault("mobile", ""));
+            entity.setTerritory((String) request.getOrDefault("territory", ""));
+            entity.setRouteLine((String) request.getOrDefault("routeLine", ""));
+            entity.setSalesman((String) request.getOrDefault("salesman", ""));
+            entity.setCustomerLevel((String) request.getOrDefault("customerLevel", "普通"));
+            entity.setAccountPeriodType((String) request.getOrDefault("accountPeriodType", "现结"));
+            entity.setStatus("NORMAL");
+            customerService.save(entity);
+        }
         log("base.customer", "SAVE", code, "保存客户资料");
         return ApiResponse.ok(GenericResult.row("customerId", id, "customerCode", code, "success", true));
     }
@@ -174,22 +162,31 @@ public class BaseMasterController {
     private ApiResponse<Map<String, Object>> saveSupplier(Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("supplierId", "SUP" + System.currentTimeMillis()));
         String code = String.valueOf(request.getOrDefault("supplierCode", request.getOrDefault("code", id)));
-        String status = existingStatus("base_supplier", "supplier_id", "supplier_code", id, code);
-        jdbcTemplate.update("""
-                MERGE INTO base_supplier KEY(supplier_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, code, request.getOrDefault("supplierName", request.getOrDefault("name", "新供应商")),
-                request.getOrDefault("shortName", ""), request.getOrDefault("supplierType", "普通供应商"), request.getOrDefault("contactName", ""),
-                request.getOrDefault("phone", ""), request.getOrDefault("deliveryDays", 0), request.getOrDefault("settlementMethod", "现结"),
-                request.getOrDefault("accountPeriodDays", 0), request.getOrDefault("defaultBuyer", ""), request.getOrDefault("defaultReceiptAccount", ""),
-                request.getOrDefault("invoiceTitle", ""), request.getOrDefault("taxNo", ""), request.getOrDefault("apBalance", 0), request.getOrDefault("status", status));
+        BaseSupplier existing = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_id", id).or().eq("supplier_code", code));
+        if (existing != null) {
+            existing.setSupplierName((String) request.getOrDefault("supplierName", request.getOrDefault("name", existing.getSupplierName())));
+            existing.setShortName((String) request.getOrDefault("shortName", existing.getShortName()));
+            existing.setSupplierType((String) request.getOrDefault("supplierType", existing.getSupplierType()));
+            existing.setContactName((String) request.getOrDefault("contactName", existing.getContactName()));
+            existing.setPhone((String) request.getOrDefault("phone", existing.getPhone()));
+            existing.setSettlementMethod((String) request.getOrDefault("settlementMethod", existing.getSettlementMethod()));
+            existing.setDefaultBuyer((String) request.getOrDefault("defaultBuyer", existing.getDefaultBuyer()));
+            supplierService.updateById(existing);
+        } else {
+            BaseSupplier entity = new BaseSupplier();
+            entity.setSupplierId(id);
+            entity.setSupplierCode(code);
+            entity.setSupplierName((String) request.getOrDefault("supplierName", request.getOrDefault("name", "新供应商")));
+            entity.setShortName((String) request.getOrDefault("shortName", ""));
+            entity.setSupplierType((String) request.getOrDefault("supplierType", "普通供应商"));
+            entity.setContactName((String) request.getOrDefault("contactName", ""));
+            entity.setPhone((String) request.getOrDefault("phone", ""));
+            entity.setSettlementMethod((String) request.getOrDefault("settlementMethod", "现结"));
+            entity.setStatus("NORMAL");
+            supplierService.save(entity);
+        }
         log("base.supplier", "SAVE", code, "保存供应商资料");
         return ApiResponse.ok(GenericResult.row("supplierId", id, "supplierCode", code, "success", true));
-    }
-
-    private String existingStatus(String tableName, String idColumn, String codeColumn, String id, String code) {
-        List<String> rows = jdbcTemplate.queryForList("SELECT status FROM " + tableName + " WHERE " + idColumn + "=? OR " + codeColumn + "=? LIMIT 1", String.class, id, code);
-        return rows.isEmpty() ? "NORMAL" : rows.get(0);
     }
 
     private void log(String moduleCode, String action, String bizNo, String detail) {

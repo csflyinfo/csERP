@@ -127,6 +127,69 @@ public class ReportController {
                 """), request));
     }
 
+    // ========== 图表数据接口 ==========
+
+    @GetMapping("/chart/sales-trend")
+    public ApiResponse<List<Map<String, Object>>> salesTrend() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT bill_date date, COALESCE(SUM(amount),0) amount, COUNT(*) count
+                FROM sales_order WHERE status <> 'DELETED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
+                """);
+        return ApiResponse.ok(rows);
+    }
+
+    @GetMapping("/chart/purchase-trend")
+    public ApiResponse<List<Map<String, Object>>> purchaseTrend() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT bill_date date, COALESCE(SUM(amount),0) amount, COUNT(*) count
+                FROM pur_order WHERE status <> 'DELETED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
+                """);
+        return ApiResponse.ok(rows);
+    }
+
+    @GetMapping("/chart/stock-distribution")
+    public ApiResponse<List<Map<String, Object>>> stockDistribution() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT warehouse name, COALESCE(SUM(stock_amount),0) value
+                FROM inv_stock_balance GROUP BY warehouse ORDER BY value DESC
+                """);
+        return ApiResponse.ok(rows);
+    }
+
+    @GetMapping("/chart/customer-sales")
+    public ApiResponse<List<Map<String, Object>>> customerSales() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT customer name, COALESCE(SUM(amount),0) value
+                FROM sales_order WHERE status <> 'DELETED' GROUP BY customer ORDER BY value DESC LIMIT 10
+                """);
+        return ApiResponse.ok(rows);
+    }
+
+    @GetMapping("/chart/finance-overview")
+    public ApiResponse<Map<String, Object>> financeOverview() {
+        Map<String, Object> ar = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(ar_amount),0) total, COALESCE(SUM(received_amount),0) received, COALESCE(SUM(unreceived_amount),0) unreceived FROM fin_ar");
+        Map<String, Object> ap = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(ap_amount),0) total, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(unpaid_amount),0) unpaid FROM fin_ap");
+        Map<String, Object> fund = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(CASE WHEN direction='IN' THEN amount ELSE -amount END),0) balance FROM fin_fund_ledger");
+        return ApiResponse.ok(Map.of(
+                "arTotal", ar.get("TOTAL"), "arReceived", ar.get("RECEIVED"), "arUnreceived", ar.get("UNRECEIVED"),
+                "apTotal", ap.get("TOTAL"), "apPaid", ap.get("PAID"), "apUnpaid", ap.get("UNPAID"),
+                "fundBalance", fund.get("BALANCE")
+        ));
+    }
+
+    @GetMapping("/chart/category-sales")
+    public ApiResponse<List<Map<String, Object>>> categorySales() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT g.category_name name, COALESCE(SUM(s.amount),0) value
+                FROM sales_order_detail s
+                JOIN base_goods g ON s.goods_code = g.goods_code
+                JOIN sales_order o ON s.order_id = o.order_id
+                WHERE o.status <> 'DELETED'
+                GROUP BY g.category_name ORDER BY value DESC LIMIT 10
+                """);
+        return ApiResponse.ok(rows);
+    }
+
     @PostMapping("/export")
     public ApiResponse<Map<String, Object>> exportReport(@RequestBody Map<String, Object> request) {
         String taskId = "EXP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
