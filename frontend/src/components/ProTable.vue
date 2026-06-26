@@ -24,13 +24,21 @@ const emit = defineEmits(['field-setting', 'export', 'row-action', 'page-change'
     <div class="scroll">
       <table>
         <tr>
-          <th v-for="col in columns" :key="col.key" class="sortable-th" @click="emit('sort-change', col.key)">
+          <!-- 勾选列头部（提供了slot时显示） -->
+          <th v-if="$slots['checkbox-header']" class="checkbox-th">
+            <slot name="checkbox-header"></slot>
+          </th>
+          <th v-for="col in columns" :key="col.key" :class="['sortable-th', { 'action-col': /操作/.test(col.title) }]" @click="emit('sort-change', col.key)">
             {{ col.title }}
             <span v-if="sortField === col.key">{{ sortOrder === 'desc' ? '↓' : '↑' }}</span>
           </th>
         </tr>
         <tr v-for="(row, index) in rows" :key="index" @dblclick="emit('row-action', '查看', row)">
-          <td v-for="col in columns" :key="col.key" :class="col.num ? 'num' : ''">
+          <!-- 勾选列单元格（提供了slot时显示） -->
+          <td v-if="$slots['checkbox-cell']" class="checkbox-td">
+            <slot name="checkbox-cell" :row="row" :row-index="index"></slot>
+          </td>
+          <td v-for="col in columns" :key="col.key" :class="[col.num ? 'num' : '', { 'action-col': /操作/.test(col.title) }]">
             <slot :name="col.key" :row="row">{{ row[col.key] }}</slot>
           </td>
         </tr>
@@ -49,3 +57,41 @@ const emit = defineEmits(['field-setting', 'export', 'row-action', 'page-change'
     </div>
   </div>
 </template>
+
+<style scoped>
+.checkbox-th,
+.checkbox-td {
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+  position: sticky;
+  left: 0;
+  background: #f7fbff;
+  z-index: 2;
+}
+
+.checkbox-td {
+  background: #fff;
+}
+
+.checkbox-th input[type="checkbox"],
+.checkbox-td input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* 操作列固定在最右侧 */
+.action-col {
+  position: sticky;
+  right: 0;
+  background: #fff;
+  z-index: 2;
+  min-width: 120px;
+}
+
+th.action-col {
+  background: #f7fbff;
+  z-index: 3;
+}
+</style>

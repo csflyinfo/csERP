@@ -68,6 +68,7 @@ export const fallbackMenus = {
     { code: 'supplierStatement', name: '供应商对账' },
   ],
   报表中心: [
+    { code: 'chartReport', name: '图表报表' },
     { code: 'salesReport', name: '销售报表' },
     { code: 'purchaseReport', name: '采购报表' },
     { code: 'stockReport', name: '库存报表' },
@@ -85,5 +86,9 @@ export const fallbackMenus = {
     { code: 'importList', name: '导入列表' },
     { code: 'exportCenter', name: '导出中心' },
     { code: 'log', name: '操作日志' },
+  ],
+  工作台: [
+    { code: 'todo', name: '待办中心' },
+    { code: 'notification', name: '消息通知' },
   ],
 }

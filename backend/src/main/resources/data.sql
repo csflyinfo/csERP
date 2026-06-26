@@ -39,16 +39,18 @@ MERGE INTO fin_fund_ledger KEY(ledger_id) VALUES ('FL001', 'FUND202606140001', '
 
 MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_PUR_RETURN_001', 'PURCHASE_RETURN', 'PRT202606140001', '农夫山泉杭州经销', '总仓', '质量问题', 350.00, 10, 'PENDING', CURRENT_TIMESTAMP);
 MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_SALES_RETURN_001', 'SALES_RETURN', 'SRT202606140001', '华联超市', '退货仓', '客户退货', 120.00, 5, 'PENDING', CURRENT_TIMESTAMP);
-MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_TRANSFER_001', 'TRANSFER', 'TR202606140001', '总仓 → 东区仓', '总仓', '正常调拨', 3080.00, 100, 'PENDING', CURRENT_TIMESTAMP);
-MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_DAMAGE_001', 'DAMAGE', 'DO202606140001', '冷藏仓', '冷藏仓', '过期报损', 64.00, 20, 'PENDING', CURRENT_TIMESTAMP);
-MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_COST_ADJUST_001', 'COST_ADJUST', 'CA202606140001', 'SP001', '总仓', '成本修正', 336.00, 0, 'PENDING', CURRENT_TIMESTAMP);
+MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_TRANSFER_001', 'TRANSFER', 'TR202606140001', '总仓 → 东区仓', '总仓', '正常调拨', 3080.00, 100, 'SP001', '农夫山泉500ml*24', 'PENDING', CURRENT_TIMESTAMP);
+MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_DAMAGE_001', 'DAMAGE', 'DO202606140001', '冷藏仓', '冷藏仓', '过期报损', 64.00, 20, 'SP001', '农夫山泉500ml*24', 'PENDING', CURRENT_TIMESTAMP);
+MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_COST_ADJUST_001', 'COST_ADJUST', 'CA202606140001', 'SP001', '总仓', '成本修正', 336.00, 0, 'SP001', '农夫山泉500ml*24', 'PENDING', CURRENT_TIMESTAMP);
 MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_PUR_EXPENSE_001', 'PURCHASE_EXPENSE', 'PE202606140001', '顺丰物流', '总仓', '运费分摊', 1000.00, 0, 'PENDING', CURRENT_TIMESTAMP);
 MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_FLY_001', 'FLY_ORDER', 'FLY202606140001', '华联超市', '虚拟仓', '飞单不影响库存', 350.00, 10, 'PENDING', CURRENT_TIMESTAMP);
 MERGE INTO biz_simple_bill KEY(bill_id) VALUES ('BILL_EMPTY_001', 'EMPTY_ADJUST', 'EA202606140001', '华联超市', '虚拟仓', '不影响库存，仅调整应收', 350.00, 0, 'PENDING', CURRENT_TIMESTAMP);
 
+MERGE INTO fin_receipt_bill KEY(receipt_id) VALUES ('RC001', 'RC202606140001', '华联超市', '工行基本户', 350.00, 0.00, 'AR202606140001', '销售收款', 'PENDING');
+MERGE INTO fin_payment_bill KEY(payment_id) VALUES ('PAY001', 'PAY202606140001', '农夫山泉杭州经销', '工行基本户', 3955.00, 0.00, 'AP202606140001', '采购付款', 'PENDING');
 MERGE INTO fin_expense_bill KEY(expense_id) VALUES ('FE001', 'FE202606140001', 'OUT', '房租', '物业公司', 5000.00, 0.00, TRUE, FALSE, 'PENDING');
 
-MERGE INTO sys_user_runtime KEY(user_id) VALUES ('U0001', 'admin', '系统管理员', '13800000000', '管理员组', '全部', 'NORMAL');
+MERGE INTO sys_user_runtime KEY(user_id) VALUES ('U0001', 'admin', '系统管理员', 'admin123', '13800000000', '管理员组', '全部', 'NORMAL');
 MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0001', 'ADMIN', '管理员组', 1, '*', '*', 'ALL', 'NORMAL');
 MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0002', 'SALE', '销售员组', 1, 'dashboard,sales,inventory,exportCenter,log', '隐藏成本字段', 'SELF', 'NORMAL');
 MERGE INTO sys_role_runtime KEY(role_id) VALUES ('R0003', 'PURCHASE', '采购员组', 1, 'dashboard,base,purchase,stockBalance,exportCenter,log', '*', 'DEPARTMENT', 'NORMAL');
@@ -60,3 +62,14 @@ MERGE INTO sys_bill_no_rule_runtime KEY(rule_id) VALUES ('BN003', '客户价格�
 MERGE INTO sys_operation_log_runtime KEY(log_id) VALUES ('LOG001', TIMESTAMP '2026-06-15 09:00:00', '系统管理员', 'system', 'INIT', 'INIT', 'SUCCESS', '系统初始化');
 MERGE INTO sys_export_task_runtime KEY(task_id) VALUES ('EXP001', 'EXP202606150001', '销售订单导出', 'salesOrder', '{}', '销售订单导出_EXP202606150001.xlsx', 'FINISHED', TIMESTAMP '2026-06-15 09:10:00', TIMESTAMP '2026-06-15 09:10:05');
 MERGE INTO sys_import_task_runtime KEY(task_id) VALUES ('IMP001', 'IMP202606150001', 'goods', '商品导入任务', '商品导入模板.xlsx', 120, 0, 'FINISHED', '导入成功', TIMESTAMP '2026-06-15 09:20:00', TIMESTAMP '2026-06-15 09:20:08');
+
+MERGE INTO sys_notification KEY(notify_id) VALUES ('N001', '销售订单待审核提醒', '有 1 笔销售订单待审核（SO202606140001）', 'BUSINESS', 'salesOrder', 'SO202606140001', FALSE, TIMESTAMP '2026-06-15 09:30:00');
+MERGE INTO sys_notification KEY(notify_id) VALUES ('N002', '采购订单待审核提醒', '有 1 笔采购订单待审核（PO202606140001）', 'BUSINESS', 'purchaseOrder', 'PO202606140001', FALSE, TIMESTAMP '2026-06-15 09:31:00');
+MERGE INTO sys_notification KEY(notify_id) VALUES ('N003', '库存预警通知', '农夫山泉500ml*24 库存低于下限', 'WARNING', 'stockBalance', 'SP001', FALSE, TIMESTAMP '2026-06-15 09:32:00');
+MERGE INTO sys_notification KEY(notify_id) VALUES ('N004', '系统初始化完成', '系统已成功初始化，欢迎使用商贸云 ERP', 'SYSTEM', 'system', 'INIT', TRUE, TIMESTAMP '2026-06-15 09:00:00');
+
+MERGE INTO sys_todo KEY(todo_id) VALUES ('T001', '销售订单审核', 'salesOrder', 'SO202606140001', 'SO001', 'HIGH', 'PENDING', TIMESTAMP '2026-06-15 09:30:00');
+MERGE INTO sys_todo KEY(todo_id) VALUES ('T002', '采购订单审核', 'purchaseOrder', 'PO202606140001', 'PO001', 'HIGH', 'PENDING', TIMESTAMP '2026-06-15 09:31:00');
+MERGE INTO sys_todo KEY(todo_id) VALUES ('T003', '应收收款核销', 'receiptVerify', 'AR202606140001', 'AR001', 'NORMAL', 'PENDING', TIMESTAMP '2026-06-15 09:33:00');
+MERGE INTO sys_todo KEY(todo_id) VALUES ('T004', '应付付款核销', 'paymentVerify', 'AP202606140001', 'AP001', 'NORMAL', 'PENDING', TIMESTAMP '2026-06-15 09:34:00');
+MERGE INTO sys_todo KEY(todo_id) VALUES ('T005', '客户价格调整单审核', 'customerPrice', 'CPA202606140001', 'CPA001', 'NORMAL', 'PENDING', TIMESTAMP '2026-06-15 09:35:00');

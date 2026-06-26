@@ -40,7 +40,7 @@ public class CustomerPriceController {
                        adjust_no adjustNo,
                        customer_code || ' ' || customer_name customer,
                        bill_date billDate,
-                       CASE effective_mode WHEN 'IMMEDIATE' THEN '立即生效' ELSE '定时生效 ' || FORMATDATETIME(effective_time, 'yyyy-MM-dd HH:mm') END effectiveMode,
+                       CASE effective_mode WHEN 'IMMEDIATE' THEN '立即生效' ELSE '定时生效 ' || DATE_FORMAT(effective_time, '%Y-%m-%d %H:%i') END effectiveMode,
                        valid_range validRange,
                        detail_count detailCount,
                        creator_info creatorInfo,
@@ -92,7 +92,7 @@ public class CustomerPriceController {
         jdbcTemplate.update("""
                 INSERT INTO base_customer_price_adjust(adjust_id, adjust_no, customer_code, customer_name, bill_date, effective_mode,
                                                        effective_time, valid_range, detail_count, creator_info, audit_info, status, remark)
-                VALUES (?, ?, 'C001', '华联超市', CURRENT_DATE, ?, NULL, ?, ?, '管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm'), '待审核', 'PENDING', ?)
+                VALUES (?, ?, 'C001', '华联超市', CURRENT_DATE, ?, NULL, ?, ?, '管理员 ' || DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i'), '待审核', 'PENDING', ?)
                 """, adjustId, adjustNo, request.effectiveMode(), validRange(request), request.details().size(), request.remark());
         int index = 1;
         for (CustomerPriceAdjustDetailRequest detail : request.details()) {
@@ -135,7 +135,7 @@ public class CustomerPriceController {
                     detail.get("goods_name"), detail.get("base_unit"), detail.get("spec"), detail.get("barcode"), detail.get("original_price"),
                     detail.get("current_price"), detail.get("latest_purchase_price"), detail.get("cost_price"), head.get("effective_mode"), head.get("valid_range"));
         }
-        jdbcTemplate.update("UPDATE base_customer_price_adjust SET status='APPROVED', audit_info='管理员 ' || FORMATDATETIME(CURRENT_TIMESTAMP, 'yyyy-MM-dd HH:mm') WHERE adjust_id = ?", adjustId);
+        jdbcTemplate.update("UPDATE base_customer_price_adjust SET status='APPROVED', audit_info='管理员 ' || DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i') WHERE adjust_id = ?", adjustId);
         return ApiResponse.ok(GenericResult.row("adjustId", adjustId, "status", "APPROVED", "auditTime", LocalDateTime.now().toString(), "effect", "已生成客户价格，历史有效价格自动停用"));
     }
 

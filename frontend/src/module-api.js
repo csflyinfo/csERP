@@ -1,11 +1,11 @@
 export const moduleApis = {
-  goods: { page: '/base/goods/page', save: '/base/goods/create', update: '/base/goods/update', stop: '/base/goods/stop', freeze: '/base/goods/freeze', delete: '/base/goods/delete' },
-  category: { page: '/base/category/page', save: '/base/category/create', stop: '/base/master/stop' },
-  brand: { page: '/base/brand/page', save: '/base/master/save', stop: '/base/master/stop' },
-  unit: { page: '/base/unit/page', save: '/base/master/save', stop: '/base/master/stop' },
-  warehouse: { page: '/base/warehouse/page', save: '/base/master/save', stop: '/base/master/stop' },
-  customer: { page: '/base/master/customer/page', save: '/base/master/save', update: '/base/master/save', stop: '/base/master/stop', freeze: '/base/master/freeze', unfreeze: '/base/master/unfreeze' },
-  supplier: { page: '/base/master/supplier/page', save: '/base/master/save', update: '/base/master/save', stop: '/base/master/stop', freeze: '/base/master/freeze', unfreeze: '/base/master/unfreeze' },
+  goods: { page: '/base/goods/page', save: '/base/goods/create', update: '/base/goods/update' },
+  category: { page: '/base/category/page', save: '/base/category/create', update: '/base/category/update' },
+  brand: { page: '/base/brand/page', save: '/base/brand/create' },
+  unit: { page: '/base/unit/page', save: '/base/unit/create' },
+  warehouse: { page: '/base/warehouse/page', save: '/base/warehouse/create' },
+  customer: { page: '/base/customer/page', save: '/base/customer/create', update: '/base/customer/update' },
+  supplier: { page: '/base/supplier/page', save: '/base/supplier/create', update: '/base/supplier/update' },
   priceGroup: { page: '/base/master/price-group/page', save: '/base/master/save', stop: '/base/master/stop' },
   counterparty: { page: '/base/master/counterparty/page', save: '/base/master/save', stop: '/base/master/stop' },
   fundAccount: { page: '/base/master/fund-account/page', save: '/base/master/save', stop: '/base/master/stop' },
@@ -74,10 +74,20 @@ export const moduleApis = {
   exportCenter: { page: '/system/export-center/page', download: '/system/export-center/download' },
   log: { page: '/system/operation-log/page' },
 
-  salesReport: { page: '/report/sales/page', export: '/report/export' },
-  purchaseReport: { page: '/report/purchase/page', export: '/report/export' },
-  stockReport: { page: '/report/stock/page', export: '/report/export' },
-  financeReport: { page: '/report/finance/page', export: '/report/export' },
+  salesReport: { page: '/report/sales/page', export: '/excel/export/salesOrder' },
+  purchaseReport: { page: '/report/purchase/page', export: '/excel/export/purchaseOrder' },
+  stockReport: { page: '/report/stock/page', export: '/excel/export/stockBalance' },
+  financeReport: { page: '/report/finance/page', export: '/excel/export/finance' },
+}
+
+// 支持 Excel 导入导出的模块
+export const excelModules = {
+  goods: { export: '/excel/export/goods', import: '/excel/import/goods', template: '/excel/template/goods' },
+  customer: { export: '/excel/export/customer', import: '/excel/import/customer', template: '/excel/template/customer' },
+  supplier: { export: '/excel/export/supplier', import: '/excel/import/supplier', template: '/excel/template/supplier' },
+  warehouse: { export: '/excel/export/warehouse', import: '/excel/import/warehouse', template: '/excel/template/warehouse' },
+  purchaseOrder: { export: '/excel/export/purchaseOrder', import: '/excel/import/purchaseOrder', template: '/excel/template/purchaseOrder' },
+  salesOrder: { export: '/excel/export/salesOrder', import: '/excel/import/salesOrder', template: '/excel/template/salesOrder' },
 }
 
 export function mapRecordToRow(record, config) {

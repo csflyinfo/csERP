@@ -5,6 +5,7 @@ import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -22,9 +24,11 @@ import java.util.UUID;
 @RequestMapping("/system")
 public class SystemController {
     private final JdbcTemplate jdbcTemplate;
+    private final BCryptPasswordEncoder passwordEncoder;
 
-    public SystemController(JdbcTemplate jdbcTemplate) {
+    public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder) {
         this.jdbcTemplate = jdbcTemplate;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @GetMapping("/menu/user-tree")
@@ -145,11 +149,13 @@ public class SystemController {
     @PostMapping("/user/save")
     public ApiResponse<Map<String, Object>> saveUser(@RequestBody Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("userId", "U" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
+        String rawPassword = String.valueOf(request.getOrDefault("password", "admin123"));
+        String encodedPassword = passwordEncoder.encode(rawPassword);
         jdbcTemplate.update("""
                 MERGE INTO sys_user_runtime KEY(user_id)
-                VALUES (?, ?, ?, ?, ?, ?, 'NORMAL')
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'NORMAL')
                 """, id, request.getOrDefault("username", "user" + System.currentTimeMillis()), request.getOrDefault("displayName", "新用户"),
-                request.getOrDefault("mobile", ""), request.getOrDefault("roleName", "普通用户"), request.getOrDefault("dataScope", "本人"));
+                encodedPassword, request.getOrDefault("mobile", ""), request.getOrDefault("roleName", "普通用户"), request.getOrDefault("dataScope", "本人"));
         log("system.user", "SAVE", id, "SUCCESS", "保存用户");
         return ApiResponse.ok(GenericResult.row("userId", id, "success", true));
     }
@@ -380,6 +386,76 @@ public class SystemController {
                 FROM sys_operation_log_runtime
                 ORDER BY operate_at DESC
                 """), request));
+    }
+
+    // ========== 消息通知 ==========
+    @PostMapping("/notification/page")
+    public ApiResponse<PageResult<Map<String, Object>>> notificationPage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT notify_id notifyId, title, content, notify_type notifyType,
+                       module_code moduleCode, biz_no bizNo,
+                       CASE WHEN is_read THEN '已读' ELSE '未读' END status,
+                       created_at createdAt
+                FROM sys_notification
+                ORDER BY is_read ASC, created_at DESC
+                """), request));
+    }
+
+    @PostMapping("/notification/read")
+    public ApiResponse<Boolean> readNotification(@RequestBody Map<String, Object> request) {
+        String notifyId = String.valueOf(request.getOrDefault("bizId", ""));
+        if (notifyId == null || notifyId.isBlank() || "null".equals(notifyId)) {
+            jdbcTemplate.update("UPDATE sys_notification SET is_read = TRUE WHERE is_read = FALSE");
+        } else {
+            jdbcTemplate.update("UPDATE sys_notification SET is_read = TRUE WHERE notify_id = ?", notifyId);
+        }
+        return ApiResponse.ok(true);
+    }
+
+    @GetMapping("/notification/unread-count")
+    public ApiResponse<Map<String, Object>> unreadCount() {
+        int count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_notification WHERE is_read = FALSE", Integer.class);
+        return ApiResponse.ok(Map.of("count", count));
+    }
+
+    // ========== 待办中心 ==========
+    @PostMapping("/todo/page")
+    public ApiResponse<PageResult<Map<String, Object>>> todoPage(@RequestBody PageRequest request) {
+        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+                SELECT todo_id todoId, title, module_code moduleCode, biz_no bizNo, biz_id bizId,
+                       CASE priority WHEN 'HIGH' THEN '高' WHEN 'LOW' THEN '低' ELSE '普通' END priority,
+                       CASE status WHEN 'DONE' THEN '已完成' ELSE '待处理' END status,
+                       created_at createdAt
+                FROM sys_todo
+                ORDER BY CASE priority WHEN 'HIGH' THEN 0 WHEN 'NORMAL' THEN 1 ELSE 2 END, created_at DESC
+                """), request));
+    }
+
+    @PostMapping("/todo/done")
+    public ApiResponse<Boolean> doneTodo(@RequestBody Map<String, Object> request) {
+        String todoId = String.valueOf(request.getOrDefault("bizId", ""));
+        jdbcTemplate.update("UPDATE sys_todo SET status = 'DONE' WHERE todo_id = ?", todoId);
+        return ApiResponse.ok(true);
+    }
+
+    @GetMapping("/todo/pending-count")
+    public ApiResponse<Map<String, Object>> pendingCount() {
+        int count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_todo WHERE status = 'PENDING'", Integer.class);
+        return ApiResponse.ok(Map.of("count", count));
+    }
+
+    @GetMapping("/todo/summary")
+    public ApiResponse<Map<String, Object>> todoSummary() {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT module_code moduleCode, COUNT(*) cnt
+                FROM sys_todo WHERE status = 'PENDING' GROUP BY module_code
+                """);
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("total", rows.stream().mapToInt(r -> ((Number) r.get("CNT")).intValue()).sum());
+        for (Map<String, Object> row : rows) {
+            summary.put(String.valueOf(row.get("MODULECODE")), row.get("CNT"));
+        }
+        return ApiResponse.ok(summary);
     }
 
     private ApiResponse<PageResult<Map<String, Object>>> simpleSystemPage(PageRequest request, String codePrefix, String name, String type, String status, String remark) {

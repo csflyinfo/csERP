@@ -386,6 +386,32 @@ CREATE TABLE IF NOT EXISTS fin_fund_ledger (
   operator_name VARCHAR(100)
 );
 
+CREATE TABLE IF NOT EXISTS fin_receipt_bill (
+  receipt_id VARCHAR(32) PRIMARY KEY,
+  receipt_no VARCHAR(50) NOT NULL UNIQUE,
+  object_name VARCHAR(100) NOT NULL,
+  fund_account VARCHAR(100) NOT NULL,
+  amount DECIMAL(18,2) DEFAULT 0,
+  verified_amount DECIMAL(18,2) DEFAULT 0,
+  source_ar_no VARCHAR(50),
+  remark VARCHAR(500),
+  status VARCHAR(20) DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fin_payment_bill (
+  payment_id VARCHAR(32) PRIMARY KEY,
+  payment_no VARCHAR(50) NOT NULL UNIQUE,
+  object_name VARCHAR(100) NOT NULL,
+  fund_account VARCHAR(100) NOT NULL,
+  amount DECIMAL(18,2) DEFAULT 0,
+  verified_amount DECIMAL(18,2) DEFAULT 0,
+  source_ap_no VARCHAR(50),
+  remark VARCHAR(500),
+  status VARCHAR(20) DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS biz_simple_bill (
   bill_id VARCHAR(32) PRIMARY KEY,
   bill_type VARCHAR(50) NOT NULL,
@@ -395,6 +421,8 @@ CREATE TABLE IF NOT EXISTS biz_simple_bill (
   reason VARCHAR(200),
   amount DECIMAL(18,2) DEFAULT 0,
   qty DECIMAL(18,2) DEFAULT 0,
+  goods_code VARCHAR(50),
+  goods_name VARCHAR(200),
   status VARCHAR(20) DEFAULT 'PENDING',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -416,6 +444,7 @@ CREATE TABLE IF NOT EXISTS sys_user_runtime (
   user_id VARCHAR(32) PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
   display_name VARCHAR(100) NOT NULL,
+  password VARCHAR(100) DEFAULT 'admin123',
   mobile VARCHAR(30),
   role_name VARCHAR(100),
   data_scope VARCHAR(100),
@@ -490,4 +519,101 @@ CREATE TABLE IF NOT EXISTS sys_import_task_runtime (
   result_text VARCHAR(1000),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   finished_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sys_notification (
+  notify_id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  content VARCHAR(1000),
+  notify_type VARCHAR(50) DEFAULT 'SYSTEM',
+  module_code VARCHAR(100),
+  biz_no VARCHAR(100),
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sys_todo (
+  todo_id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  module_code VARCHAR(100),
+  biz_no VARCHAR(100),
+  biz_id VARCHAR(100),
+  priority VARCHAR(20) DEFAULT 'NORMAL',
+  status VARCHAR(20) DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ========== 性能优化索引 ==========
+-- 基础资料索引
+CREATE INDEX IF NOT EXISTS idx_goods_code ON base_goods(goods_code);
+CREATE INDEX IF NOT EXISTS idx_goods_name ON base_goods(goods_name);
+CREATE INDEX IF NOT EXISTS idx_goods_category ON base_goods(category_name);
+CREATE INDEX IF NOT EXISTS idx_goods_brand ON base_goods(brand_name);
+CREATE INDEX IF NOT EXISTS idx_goods_status ON base_goods(status);
+
+CREATE INDEX IF NOT EXISTS idx_customer_code ON base_customer(customer_code);
+CREATE INDEX IF NOT EXISTS idx_customer_name ON base_customer(customer_name);
+CREATE INDEX IF NOT EXISTS idx_customer_status ON base_customer(status);
+
+CREATE INDEX IF NOT EXISTS idx_supplier_code ON base_supplier(supplier_code);
+CREATE INDEX IF NOT EXISTS idx_supplier_name ON base_supplier(supplier_name);
+
+-- 采购订单索引
+CREATE INDEX IF NOT EXISTS idx_pur_order_no ON pur_order(order_no);
+CREATE INDEX IF NOT EXISTS idx_pur_order_supplier ON pur_order(supplier);
+CREATE INDEX IF NOT EXISTS idx_pur_order_status ON pur_order(status);
+CREATE INDEX IF NOT EXISTS idx_pur_order_date ON pur_order(bill_date);
+CREATE INDEX IF NOT EXISTS idx_pur_order_detail_order ON pur_order_detail(order_id);
+
+-- 销售订单索引
+CREATE INDEX IF NOT EXISTS idx_sales_order_no ON sales_order(order_no);
+CREATE INDEX IF NOT EXISTS idx_sales_order_customer ON sales_order(customer);
+CREATE INDEX IF NOT EXISTS idx_sales_order_status ON sales_order(status);
+CREATE INDEX IF NOT EXISTS idx_sales_order_date ON sales_order(bill_date);
+CREATE INDEX IF NOT EXISTS idx_sales_order_detail_order ON sales_order_detail(order_id);
+
+-- 入库出库索引
+CREATE INDEX IF NOT EXISTS idx_pur_inbound_no ON pur_inbound(inbound_no);
+CREATE INDEX IF NOT EXISTS idx_pur_inbound_order ON pur_inbound(source_order);
+CREATE INDEX IF NOT EXISTS idx_pur_inbound_status ON pur_inbound(status);
+CREATE INDEX IF NOT EXISTS idx_sales_outbound_no ON sales_outbound(outbound_no);
+CREATE INDEX IF NOT EXISTS idx_sales_outbound_order ON sales_outbound(source_order);
+CREATE INDEX IF NOT EXISTS idx_sales_outbound_status ON sales_outbound(status);
+
+-- 库存索引
+CREATE INDEX IF NOT EXISTS idx_stock_goods ON inv_stock_balance(goods_code);
+CREATE INDEX IF NOT EXISTS idx_stock_warehouse ON inv_stock_balance(warehouse);
+CREATE INDEX IF NOT EXISTS idx_stock_goods_warehouse ON inv_stock_balance(goods_code, warehouse);
+CREATE INDEX IF NOT EXISTS idx_ledger_goods ON inv_stock_ledger(goods_code);
+CREATE INDEX IF NOT EXISTS idx_ledger_warehouse ON inv_stock_ledger(warehouse);
+CREATE INDEX IF NOT EXISTS idx_ledger_bill ON inv_stock_ledger(source_bill);
+
+-- 财务索引
+CREATE INDEX IF NOT EXISTS idx_fin_ar_customer ON fin_ar(customer);
+CREATE INDEX IF NOT EXISTS idx_fin_ar_status ON fin_ar(status);
+CREATE INDEX IF NOT EXISTS idx_fin_ap_supplier ON fin_ap(supplier);
+CREATE INDEX IF NOT EXISTS idx_fin_ap_status ON fin_ap(status);
+CREATE INDEX IF NOT EXISTS idx_fund_ledger_account ON fin_fund_ledger(fund_account);
+CREATE INDEX IF NOT EXISTS idx_fund_ledger_bill ON fin_fund_ledger(source_bill);
+
+-- 系统表索引
+CREATE INDEX IF NOT EXISTS idx_user_username ON sys_user_runtime(username);
+CREATE INDEX IF NOT EXISTS idx_user_status ON sys_user_runtime(status);
+CREATE INDEX IF NOT EXISTS idx_role_code ON sys_role_runtime(role_code);
+CREATE INDEX IF NOT EXISTS idx_notify_read ON sys_notification(is_read, created_at);
+CREATE INDEX IF NOT EXISTS idx_notify_type ON sys_notification(notify_type);
+CREATE INDEX IF NOT EXISTS idx_todo_status ON sys_todo(status);
+CREATE INDEX IF NOT EXISTS idx_todo_module ON sys_todo(module_code);
+CREATE INDEX IF NOT EXISTS idx_log_time ON sys_operation_log_runtime(operate_at);
+CREATE INDEX IF NOT EXISTS idx_log_module ON sys_operation_log_runtime(module_code);
+
+CREATE TABLE IF NOT EXISTS sys_todo (
+  todo_id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  module_code VARCHAR(100),
+  biz_no VARCHAR(100),
+  biz_id VARCHAR(100),
+  priority VARCHAR(20) DEFAULT 'NORMAL',
+  status VARCHAR(20) DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

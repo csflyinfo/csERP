@@ -1,16 +1,109 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
-import { get, post, saveTextFile } from '../api/client.js'
+import GoodsDrawer from './goods/GoodsDrawer.vue'
+import BatchEditDrawer from './goods/components/BatchEditDrawer.vue'
+import BillDrawer from '../components/BillDrawer.vue'
+import FundBillDrawer from '../components/FundBillDrawer.vue'
+import BaseInfoDrawer from '../components/BaseInfoDrawer.vue'
+import { get, post, upload, downloadBlob, saveBlobFile, saveTextFile } from '../api/client.js'
 import { usePermission } from '../composables/usePermission.js'
-import { mapRecordToRow, moduleApis } from '../module-api.js'
+import { mapRecordToRow, moduleApis, excelModules } from '../module-api.js'
+import { moduleConfigs } from '../module-config.js'
 
-const props = defineProps({
-  config: { type: Object, required: true },
-  moduleCode: { type: String, required: true },
-  roleCode: { type: String, default: 'ADMIN' },
-})
+const route = useRoute()
+const moduleCode = computed(() => route.meta?.module || '')
+const config = computed(() => moduleConfigs[moduleCode.value] || {})
+const roleCode = 'ADMIN'
+
+// 商品编辑抽屉
+const showGoodsDrawer = ref(false)
+const drawerMode = ref('add') // add/edit
+const editGoodsData = ref(null)
+
+// 业务单据抽屉（采购订单/销售订单）
+const showBillDrawer = ref(false)
+const billDrawerMode = ref('add')
+const billDrawerCode = ref('')
+const billEditData = ref(null)
+
+function openBillDrawer(mode, code, rowData = null) {
+  billDrawerMode.value = mode
+  billDrawerCode.value = code
+  billEditData.value = rowData
+  showBillDrawer.value = true
+}
+function closeBillDrawer() {
+  showBillDrawer.value = false
+}
+function onBillSave(result) {
+  showBillDrawer.value = false
+  loadRows()
+  show(`${moduleConfigs[billDrawerCode.value]?.title || '单据'}保存成功`)
+}
+
+// 资金单据抽屉（收付款/核销）
+const showFundDrawer = ref(false)
+const fundBillType = ref('receipt')
+const fundEditData = ref(null)
+
+function openFundDrawer(type, rowData = null) {
+  fundBillType.value = type
+  fundEditData.value = rowData
+  showFundDrawer.value = true
+}
+function closeFundDrawer() {
+  showFundDrawer.value = false
+}
+function onFundSave(result) {
+  showFundDrawer.value = false
+  loadRows()
+  show('资金操作成功')
+}
+
+// 基础资料抽屉
+const showBaseDrawer = ref(false)
+const baseDrawerCode = ref('')
+const baseDrawerMode = ref('add')
+const baseEditData = ref(null)
+
+function openBaseDrawer(mode, code, rowData = null) {
+  baseDrawerMode.value = mode
+  baseDrawerCode.value = code
+  baseEditData.value = rowData
+  showBaseDrawer.value = true
+}
+function closeBaseDrawer() {
+  showBaseDrawer.value = false
+}
+function onBaseSave(result) {
+  showBaseDrawer.value = false
+  loadRows()
+  show(`${moduleConfigs[baseDrawerCode.value]?.title || '资料'}保存成功`)
+}
+
+// 批量编辑
+const showBatchEditDrawer = ref(false)
+const selectedRows = ref([])
+const selectedRowKeys = ref(new Set())
+
+// 暴露给父组件：打开新增抽屉
+function openAddDrawer() {
+  drawerMode.value = 'add'
+  editGoodsData.value = null
+  showGoodsDrawer.value = true
+}
+
+// 暴露给父组件：打开编辑抽屉
+function openEditDrawer(rowData) {
+  drawerMode.value = 'edit'
+  editGoodsData.value = rowData || null
+  showGoodsDrawer.value = true
+}
+
+defineExpose({ openAddDrawer, openEditDrawer })
 
 const { loadFieldScope, canViewField } = usePermission()
 const feedback = ref('')
@@ -29,23 +122,23 @@ const queryFilters = ref({})
 const sortField = ref('')
 const sortOrder = ref('')
 
-const columns = computed(() => props.config.columns.map((title, index) => ({
+const columns = computed(() => config.value.columns.map((title, index) => ({
   key: `c${index}`,
   title,
   num: /金额|数量|库存|单价|成本|余额|已收|未收|已付|未付|原价|现价|进价|税额|毛利|额度/.test(title),
 })))
-const visibleColumns = computed(() => columns.value.filter(col => (columnSettings.value[col.key] !== false || /操作/.test(col.title)) && canViewField(props.moduleCode, col.title)))
-const fieldSettingKey = computed(() => `erp-field-setting:${props.moduleCode}`)
+const visibleColumns = computed(() => columns.value.filter(col => (columnSettings.value[col.key] !== false || /操作/.test(col.title)) && canViewField(moduleCode.value, col.title)))
+const fieldSettingKey = computed(() => `erp-field-setting:${moduleCode.value}`)
 
-const actionColumnIndex = computed(() => props.config.columns.findIndex(title => /操作/.test(title)))
-const statusColumnIndex = computed(() => props.config.columns.findIndex(title => /状态|核销状态|应付生成状态|应收生成|开票状态|勾稽状态/.test(title)))
+const actionColumnIndex = computed(() => config.value.columns.findIndex(title => /操作/.test(title)))
+const statusColumnIndex = computed(() => config.value.columns.findIndex(title => /状态|核销状态|应付生成状态|应收生成|开票状态|勾稽状态/.test(title)))
 
-function buildRow(values = props.config.row) {
+function buildRow(values = config.value.row) {
   return Object.fromEntries(values.map((value, index) => [`c${index}`, value]))
 }
 
 async function loadRows() {
-  const api = moduleApis[props.moduleCode]
+  const api = moduleApis[moduleCode.value]
   if (!api?.page) {
     tableRows.value = [buildRow()]
     total.value = tableRows.value.length
@@ -53,13 +146,13 @@ async function loadRows() {
   }
   loading.value = true
   try {
-    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: props.roleCode } })
-    tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, props.config)) : [buildRow()]
+    const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: roleCode } })
+    tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, config.value)) : [buildRow()]
     total.value = data.total || tableRows.value.length
   } catch (error) {
     tableRows.value = [buildRow()]
     total.value = tableRows.value.length
-    show(`${props.config.title}接口加载失败，已显示示例数据`)
+    show(`${config.value.title}接口加载失败，已显示示例数据`)
   } finally {
     loading.value = false
   }
@@ -77,29 +170,29 @@ function loadColumnSettings() {
 
 function saveColumnSettings() {
   localStorage.setItem(fieldSettingKey.value, JSON.stringify(columnSettings.value))
-  show(`${props.config.title}字段设置已保存`)
+  show(`${config.value.title}字段设置已保存`)
   closeDialog()
 }
 
 function resetColumnSettings() {
   localStorage.removeItem(fieldSettingKey.value)
   loadColumnSettings()
-  show(`${props.config.title}字段设置已恢复默认`)
+  show(`${config.value.title}字段设置已恢复默认`)
 }
 
-watch(() => [props.config, props.roleCode], () => { loadColumnSettings(); loadFieldScope(props.moduleCode, props.roleCode); resetRows() }, { immediate: true })
+watch(() => [config.value, roleCode], () => { loadColumnSettings(); loadFieldScope(moduleCode.value, roleCode); resetRows() }, { immediate: true })
 
 const formFields = computed(() => {
-  if (props.config.formFields?.length) return props.config.formFields
+  if (config.value.formFields?.length) return config.value.formFields
   const ignored = /操作|商品数|当前库存|库存金额|应收余额|应付余额|逾期金额|已入库|已收|未收|已付|未付|创建|审核|状态|付款状态|到货状态|签收状态|开票状态|勾稽状态|核销状态/
-  const fromColumns = props.config.columns.filter(title => !ignored.test(title)).slice(0, 12)
-  return fromColumns.length ? fromColumns : (props.config.sections || ['基础信息'])
+  const fromColumns = config.value.columns.filter(title => !ignored.test(title)).slice(0, 12)
+  return fromColumns.length ? fromColumns : (config.value.sections || ['基础信息'])
 })
 
 const detailColumns = computed(() => {
-  if (props.config.detailColumns?.length) return props.config.detailColumns
-  if (props.config.mode === 'bill' || props.config.type !== 'base') {
-    return props.config.columns.filter(title => !/操作|状态|创建|审核/.test(title)).slice(0, 10)
+  if (config.value.detailColumns?.length) return config.value.detailColumns
+  if (config.value.mode === 'bill' || config.value.type !== 'base') {
+    return config.value.columns.filter(title => !/操作|状态|创建|审核/.test(title)).slice(0, 10)
   }
   return []
 })
@@ -107,6 +200,90 @@ const detailColumns = computed(() => {
 function show(message) {
   feedback.value = message
   setTimeout(() => (feedback.value = ''), 2000)
+}
+
+// 商品保存后处理：新增插入列表，编辑更新列表
+function handleGoodsSave(goodsData) {
+  console.log('handleGoodsSave:', goodsData)
+  const row = buildGoodsRow(goodsData)
+  if (drawerMode.value === 'edit' && editGoodsData.value) {
+    // 编辑模式：找到原行并更新
+    const idx = tableRows.value.findIndex(r => r.c1 === editGoodsData.value.c1)
+    if (idx >= 0) {
+      tableRows.value[idx] = row
+    } else {
+      tableRows.value.unshift(row)
+    }
+  } else {
+    // 新增模式：插入到列表顶部
+    tableRows.value.unshift(row)
+    total.value = tableRows.value.length
+  }
+  show('商品保存成功')
+}
+
+// 将商品对象转换为列表行格式
+function buildGoodsRow(data) {
+  const u = data.units?.[0] || {}
+  const saleFlag = data.canSale ? '是' : '否'
+  const purchaseFlag = data.canPurchase ? '是' : '否'
+  const returnFlag = data.canReturn ? '是' : '否'
+  return {
+    c0: '-',
+    c1: data.goodsCode || `GD${String(tableRows.value.length + 1).padStart(3, '0')}`,
+    c2: data.goodsName || '',
+    c3: data.goodsType || '正常商品',
+    c4: data.spec || '',
+    c5: data.categoryName || '',
+    c6: data.brandName || '',
+    c7: u.unitName || '瓶',
+    c8: u.barcode || '',
+    c9: data.shelfLifeDays ? `${data.shelfLifeDays}天` : '',
+    c10: data.storageProperty || '常温',
+    c11: data.standardPrice || '0.00',
+    c12: data.suggestedRetailPrice || '0.00',
+    c13: data.referencePurchasePrice || '0.00',
+    c14: data.minSalePrice || '0.00',
+    c15: data.stockUpperLimit || '0',
+    c16: data.stockLowerLimit || '0',
+    c17: data.defaultSupplier || '',
+    c18: data.defaultWarehouse || '总仓',
+    c19: `${saleFlag}/${purchaseFlag}/${returnFlag}`,
+    c20: '0',
+    c21: data.status || '正常',
+    c22: '编辑 复制 停用 删除 库存 历史',
+  }
+}
+
+// ========== 批量编辑相关 ==========
+// 打开批量编辑弹窗
+function openBatchEdit() {
+  if (selectedRowKeys.value.size === 0) {
+    show('请先选择商品')
+    return
+  }
+  selectedRows.value = tableRows.value.filter((row, index) => selectedRowKeys.value.has(index))
+  showBatchEditDrawer.value = true
+}
+
+// 切换单行勾选
+function toggleRowSelection(index, checked) {
+  if (checked) selectedRowKeys.value.add(index)
+  else selectedRowKeys.value.delete(index)
+}
+
+// 全选/取消全选
+function toggleSelectAll(checked) {
+  if (checked) tableRows.value.forEach((_, index) => selectedRowKeys.value.add(index))
+  else selectedRowKeys.value.clear()
+}
+
+// 批量保存
+function handleBatchSave(updateData) {
+  selectedRows.value.forEach(row => Object.assign(row, updateData))
+  show(`批量更新完成，共更新 ${selectedRows.value.length} 个商品`)
+  showBatchEditDrawer.value = false
+  selectedRowKeys.value.clear()
 }
 
 function openDialog(type, title, message, row = null) {
@@ -132,7 +309,7 @@ function valueByTitle(title, row = selectedRow.value) {
 }
 
 async function saveForm() {
-  const api = moduleApis[props.moduleCode]
+  const api = moduleApis[moduleCode.value]
   const endpoint = dialog.value?.title?.includes('编辑') && api?.update ? api.update : api?.save
   if (endpoint) {
     try {
@@ -143,11 +320,11 @@ async function saveForm() {
     }
   }
   if (dialog.value?.title?.includes('新建')) {
-    const newValues = [...props.config.row]
+    const newValues = [...config.value.row]
     const codeIndex = 0
     const nameIndex = Math.min(1, newValues.length - 1)
-    newValues[codeIndex] = `${props.config.title.substring(0, 2)}${String(tableRows.value.length + 1).padStart(3, '0')}`
-    newValues[nameIndex] = `${props.config.title}新增记录`
+    newValues[codeIndex] = `${config.value.title.substring(0, 2)}${String(tableRows.value.length + 1).padStart(3, '0')}`
+    newValues[nameIndex] = `${config.value.title}新增记录`
     tableRows.value.unshift(buildRow(newValues))
   }
   show(`${dialog.value.title}保存成功`)
@@ -156,7 +333,7 @@ async function saveForm() {
 
 async function confirmAction() {
   const action = dialog.value?.title || '操作'
-  const api = moduleApis[props.moduleCode]
+  const api = moduleApis[moduleCode.value]
   const endpoint = resolveEndpoint(api, action)
   if (endpoint) {
     try {
@@ -175,7 +352,7 @@ async function confirmAction() {
     if (/删除/.test(action)) tableRows.value = tableRows.value.filter(row => row !== selectedRow.value)
     if (/核销/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已核销'
   }
-  show(`${props.config.title}${action}成功`)
+  show(`${config.value.title}${action}成功`)
   closeDialog()
 }
 
@@ -192,90 +369,173 @@ function resolveEndpoint(api, action) {
 }
 
 async function openDetail(action, row) {
-  const api = moduleApis[props.moduleCode]
+  const api = moduleApis[moduleCode.value]
   detailData.value = null
   if (api?.detail && row?.c0) {
     try {
       const separator = api.detail.includes('?') ? '&' : '?'
       detailData.value = await get(`${api.detail}${separator}orderId=${encodeURIComponent(row.c0)}`)
     } catch (error) {
-      show(`${props.config.title}详情接口暂不可用，已显示列表字段`)
+      show(`${config.value.title}详情接口暂不可用，已显示列表字段`)
     }
   }
-  openDialog('view', action, detailData.value ? `${props.config.title}详情已加载` : `${props.config.title}详情`, row)
+  openDialog('view', action, detailData.value ? `${config.value.title}详情已加载` : `${config.value.title}详情`, row)
 }
 
+const importFile = ref(null)
+
 async function uploadImport() {
-  const api = moduleApis[props.moduleCode]
-  if (api?.import) {
+  const excelApi = excelModules[moduleCode.value]
+  if (excelApi?.import && importFile.value) {
     try {
-      const result = await post(api.import, { ...buildPayload(), taskName: `${props.config.title}导入任务`, fileName: `${props.config.title}导入模板.xlsx` })
+      const formData = new FormData()
+      formData.append('file', importFile.value)
+      formData.append('taskName', `${config.value.title}导入任务`)
+      const result = await upload(excelApi.import, formData)
       show(result?.message || `导入完成：成功${result?.successRows ?? 0}行，失败${result?.failedRows ?? 0}行`)
-      if (props.moduleCode === 'importList') await loadRows()
+      if (moduleCode.value === 'importList') await loadRows()
+      loadRows()
     } catch (error) {
-      show(`${props.config.title}导入接口暂不可用，已保留校验结果`)
+      show(`${config.value.title}导入失败：${error.message}`)
     }
   } else {
-    show('导入校验通过')
+    const api = moduleApis[moduleCode.value]
+    if (api?.import) {
+      try {
+        const result = await post(api.import, { ...buildPayload(), taskName: `${config.value.title}导入任务`, fileName: `${config.value.title}导入模板.xlsx` })
+        show(result?.message || `导入完成：成功${result?.successRows ?? 0}行，失败${result?.failedRows ?? 0}行`)
+        if (moduleCode.value === 'importList') await loadRows()
+      } catch (error) {
+        show(`${config.value.title}导入接口暂不可用`)
+      }
+    } else {
+      show('导入校验通过')
+    }
   }
+  importFile.value = null
   closeDialog()
 }
 
+async function downloadTemplate() {
+  const excelApi = excelModules[moduleCode.value]
+  if (excelApi?.template) {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE || '/api'}${excelApi.template}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('erp-token') || ''}` }
+      })
+      if (!response.ok) throw new Error('下载失败')
+      const blob = await response.blob()
+      saveBlobFile(`${config.value.title}_导入模板.xlsx`, blob)
+      show('模板下载成功')
+    } catch (error) {
+      show(`模板下载失败：${error.message}`)
+    }
+  } else {
+    show('该模块暂无导入模板')
+  }
+}
+
 async function handleAction(action, row = null) {
+  const actionStr = String(action || '')
+
+  // 商品模块：新增/编辑走大抽屉，批量编辑走批量弹窗
+  if (moduleCode.value === 'goods') {
+    if (actionStr === '新建商品' || actionStr === '新增商品') { openAddDrawer(); return }
+    if (actionStr === '编辑') { openEditDrawer(row); return }
+    if (actionStr === '批量编辑') { openBatchEdit(); return }
+  }
+
+  // 采购订单/销售订单：走专用单据抽屉
+  if (moduleCode.value === 'purchaseOrder' || moduleCode.value === 'salesOrder') {
+    if (/新建|新增/.test(actionStr)) { openBillDrawer('add', moduleCode.value); return }
+    if (actionStr === '编辑') { openBillDrawer('edit', moduleCode.value, row); return }
+  }
+
+  // 收付款单/核销：走资金单据抽屉
+  if (moduleCode.value === 'receiptPayment') {
+    if (/新建收款|收款/.test(actionStr)) { openFundDrawer('receipt', row); return }
+    if (/新建付款|付款/.test(actionStr)) { openFundDrawer('payment', row); return }
+  }
+  if (moduleCode.value === 'receiptVerify' || moduleCode.value === 'arSettlement' || moduleCode.value === 'counterpartyAr') {
+    if (/核销|收款/.test(actionStr)) { openFundDrawer('receiveVerify', row); return }
+  }
+  if (moduleCode.value === 'paymentVerify' || moduleCode.value === 'apSettlement' || moduleCode.value === 'counterpartyAp') {
+    if (/核销|付款/.test(actionStr)) { openFundDrawer('payVerify', row); return }
+  }
+
+  // 基础资料：走专用抽屉
+  const baseModules = ['customer', 'supplier', 'warehouse', 'unit', 'brand', 'category']
+  if (baseModules.includes(moduleCode.value)) {
+    if (/新建|新增/.test(actionStr)) { openBaseDrawer('add', moduleCode.value); return }
+    if (actionStr === '编辑') { openBaseDrawer('edit', moduleCode.value, row); return }
+  }
+
   if (/刷新/.test(action)) {
     pageNo.value = 1
     await loadRows()
-    show(`${props.config.title}已刷新`)
+    show(`${config.value.title}已刷新`)
   } else if (/查看|详情|历史|库存|日志|来源/.test(action)) {
     await openDetail(action, row)
   } else if (/新建|编辑|复制|引入/.test(action)) {
-    openDialog('form', action, `${props.config.title}：按PRD打开${props.config.mode === 'modal' ? '小弹窗' : props.config.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
+    openDialog('form', action, `${config.value.title}：按PRD打开${config.value.mode === 'modal' ? '小弹窗' : config.value.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
   } else if (/审核|确认签收|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
     openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
   } else if (/导入/.test(action)) {
-    openDialog('import', action, `${props.config.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
+    openDialog('import', action, `${config.value.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
   } else if (/下载|失败原因/.test(action)) {
-    const api = moduleApis[props.moduleCode]
+    const api = moduleApis[moduleCode.value]
     if (api?.download) {
       try {
         const result = await post(api.download, buildPayload())
         if (result?.fileContent) saveTextFile(result.fileName, result.fileContent, result.mimeType)
-        show(result?.message ? `${result.message}：${result.fileName}` : `${props.config.title}下载已准备好`)
+        show(result?.message ? `${result.message}：${result.fileName}` : `${config.value.title}下载已准备好`)
       } catch (error) {
-        show(`${props.config.title}下载失败：${error.message}`)
+        show(`${config.value.title}下载失败：${error.message}`)
       }
     } else {
-      show(`${props.config.title}文件下载已开始`)
+      show(`${config.value.title}文件下载已开始`)
     }
   } else if (/导出/.test(action)) {
-    const api = moduleApis[props.moduleCode]
-    if (api?.export) {
+    const excelApi = excelModules[moduleCode.value]
+    if (excelApi?.export) {
       try {
-        const result = await post(api.export, { moduleCode: props.moduleCode, reportName: props.config.title, filters: queryFilters.value })
-        show(result?.message || `${props.config.title}已创建导出任务`)
-        if (props.moduleCode === 'exportCenter') loadRows()
+        const blob = await downloadBlob(excelApi.export, { moduleCode: moduleCode.value, filters: queryFilters.value })
+        const fileName = `${config.value.title}_导出_${Date.now()}.xlsx`
+        saveBlobFile(fileName, blob)
+        show(`${config.value.title}导出成功：${fileName}`)
       } catch (error) {
-        show(`${props.config.title}导出接口暂不可用，已保留导出任务提示`)
+        show(`${config.value.title}导出失败：${error.message}`)
       }
     } else {
-      show(`${props.config.title}已创建导出任务`)
+      const api = moduleApis[moduleCode.value]
+      if (api?.export) {
+        try {
+          const result = await post(api.export, { moduleCode: moduleCode.value, reportName: config.value.title, filters: queryFilters.value })
+          show(result?.message || `${config.value.title}已创建导出任务`)
+          if (moduleCode.value === 'exportCenter') loadRows()
+        } catch (error) {
+          show(`${config.value.title}导出接口暂不可用`)
+        }
+      } else {
+        show(`${config.value.title}已创建导出任务`)
+      }
     }
   } else if (/打印/.test(action)) {
-    show(`${props.config.title}打印预览已打开`)
+    show(`${config.value.title}打印预览已打开`)
   } else if (/字段设置/.test(action)) {
     openDialog('field', '字段设置', '支持列显示/隐藏、顺序、宽度、固定列，并按用户保存。', row)
   } else {
-    show(`${props.config.title}：${action}`)
+    show(`${config.value.title}：${action}`)
   }
 }
 
 function buildPayload() {
   const base = {
-    moduleCode: props.moduleCode,
-    bizId: selectedRow.value?.c0 || `${props.moduleCode}-demo`,
+    moduleCode: moduleCode.value,
+    bizId: selectedRow.value?.c0 || `${moduleCode.value}-demo`,
     orderId: selectedRow.value?.c0,
     taskNo: selectedRow.value?.c0,
-    remark: `${props.config.title}操作`,
+    remark: `${config.value.title}操作`,
     customerId: 'CUS001',
     supplierId: 'SUP001',
     warehouseId: 'WH001',
@@ -285,7 +545,7 @@ function buildPayload() {
     parentId: 'ROOT',
     parentCode: '01',
     categoryCode: '01',
-    categoryName: `${props.config.title}新增`,
+    categoryName: `${config.value.title}新增`,
     effectiveMode: 'IMMEDIATE',
     validType: 'LONG_TERM',
     details: [{ goodsId: 'G001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: '正常', discountRate: '100%', taxRate: '13%', qty: 1, price: 1, currentPrice: 1 }],
@@ -296,7 +556,7 @@ function buildPayload() {
 }
 
 function modulePayload() {
-  if (props.moduleCode === 'goods') {
+  if (moduleCode.value === 'goods') {
     const code = text('商品编码') || selectedRow.value?.c1 || `GD${Date.now()}`
     return {
       goodsCode: code,
@@ -321,7 +581,7 @@ function modulePayload() {
       canReturn: !/否/.test(text('可售/可采购/可退')),
     }
   }
-  if (props.moduleCode === 'customer') {
+  if (moduleCode.value === 'customer') {
     const code = text('客户编码') || selectedRow.value?.c0 || `CT${Date.now()}`
     return {
       customerId: selectedRow.value?.c0 || code,
@@ -342,7 +602,7 @@ function modulePayload() {
       taxNo: text('税号'),
     }
   }
-  if (props.moduleCode === 'supplier') {
+  if (moduleCode.value === 'supplier') {
     const code = text('供应商编码') || selectedRow.value?.c0 || `SP${Date.now()}`
     return {
       supplierId: selectedRow.value?.c0 || code,
@@ -361,7 +621,7 @@ function modulePayload() {
       taxNo: text('税号'),
     }
   }
-  if (props.moduleCode === 'purchaseOrder') {
+  if (moduleCode.value === 'purchaseOrder') {
     return {
       orderId: selectedRow.value?.c0,
       supplierId: text('供应商') || '农夫山泉杭州经销',
@@ -372,7 +632,7 @@ function modulePayload() {
       details: [{ goodsId: 'SP001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: '正常', taxRate: '13%', qty: 1, price: 35 }],
     }
   }
-  if (props.moduleCode === 'salesOrder') {
+  if (moduleCode.value === 'salesOrder') {
     return {
       orderId: selectedRow.value?.c0,
       customerId: text('客户') || '华联超市',
@@ -382,10 +642,10 @@ function modulePayload() {
       details: [{ goodsId: 'SP001', goodsName: '农夫山泉500ml*24', unitId: '箱', lineType: text('行类型') || '正常', discountRate: '100%', taxRate: '13%', qty: 1, price: 35 }],
     }
   }
-  if (props.moduleCode === 'purchaseInbound') {
+  if (moduleCode.value === 'purchaseInbound') {
     return { sourceOrder: text('采购单号') || selectedRow.value?.c2 || selectedRow.value?.c0 || 'PO202606140001' }
   }
-  if (props.moduleCode === 'salesOutbound') {
+  if (moduleCode.value === 'salesOutbound') {
     return { sourceOrder: text('销售单号') || selectedRow.value?.c1 || selectedRow.value?.c0 || 'SO202606140001' }
   }
   return {}
@@ -401,8 +661,8 @@ function numberValue(field, fallback = 0) {
 }
 
 function selectTreeNode(node) { selectedTreeNode.value = node.trim(); queryFilters.value = { ...queryFilters.value, treeNode: selectedTreeNode.value }; pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
-async function handleQuery(filters = {}) { queryFilters.value = filters; pageNo.value = 1; await loadRows(); show(`${props.config.title}查询完成`) }
-function handleReset() { queryFilters.value = {}; pageNo.value = 1; loadRows(); show(`${props.config.title}查询条件已重置`) }
+async function handleQuery(filters = {}) { queryFilters.value = filters; pageNo.value = 1; await loadRows(); show(`${config.value.title}查询完成`) }
+function handleReset() { queryFilters.value = {}; pageNo.value = 1; loadRows(); show(`${config.value.title}查询条件已重置`) }
 function handleMore(fields) { openDialog('more', '更多查询条件', fields.join('、')) }
 function handleRowAction(action, row) { handleAction(action, row) }
 function handlePageChange(nextPageNo) { pageNo.value = Math.max(1, nextPageNo); loadRows() }
@@ -430,7 +690,10 @@ function handleSortChange(field) {
 
     <section class="module-list">
       <div class="page-ops">
-        <button v-for="action in config.actions" :key="action" class="btn" :class="{ primary: /^新建|审核并打印/.test(action) }" @click="handleAction(action)">{{ action }}</button>
+        <button v-for="action in config.actions" :key="action" class="btn" :class="{ primary: /^新建|新增商品|审核并打印/.test(action) }" @click="handleAction(action)">
+          {{ action }}
+          <span v-if="action === '批量编辑' && moduleCode === 'goods' && selectedRowKeys.size > 0">({{ selectedRowKeys.size }})</span>
+        </button>
       </div>
 
       <QueryBar :fields="config.filters" @query="handleQuery" @reset="handleReset" @more="handleMore" />
@@ -441,6 +704,14 @@ function handleSortChange(field) {
 
       <div v-if="loading" class="tips-inline"><span>正在加载 {{ config.title }} 数据...</span></div>
       <ProTable :title="config.title + '列表'" :columns="visibleColumns" :rows="tableRows" :page-no="pageNo" :page-size="pageSize" :total="total" :sort-field="sortField" :sort-order="sortOrder" @field-setting="handleAction('字段设置')" @export="handleAction('导出')" @row-action="handleRowAction" @page-change="handlePageChange" @page-size-change="handlePageSizeChange" @sort-change="handleSortChange">
+        <!-- 商品列表勾选列 -->
+        <template v-if="moduleCode === 'goods'" #checkbox-header>
+          <input type="checkbox" :checked="tableRows.length > 0 && selectedRowKeys.size === tableRows.length" @change="toggleSelectAll($event.target.checked)" />
+        </template>
+        <template v-if="moduleCode === 'goods'" #checkbox-cell="{ rowIndex }">
+          <input type="checkbox" :checked="selectedRowKeys.has(rowIndex)" @change="toggleRowSelection(rowIndex, $event.target.checked)" />
+        </template>
+
         <template v-for="col in visibleColumns" #[col.key]="{ row }" :key="col.key">
           <span v-if="/状态/.test(col.title)" class="badge wait">{{ row[col.key] }}</span>
           <span v-else-if="/操作/.test(col.title)">
@@ -502,8 +773,9 @@ function handleSortChange(field) {
         <div v-if="dialog.type === 'confirm'" class="field"><label>原因/备注</label><textarea placeholder="请输入原因或备注"></textarea></div>
 
         <div v-if="dialog.type === 'import'" class="section-block">
-          <button class="btn">下载模板</button>
-          <input style="margin-left:8px" type="file" />
+          <button class="btn" @click="downloadTemplate">下载模板</button>
+          <input style="margin-left:8px" type="file" accept=".xlsx,.xls" @change="importFile = $event.target.files?.[0] || null" />
+          <p v-if="importFile" style="color:var(--primary);font-size:12px">已选择：{{ importFile.name }}</p>
           <p style="color:#5d7896">上传后先校验，不直接入库；失败行可下载失败原因。</p>
         </div>
 
@@ -525,4 +797,50 @@ function handleSortChange(field) {
       </div>
     </div>
   </div>
+
+  <!-- 商品编辑大抽屉 -->
+  <GoodsDrawer
+    :visible="showGoodsDrawer && moduleCode === 'goods'"
+    :mode="drawerMode"
+    :goods-data="editGoodsData"
+    @close="showGoodsDrawer = false"
+    @save="handleGoodsSave"
+  />
+
+  <!-- 业务单据抽屉（采购订单/销售订单） -->
+  <BillDrawer
+    :visible="showBillDrawer"
+    :mode="billDrawerMode"
+    :module-code="billDrawerCode"
+    :edit-data="billEditData"
+    @close="closeBillDrawer"
+    @save="onBillSave"
+  />
+
+  <!-- 资金单据抽屉（收付款/核销） -->
+  <FundBillDrawer
+    :visible="showFundDrawer"
+    :bill-type="fundBillType"
+    :edit-data="fundEditData"
+    @close="closeFundDrawer"
+    @save="onFundSave"
+  />
+
+  <!-- 基础资料抽屉 -->
+  <BaseInfoDrawer
+    :visible="showBaseDrawer"
+    :mode="baseDrawerMode"
+    :module-code="baseDrawerCode"
+    :edit-data="baseEditData"
+    @close="closeBaseDrawer"
+    @save="onBaseSave"
+  />
+
+  <!-- 批量编辑弹窗 -->
+  <BatchEditDrawer
+    :visible="showBatchEditDrawer && moduleCode === 'goods'"
+    :selected-rows="selectedRows"
+    @close="showBatchEditDrawer = false"
+    @save="handleBatchSave"
+  />
 </template>
