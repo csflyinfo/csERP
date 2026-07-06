@@ -1,12 +1,12 @@
 # 多阶段构建：Maven 编译
-FROM maven:3.9-eclipse-temurin-17-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /build
 COPY pom.xml .
 COPY src ./src
 RUN mvn clean package -DskipTests -q
 
 # 运行时：仅 JRE
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # 安装字体支持（用于报表导出）
