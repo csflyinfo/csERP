@@ -91,7 +91,9 @@ export const excelModules = {
 }
 
 export function mapRecordToRow(record, config) {
-  return Object.fromEntries(config.columns.map((title, index) => [`c${index}`, valueForTitle(title, record, config.row[index])]))
+  const row = Object.fromEntries(config.columns.map((title, index) => [`c${index}`, valueForTitle(title, record, '')]))
+  row._raw = record
+  return row
 }
 
 function valueForTitle(title, record, fallback = '') {

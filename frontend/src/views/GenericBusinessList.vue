@@ -315,19 +315,15 @@ async function saveForm() {
     try {
       await post(endpoint, buildPayload())
       await loadRows()
+      show(`${dialog.value.title}保存成功`)
+      closeDialog()
+      return
     } catch (error) {
-      show(`${dialog.value.title}接口暂不可用，已保留前端操作`)
+      show(`${dialog.value.title}保存失败：${error.message}`)
+      return
     }
   }
-  if (dialog.value?.title?.includes('新建')) {
-    const newValues = [...config.value.row]
-    const codeIndex = 0
-    const nameIndex = Math.min(1, newValues.length - 1)
-    newValues[codeIndex] = `${config.value.title.substring(0, 2)}${String(tableRows.value.length + 1).padStart(3, '0')}`
-    newValues[nameIndex] = `${config.value.title}新增记录`
-    tableRows.value.unshift(buildRow(newValues))
-  }
-  show(`${dialog.value.title}保存成功`)
+  show('该模块暂不支持保存')
   closeDialog()
 }
 
@@ -338,10 +334,16 @@ async function confirmAction() {
   if (endpoint) {
     try {
       await post(endpoint, buildPayload())
+      await loadRows()
+      show(`${config.value.title}${action}成功`)
+      closeDialog()
+      return
     } catch (error) {
-      show(`${action}接口暂不可用，已保留前端状态变化`)
+      show(`${action}失败：${error.message}`)
+      return
     }
   }
+  // 无后端接口时前端状态变更
   if (selectedRow.value && statusColumnIndex.value >= 0) {
     if (/反审核/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '待审核'
     else if (/审核|确认/.test(action)) selectedRow.value[`c${statusColumnIndex.value}`] = '已审核'
@@ -464,7 +466,7 @@ async function handleAction(action, row = null) {
   }
 
   // 基础资料：走专用抽屉
-  const baseModules = ['customer', 'supplier', 'warehouse', 'unit', 'brand', 'category']
+  const baseModules = ['customer', 'supplier', 'warehouse', 'unit', 'brand', 'category', 'priceGroup', 'territory', 'routeLine', 'employee', 'department', 'owner', 'expenseType', 'counterparty', 'fundAccount']
   if (baseModules.includes(moduleCode.value)) {
     if (/新建|新增/.test(actionStr)) { openBaseDrawer('add', moduleCode.value); return }
     if (actionStr === '编辑') { openBaseDrawer('edit', moduleCode.value, row); return }
