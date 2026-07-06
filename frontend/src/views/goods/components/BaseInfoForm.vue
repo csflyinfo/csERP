@@ -1,30 +1,57 @@
 <script setup>
-import { watch } from 'vue'
+import { watch, ref, onMounted } from 'vue'
+import { post } from '../../../api/client.js'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
 })
 
-// 简拼生成：根据商品名称自动提取拼音首字母
+// 真实数据源：从后端加载
+const categoryOptions = ref([])
+const brandOptions = ref([])
+const warehouseOptions = ref([])
+const employeeOptions = ref([])
+
+async function loadOptions() {
+  const params = { pageNo: 1, pageSize: 500, filters: {} }
+  try {
+    const [cat, brand, wh, emp] = await Promise.all([
+      post('/base/category/page', params).catch(() => ({ records: [] })),
+      post('/base/brand/page', params).catch(() => ({ records: [] })),
+      post('/base/warehouse/page', params).catch(() => ({ records: [] })),
+      post('/base/master/employee/page', params).catch(() => ({ records: [] })),
+    ])
+    // 分类：只显示末级分类（自己的 categoryCode 未被其他节点作为 parentCode）
+    const allCats = cat.records || []
+    const parentCodes = new Set(allCats.map(r => r.parentCode).filter(Boolean))
+    categoryOptions.value = allCats
+      .filter(r => !parentCodes.has(r.categoryCode))
+      .map(r => r.categoryName)
+      .filter(Boolean)
+    brandOptions.value = (brand.records || []).map(r => r.brandName).filter(Boolean)
+    warehouseOptions.value = (wh.records || []).map(r => r.warehouseName).filter(Boolean)
+    employeeOptions.value = (emp.records || []).map(r => r.employeeName).filter(Boolean)
+  } catch (e) {
+    console.warn('加载下拉数据失败', e)
+  }
+}
+
+onMounted(loadOptions)
+
+// 简拼生成
 function generateSimpleCode(name) {
   if (!name) return ''
   let result = ''
   for (const char of name) {
     const code = char.charCodeAt(0)
-    // 英文字母直接取大写
-    if (code >= 65 && code <= 90) { result += char }
-    else if (code >= 97 && code <= 122) { result += String.fromCharCode(code - 32) }
-    // 中文取拼音首字母（基于Unicode范围近似）
-    else if (code >= 0x4e00 && code <= 0x9fa5) {
-      result += getPinyinFirstLetter(char, code)
-    }
+    if (code >= 65 && code <= 90) result += char
+    else if (code >= 97 && code <= 122) result += String.fromCharCode(code - 32)
+    else if (code >= 0x4e00 && code <= 0x9fa5) result += getPinyinFirstLetter(char, code)
   }
   return result
 }
 
-// 常用汉字拼音首字母映射（覆盖大部分商品名称用字）
 function getPinyinFirstLetter(char, code) {
-  // 按Unicode范围分组的拼音首字母（近似但覆盖常用字）
   const ranges = [
     { start: 0x4e00, end: 0x5475, letters: 'GDYBKZSCJMQLTWNXFPHDR' },
     { start: 0x5476, end: 0x5c22, letters: 'ZHCSWLYPMJTXQGNBKFDR' },
@@ -48,7 +75,6 @@ function getPinyinFirstLetter(char, code) {
   return char
 }
 
-// 监听商品名称变化，自动更新简拼
 watch(() => props.modelValue.goodsName, (newName) => {
   if (newName && !props.modelValue.simpleCode) {
     props.modelValue.simpleCode = generateSimpleCode(newName)
@@ -61,15 +87,15 @@ watch(() => props.modelValue.goodsName, (newName) => {
     <!-- 第一行 -->
     <div class="row">
       <div class="field">
-        <label>商品编码</label>
-        <input type="text" v-model="modelValue.goodsCode" placeholder="自动生成或手动录入" />
+        <label>商品编码 <span class="required">*</span></label>
+        <input type="text" v-model="modelValue.goodsCode" placeholder="请输入商品编码" />
       </div>
       <div class="field">
         <label>商品名称 <span class="required">*</span></label>
         <input type="text" v-model="modelValue.goodsName" placeholder="请输入商品名称" />
       </div>
       <div class="field">
-        <label>规格型号</label>
+        <label>规格型号 <span class="required">*</span></label>
         <input type="text" v-model="modelValue.spec" placeholder="如: 500ml*24瓶/箱" />
       </div>
       <div class="field">
@@ -81,34 +107,17 @@ watch(() => props.modelValue.goodsName, (newName) => {
     <!-- 第二行 -->
     <div class="row">
       <div class="field">
-        <label>商品分类</label>
+        <label>商品分类 <span class="required">*</span></label>
         <select v-model="modelValue.categoryName">
-          <option value="">请选择</option>
-          <option value="瓶装水">瓶装水</option>
-          <option value="饮料">饮料</option>
-          <option value="方便食品">方便食品</option>
-          <option value="日化百货">日化百货</option>
+          <option value="">{{ categoryOptions.length ? '请选择' : '请先在【商品分类】维护' }}</option>
+          <option v-for="opt in categoryOptions" :key="opt" :value="opt">{{ opt }}</option>
         </select>
       </div>
       <div class="field">
-        <label>品牌</label>
+        <label>品牌 <span class="required">*</span></label>
         <select v-model="modelValue.brandName">
-          <option value="">请选择</option>
-          <option value="农夫山泉">农夫山泉</option>
-          <option value="可口可乐">可口可乐</option>
-          <option value="百事可乐">百事可乐</option>
-          <option value="统一">统一</option>
-          <option value="康师傅">康师傅</option>
-          <option value="娃哈哈">娃哈哈</option>
-          <option value="伊利">伊利</option>
-          <option value="蒙牛">蒙牛</option>
-          <option value="三只松鼠">三只松鼠</option>
-          <option value="百草味">百草味</option>
-          <option value="良品铺子">良品铺子</option>
-          <option value="达能">达能</option>
-          <option value="雀巢">雀巢</option>
-          <option value="王老吉">王老吉</option>
-          <option value="红牛">红牛</option>
+          <option value="">{{ brandOptions.length ? '请选择' : '请先在【品牌管理】维护' }}</option>
+          <option v-for="opt in brandOptions" :key="opt" :value="opt">{{ opt }}</option>
         </select>
       </div>
       <div class="field">
@@ -134,6 +143,13 @@ watch(() => props.modelValue.goodsName, (newName) => {
     <!-- 第三行 -->
     <div class="row">
       <div class="field">
+        <label>默认仓库 <span class="required">*</span></label>
+        <select v-model="modelValue.defaultWarehouse">
+          <option value="">{{ warehouseOptions.length ? '请选择' : '请先在【仓库资料】维护' }}</option>
+          <option v-for="opt in warehouseOptions" :key="opt" :value="opt">{{ opt }}</option>
+        </select>
+      </div>
+      <div class="field">
         <label>税率</label>
         <select v-model="modelValue.taxRate">
           <option value="">请选择</option>
@@ -146,10 +162,8 @@ watch(() => props.modelValue.goodsName, (newName) => {
       <div class="field">
         <label>商品负责人</label>
         <select v-model="modelValue.goodsManager">
-          <option value="">请选择</option>
-          <option value="张三">张三</option>
-          <option value="李四">李四</option>
-          <option value="王五">王五</option>
+          <option value="">{{ employeeOptions.length ? '请选择' : '请先在【人员信息】维护' }}</option>
+          <option v-for="opt in employeeOptions" :key="opt" :value="opt">{{ opt }}</option>
         </select>
       </div>
     </div>
@@ -215,8 +229,8 @@ watch(() => props.modelValue.goodsName, (newName) => {
 
 .field label {
   font-size: 12px;
-  font-weight: 600; /* 加粗 */
-  color: #303133; /* 颜色加深，与字段名统一 */
+  font-weight: 600;
+  color: #303133;
   width: 80px;
   text-align: right;
   flex-shrink: 0;
@@ -236,7 +250,7 @@ watch(() => props.modelValue.goodsName, (newName) => {
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   font-size: 12px;
-  color: #606266; /* 输入值颜色稍浅，与标签区分 */
+  color: #606266;
   transition: all 0.2s;
   box-sizing: border-box;
   min-width: 80px;

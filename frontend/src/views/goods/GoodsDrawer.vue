@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, computed, nextTick } from 'vue'
+import { post } from '../../api/client.js'
 import BaseInfoForm from './components/BaseInfoForm.vue'
 import MultiUnitMatrix from './components/MultiUnitMatrix.vue'
 import StockPurchaseForm from './components/StockPurchaseForm.vue'
@@ -11,6 +12,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'save'])
+
+// 当前实际模式（复制新增时会从 edit 切换到 add）
+const currentMode = ref(props.mode)
+watch(() => props.mode, (val) => { currentMode.value = val })
 
 const tabs = [
   { key: 'base', label: '基本信息' },
@@ -55,6 +60,9 @@ const defaultForm = {
   canPurchase: true,
   canReturn: true,
   standardPrice: 0,
+  latestPurchasePrice: 0,
+  minSalePrice: 0,
+  suggestedRetailPrice: 0,
   minOrderQty: 0,
   stockUpperLimit: 0,
   stockLowerLimit: 0,
@@ -71,41 +79,110 @@ const defaultForm = {
   updateTime: '',
   updateBy: '',
   units: [
-    { unitType: '小单位', unitName: '瓶', barcode: '', convertQty: 1, standardPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: true },
-    { unitType: '中单位', unitName: '', barcode: '', convertQty: 12, standardPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: false },
-    { unitType: '大单位', unitName: '', barcode: '', convertQty: 24, standardPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: false },
+    { unitType: '小单位', unitName: '', barcode: '', convertQty: 1, standardPrice: 0, minPrice: 0, suggestRetailPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: true },
+    { unitType: '中单位', unitName: '', barcode: '', convertQty: 12, standardPrice: 0, minPrice: 0, suggestRetailPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: false },
+    { unitType: '大单位', unitName: '', barcode: '', convertQty: 24, standardPrice: 0, minPrice: 0, suggestRetailPrice: 0, weight: 0, volume: 0, minOrderQty: 0, isSaleUnit: true, isPurchaseUnit: true, enabled: false },
   ],
 }
 
-const formModel = ref({ ...defaultForm })
+const formModel = ref(JSON.parse(JSON.stringify(defaultForm)))
+
+// 将列表行数据反解为表单对象
+function parseRowToForm(row) {
+  if (!row) return null
+  if (row.goodsCode && !row.c1) return row
+  const raw = row._raw || {}
+  const form = JSON.parse(JSON.stringify(defaultForm))
+  form.goodsId = raw.goodsId || ''
+  form.goodsCode = raw.goodsCode || row.c1 || ''
+  form.goodsName = raw.goodsName || row.c2 || ''
+  form.goodsType = raw.goodsType || '正常商品'
+  form.spec = raw.spec || ''
+  form.categoryName = raw.categoryName || ''
+  form.brandName = raw.brandName || ''
+  form.baseUnit = raw.baseUnit || ''
+  form.barcode = raw.barcode || ''
+  form.standardPrice = raw.standardPrice != null ? Number(raw.standardPrice) : 0
+  form.latestPurchasePrice = raw.latestPurchasePrice != null ? Number(raw.latestPurchasePrice) : 0
+  form.minSalePrice = raw.minSalePrice != null ? Number(raw.minSalePrice) : 0
+  form.suggestedRetailPrice = raw.suggestedRetailPrice != null ? Number(raw.suggestedRetailPrice) : 0
+  form.stockUpperLimit = raw.stockUpperLimit != null ? Number(raw.stockUpperLimit) : 0
+  form.stockLowerLimit = raw.stockLowerLimit != null ? Number(raw.stockLowerLimit) : 0
+  form.shelfLifeDays = raw.shelfLifeDays != null ? Number(raw.shelfLifeDays) : 0
+  form.storageProperty = raw.storageProperty || '常温'
+  form.defaultSupplier = raw.defaultSupplier || ''
+  form.defaultWarehouse = raw.defaultWarehouse || ''
+  form.canReturn = raw.canReturn !== false
+  form.status = raw.status === 'STOPPED' ? '停用' : '正常'
+  form.simpleCode = raw.simpleCode || ''
+  form.goodsLevel = raw.goodsLevel || ''
+  form.taxRate = raw.taxRate || ''
+  form.goodsManager = raw.goodsManager || ''
+  form.isWeighted = raw.isWeighted === true
+  form.isPresale = raw.isPresale === true
+  form.canSale = raw.canSale !== false
+  form.canPurchase = raw.canPurchase !== false
+  form.origin = raw.origin || ''
+  form.warningDays = raw.warningDays != null ? Number(raw.warningDays) : 0
+  form.minOrderQty = raw.minOrderQty != null ? Number(raw.minOrderQty) : 0
+  form.palletQty = raw.palletQty != null ? Number(raw.palletQty) : 0
+  form.stackLayers = raw.stackLayers != null ? Number(raw.stackLayers) : 0
+  form.baseWeight = raw.baseWeight != null ? Number(raw.baseWeight) : 0
+  form.baseVolume = raw.baseVolume != null ? Number(raw.baseVolume) : 0
+  form.goodsIntro = raw.goodsIntro || ''
+  form.remark = raw.remark || ''
+
+  // 回填 units[0]
+  if (form.units && form.units[0]) {
+    form.units[0].unitName = form.baseUnit || ''
+    form.units[0].barcode = form.barcode || ''
+    form.units[0].standardPrice = form.standardPrice || 0
+    form.units[0].minPrice = form.minSalePrice || 0
+    form.units[0].suggestRetailPrice = form.suggestedRetailPrice || 0
+    form.units[0].enabled = true
+  }
+  // 从 unitConfig JSON 反序列化完整 units
+  if (raw.unitConfig) {
+    try {
+      const parsedUnits = typeof raw.unitConfig === 'string' ? JSON.parse(raw.unitConfig) : raw.unitConfig
+      if (Array.isArray(parsedUnits) && parsedUnits.length > 0) {
+        form.units = parsedUnits
+      }
+    } catch (e) {
+      console.warn('解析 unitConfig 失败', e)
+    }
+  }
+  return form
+}
 
 // 监听打开抽屉，重置表单和错误
 watch(() => props.visible, (val) => {
   if (val) {
     formErrors.value = {}
+    currentMode.value = props.mode
     if (props.mode === 'edit' && props.goodsData) {
-      formModel.value = { ...props.goodsData }
+      const parsed = parseRowToForm(props.goodsData)
+      formModel.value = parsed || JSON.parse(JSON.stringify(defaultForm))
     } else {
       formModel.value = JSON.parse(JSON.stringify(defaultForm))
     }
   }
 })
 
-// 表单验证
+// 表单验证 — 7个必填字段
 function validateForm() {
   formErrors.value = {}
   const errors = {}
+  const m = formModel.value
 
-  // 商品名称必填验证
-  if (!formModel.value.goodsName || !formModel.value.goodsName.trim()) {
-    errors.goodsName = '商品名称不能为空'
-  }
-
-  // 小单位名称必填
-  const baseUnit = formModel.value.units[0]
-  if (!baseUnit.unitName || !baseUnit.unitName.trim()) {
-    errors.baseUnitName = '基本单位名称不能为空'
-  }
+  if (!m.goodsCode || !String(m.goodsCode).trim()) errors.goodsCode = '商品编码不能为空'
+  if (!m.goodsName || !String(m.goodsName).trim()) errors.goodsName = '商品名称不能为空'
+  if (!m.categoryName || !String(m.categoryName).trim()) errors.categoryName = '商品分类不能为空'
+  if (!m.brandName || !String(m.brandName).trim()) errors.brandName = '品牌不能为空'
+  if (!m.spec || !String(m.spec).trim()) errors.spec = '规格型号不能为空'
+  if (!m.defaultWarehouse || !String(m.defaultWarehouse).trim()) errors.defaultWarehouse = '默认仓库不能为空'
+  const baseUnit = m.units?.[0]
+  if (!baseUnit || !baseUnit.unitName || !String(baseUnit.unitName).trim()) errors.baseUnitName = '小单位名称不能为空'
 
   formErrors.value = errors
   return Object.keys(errors).length === 0
@@ -115,27 +192,57 @@ function closeDrawer() {
   emit('close')
 }
 
-function saveAndExit() {
+async function doSave() {
   if (!validateForm()) {
     const firstError = Object.values(formErrors.value)[0]
     alert(firstError)
-    return
+    return null
   }
-  console.log('保存并退出:', formModel.value)
-  emit('save', formModel.value)
-  alert('商品保存成功！')
-  closeDrawer()
+  const isEdit = currentMode.value === 'edit'
+  const endpoint = isEdit ? '/base/goods/update' : '/base/goods/create'
+  const payload = { ...formModel.value }
+  // 从小单位提取 baseUnit / barcode / 价格
+  const baseUnit = formModel.value.units?.[0]
+  if (baseUnit) {
+    payload.baseUnit = baseUnit.unitName || payload.baseUnit
+    payload.barcode = baseUnit.barcode || payload.barcode || ''
+    if (baseUnit.standardPrice != null) payload.standardPrice = baseUnit.standardPrice
+    if (baseUnit.minPrice != null) payload.minSalePrice = baseUnit.minPrice
+    if (baseUnit.suggestRetailPrice != null) payload.suggestedRetailPrice = baseUnit.suggestRetailPrice
+  }
+  try {
+    const result = await post(endpoint, payload)
+    return result || payload
+  } catch (error) {
+    alert('保存失败：' + (error.message || '未知错误'))
+    return null
+  }
 }
 
-function saveOnly() {
-  if (!validateForm()) {
-    const firstError = Object.values(formErrors.value)[0]
-    alert(firstError)
-    return
+async function saveAndExit() {
+  const result = await doSave()
+  if (result) {
+    emit('save', result)
+    closeDrawer()
   }
-  console.log('保存:', formModel.value)
-  emit('save', formModel.value)
-  alert('商品保存成功！')
+}
+
+async function saveOnly() {
+  const result = await doSave()
+  if (result) {
+    emit('save', result)
+  }
+}
+
+// 复制新增：保留所有字段，清空商品编码，切换到新增模式
+function copyAsNew() {
+  const cloned = JSON.parse(JSON.stringify(formModel.value))
+  cloned.goodsCode = ''
+  cloned.goodsId = ''
+  formModel.value = cloned
+  currentMode.value = 'add'
+  formErrors.value = {}
+  alert('已复制商品信息，请填写新的商品编码后保存')
 }
 </script>
 
@@ -147,12 +254,15 @@ function saveOnly() {
       <div class="drawer-header">
         <div class="header-top">
           <div class="title-row">
-            <span class="drawer-title">{{ mode === 'edit' ? '编辑商品' : '新增商品' }}</span>
+            <span class="drawer-title">{{ currentMode === 'edit' ? '编辑商品' : '新增商品' }}</span>
             <span class="goods-code" v-if="formModel.goodsCode">
               编码：{{ formModel.goodsCode }}
             </span>
           </div>
           <div class="action-btns">
+            <button v-if="props.mode === 'edit'" class="btn btn-copy" @click="copyAsNew">
+              复制新增
+            </button>
             <button class="btn btn-default" @click="closeDrawer">
               退出
             </button>
@@ -219,7 +329,7 @@ function saveOnly() {
           </div>
 
           <!-- 其他信息（编辑时只读展示） -->
-          <div v-if="mode === 'edit'" class="section-card">
+          <div v-if="currentMode === 'edit'" class="section-card">
             <div class="section-title">其他信息</div>
             <div class="other-info-card">
               <div class="info-row">
@@ -366,6 +476,17 @@ function saveOnly() {
 .btn-save-exit:hover {
   background: #85ce61;
   border-color: #85ce61;
+}
+
+.btn-copy {
+  background: #e6a23c;
+  border-color: #e6a23c;
+  color: #fff;
+}
+
+.btn-copy:hover {
+  background: #ebb563;
+  border-color: #ebb563;
 }
 
 /* Tab 导航（作为锚点按钮） */

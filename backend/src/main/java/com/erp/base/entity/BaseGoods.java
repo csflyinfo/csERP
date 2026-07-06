@@ -31,6 +31,25 @@ public class BaseGoods {
     private Boolean canReturn;
     private BigDecimal currentStock;
     private String status;
+    // 扩展字段
+    private String simpleCode;
+    private String goodsLevel;
+    private String taxRate;
+    private String goodsManager;
+    private Boolean canSale;
+    private Boolean canPurchase;
+    private Boolean isWeighted;
+    private Boolean isPresale;
+    private String origin;
+    private Integer warningDays;
+    private BigDecimal minOrderQty;
+    private Integer palletQty;
+    private Integer stackLayers;
+    private BigDecimal baseWeight;
+    private BigDecimal baseVolume;
+    private String goodsIntro;
+    private String remark;
+    private String unitConfig;
 
     public String getGoodsId() { return goodsId; }
     public void setGoodsId(String goodsId) { this.goodsId = goodsId; }
@@ -97,4 +116,58 @@ public class BaseGoods {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getSimpleCode() { return simpleCode; }
+    public void setSimpleCode(String simpleCode) { this.simpleCode = simpleCode; }
+
+    public String getGoodsLevel() { return goodsLevel; }
+    public void setGoodsLevel(String goodsLevel) { this.goodsLevel = goodsLevel; }
+
+    public String getTaxRate() { return taxRate; }
+    public void setTaxRate(String taxRate) { this.taxRate = taxRate; }
+
+    public String getGoodsManager() { return goodsManager; }
+    public void setGoodsManager(String goodsManager) { this.goodsManager = goodsManager; }
+
+    public Boolean getCanSale() { return canSale; }
+    public void setCanSale(Boolean canSale) { this.canSale = canSale; }
+
+    public Boolean getCanPurchase() { return canPurchase; }
+    public void setCanPurchase(Boolean canPurchase) { this.canPurchase = canPurchase; }
+
+    public Boolean getIsWeighted() { return isWeighted; }
+    public void setIsWeighted(Boolean isWeighted) { this.isWeighted = isWeighted; }
+
+    public Boolean getIsPresale() { return isPresale; }
+    public void setIsPresale(Boolean isPresale) { this.isPresale = isPresale; }
+
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
+
+    public Integer getWarningDays() { return warningDays; }
+    public void setWarningDays(Integer warningDays) { this.warningDays = warningDays; }
+
+    public BigDecimal getMinOrderQty() { return minOrderQty; }
+    public void setMinOrderQty(BigDecimal minOrderQty) { this.minOrderQty = minOrderQty; }
+
+    public Integer getPalletQty() { return palletQty; }
+    public void setPalletQty(Integer palletQty) { this.palletQty = palletQty; }
+
+    public Integer getStackLayers() { return stackLayers; }
+    public void setStackLayers(Integer stackLayers) { this.stackLayers = stackLayers; }
+
+    public BigDecimal getBaseWeight() { return baseWeight; }
+    public void setBaseWeight(BigDecimal baseWeight) { this.baseWeight = baseWeight; }
+
+    public BigDecimal getBaseVolume() { return baseVolume; }
+    public void setBaseVolume(BigDecimal baseVolume) { this.baseVolume = baseVolume; }
+
+    public String getGoodsIntro() { return goodsIntro; }
+    public void setGoodsIntro(String goodsIntro) { this.goodsIntro = goodsIntro; }
+
+    public String getRemark() { return remark; }
+    public void setRemark(String remark) { this.remark = remark; }
+
+    public String getUnitConfig() { return unitConfig; }
+    public void setUnitConfig(String unitConfig) { this.unitConfig = unitConfig; }
 }

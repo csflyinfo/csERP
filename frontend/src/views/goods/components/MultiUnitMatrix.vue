@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
+import { post } from '../../../api/client.js'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },
@@ -58,13 +59,23 @@ attributeFields.push(
 )
 
 // 单位选项
-const unitOptions = ['瓶', '盒', '箱', '件', '个', '袋', '包', '桶', 'kg', 'g', 'L', 'ml']
+// 单位选项：从后端加载真实数据
+const unitOptions = ref([])
+async function loadUnits() {
+  try {
+    const data = await post('/base/unit/page', { pageNo: 1, pageSize: 500, filters: {} })
+    unitOptions.value = (data.records || []).map(r => r.unitName).filter(Boolean)
+  } catch (e) {
+    console.warn('加载单位数据失败', e)
+  }
+}
+onMounted(loadUnits)
 
 // 确保单位数据结构完整
 function ensureUnitStructure(unit, index) {
   const defaults = {
     unitType: ['小单位', '中单位', '大单位'][index],
-    unitName: index === 0 ? '瓶' : '',
+    unitName: '',
     barcode: '',
     convertQty: index === 0 ? 1 : (index === 1 ? 12 : 24),
     standardPrice: 0,

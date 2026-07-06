@@ -71,14 +71,29 @@ public class BaseController {
     }
 
     @PostMapping("/category/create")
-    public ApiResponse<BaseCategory> createCategory(@Valid @RequestBody CategorySaveRequest request) {
+    public ApiResponse<BaseCategory> createCategory(@RequestBody Map<String, Object> request) {
         BaseCategory entity = new BaseCategory();
         entity.setCategoryId(genId("CATE"));
-        entity.setParentId(request.parentId());
-        entity.setParentCode(request.parentCode());
-        entity.setCategoryCode(request.parentCode() + request.categoryCode());
-        entity.setCategoryName(request.categoryName());
-        entity.setDefaultTaxRate(request.defaultTaxRate() == null ? "13%" : request.defaultTaxRate());
+        String parentId = (String) request.getOrDefault("parentId", "");
+        String parentCode = (String) request.getOrDefault("parentCode", "");
+        String categoryCode = (String) request.getOrDefault("categoryCode", "");
+        String categoryName = (String) request.getOrDefault("categoryName", "新分类");
+        // 生成完整分类编码
+        String fullCode = (parentCode == null ? "" : parentCode) + (categoryCode == null ? "" : categoryCode);
+        if (fullCode.isBlank()) {
+            fullCode = entity.getCategoryId(); // 兜底避免唯一约束冲突
+        }
+        // 唯一性校验
+        if (categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", fullCode)) != null) {
+            return ApiResponse.fail("400", "分类编码 " + fullCode + " 已存在");
+        }
+        entity.setParentId(parentId);
+        entity.setParentCode(parentCode);
+        entity.setCategoryCode(fullCode);
+        entity.setCategoryName(categoryName);
+        Object taxRate = request.get("defaultTaxRate");
+        if (taxRate == null) taxRate = request.get("taxRate");
+        entity.setDefaultTaxRate(taxRate == null ? "13%" : taxRate.toString());
         entity.setGoodsCount(0);
         entity.setStatus("NORMAL");
         categoryService.save(entity);
@@ -183,10 +198,8 @@ public class BaseController {
     public ApiResponse<BaseGoods> createGoods(@RequestBody Map<String, Object> request) {
         BaseGoods entity = new BaseGoods();
         entity.setGoodsId(genId("G"));
-        entity.setGoodsCode((String) request.getOrDefault("goodsCode", entity.getGoodsId()));
-        entity.setGoodsName((String) request.getOrDefault("goodsName", "新商品"));
-        entity.setGoodsType((String) request.getOrDefault("goodsType", "正常商品"));
-        entity.setStatus("NORMAL");
+        fillGoodsEntity(entity, request);
+        entity.setCurrentStock(java.math.BigDecimal.ZERO);
         goodsService.save(entity);
         return ApiResponse.ok(entity);
     }
@@ -203,11 +216,85 @@ public class BaseController {
         String bizId = String.valueOf(request.getOrDefault("goodsId", request.getOrDefault("goodsCode", request.getOrDefault("bizId", ""))));
         BaseGoods entity = goodsService.getOne(new QueryWrapper<BaseGoods>().eq("goods_id", bizId).or().eq("goods_code", bizId));
         if (entity == null) return ApiResponse.fail("404", "商品不存在");
-        if (request.get("goodsName") != null) entity.setGoodsName((String) request.get("goodsName"));
-        if (request.get("standardPrice") != null) entity.setStandardPrice(new java.math.BigDecimal(request.get("standardPrice").toString()));
-        if (request.get("status") != null) entity.setStatus((String) request.get("status"));
+        String originalCode = entity.getGoodsCode();
+        fillGoodsEntity(entity, request);
+        entity.setGoodsCode(originalCode);
         goodsService.updateById(entity);
         return ApiResponse.ok(null);
+    }
+
+    private void fillGoodsEntity(BaseGoods entity, Map<String, Object> request) {
+        entity.setGoodsCode((String) request.getOrDefault("goodsCode", entity.getGoodsId()));
+        entity.setGoodsName((String) request.getOrDefault("goodsName", "新商品"));
+        entity.setGoodsType((String) request.getOrDefault("goodsType", "正常商品"));
+        entity.setSpec((String) request.getOrDefault("spec", ""));
+        entity.setCategoryName((String) request.getOrDefault("categoryName", ""));
+        entity.setBrandName((String) request.getOrDefault("brandName", ""));
+        entity.setBaseUnit((String) request.getOrDefault("baseUnit", ""));
+        entity.setBarcode((String) request.getOrDefault("barcode", ""));
+        entity.setStandardPrice(parseDecimal(request.get("standardPrice")));
+        entity.setLatestPurchasePrice(parseDecimal(request.get("latestPurchasePrice")));
+        entity.setMinSalePrice(parseDecimal(request.get("minSalePrice")));
+        entity.setSuggestedRetailPrice(parseDecimal(request.get("suggestedRetailPrice")));
+        entity.setStockUpperLimit(parseDecimal(request.get("stockUpperLimit")));
+        entity.setStockLowerLimit(parseDecimal(request.get("stockLowerLimit")));
+        entity.setShelfLifeDays(parseInt(request.get("shelfLifeDays")));
+        entity.setStorageProperty((String) request.getOrDefault("storageProperty", "常温"));
+        entity.setDefaultSupplier((String) request.getOrDefault("defaultSupplier", ""));
+        entity.setDefaultWarehouse((String) request.getOrDefault("defaultWarehouse", ""));
+        entity.setCanReturn(parseBoolean(request.get("canReturn"), true));
+        // 扩展字段
+        try { entity.setSimpleCode((String) request.getOrDefault("simpleCode", "")); } catch (Exception ignore) {}
+        try { entity.setGoodsLevel((String) request.getOrDefault("goodsLevel", "")); } catch (Exception ignore) {}
+        try { entity.setTaxRate((String) request.getOrDefault("taxRate", "")); } catch (Exception ignore) {}
+        try { entity.setGoodsManager((String) request.getOrDefault("goodsManager", "")); } catch (Exception ignore) {}
+        try { entity.setCanSale(parseBoolean(request.get("canSale"), true)); } catch (Exception ignore) {}
+        try { entity.setCanPurchase(parseBoolean(request.get("canPurchase"), true)); } catch (Exception ignore) {}
+        try { entity.setIsWeighted(parseBoolean(request.get("isWeighted"), false)); } catch (Exception ignore) {}
+        try { entity.setIsPresale(parseBoolean(request.get("isPresale"), false)); } catch (Exception ignore) {}
+        try { entity.setOrigin((String) request.getOrDefault("origin", "")); } catch (Exception ignore) {}
+        try { entity.setWarningDays(parseInt(request.get("warningDays"))); } catch (Exception ignore) {}
+        try { entity.setMinOrderQty(parseDecimal(request.get("minOrderQty"))); } catch (Exception ignore) {}
+        try { entity.setPalletQty(parseInt(request.get("palletQty"))); } catch (Exception ignore) {}
+        try { entity.setStackLayers(parseInt(request.get("stackLayers"))); } catch (Exception ignore) {}
+        try { entity.setBaseWeight(parseDecimal(request.get("baseWeight"))); } catch (Exception ignore) {}
+        try { entity.setBaseVolume(parseDecimal(request.get("baseVolume"))); } catch (Exception ignore) {}
+        try { entity.setGoodsIntro((String) request.getOrDefault("goodsIntro", "")); } catch (Exception ignore) {}
+        try { entity.setRemark((String) request.getOrDefault("remark", "")); } catch (Exception ignore) {}
+        // units 序列化为 JSON
+        Object units = request.get("units");
+        if (units != null) {
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                entity.setUnitConfig(mapper.writeValueAsString(units));
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        String status = (String) request.getOrDefault("status", "NORMAL");
+        if ("正常".equals(status)) status = "NORMAL";
+        else if ("停用".equals(status)) status = "STOPPED";
+        entity.setStatus(status);
+    }
+
+    private java.math.BigDecimal parseDecimal(Object val) {
+        if (val == null) return java.math.BigDecimal.ZERO;
+        try {
+            String s = val.toString().replaceAll("[^0-9.\\-]", "");
+            if (s.isEmpty()) return java.math.BigDecimal.ZERO;
+            return new java.math.BigDecimal(s);
+        } catch (Exception e) {
+            return java.math.BigDecimal.ZERO;
+        }
+    }
+
+    private Boolean parseBoolean(Object val, Boolean fallback) {
+        if (val == null) return fallback;
+        if (val instanceof Boolean) return (Boolean) val;
+        String s = val.toString().toLowerCase();
+        if ("true".equals(s) || "1".equals(s) || "是".equals(s) || "y".equals(s)) return true;
+        if ("false".equals(s) || "0".equals(s) || "否".equals(s) || "n".equals(s)) return false;
+        return fallback;
     }
 
     @PostMapping("/goods/stop")
@@ -323,6 +410,17 @@ public class BaseController {
         if ("正常".equals(status)) status = "NORMAL";
         else if ("停用".equals(status)) status = "STOPPED";
         entity.setStatus(status);
+    }
+
+    private Integer parseInt(Object val) {
+        if (val == null) return 0;
+        try {
+            String s = val.toString().replaceAll("[^0-9\\-]", "");
+            if (s.isEmpty()) return 0;
+            return Integer.parseInt(s);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     public record CategorySaveRequest(
