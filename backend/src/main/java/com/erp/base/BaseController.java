@@ -325,6 +325,15 @@ public class BaseController {
         entity.setStatus(status);
     }
 
+    private Integer parseInt(Object val) {
+        if (val == null) return 0;
+        try {
+            return Integer.parseInt(val.toString());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public record CategorySaveRequest(
             @NotBlank String parentId,
             @NotBlank String parentCode,

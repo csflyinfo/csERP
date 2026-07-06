@@ -133,26 +133,26 @@ const fieldSettingKey = computed(() => `erp-field-setting:${moduleCode.value}`)
 const actionColumnIndex = computed(() => config.value.columns.findIndex(title => /操作/.test(title)))
 const statusColumnIndex = computed(() => config.value.columns.findIndex(title => /状态|核销状态|应付生成状态|应收生成|开票状态|勾稽状态/.test(title)))
 
-function buildRow(values = config.value.row) {
-  return Object.fromEntries(values.map((value, index) => [`c${index}`, value]))
+function buildRow(values = config.value.row || []) {
+  return Object.fromEntries((values || []).map((value, index) => [`c${index}`, value]))
 }
 
 async function loadRows() {
   const api = moduleApis[moduleCode.value]
   if (!api?.page) {
-    tableRows.value = [buildRow()]
-    total.value = tableRows.value.length
+    tableRows.value = []
+    total.value = 0
     return
   }
   loading.value = true
   try {
     const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: roleCode } })
-    tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, config.value)) : [buildRow()]
-    total.value = data.total || tableRows.value.length
+    tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, config.value)) : []
+    total.value = data.total || 0
   } catch (error) {
-    tableRows.value = [buildRow()]
-    total.value = tableRows.value.length
-    show(`${config.value.title}接口加载失败，已显示示例数据`)
+    tableRows.value = []
+    total.value = 0
+    show(`${config.value.title}加载失败：${error.message}`)
   } finally {
     loading.value = false
   }
@@ -251,7 +251,7 @@ function buildGoodsRow(data) {
     c19: `${saleFlag}/${purchaseFlag}/${returnFlag}`,
     c20: '0',
     c21: data.status || '正常',
-    c22: '编辑 复制 停用 删除 库存 历史',
+    c22: '编辑',
   }
 }
 
