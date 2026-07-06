@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新建销售订单 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+
+  <!-- ====== Layer 1: Background (Dimmed Sales Order List Page) ====== -->
+  <div class="bg-page">
+    <div class="bg-sidebar">
+      <div class="bg-sidebar-brand">
+        <div class="bg-brand-mark"><span>S</span></div>
+        <div class="bg-brand-text">商贸云 ERP</div>
+      </div>
+    </div>
+    <div class="bg-main">
+      <div class="bg-header">
+        <span>首页 / 销售管理 / <strong>销售订单</strong></span>
+      </div>
+      <div class="bg-title-bar">
+        <h1>销售订单</h1>
+      </div>
+      <div class="bg-content">
+        <table class="bg-table">
+          <thead>
+            <tr>
+              <th>订单号</th>
+              <th>日期</th>
+              <th>客户</th>
+              <th>业务员</th>
+              <th>仓库</th>
+              <th>订单金额</th>
+              <th>已收金额</th>
+              <th>未收金额</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>SO-20260628-001</td>
+              <td>2026-06-28</td>
+              <td>华润万家超市</td>
+              <td>李明</td>
+              <td>主仓库</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥68,500.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥0.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥68,500.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#FFFFF0;color:#D69E2E;border:1px solid #FEFCBF;">待审核</span></td>
+              <td>查看 | 编辑 | 审核</td>
+            </tr>
+            <tr>
+              <td>SO-20260625-003</td>
+              <td>2026-06-25</td>
+              <td>永辉超市</td>
+              <td>王芳</td>
+              <td>华东仓</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥45,200.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥45,200.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥0.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#F0FFF4;color:#38A169;border:1px solid #C6F6D5;">已审核</span></td>
+              <td>查看 | 编辑</td>
+            </tr>
+            <tr>
+              <td>SO-20260627-002</td>
+              <td>2026-06-27</td>
+              <td>大润发卖场</td>
+              <td>赵强</td>
+              <td>主仓库</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥72,300.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥20,000.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥52,300.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#FFFFF0;color:#D69E2E;border:1px solid #FEFCBF;">待审核</span></td>
+              <td>查看 | 编辑 | 审核</td>
+            </tr>
+            <tr>
+              <td>SO-20260620-005</td>
+              <td>2026-06-20</td>
+              <td>百佳超市</td>
+              <td>刘洋</td>
+              <td>华南仓</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥38,600.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥38,600.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥0.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#F0FFF4;color:#38A169;border:1px solid #C6F6D5;">已审核</span></td>
+              <td>查看</td>
+            </tr>
+            <tr>
+              <td>SO-20260626-004</td>
+              <td>2026-06-26</td>
+              <td>红旗连锁</td>
+              <td>李明</td>
+              <td>主仓库</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥56,800.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥30,000.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥26,800.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#F0FFF4;color:#38A169;border:1px solid #C6F6D5;">已审核</span></td>
+              <td>查看 | 编辑</td>
+            </tr>
+            <tr>
+              <td>SO-20260615-008</td>
+              <td>2026-06-15</td>
+              <td>美宜佳便利店</td>
+              <td>王芳</td>
+              <td>华东仓</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥18,400.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥18,400.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥0.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#F7FAFC;color:#4A5568;border:1px solid #E2E8F0;">已关闭</span></td>
+              <td>查看</td>
+            </tr>
+            <tr>
+              <td>SO-20260629-001</td>
+              <td>2026-06-29</td>
+              <td>华润万家超市</td>
+              <td>赵强</td>
+              <td>主仓库</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥28,900.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥0.00</td>
+              <td style="text-align:right; font-family:var(--font-mono);">¥28,900.00</td>
+              <td><span style="display:inline-flex;padding:2px 10px;border-radius:9999px;font-size:12px;background:#FFFFF0;color:#D69E2E;border:1px solid #FEFCBF;">待审核</span></td>
+              <td>查看 | 编辑 | 审核</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== Backdrop Overlay ====== -->
+  <div class="drawer-backdrop" data-dom-id="drawer-backdrop"></div>
+
+  <!-- ====== Layer 2: Drawer Panel ====== -->
+  <div class="drawer-panel">
+
+    <!-- Drawer Header -->
+    <div class="drawer-header">
+      <h2>新建销售订单</h2>
+      <div class="drawer-header-actions">
+        <span class="btn-cancel-link" data-dom-id="btn-cancel">取消</span>
+        <div class="btn-close-x" title="关闭">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drawer Body (scrollable) -->
+    <div class="drawer-body">
+
+      <!-- Customer Info Section -->
+      <div class="section-card">
+        <div class="section-title">客户信息</div>
+        <div class="form-grid-4">
+          <div class="form-item">
+            <label>客户</label>
+            <select class="form-select">
+              <option value="">请选择客户</option>
+              <option selected>华润万家超市</option>
+              <option>永辉超市</option>
+              <option>大润发卖场</option>
+              <option>百佳超市</option>
+              <option>红旗连锁</option>
+              <option>美宜佳便利店</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label>业务员</label>
+            <select class="form-select">
+              <option value="">请选择业务员</option>
+              <option>李明</option>
+              <option selected>王芳</option>
+              <option>赵强</option>
+              <option>刘洋</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label>仓库</label>
+            <select class="form-select">
+              <option value="">请选择仓库</option>
+              <option selected>主仓库</option>
+              <option>华东仓</option>
+              <option>华南仓</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label>单据日期</label>
+            <input class="form-input" type="date" value="2026-07-01">
+          </div>
+        </div>
+        <!-- Customer Risk Bar -->
+        <div class="risk-bar">
+          <span class="risk-dot"></span>
+          <span>客户状态正常</span>
+          <span class="risk-sep">|</span>
+          <span>信用额度 <span class="risk-value">¥50,000</span></span>
+          <span class="risk-sep">|</span>
+          <span>已用 <span class="risk-value">¥12,800</span></span>
+          <span class="risk-sep">|</span>
+          <span>可用 <span class="risk-value">¥37,200</span></span>
+          <span class="risk-sep">|</span>
+          <span>应收余额 <span class="risk-value">¥45,600</span></span>
+          <span class="risk-sep">|</span>
+          <span>逾期 <span class="risk-value">¥0</span></span>
+        </div>
+      </div>
+
+      <!-- Product Detail Section -->
+      <div class="section-card" style="flex:1; display:flex; flex-direction:column;">
+        <div class="product-table-header">
+          <div class="section-title" style="margin-bottom:0;">商品明细</div>
+          <button class="btn-add-product">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            添加商品
+          </button>
+        </div>
+        <div class="product-table-wrap" style="flex:1;">
+          <table class="product-table">
+            <thead>
+              <tr>
+                <th class="pt-col-no">#</th>
+                <th class="pt-col-product">商品</th>
+                <th class="pt-col-spec">规格</th>
+                <th class="pt-col-unit text-center">单位</th>
+                <th class="pt-col-qty text-right">数量</th>
+                <th class="pt-col-stock text-center">可用库存</th>
+                <th class="pt-col-price text-right">单价</th>
+                <th class="pt-col-discount text-center">折扣(%)</th>
+                <th class="pt-col-amount text-right">金额</th>
+                <th class="pt-col-action text-center">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <!-- Row 1 -->
+              <tr>
+                <td class="pt-col-no" style="color:var(--text-tertiary); font-size:12px;">1</td>
+                <td class="pt-col-product">
+                  <select class="cell-select">
+                    <option selected>农夫山泉饮用天然水550ml</option>
+                  </select>
+                </td>
+                <td class="pt-col-spec" style="color:var(--text-secondary); font-size:12px;">550ml/瓶</td>
+                <td class="pt-col-unit text-center" style="color:var(--text-secondary); font-size:12px;">箱</td>
+                <td class="pt-col-qty">
+                  <input class="cell-input text-right" type="text" value="50" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-stock text-center">
+                  <span class="stock-ok">200</span>
+                </td>
+                <td class="pt-col-price">
+                  <input class="cell-input text-right" type="text" value="2.00" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-discount">
+                  <input class="cell-input text-center" type="text" value="100">
+                </td>
+                <td class="pt-col-amount">
+                  <span class="cell-amount">¥100.00</span>
+                </td>
+                <td class="pt-col-action text-center">
+                  <span class="row-delete" title="删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </span>
+                </td>
+              </tr>
+              <!-- Row 2 -->
+              <tr>
+                <td class="pt-col-no" style="color:var(--text-tertiary); font-size:12px;">2</td>
+                <td class="pt-col-product">
+                  <select class="cell-select">
+                    <option selected>可口可乐经典罐装330ml</option>
+                  </select>
+                </td>
+                <td class="pt-col-spec" style="color:var(--text-secondary); font-size:12px;">330ml/罐</td>
+                <td class="pt-col-unit text-center" style="color:var(--text-secondary); font-size:12px;">箱</td>
+                <td class="pt-col-qty">
+                  <input class="cell-input text-right" type="text" value="30" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-stock text-center">
+                  <span class="stock-ok">85</span>
+                </td>
+                <td class="pt-col-price">
+                  <input class="cell-input text-right" type="text" value="3.50" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-discount">
+                  <input class="cell-input text-center" type="text" value="100">
+                </td>
+                <td class="pt-col-amount">
+                  <span class="cell-amount">¥105.00</span>
+                </td>
+                <td class="pt-col-action text-center">
+                  <span class="row-delete" title="删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </span>
+                </td>
+              </tr>
+              <!-- Row 3 -->
+              <tr>
+                <td class="pt-col-no" style="color:var(--text-tertiary); font-size:12px;">3</td>
+                <td class="pt-col-product">
+                  <select class="cell-select">
+                    <option selected>统一老坛酸菜牛肉面</option>
+                  </select>
+                </td>
+                <td class="pt-col-spec" style="color:var(--text-secondary); font-size:12px;">122g/碗</td>
+                <td class="pt-col-unit text-center" style="color:var(--text-secondary); font-size:12px;">箱</td>
+                <td class="pt-col-qty">
+                  <input class="cell-input text-right" type="text" value="100" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-stock text-center">
+                  <span class="stock-low">15</span>
+                </td>
+                <td class="pt-col-price">
+                  <input class="cell-input text-right" type="text" value="21.45" style="font-family:var(--font-mono);">
+                </td>
+                <td class="pt-col-discount">
+                  <input class="cell-input text-center" type="text" value="100">
+                </td>
+                <td class="pt-col-amount">
+                  <span class="cell-amount">¥2,145.00</span>
+                </td>
+                <td class="pt-col-action text-center">
+                  <span class="row-delete" title="删除">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                  </span>
+                </td>
+              </tr>
+              <!-- Add product dashed row -->
+              <tr class="add-row">
+                <td colspan="10">
+                  <span class="add-row-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    添加一行商品
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Summary Bar (sticky bottom) -->
+    <div class="summary-bar">
+      <div class="summary-items">
+        <div class="summary-item">
+          <span class="summary-label">商品金额:</span>
+          <span class="summary-value">¥2,350.00</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">优惠:</span>
+          <span class="summary-value">¥0.00</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">应收:</span>
+          <span class="summary-value highlight">¥2,350.00</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">已收:</span>
+          <span class="summary-value">¥0.00</span>
+        </div>
+        <div class="summary-divider"></div>
+        <div class="summary-item">
+          <span class="summary-label">未收:</span>
+          <span class="summary-value highlight">¥2,350.00</span>
+        </div>
+      </div>
+      <div class="summary-actions">
+        <button class="btn-draft">保存草稿</button>
+        <button class="btn-submit">审核并打印</button>
+      </div>
+    </div>
+
+  </div>
+
+
+    <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-bg);
+    }
+
+    /* === Background List Page (Layer 1) === */
+    .bg-page {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      height: 100vh;
+      filter: blur(1px);
+      pointer-events: none;
+    }
+    .bg-sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--surface-sidebar);
+      flex-shrink: 0;
+    }
+    .bg-sidebar-brand {
+      padding: 10px 12px 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bg-brand-mark {
+      width: 28px; height: 28px;
+      border-radius: var(--radius-lg);
+      background: var(--brand-primary);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .bg-brand-mark span { color: #fff; font-weight: var(--font-weight-bold); font-size: 13px; }
+    .bg-brand-text { color: var(--text-sidebar); font-weight: var(--font-weight-semibold); font-size: 13px; }
+    .bg-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .bg-header {
+      height: var(--header-height);
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      padding: 0 var(--space-6);
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+    .bg-title-bar {
+      height: 48px;
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .bg-title-bar h1 {
+      font-size: var(--font-size-xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+    }
+    .bg-content {
+      flex: 1;
+      padding: var(--space-6);
+      overflow: hidden;
+    }
+    /* Simplified dimmed table */
+    .bg-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .bg-table thead th {
+      background: var(--surface-bg);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-default);
+      text-align: left;
+      height: var(--table-header-height);
+    }
+    .bg-table tbody td {
+      font-size: 13px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-primary);
+      height: 40px;
+    }
+    .bg-table tbody tr:nth-child(even) { background: var(--surface-bg); }
+
+    /* === Backdrop Overlay === */
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(2px);
+      z-index: 100;
+      transition: opacity 0.3s ease;
+    }
+
+    /* === Drawer Panel (Layer 2) === */
+    .drawer-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 820px;
+      max-width: 92vw;
+      height: 100vh;
+      background: var(--surface-card);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+      border-radius: 12px 0 0 0;
+      z-index: 101;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(0);
+      transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    .drawer-panel.closing {
+      transform: translateX(100%);
+    }
+
+    /* === Drawer Header === */
+    .drawer-header {
+      height: 56px;
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .drawer-header h2 {
+      font-size: 18px;
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+    }
+    .drawer-header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .btn-cancel-link {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: color 0.12s;
+      user-select: none;
+    }
+    .btn-cancel-link:hover { color: var(--text-primary); }
+    .btn-close-x {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .btn-close-x:hover {
+      background: var(--surface-bg);
+      color: var(--text-primary);
+    }
+
+    /* === Drawer Body === */
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-6);
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-6);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+
+    /* === Section Card === */
+    .section-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: var(--space-4);
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: var(--font-size-md);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-4);
+    }
+    .section-title::before {
+      content: '';
+      width: 3px;
+      height: 16px;
+      border-radius: 2px;
+      background: var(--brand-primary);
+      flex-shrink: 0;
+    }
+
+    /* === Form Inputs === */
+    .form-grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-4);
+    }
+    .form-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .form-item label {
+      font-size: var(--font-size-xs);
+      color: var(--text-secondary);
+      font-weight: var(--font-weight-medium);
+    }
+    .form-input,
+    .form-select {
+      height: 32px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      background: var(--surface-input);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      font-family: var(--font-family);
+      width: 100%;
+    }
+    .form-select { appearance: auto; }
+    .form-input:focus,
+    .form-select:focus {
+      border-color: var(--brand-primary-light);
+      box-shadow: 0 0 0 2px var(--brand-primary-50);
+    }
+    .form-input::placeholder { color: var(--text-tertiary); }
+
+    /* === Customer Risk Bar === */
+    .risk-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: var(--space-3);
+      padding: 10px var(--space-4);
+      background: var(--state-success-bg);
+      border: 1px solid var(--state-success-light);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-xs);
+      color: var(--state-success);
+      flex-wrap: wrap;
+    }
+    .risk-bar .risk-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--state-success);
+      flex-shrink: 0;
+    }
+    .risk-bar .risk-sep {
+      color: var(--state-success-light);
+      margin: 0 2px;
+    }
+    .risk-bar .risk-value {
+      font-family: var(--font-mono);
+      font-weight: var(--font-weight-medium);
+    }
+
+    /* === Product Table === */
+    .product-table-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: var(--space-4);
+    }
+    .btn-add-product {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 30px;
+      padding: 0 var(--space-3);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-medium);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+      border: 1px solid var(--brand-primary-200);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: var(--font-family);
+    }
+    .btn-add-product:hover {
+      background: var(--brand-primary-100);
+      border-color: var(--brand-primary);
+    }
+    .product-table-wrap {
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+    .product-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .product-table thead th {
+      background: var(--surface-bg);
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border-default);
+      text-align: left;
+      white-space: nowrap;
+      height: 36px;
+      user-select: none;
+    }
+    .product-table thead th.text-right { text-align: right; }
+    .product-table thead th.text-center { text-align: center; }
+    .product-table tbody td {
+      font-size: 13px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-primary);
+      height: 36px;
+      vertical-align: middle;
+    }
+    .product-table tbody tr:hover { background: #FAFBFC; }
+    .product-table tbody tr:last-child td { border-bottom: none; }
+
+    /* Column widths for product table */
+    .pt-col-no { width: 36px; min-width: 36px; text-align: center; }
+    .pt-col-product { width: auto; }
+    .pt-col-spec { width: 90px; min-width: 90px; }
+    .pt-col-unit { width: 50px; min-width: 50px; text-align: center; }
+    .pt-col-qty { width: 80px; min-width: 80px; }
+    .pt-col-stock { width: 72px; min-width: 72px; text-align: center; }
+    .pt-col-price { width: 90px; min-width: 90px; }
+    .pt-col-discount { width: 68px; min-width: 68px; }
+    .pt-col-amount { width: 100px; min-width: 100px; text-align: right; }
+    .pt-col-action { width: 44px; min-width: 44px; text-align: center; }
+
+    /* Editable cell inputs */
+    .cell-input {
+      height: 28px;
+      padding: 0 6px;
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text-primary);
+      background: #fff;
+      outline: none;
+      width: 100%;
+      font-family: var(--font-family);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .cell-input:focus {
+      border-color: var(--brand-primary-light);
+      box-shadow: 0 0 0 2px var(--brand-primary-50);
+    }
+    .cell-input.text-right { text-align: right; font-family: var(--font-mono); }
+    .cell-input.text-center { text-align: center; }
+
+    /* Product cell with dropdown feel */
+    .cell-select {
+      height: 28px;
+      padding: 0 6px;
+      border: 1px solid var(--border-default);
+      border-radius: 4px;
+      font-size: 13px;
+      color: var(--text-primary);
+      background: #fff;
+      outline: none;
+      width: 100%;
+      font-family: var(--font-family);
+      cursor: pointer;
+      appearance: auto;
+    }
+    .cell-select:focus {
+      border-color: var(--brand-primary-light);
+      box-shadow: 0 0 0 2px var(--brand-primary-50);
+    }
+
+    /* Stock indicator */
+    .stock-ok { color: var(--state-success); font-weight: var(--font-weight-medium); font-size: 12px; }
+    .stock-low { color: var(--state-error); font-weight: var(--font-weight-medium); font-size: 12px; }
+
+    /* Amount display */
+    .cell-amount {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      text-align: right;
+      color: var(--text-primary);
+      font-weight: var(--font-weight-medium);
+    }
+
+    /* Row delete */
+    .row-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      color: var(--text-tertiary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .row-delete:hover {
+      background: var(--state-error-bg);
+      color: var(--state-error);
+    }
+
+    /* Add product dashed row */
+    .add-row td {
+      border-top: 1px dashed var(--border-default);
+      text-align: center;
+      padding: 10px;
+    }
+    .add-row-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--text-tertiary);
+      cursor: pointer;
+      transition: color 0.12s;
+      user-select: none;
+    }
+    .add-row-btn:hover { color: var(--brand-primary); }
+    .add-row-btn svg { width: 16px; height: 16px; }
+
+    /* === Summary Bar === */
+    .summary-bar {
+      height: 48px;
+      background: var(--surface-sidebar);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .summary-items {
+      display: flex;
+      align-items: center;
+      gap: var(--space-6);
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.85);
+    }
+    .summary-item {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      white-space: nowrap;
+    }
+    .summary-item .summary-label {
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .summary-item .summary-value {
+      font-family: var(--font-mono);
+      font-weight: var(--font-weight-semibold);
+      color: #fff;
+    }
+    .summary-item .summary-value.highlight {
+      color: #63B3ED;
+    }
+    .summary-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255, 255, 255, 0.15);
+    }
+    .summary-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .btn-draft {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 32px;
+      padding: 0 var(--space-4);
+      font-size: 13px;
+      font-weight: var(--font-weight-medium);
+      color: #fff;
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: var(--font-family);
+    }
+    .btn-draft:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.5);
+    }
+    .btn-submit {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 32px;
+      padding: 0 var(--space-5);
+      font-size: 13px;
+      font-weight: var(--font-weight-medium);
+      color: #fff;
+      background: var(--brand-primary-light);
+      border: 1px solid var(--brand-primary-light);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: var(--font-family);
+      box-shadow: 0 2px 8px rgba(49, 130, 206, 0.4);
+    }
+    .btn-submit:hover {
+      background: var(--brand-primary);
+      box-shadow: 0 4px 12px rgba(49, 130, 206, 0.5);
+      transform: translateY(-1px);
+    }
+  </style>
+</body>
+</html>

@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户资料 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+  <div style="display: flex; height: 100vh;">
+
+    <!-- ====== Sidebar ====== -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+
+      <!-- Menu -->
+      <nav class="sidebar-menu">
+  <div class="menu-item" data-dom-id="back-dashboard">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg></span>
+    <span class="menu-text">经营概览</span>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">基础资料</span>
+      <span class="menu-arrow open">&#9654;</span>
+    </div>
+    <div class="menu-submenu open">
+      <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+      <div class="menu-item active"><span class="menu-text">客户资料</span></div>
+      <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+      <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">采购管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-purchase-order"><span class="menu-text">采购订单</span></div>
+      <div class="menu-item" data-dom-id="nav-purchase-inbound"><span class="menu-text">采购入库</span></div>
+      <div class="menu-item"><span class="menu-text">采购退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">销售管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-quick-order"><span class="menu-text">销售快速开单</span></div>
+      <div class="menu-item" data-dom-id="nav-sales-order"><span class="menu-text">销售订单</span></div>
+      <div class="menu-item"><span class="menu-text">销售出库</span></div>
+      <div class="menu-item"><span class="menu-text">销售退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">库存管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-stock-balance"><span class="menu-text">库存余额</span></div>
+      <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+      <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+      <span class="menu-text">财务管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-ar"><span class="menu-text">应收账款</span></div>
+      <div class="menu-item"><span class="menu-text">应付账款</span></div>
+      <div class="menu-item"><span class="menu-text">收款管理</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">报表中心</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">销售报表</span></div>
+      <div class="menu-item"><span class="menu-text">采购报表</span></div>
+      <div class="menu-item"><span class="menu-text">库存报表</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">系统管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">用户管理</span></div>
+      <div class="menu-item"><span class="menu-text">角色权限</span></div>
+      <div class="menu-item"><span class="menu-text">系统设置</span></div>
+    </div>
+  </div>
+</nav>
+    </aside>
+
+    <!-- ====== Main Area ====== -->
+    <div class="main-wrapper">
+      <!-- Header -->
+      <header class="top-header">
+        <div class="breadcrumb">
+          首页 <span>/</span> 基础资料 <span>/</span> <span class="current">客户资料</span>
+        </div>
+        <div class="header-actions">
+          <!-- Notification -->
+          <div class="header-icon-btn" title="通知">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge-dot">3</span>
+          </div>
+          <!-- Todo -->
+          <div class="header-icon-btn" title="待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span class="badge-dot">12</span>
+          </div>
+          <!-- User Dropdown -->
+          <div class="header-user">
+            <div class="header-user-avatar">张</div>
+            <span class="header-user-name">张经理</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </header>
+
+      
+
+      <!-- Content -->
+      <main class="content">
+        <div class="content-inner">
+
+          <!-- Query Bar -->
+                    <div class="query-bar">
+            <div class="query-row">
+              <div class="query-filters" id="queryFilters">
+                <span class="page-title-inline">客户资料</span>
+                <div class="query-item"><label>客户编码</label><input type="text" placeholder="请输入" style="width:130px;"></div>
+                <div class="query-item"><label>客户名称</label><input type="text" placeholder="请输入" style="width:150px;"></div>
+                <div class="query-item"><label>客户等级</label><select style="width:100px;"><option value="">全部</option><option>VIP</option><option>金牌</option><option>普通</option></select></div>
+                <div class="query-item"><label>状态</label><select style="width:100px;"><option value="">全部</option><option>正常</option><option>停用</option><option>冻结</option></select></div>
+              </div>
+              <div class="query-toggle" id="queryToggle" onclick="toggleQueryExpand()" style="display:none;">
+                <span class="query-toggle-text">鏇村鏌ヨ</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="query-btn-row">
+              <div class="query-btn-left">
+                <button class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>新增客户</button>
+                <button class="btn btn-outline">导入</button>
+                <button class="btn btn-outline">导出</button>
+                <button class="btn btn-primary btn-sm">查询</button>
+                <button class="btn btn-outline btn-sm">重置</button>
+              </div>
+              <div class="query-btn-right">
+                <button class="btn btn-primary btn-sm">鏌ヨ</button>
+                <button class="btn btn-outline btn-sm">閲嶇疆</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-bar">
+  <div class="tab-item active" data-tab="all">全部 (486)</div>
+  <div class="tab-item" data-tab="normal">正常 (450)</div>
+  <div class="tab-item" data-tab="stopped">停用 (28)</div>
+  <div class="tab-item" data-tab="frozen">冻结 (8)</div>
+</div>
+
+          <!-- Data Table -->
+          <div class="table-card">
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="col-cb">
+                      <div class="custom-checkbox" id="checkAll" onclick="toggleAllCheckbox(this)"></div>
+                    </th>
+                    <th class="col-code sortable">
+                      客户编码
+                      <span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down active">&#9660;</span></span>
+                    </th>
+                    <th class="col-name sortable">
+                      客户名称
+                      <span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span>
+                    </th>
+                    <th class="col-contact">联系人</th>
+                    <th class="col-phone">手机号</th>
+                    <th class="col-area">片区</th>
+                    <th class="col-route">线路</th>
+                    <th class="col-sales">业务员</th>
+                    <th class="col-level">客户等级</th>
+                    <th class="col-settle">结算方式</th>
+                    <th class="col-credit sortable">
+                      信用额度
+                      <span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span>
+                    </th>
+                    <th class="col-receivable sortable">
+                      应收余额
+                      <span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span>
+                    </th>
+                    <th class="col-overdue sortable">
+                      逾期金额
+                      <span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span>
+                    </th>
+                    <th class="col-status">状态</th>
+                    <th class="col-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Row 1 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001001</td>
+                    <td class="col-name">永辉超市朝阳店</td>
+                    <td class="col-contact">刘经理</td>
+                    <td class="col-phone">138****2201</td>
+                    <td class="col-area">朝阳区</td>
+                    <td class="col-route">线路A - 朝阳线</td>
+                    <td class="col-sales">王建国</td>
+                    <td class="col-level"><span class="level-pill gold">&#11088; 金牌</span></td>
+                    <td class="col-settle">月结30天</td>
+                    <td class="col-credit">¥500,000</td>
+                    <td class="col-receivable amount-danger">¥236,800</td>
+                    <td class="col-overdue amount-danger">¥18,500</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link" data-dom-id="btn-view-detail">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 2 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001002</td>
+                    <td class="col-name">物美超市西三旗店</td>
+                    <td class="col-contact">陈主管</td>
+                    <td class="col-phone">139****5502</td>
+                    <td class="col-area">海淀区</td>
+                    <td class="col-route">线路B - 海淀线</td>
+                    <td class="col-sales">李明</td>
+                    <td class="col-level"><span class="level-pill vip">VIP</span></td>
+                    <td class="col-settle">月结45天</td>
+                    <td class="col-credit">¥300,000</td>
+                    <td class="col-receivable amount-danger">¥168,200</td>
+                    <td class="col-overdue amount-danger">¥12,300</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 3 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001003</td>
+                    <td class="col-name">京客隆便利店</td>
+                    <td class="col-contact">孙老板</td>
+                    <td class="col-phone">135****8803</td>
+                    <td class="col-area">朝阳区</td>
+                    <td class="col-route">线路A - 朝阳线</td>
+                    <td class="col-sales">王建国</td>
+                    <td class="col-level"><span class="level-pill normal">普通</span></td>
+                    <td class="col-settle">现结</td>
+                    <td class="col-credit">¥50,000</td>
+                    <td class="col-receivable">¥12,600</td>
+                    <td class="col-overdue amount-danger">¥3,200</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 4 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001004</td>
+                    <td class="col-name">华联超市丰台店</td>
+                    <td class="col-contact">周店长</td>
+                    <td class="col-phone">186****3304</td>
+                    <td class="col-area">丰台区</td>
+                    <td class="col-route">线路C - 丰台线</td>
+                    <td class="col-sales">张伟</td>
+                    <td class="col-level"><span class="level-pill vip">VIP</span></td>
+                    <td class="col-settle">月结30天</td>
+                    <td class="col-credit">¥200,000</td>
+                    <td class="col-receivable amount-danger">¥89,500</td>
+                    <td class="col-overdue amount-danger">¥25,000</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 5 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001005</td>
+                    <td class="col-name">美廉美超市通州店</td>
+                    <td class="col-contact">吴经理</td>
+                    <td class="col-phone">152****7705</td>
+                    <td class="col-area">通州区</td>
+                    <td class="col-route">线路D - 通州线</td>
+                    <td class="col-sales">赵丽</td>
+                    <td class="col-level"><span class="level-pill normal">普通</span></td>
+                    <td class="col-settle">货到付款</td>
+                    <td class="col-credit">¥80,000</td>
+                    <td class="col-receivable">¥35,400</td>
+                    <td class="col-overdue amount-safe">&#8212;</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 6 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001006</td>
+                    <td class="col-name">七鲜超市望京店</td>
+                    <td class="col-contact">郑主管</td>
+                    <td class="col-phone">137****6606</td>
+                    <td class="col-area">朝阳区</td>
+                    <td class="col-route">线路A - 朝阳线</td>
+                    <td class="col-sales">王建国</td>
+                    <td class="col-level"><span class="level-pill gold">&#11088; 金牌</span></td>
+                    <td class="col-settle">月结60天</td>
+                    <td class="col-credit">¥800,000</td>
+                    <td class="col-receivable amount-danger">¥325,600</td>
+                    <td class="col-overdue amount-danger">¥15,800</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 7 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001007</td>
+                    <td class="col-name">家乐福超市西直门店</td>
+                    <td class="col-contact">冯店长</td>
+                    <td class="col-phone">158****1107</td>
+                    <td class="col-area">西城区</td>
+                    <td class="col-route">线路B - 海淀线</td>
+                    <td class="col-sales">李明</td>
+                    <td class="col-level"><span class="level-pill vip">VIP</span></td>
+                    <td class="col-settle">月结30天</td>
+                    <td class="col-credit">¥400,000</td>
+                    <td class="col-receivable amount-danger">¥178,200</td>
+                    <td class="col-overdue">&#8212;</td>
+                    <td class="col-status"><span class="status-pill frozen">冻结</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link" style="color:var(--state-info);">解冻</span>
+                    </td>
+                  </tr>
+                  <!-- Row 8 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001008</td>
+                    <td class="col-name">天客隆超市</td>
+                    <td class="col-contact">杨经理</td>
+                    <td class="col-phone">133****4408</td>
+                    <td class="col-area">东城区</td>
+                    <td class="col-route">线路A - 朝阳线</td>
+                    <td class="col-sales">张伟</td>
+                    <td class="col-level"><span class="level-pill normal">普通</span></td>
+                    <td class="col-settle">现结</td>
+                    <td class="col-credit">¥30,000</td>
+                    <td class="col-receivable">¥8,900</td>
+                    <td class="col-overdue amount-safe">&#8212;</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 9 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001009</td>
+                    <td class="col-name">乐购超市大兴店</td>
+                    <td class="col-contact">何老板</td>
+                    <td class="col-phone">159****9909</td>
+                    <td class="col-area">丰台区</td>
+                    <td class="col-route">线路C - 丰台线</td>
+                    <td class="col-sales">赵丽</td>
+                    <td class="col-level"><span class="level-pill normal">普通</span></td>
+                    <td class="col-settle">货到付款</td>
+                    <td class="col-credit">¥60,000</td>
+                    <td class="col-receivable">¥42,300</td>
+                    <td class="col-overdue amount-safe">&#8212;</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                  <!-- Row 10 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">KH001010</td>
+                    <td class="col-name">超市发连锁学院路店</td>
+                    <td class="col-contact">徐主管</td>
+                    <td class="col-phone">188****6610</td>
+                    <td class="col-area">海淀区</td>
+                    <td class="col-route">线路B - 海淀线</td>
+                    <td class="col-sales">李明</td>
+                    <td class="col-level"><span class="level-pill vip">VIP</span></td>
+                    <td class="col-settle">月结45天</td>
+                    <td class="col-credit">¥250,000</td>
+                    <td class="col-receivable amount-danger">¥95,400</td>
+                    <td class="col-overdue amount-danger">¥11,700</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">查看</span><span class="action-sep">|</span><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">冻结</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="pagination-bar">
+              <div class="pagination-info">
+                <span>共 <strong style="color:var(--text-primary);">486</strong> 条</span>
+                <span class="pagination-summary">本页合计: 应收余额 <strong style="color:var(--text-primary);font-family:var(--font-mono);">¥1,256,800</strong> | 逾期金额 <strong style="color:var(--state-error);font-family:var(--font-mono);">¥86,500</strong></span>
+              </div>
+              <div class="pagination-controls">
+                <span style="font-size:var(--font-size-sm);color:var(--text-secondary);margin-right:4px;">20条/页</span>
+                <button class="page-btn" disabled>&lt;</button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn">2</button>
+                <button class="page-btn">3</button>
+                <button class="page-btn">4</button>
+                <button class="page-btn">5</button>
+                <span class="page-text">...</span>
+                <button class="page-btn">25</button>
+                <button class="page-btn">&gt;</button>
+                <span class="page-text" style="margin-left:8px;">第 1/25 页</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      sidebar.classList.toggle('collapsed');
+      toggle.classList.toggle('collapsed-icon');
+    }
+
+    function toggleQueryExpand() {
+      const filters = document.getElementById('queryFilters');
+      const toggle = document.getElementById('queryToggle');
+      filters.classList.toggle('expanded');
+      toggle.classList.toggle('expanded');
+      const text = toggle.querySelector('.query-toggle-text');
+      text.textContent = filters.classList.contains('expanded') ? '收起查询' : '更多查询';
+    }
+
+    // Sidebar submenu toggle
+    function toggleSubmenu(el) {
+      const submenu = el.nextElementSibling;
+      const arrow = el.querySelector('.menu-arrow');
+      if (submenu && submenu.classList.contains('menu-submenu')) {
+        submenu.classList.toggle('open');
+        if (arrow) arrow.classList.toggle('open');
+      }
+    }
+
+    // Checkbox toggle
+    function toggleCheckbox(el) {
+      el.classList.toggle('checked');
+    }
+
+    // Select all toggle
+    function toggleAllCheckbox(el) {
+      const isChecked = el.classList.toggle('checked');
+      const checkboxes = document.querySelectorAll('.data-table tbody .custom-checkbox');
+      checkboxes.forEach(cb => {
+        if (isChecked) {
+          cb.classList.add('checked');
+        } else {
+          cb.classList.remove('checked');
+        }
+      });
+    }
+  </script>
+
+  <style>
+    /* === Base Reset & Layout === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-bg);
+    }
+
+    /* === Sidebar === */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--surface-sidebar);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .sidebar-brand {
+      padding: 8px 10px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      background: var(--brand-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-mark span {
+      color: #fff;
+      font-weight: var(--font-weight-bold);
+      font-size: 11px;
+    }
+    .brand-text {
+      color: var(--text-sidebar);
+      font-weight: var(--font-weight-semibold);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    /* === Menu === */
+    .sidebar-menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .menu-group { margin-bottom: 0; }
+.menu-item {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 3px;
+      color: var(--text-sidebar);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .menu-item:hover {
+      background: var(--surface-sidebar-hover);
+      color: var(--text-sidebar);
+    }
+    .menu-item.active {
+      background: var(--surface-sidebar-active);
+      color: var(--text-sidebar-active);
+      font-weight: var(--font-weight-medium);
+    }
+    .menu-parent { font-weight: var(--font-weight-medium); margin-top: 2px; }
+    .menu-icon {
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+    .menu-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    .menu-arrow.open { transform: rotate(90deg); }
+    .menu-submenu {
+      padding-left: 18px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+    }
+    .menu-submenu.open { max-height: 500px; }
+    .menu-submenu .menu-item { height: 26px; padding: 0 6px; font-size: 12px; color: var(--text-sidebar); }
+
+    /* === Sidebar Toggle === */
+    .sidebar-toggle {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; cursor: pointer; color: var(--text-secondary); transition: background 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .sidebar-toggle:hover { background: var(--surface-sidebar-hover); color: var(--text-primary); }
+    .sidebar.collapsed { width: 40px !important; overflow: hidden; }
+    .sidebar.collapsed .menu-text,
+    .sidebar.collapsed .menu-arrow, .sidebar.collapsed .user-info, .sidebar.collapsed .menu-submenu { display: none !important; }
+    .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0 8px; }
+    .sidebar.collapsed .menu-item { justify-content: center; padding: 0; height: 28px; }
+    .sidebar.collapsed .menu-icon { margin-right: 0; width: 14px; }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      flex-shrink: 0;
+    }
+    .user-info { overflow: hidden; }
+    .user-name {
+      color: var(--text-sidebar);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .user-role {
+      color: var(--text-tertiary);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    /* === Main Area === */
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* === Header === */
+    .top-header {
+      height: var(--header-height);
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .breadcrumb {
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+    }
+    .breadcrumb span { color: var(--text-tertiary); margin: 0 var(--space-2); }
+    .breadcrumb .current { color: var(--text-primary); font-weight: var(--font-weight-medium); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .header-icon-btn {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-icon-btn:hover {
+      background: var(--surface-bg);
+      color: var(--text-primary);
+    }
+    .header-icon-btn svg { width: 20px; height: 20px; }
+    .badge-dot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: var(--radius-full);
+      background: var(--state-error);
+      color: #fff;
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-md);
+      transition: background 0.12s;
+    }
+    .header-user:hover { background: var(--surface-bg); }
+    .header-user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+    }
+    .header-user-name {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+    }
+
+    /* === Content === */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-6);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+
+    /* === Page Title Bar === */
+    /* === Buttons === */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      height: 28px;
+      padding: 0 var(--space-4);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      outline: none;
+      font-family: var(--font-family);
+    }
+    .btn-primary {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: var(--brand-primary);
+    }
+    .btn-primary:hover {
+      background: var(--brand-primary-light);
+      border-color: var(--brand-primary-light);
+    }
+    .btn-outline {
+      background: var(--surface-card);
+      color: var(--text-primary);
+      border-color: var(--border-default);
+    }
+    .btn-outline:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .btn-sm {
+      height: 28px;
+      padding: 0 var(--space-3);
+      font-size: 12px;
+    }
+
+    
+    .query-bar {
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--border-light);
+      padding: 0 16px;
+    }
+    .query-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 0 0;
+    }
+    .query-filters {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      flex-wrap: wrap;
+      max-height: 62px;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }
+    .query-filters.expanded { max-height: 200px; }
+    .query-filters .query-item { display: flex; align-items: center; gap: 4px; }
+    .query-filters .query-item label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; line-height: 1; }
+    .query-filters .page-title-inline { font-weight: 600; font-size: 15px; white-space: nowrap; margin-right: 4px; color: var(--text-primary); }
+    .query-filters .query-item input,
+    .query-filters .query-item select { height: 28px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); background: var(--surface-input); outline: none; transition: border-color 0.15s; }
+    .query-filters .query-item input:focus,
+    .query-filters .query-item select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(22,119,255,0.08); }
+    .query-toggle { display: flex; align-items: center; gap: 2px; cursor: pointer; color: var(--brand-primary); font-size: 12px; white-space: nowrap; padding: 4px 0; flex-shrink: 0; user-select: none; }
+    .query-toggle:hover { opacity: 0.8; }
+    .query-toggle svg { transition: transform 0.25s; }
+    .query-toggle.expanded svg { transform: rotate(180deg); }
+    .query-btn-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 8px; border-top: 1px solid var(--border-light); margin-top: 8px; }
+    .query-btn-left { display: flex; align-items: center; gap: 6px; }
+    .query-btn-right { display: flex; align-items: center; gap: 6px; }
+
+    .tab-bar {
+      display: flex; align-items: center; gap: 0;
+      padding: 0 16px; border-bottom: 1px solid var(--border-light);
+      background: var(--surface-card);
+    }
+    .tab-bar .tab-item { padding: 8px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
+    .tab-bar .tab-item:hover { color: var(--brand-primary); }
+    .tab-bar .tab-item.active { color: var(--brand-primary); border-bottom-color: var(--brand-primary); font-weight: var(--font-weight-medium); }
+        /* === Data Table === */
+    .table-card {
+      background: var(--surface-card);
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      overflow-y: auto;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      min-width: 1600px;
+    }
+    .data-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .data-table thead th {
+      background: var(--surface-bg);
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-default);
+      text-align: left;
+      white-space: nowrap;
+      user-select: none;
+      height: 32px;
+    }
+    .data-table thead th.sortable {
+      cursor: pointer;
+    }
+    .data-table thead th.sortable:hover {
+      color: var(--brand-primary);
+    }
+    .sort-arrows {
+      display: inline-flex;
+      flex-direction: column;
+      margin-left: 4px;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .sort-arrows .arrow-up,
+    .sort-arrows .arrow-down {
+      font-size: 8px;
+      line-height: 8px;
+      color: var(--text-tertiary);
+    }
+    .sort-arrows .arrow-up.active,
+    .sort-arrows .arrow-down.active {
+      color: var(--brand-primary);
+    }
+    .data-table tbody td {
+      font-size: 14px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-primary);
+      height: 32px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .data-table tbody tr:nth-child(even) {
+      background: var(--surface-bg);
+    }
+    .data-table tbody tr:hover {
+      background: #EBF8FF;
+    }
+
+    /* Column widths */
+    .data-table .col-cb {
+      width: 44px; min-width: 44px; text-align: center;
+      position: sticky; left: 0; z-index: 5; background: inherit;
+    }
+    .data-table thead .col-cb { background: var(--surface-bg); z-index: 15; }
+    .data-table .col-code { width: 100px; min-width: 100px; }
+    .data-table .col-name { width: 180px; min-width: 180px; }
+    .data-table .col-contact { width: 80px; min-width: 80px; }
+    .data-table .col-phone { width: 110px; min-width: 110px; }
+    .data-table .col-area { width: 80px; min-width: 80px; }
+    .data-table .col-route { width: 130px; min-width: 130px; }
+    .data-table .col-sales { width: 70px; min-width: 70px; }
+    .data-table .col-level { width: 80px; min-width: 80px; text-align: center; }
+    .data-table .col-settle { width: 90px; min-width: 90px; }
+    .data-table .col-credit {
+      width: 100px; min-width: 100px; text-align: right;
+      font-family: var(--font-mono);
+    }
+    .data-table .col-receivable {
+      width: 100px; min-width: 100px; text-align: right;
+      font-family: var(--font-mono);
+    }
+    .data-table .col-overdue {
+      width: 100px; min-width: 100px; text-align: right;
+      font-family: var(--font-mono);
+    }
+    .data-table .col-status { width: 70px; min-width: 70px; text-align: center; }
+    .data-table .col-actions {
+      width: 130px; min-width: 130px; text-align: center;
+      position: sticky; right: 0; z-index: 5; background: inherit;
+    }
+    .data-table thead .col-actions { background: var(--surface-bg); z-index: 15; }
+
+    /* Checkbox */
+    .custom-checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--border-default);
+      border-radius: 3px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface-card);
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .custom-checkbox:hover {
+      border-color: var(--brand-primary-light);
+    }
+    .custom-checkbox.checked {
+      background: var(--brand-primary);
+      border-color: var(--brand-primary);
+    }
+    .custom-checkbox.checked::after {
+      content: '';
+      width: 8px;
+      height: 5px;
+      border-left: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      transform: rotate(-45deg) translateY(-1px);
+    }
+
+    /* Customer Level Pills */
+    .level-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .level-pill.normal {
+      background: var(--surface-bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+    }
+    .level-pill.vip {
+      background: var(--state-info-bg);
+      color: var(--state-info);
+      border: 1px solid var(--state-info-light);
+    }
+    .level-pill.gold {
+      background: var(--state-warning-bg);
+      color: #B7791F;
+      border: 1px solid var(--state-warning-light);
+    }
+
+    /* Amount styling */
+    .amount-danger {
+      color: var(--state-error) !important;
+      font-weight: var(--font-weight-medium);
+    }
+    .amount-safe {
+      color: var(--state-success) !important;
+      font-weight: var(--font-weight-medium);
+    }
+
+    /* Status Badges */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .status-pill.active {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+    .status-pill.disabled {
+      background: var(--state-error-bg);
+      color: var(--state-error);
+      border: 1px solid var(--state-error-light);
+    }
+    .status-pill.frozen {
+      background: var(--state-info-bg);
+      color: var(--state-info);
+      border: 1px solid var(--state-info-light);
+    }
+
+    /* Action links */
+    .action-link {
+      font-size: var(--font-size-sm);
+      color: var(--text-link);
+      cursor: pointer;
+      transition: color 0.12s;
+      white-space: nowrap;
+    }
+    .action-link:hover { color: var(--brand-primary-dark); }
+    .action-link.danger:hover { color: var(--state-error); }
+    .action-sep {
+      color: var(--border-default);
+      margin: 0 6px;
+    }
+
+    /* === Pagination Bar === */
+    .pagination-bar {
+      height: 32px;
+      background: var(--surface-card);
+      border-top: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+    .pagination-info {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .pagination-summary {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .page-size-select {
+      height: 28px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      background: var(--surface-card);
+      outline: none;
+      font-family: var(--font-family);
+      appearance: auto;
+    }
+    .page-size-select:focus {
+      border-color: var(--brand-primary-light);
+    }
+    .page-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      background: var(--surface-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.12s;
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .page-btn.active {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: var(--brand-primary);
+    }
+    .page-text {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin: 0 var(--space-1);
+    }
+
+    /* === Content layout for table page === */
+    .content-inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+  </style>
+</body>
+</html>

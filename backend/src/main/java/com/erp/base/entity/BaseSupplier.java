@@ -25,6 +25,8 @@ public class BaseSupplier {
     private String taxNo;
     private BigDecimal apBalance;
     private String status;
+    private String address;
+    private String remark;
 
     public String getSupplierId() { return supplierId; }
     public void setSupplierId(String supplierId) { this.supplierId = supplierId; }
@@ -73,4 +75,10 @@ public class BaseSupplier {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
+
+    public String getRemark() { return remark; }
+    public void setRemark(String remark) { this.remark = remark; }
 }

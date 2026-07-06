@@ -1,0 +1,413 @@
+{
+  "data": [
+    {
+      "id": "page-login",
+      "title": "登录页",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400005000,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/login.html",
+        "interactions": [
+          {
+            "domId": "btn-login",
+            "targetPageId": "page-dashboard",
+            "transitionLabel": "登录成功"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-dashboard",
+      "title": "经营概览",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400000000,
+      "canvasData": {
+        "x": 620,
+        "y": 0,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/dashboard.html",
+        "interactions": [
+          {
+            "domId": "nav-goods",
+            "targetPageId": "page-goods-archive",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-sales-order",
+            "targetPageId": "page-sales-order",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-purchase-inbound",
+            "targetPageId": "page-purchase-inbound",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-purchase-order",
+            "targetPageId": "page-purchase-order",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-customer",
+            "targetPageId": "page-customer",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-quick-order",
+            "targetPageId": "page-quick-order",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-stock-balance",
+            "targetPageId": "page-stock-balance",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-ar",
+            "targetPageId": "page-ar",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-todo",
+            "targetPageId": "page-todo",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-goods-archive",
+      "title": "商品档案",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400001000,
+      "canvasData": {
+        "x": 0,
+        "y": 377,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/goods-archive.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-sales-order",
+            "targetPageId": "page-sales-order",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-add-goods",
+            "targetPageId": "page-goods-edit-drawer",
+            "transitionLabel": "新增商品"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-goods-edit-drawer",
+      "title": "新增商品",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400013000,
+      "canvasData": {
+        "x": 620,
+        "y": 377,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/goods-edit-drawer.html",
+        "interactions": [
+          {
+            "domId": "btn-cancel",
+            "targetPageId": "page-goods-archive",
+            "hideEdge": true,
+            "transitionLabel": "退出"
+          },
+          {
+            "domId": "drawer-backdrop",
+            "targetPageId": "page-goods-archive",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-purchase-order",
+      "title": "采购订单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400006000,
+      "canvasData": {
+        "x": 0,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/purchase-order.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-goods",
+            "targetPageId": "page-goods-archive",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-purchase-inbound",
+      "title": "采购入库",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400004000,
+      "canvasData": {
+        "x": 620,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/purchase-inbound.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-customer",
+      "title": "客户资料",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400007000,
+      "canvasData": {
+        "x": 0,
+        "y": 754,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/customer.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-sales-order",
+            "targetPageId": "page-sales-order",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-view-detail",
+            "targetPageId": "page-customer-detail",
+            "transitionLabel": "查看详情"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-customer-detail",
+      "title": "客户详情抽屉",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400008000,
+      "canvasData": {
+        "x": 620,
+        "y": 754,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/customer-detail.html",
+        "interactions": [
+          {
+            "domId": "btn-close",
+            "targetPageId": "page-customer",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          },
+          {
+            "domId": "drawer-backdrop",
+            "targetPageId": "page-customer",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-sales-order",
+      "title": "销售订单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400002000,
+      "canvasData": {
+        "x": 0,
+        "y": 1131,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/sales-order.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-goods",
+            "targetPageId": "page-goods-archive",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-new-order",
+            "targetPageId": "page-sales-order-form",
+            "transitionLabel": "新建订单"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-sales-order-form",
+      "title": "新建销售订单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400003000,
+      "canvasData": {
+        "x": 620,
+        "y": 1131,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/sales-order-form.html",
+        "interactions": [
+          {
+            "domId": "btn-cancel",
+            "targetPageId": "page-sales-order",
+            "hideEdge": true,
+            "transitionLabel": "取消"
+          },
+          {
+            "domId": "drawer-backdrop",
+            "targetPageId": "page-sales-order",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-quick-order",
+      "title": "销售快速开单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400009000,
+      "canvasData": {
+        "x": 1240,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/quick-order.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-stock-balance",
+      "title": "库存余额",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400010000,
+      "canvasData": {
+        "x": 1860,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/stock-balance.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-ar",
+      "title": "应收账款",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400011000,
+      "canvasData": {
+        "x": 2480,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/ar.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-todo",
+      "title": "待办中心",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400012000,
+      "canvasData": {
+        "x": 3100,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/todo.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": true,
+    "deviceType": "desktop",
+    "projectName": "商贸云ERP界面重设计"
+  }
+}

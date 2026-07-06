@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS base_supplier (
   ap_balance DECIMAL(18,2) DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
+ALTER TABLE base_supplier ADD COLUMN IF NOT EXISTS address VARCHAR(500);
+ALTER TABLE base_supplier ADD COLUMN IF NOT EXISTS remark VARCHAR(500);
 
 CREATE TABLE IF NOT EXISTS base_customer_price_adjust (
   adjust_id VARCHAR(32) PRIMARY KEY,

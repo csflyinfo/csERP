@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>应收账款 - ERP管理系统</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <div class="flex h-screen overflow-hidden">
+
+        <!-- ===== Sidebar ===== -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+
+      <!-- Menu -->
+      <nav class="sidebar-menu">
+  <div class="menu-item" data-dom-id="back-dashboard">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg></span>
+    <span class="menu-text">经营概览</span>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">基础资料</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+      <div class="menu-item"><span class="menu-text">客户资料</span></div>
+      <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+      <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">采购管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-purchase-order"><span class="menu-text">采购订单</span></div>
+      <div class="menu-item" data-dom-id="nav-purchase-inbound"><span class="menu-text">采购入库</span></div>
+      <div class="menu-item"><span class="menu-text">采购退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">销售管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-quick-order"><span class="menu-text">销售快速开单</span></div>
+      <div class="menu-item" data-dom-id="nav-sales-order"><span class="menu-text">销售订单</span></div>
+      <div class="menu-item"><span class="menu-text">销售出库</span></div>
+      <div class="menu-item"><span class="menu-text">销售退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">库存管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-stock-balance"><span class="menu-text">库存余额</span></div>
+      <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+      <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+      <span class="menu-text">财务管理</span>
+      <span class="menu-arrow open">&#9654;</span>
+    </div>
+    <div class="menu-submenu open">
+      <div class="menu-item active" data-dom-id="nav-ar"><span class="menu-text">应收账款</span></div>
+      <div class="menu-item"><span class="menu-text">应付账款</span></div>
+      <div class="menu-item"><span class="menu-text">收款管理</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">报表中心</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">销售报表</span></div>
+      <div class="menu-item"><span class="menu-text">采购报表</span></div>
+      <div class="menu-item"><span class="menu-text">库存报表</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">系统管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">用户管理</span></div>
+      <div class="menu-item"><span class="menu-text">角色权限</span></div>
+      <div class="menu-item"><span class="menu-text">系统设置</span></div>
+    </div>
+  </div>
+</nav>
+
+    </aside>
+
+        <!-- ===== Main Area ===== -->
+        <div class="flex flex-col flex-1 overflow-hidden">
+
+            <!-- Header -->
+            <header style="height: var(--header-height); background: var(--surface-header); border-bottom: 1px solid var(--border-default); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-6);">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="sidebar-toggle" onclick="toggleSidebar()" title="收起/展开菜单">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z" fill="currentColor"/></svg>
+                    </div>
+                    <nav style="display: flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary);">
+                    <a href="#" data-dom-id="back-dashboard" style="color: var(--text-link); text-decoration: none;">首页</a>
+                    <span style="color: var(--text-tertiary);">/</span>
+                    <span>财务管理</span>
+                    <span style="color: var(--text-tertiary);">/</span>
+                    <span style="color: var(--text-primary); font-weight: var(--font-weight-medium);">应收账款</span>
+                </nav>
+                </div>
+                <div style="display: flex; align-items: center; gap: var(--space-5);">
+                    <div style="position: relative; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <span style="position: absolute; top: -4px; right: -6px; width: 16px; height: 16px; background: var(--state-error); color: white; font-size: 10px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600;">3</span>
+                    </div>
+                    <div style="position: relative; cursor: pointer;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: var(--space-2); cursor: pointer; padding: var(--space-1) var(--space-2); border-radius: var(--radius-md);">
+                        <div style="width: 30px; height: 30px; background: var(--brand-primary); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: var(--font-size-sm); font-weight: var(--font-weight-semibold);">张</div>
+                        <span style="font-size: var(--font-size-sm); color: var(--text-primary);">张经理</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <main style="flex: 1; overflow-y: auto; background: var(--surface-bg); padding: 0;">
+
+                
+                <!-- Query Bar -->
+                          <div class="query-bar">
+            <div class="query-row">
+              <div class="query-filters" id="queryFilters">
+                <span class="page-title-inline">应收账款</span>
+                <div class="query-item"><label>客户编码/名称</label><input type="text" placeholder="请输入" style="width:150px;"></div>
+                <div class="query-item"><label>客户等级</label><select style="width:100px;"><option value="">全部</option><option>VIP客户</option><option>A级客户</option><option>B级客户</option><option>C级客户</option></select></div>
+                <div class="query-item"><label>业务员</label><select style="width:80px;"><option value="">全部</option><option>王伟</option><option>李娜</option><option>张磊</option><option>赵敏</option></select></div>
+                <div class="query-item"><label>账龄</label><select style="width:90px;"><option value="">全部</option><option>0-30天</option><option>31-60天</option><option>61-90天</option><option>90天以上</option></select></div>
+                <div class="query-item"><label>是否逾期</label><select style="width:80px;"><option value="">全部</option><option>是</option><option>否</option></select></div>
+                <div class="query-item"><label>收款状态</label><select style="width:90px;"><option value="">全部</option><option>未收款</option><option>部分收款</option><option>已收完</option></select></div>
+              </div>
+              <div class="query-toggle" id="queryToggle" onclick="toggleQueryExpand()" style="display:none;">
+                <span class="query-toggle-text">鏇村鏌ヨ</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="query-btn-row">
+              <div class="query-btn-left">
+                <button class="btn-primary" style="display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); height: 28px; background: var(--brand-primary); color: white; border: none; border-radius: var(--radius-md); font-size: 12px; font-weight: var(--font-weight-medium); cursor: pointer;">
+                <button class="btn-outline" style="display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); height: 28px; background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; cursor: pointer;">
+                <button class="btn-outline" style="display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); height: 28px; background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; cursor: pointer;">
+                <button class="btn-outline" style="display: inline-flex; align-items: center; gap: var(--space-2); padding: 0 var(--space-4); height: 28px; background: var(--surface-card); color: var(--text-primary); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; cursor: pointer;">
+                <button class="btn btn-primary btn-sm" style="margin-left:6px;">查询</button>
+                <button class="btn btn-outline btn-sm">重置</button>
+              </div>
+              <div class="query-btn-right">
+                <button class="btn btn-primary btn-sm">鏌ヨ</button>
+                <button class="btn btn-outline btn-sm">閲嶇疆</button>
+              </div>
+            </div>
+          </div>
+
+                <div class="tab-bar">
+  <div class="tab-item active" data-tab="all">全部 (186)</div>
+  <div class="tab-item" data-tab="normal">正常 (155)</div>
+  <div class="tab-item" data-tab="overdue">逾期 (28)</div>
+  <div class="tab-item" data-tab="severe">严重逾期 (3)</div>
+</div>
+>
+                <div style="background: var(--surface-bg); border-radius: 0; padding: 8px 16px; margin-bottom: 0; box-shadow: none; border: none;">
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);">
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">客户编码/名称</label>
+                            <input type="text" placeholder="请输入客户编码或名称" style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                        </div>
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">客户等级</label>
+                            <select style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                                <option value="">全部</option>
+                                <option>VIP客户</option>
+                                <option>A级客户</option>
+                                <option>B级客户</option>
+                                <option>C级客户</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">业务员</label>
+                            <select style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                                <option value="">全部</option>
+                                <option>王伟</option>
+                                <option>李娜</option>
+                                <option>张磊</option>
+                                <option>赵敏</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">账龄</label>
+                            <select style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                                <option value="">全部</option>
+                                <option value="0-30">0-30天</option>
+                                <option value="31-60">31-60天</option>
+                                <option value="61-90">61-90天</option>
+                                <option value="90+">90天以上</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">是否逾期</label>
+                            <select style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                                <option value="">全部</option>
+                                <option value="yes">是</option>
+                                <option value="no">否</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: row; align-items: center; gap: 4px;">
+                            <label style="font-size: var(--font-size-sm); color: var(--text-secondary);">收款状态</label>
+                            <select style="height: 28px; padding: 0 var(--space-3); border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); background: var(--surface-input); outline: none; box-sizing: border-box;">
+                                <option value="">全部</option>
+                                <option>未收款</option>
+                                <option>部分收款</option>
+                                <option>已收完</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: 0;">
+                        <button style="height: 28px; padding: 0 var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--surface-card); color: var(--text-secondary); font-size: 12px; cursor: pointer;">重置</button>
+                        <button style="height: 28px; padding: 0 var(--space-5); border: none; border-radius: var(--radius-md); background: var(--brand-primary); color: white; font-size: 12px; font-weight: var(--font-weight-medium); cursor: pointer;">查询</button>
+                    </div>
+                </div>
+
+                <!-- Data Table -->
+                <div style="background: var(--surface-card); border-radius: 0; box-shadow: none; border: none; overflow: hidden;">
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; min-width: 1600px; table-layout: fixed; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: var(--surface-bg); border-bottom: 1px solid var(--border-default);">
+                                    <th style="width: 90px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: left; white-space: nowrap; height: 32px;">客户编码</th>
+                                    <th style="width: 110px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: left; white-space: nowrap; height: 32px;">客户名称</th>
+                                    <th style="width: 80px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">客户等级</th>
+                                    <th style="width: 70px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">业务员</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: right; white-space: nowrap; height: 32px;">应收金额</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: right; white-space: nowrap; height: 32px;">已收金额</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: right; white-space: nowrap; height: 32px;">未收金额</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: right; white-space: nowrap; height: 32px;">逾期金额</th>
+                                    <th style="width: 80px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">账龄(天)</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: right; white-space: nowrap; height: 32px;">信用额度</th>
+                                    <th style="width: 120px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">信用使用率</th>
+                                    <th style="width: 100px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">最近收款日</th>
+                                    <th style="width: 80px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">状态</th>
+                                    <th style="width: 160px; padding: 4px 8px; font-size: 12px; font-weight: var(--font-weight-medium); color: var(--text-secondary); text-align: center; white-space: nowrap; height: 32px;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Row 1: 严重逾期 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001001</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">永辉超市股份有限公司</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: var(--brand-primary-50); color: var(--brand-primary); padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">VIP</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">王伟</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥186,500</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥120,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-warning); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">¥66,500</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-error); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">¥66,500</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #FDE8E8; color: #991B1B; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">98天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥200,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-error); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">93%</span>
+                                            <div style="flex: 1; height: 6px; background: #FED7D7; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 93%; height: 100%; background: var(--state-error); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-05-18</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge status-danger" style="background: #FDE8E8; color: #991B1B; padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); display: inline-flex; align-items: center; gap: 4px;">
+                                            <span class="pulse-dot" style="width: 6px; height: 6px; background: var(--state-error); border-radius: 50%; display: inline-block;"></span>
+                                            严重逾期
+                                        </span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 2: 正常 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001002</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">物美科技集团</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: var(--brand-primary-50); color: var(--brand-primary); padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">A级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">李娜</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥128,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥80,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥48,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-success); text-align: right; font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #C6F6D5; color: #276749; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">15天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥150,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-success); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">85%</span>
+                                            <div style="flex: 1; height: 6px; background: #C6F6D5; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 85%; height: 100%; background: var(--state-warning); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-06-20</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-success-bg); color: var(--state-success); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">正常</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 3: 逾期 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001004</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">华联超市集团</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: #FFFFF0; color: #92400E; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">B级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">张磊</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥98,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥45,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥53,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-error); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">¥20,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #FEFCBF; color: #92400E; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">52天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥100,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-error); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">98%</span>
+                                            <div style="flex: 1; height: 6px; background: #FED7D7; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 98%; height: 100%; background: var(--state-error); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-05-25</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-warning-bg); color: var(--state-warning); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">逾期</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 4: 正常 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001006</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">七鲜超市</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: var(--brand-primary-50); color: var(--brand-primary); padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">A级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">赵敏</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥75,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥75,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥0</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-success); text-align: right; font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #C6F6D5; color: #276749; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">8天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥120,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-success); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">63%</span>
+                                            <div style="flex: 1; height: 6px; background: #C6F6D5; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 63%; height: 100%; background: var(--state-success); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-06-28</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-success-bg); color: var(--state-success); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">正常</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 5: 严重逾期 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001003</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">京客隆商业集团</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: #FFFFF0; color: #92400E; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">B级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">王伟</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥215,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥168,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-warning); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">¥47,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-error); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #FDE8E8; color: #991B1B; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">105天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥250,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-warning); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">86%</span>
+                                            <div style="flex: 1; height: 6px; background: #FEFCBF; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 86%; height: 100%; background: var(--state-warning); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-05-10</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge status-danger" style="background: #FDE8E8; color: #991B1B; padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); display: inline-flex; align-items: center; gap: 4px;">
+                                            <span class="pulse-dot" style="width: 6px; height: 6px; background: var(--state-error); border-radius: 50%; display: inline-block;"></span>
+                                            严重逾期
+                                        </span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 6: 正常 (刚收款) -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001005</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">美廉美连锁超市</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: #EDF2F7; color: #4A5568; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">C级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">李娜</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥42,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥42,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥0</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-success); text-align: right; font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #C6F6D5; color: #276749; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">0天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥80,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-success); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">53%</span>
+                                            <div style="flex: 1; height: 6px; background: #C6F6D5; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 53%; height: 100%; background: var(--state-success); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-07-01</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-success-bg); color: var(--state-success); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">正常</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 7: 逾期 -->
+                                <tr style="border-bottom: 1px solid var(--border-light); transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001010</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">超市发商贸</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: #EDF2F7; color: #4A5568; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">C级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">张磊</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥63,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥18,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥45,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-error); text-align: right; font-weight: var(--font-weight-medium); font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #FEFCBF; color: #92400E; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">45天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥60,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-error); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">105%</span>
+                                            <div style="flex: 1; height: 6px; background: #FED7D7; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 100%; height: 100%; background: var(--state-error); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-05-30</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-warning-bg); color: var(--state-warning); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">逾期</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                                <!-- Row 8: 正常 -->
+                                <tr style="transition: background 0.15s;">
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); font-family: var(--font-mono);">KH001008</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-base); color: var(--text-primary); font-weight: var(--font-weight-medium);">天客隆超市</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="badge" style="background: var(--brand-primary-50); color: var(--brand-primary); padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs);">A级</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: center;">赵敏</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥48,700</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥30,000</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥18,700</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--state-success); text-align: right; font-family: var(--font-mono);">&mdash;</td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;"><span class="aging-pill" style="background: #C6F6D5; color: #276749; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">22天</span></td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-primary); text-align: right; font-family: var(--font-mono);">¥80,000</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <div style="display: flex; align-items: center; gap: var(--space-2); justify-content: center;">
+                                            <span style="font-size: var(--font-size-xs); color: var(--state-success); font-weight: var(--font-weight-medium); font-family: var(--font-mono); min-width: 36px;">61%</span>
+                                            <div style="flex: 1; height: 6px; background: #C6F6D5; border-radius: var(--radius-full); min-width: 40px;">
+                                                <div style="width: 61%; height: 100%; background: var(--state-success); border-radius: var(--radius-full);"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); color: var(--text-secondary); text-align: center; font-family: var(--font-mono);">2026-06-15</td>
+                                    <td style="padding: var(--space-3); text-align: center;">
+                                        <span class="status-badge" style="background: var(--state-success-bg); color: var(--state-success); padding: 2px 10px; border-radius: var(--radius-full); font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);">正常</span>
+                                    </td>
+                                    <td style="padding: var(--space-3); font-size: var(--font-size-sm); text-align: center;">
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">查看明细</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">收款</a>
+                                        <a href="#" style="color: var(--brand-primary); text-decoration: none; margin: 0 var(--space-2);">发送对账单</a>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-4); border-top: 1px solid var(--border-default); background: var(--surface-card); height: 32px; font-size: 12px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">共 186 条</div>
+                        <div style="display: flex; align-items: center; gap: var(--space-2);">
+                            <select style="padding: 0 var(--space-3); height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-md); font-size: 12px; color: var(--text-primary); background: var(--surface-input); outline: none;">
+                                <option>20条/页</option>
+                                <option>50条/页</option>
+                                <option>100条/页</option>
+                            </select>
+                            <div style="display: flex; align-items: center; gap: var(--space-1);">
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; color: var(--text-secondary); font-size: 12px;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                                </button>
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--brand-primary); border-radius: var(--radius-sm); background: var(--brand-primary); color: white; cursor: pointer; font-size: 12px; font-weight: var(--font-weight-medium);">1</button>
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; color: var(--text-primary); font-size: 12px;">2</button>
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; color: var(--text-primary); font-size: 12px;">3</button>
+                                <span style="color: var(--text-tertiary); font-size: 12px;">...</span>
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; color: var(--text-primary); font-size: 12px;">10</button>
+                                <button style="width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--surface-card); cursor: pointer; color: var(--text-secondary); font-size: 12px;">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                                </button>
+                            </div>
+                            <span style="font-size: 12px; color: var(--text-secondary); margin-left: var(--space-2);">第 1/10 页</span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono);">本页合计: 应收 ¥856,200 | 已收 ¥528,000 | 逾期 ¥86,500</div>
+                    </div>
+                </div>
+
+            </main>
+        </div>
+    </div>
+
+    <style>
+        /* === Kingdee Compact Overrides === */
+        table td {
+            padding: 4px 8px !important;
+            height: 32px;
+        }
+
+        /* Pulse animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .pulse-dot {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* Table row hover */
+        tbody tr:hover {
+            background: var(--surface-bg) !important;
+        }
+
+        /* Button hover effects */
+        .btn-primary:hover {
+            background: var(--brand-primary-dark) !important;
+        }
+        .btn-outline:hover {
+            border-color: var(--brand-primary) !important;
+            color: var(--brand-primary) !important;
+        }
+
+        /* Action links */
+        td a:hover {
+            text-decoration: underline !important;
+        }
+
+        /* Input focus */
+        input:focus, select:focus {
+            border-color: var(--border-focus) !important;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+        }
+
+        /* Select arrow */
+        select {
+            appearance: auto;
+        }
+        /* === Standard Sidebar Styles === */
+        .sidebar { width: var(--sidebar-width); min-width: var(--sidebar-width); background: var(--surface-sidebar); color: var(--text-sidebar); display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; flex-shrink: 0; }
+        .sidebar-brand { display: flex; align-items: center; padding: 8px 10px 6px; gap: 6px; border-bottom: 1px solid var(--border-sidebar); flex-shrink: 0; }
+        .brand-mark { width: 24px; height: 24px; background: var(--brand-primary); border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .brand-mark span { font-size: 11px; color: #fff; font-weight: var(--font-weight-bold); }
+        .brand-text { font-size: 12px; font-weight: var(--font-weight-semibold); color: var(--text-inverse); white-space: nowrap; overflow: hidden; }
+        .sidebar-menu { padding: 0 4px; flex: 1; overflow-y: auto; }
+        .menu-group { margin-bottom: 0; }
+        .menu-item { height: 28px; padding: 0 6px; border-radius: 3px; display: flex; align-items: center; gap: 0; color: var(--text-sidebar); cursor: pointer; transition: background 0.15s, color 0.15s; font-size: var(--font-size-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .menu-item:hover { background: var(--surface-sidebar-hover); color: var(--text-sidebar-active); }
+        .menu-item.active { background: var(--surface-sidebar-active); color: var(--text-sidebar-active); }
+        .menu-parent { font-weight: var(--font-weight-medium); margin-top: 2px; }
+        .menu-icon { width: 14px; height: 14px; margin-right: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .menu-text { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+        .menu-arrow { font-size: 8px; transition: transform 0.2s; margin-left: auto; flex-shrink: 0; }
+        .menu-arrow.open { transform: rotate(90deg); }
+        .menu-submenu { padding-left: 18px; overflow: hidden; max-height: 0; transition: max-height 0.2s ease; }
+        .menu-submenu.open { max-height: 200px; }
+        .menu-submenu .menu-item { height: 26px; padding: 0 6px; font-size: 12px; color: var(--text-sidebar); }
+        .sidebar.collapsed { width: 40px !important; min-width: 40px !important; overflow: hidden; }
+        .sidebar.collapsed .menu-text { display: none; }
+        .sidebar.collapsed .menu-arrow { display: none; }
+        .sidebar.collapsed .menu-submenu { display: none; }
+        .sidebar.collapsed .brand-text { display: none; }
+        .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0 8px; }
+        .sidebar.collapsed .menu-item { justify-content: center; padding: 0; }
+        /* === Sidebar Toggle === */
+        .sidebar-toggle { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; color: var(--text-secondary); transition: background 0.15s, color 0.15s; flex-shrink: 0; }
+        .sidebar-toggle:hover { background: var(--surface-sidebar-hover); color: var(--text-primary); }
+    </style>
+
+    <script>
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            sidebar.classList.toggle('collapsed');
+        }
+        function toggleQueryExpand() {
+          const filters = document.getElementById('queryFilters');
+          const toggle = document.getElementById('queryToggle');
+          filters.classList.toggle('expanded');
+          toggle.classList.toggle('expanded');
+          const text = toggle.querySelector('.query-toggle-text');
+          text.textContent = filters.classList.contains('expanded') ? '收起查询' : '更多查询';
+        }
+        function toggleSubmenu(el) {
+            const submenu = el.nextElementSibling;
+            const arrow = el.querySelector('.menu-arrow');
+            if (submenu) {
+                if (submenu.classList.contains('open')) {
+                    submenu.classList.remove('open');
+                    submenu.style.maxHeight = '0px';
+                    if (arrow) arrow.classList.remove('open');
+                } else {
+                    submenu.classList.add('open');
+                    submenu.style.maxHeight = '200px';
+                    if (arrow) arrow.classList.add('open');
+                }
+            }
+        }
+    </script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>
+

@@ -42,7 +42,8 @@ function getDefaultForm() {
         supplierCode: '', supplierName: '', shortName: '',
         supplierType: '普通供应商', contactName: '', phone: '',
         deliveryDays: 0, settlementMethod: '现结', accountPeriodDays: 0,
-        invoiceTitle: '', taxNo: '',
+        defaultBuyer: '', defaultReceiptAccount: '',
+        invoiceTitle: '', taxNo: '', address: '', remark: '',
       }
     case 'warehouse':
       return {
@@ -137,14 +138,18 @@ const fields = computed(() => {
         { key: 'supplierCode', label: '供应商编码' },
         { key: 'supplierName', label: '供应商名称', required: true },
         { key: 'shortName', label: '简称' },
-        { key: 'supplierType', label: '类型', type: 'select', options: ['普通供应商', '核心供应商', '临时供应商'] },
+        { key: 'supplierType', label: '供应商类型', type: 'select', options: ['普通供应商', '核心供应商', '临时供应商'] },
         { key: 'contactName', label: '联系人' },
         { key: 'phone', label: '电话' },
         { key: 'deliveryDays', label: '到货天数', type: 'number' },
         { key: 'settlementMethod', label: '结算方式', type: 'select', options: ['现结', '月结30天', '月结60天', '货到付款'] },
         { key: 'accountPeriodDays', label: '账期天数', type: 'number' },
+        { key: 'defaultBuyer', label: '默认采购员' },
+        { key: 'defaultReceiptAccount', label: '默认收款账户' },
         { key: 'invoiceTitle', label: '发票抬头' },
         { key: 'taxNo', label: '税号' },
+        { key: 'address', label: '地址', full: true },
+        { key: 'remark', label: '备注', type: 'textarea', full: true },
       ]
     case 'warehouse':
       return [
@@ -191,7 +196,7 @@ const fields = computed(() => {
 
       <div class="modal-lite-body" style="padding:14px">
         <div class="grid4">
-          <div v-for="f in fields" :key="f.key" class="field">
+          <div v-for="f in fields" :key="f.key" class="field" :class="{ 'field-full': f.full }">
             <label>
               {{ f.label }}
               <span v-if="f.required" style="color:var(--danger)">*</span>
@@ -200,6 +205,7 @@ const fields = computed(() => {
               <option v-for="opt in f.options" :key="opt" :value="opt">{{ opt }}</option>
             </select>
             <input v-else-if="f.type === 'number'" v-model.number="form[f.key]" type="number" />
+            <textarea v-else-if="f.type === 'textarea'" v-model="form[f.key]" :placeholder="f.label" rows="2"></textarea>
             <input v-else v-model="form[f.key]" :placeholder="f.label" />
           </div>
         </div>
@@ -207,3 +213,9 @@ const fields = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.field-full {
+  grid-column: 1 / -1;
+}
+</style>

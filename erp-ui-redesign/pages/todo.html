@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待办中心 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+  <div class="layout">
+
+    <!-- ====== Sidebar ====== -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+
+      <!-- Menu -->
+      <nav class="sidebar-menu">
+  <div class="menu-item active" data-dom-id="back-dashboard">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg></span>
+    <span class="menu-text">经营概览</span>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">基础资料</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+      <div class="menu-item"><span class="menu-text">客户资料</span></div>
+      <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+      <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">采购管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-purchase-order"><span class="menu-text">采购订单</span></div>
+      <div class="menu-item" data-dom-id="nav-purchase-inbound"><span class="menu-text">采购入库</span></div>
+      <div class="menu-item"><span class="menu-text">采购退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">销售管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-quick-order"><span class="menu-text">销售快速开单</span></div>
+      <div class="menu-item" data-dom-id="nav-sales-order"><span class="menu-text">销售订单</span></div>
+      <div class="menu-item"><span class="menu-text">销售出库</span></div>
+      <div class="menu-item"><span class="menu-text">销售退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">库存管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-stock-balance"><span class="menu-text">库存余额</span></div>
+      <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+      <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+      <span class="menu-text">财务管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-ar"><span class="menu-text">应收账款</span></div>
+      <div class="menu-item"><span class="menu-text">应付账款</span></div>
+      <div class="menu-item"><span class="menu-text">收款管理</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">报表中心</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">销售报表</span></div>
+      <div class="menu-item"><span class="menu-text">采购报表</span></div>
+      <div class="menu-item"><span class="menu-text">库存报表</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">系统管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">用户管理</span></div>
+      <div class="menu-item"><span class="menu-text">角色权限</span></div>
+      <div class="menu-item"><span class="menu-text">系统设置</span></div>
+    </div>
+  </div>
+</nav>
+    </aside>
+
+    <!-- ====== Main Area ====== -->
+    <div class="main-wrapper">
+      <!-- Header -->
+      <header class="top-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="sidebar-toggle" onclick="toggleSidebar()" title="收起/展开菜单">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z" fill="currentColor"/></svg>
+          </div>
+          <div class="breadcrumb">
+          首页 <span>/</span> <span class="current">待办中心</span>
+        </div>
+        </div>
+        <div class="header-actions">
+          <!-- Notification -->
+          <div class="header-icon-btn" title="通知">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge-dot">3</span>
+          </div>
+          <!-- Todo -->
+          <div class="header-icon-btn" title="待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span class="badge-dot">12</span>
+          </div>
+          <!-- User Dropdown -->
+          <div class="header-user">
+            <div class="header-user-avatar">张</div>
+            <span class="header-user-name">张经理</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="content">
+
+        <!-- 1. Title Bar -->
+        <div class="page-title-bar">
+          <div>
+            <h1>待办中心</h1>
+            <div class="subtitle">统一管理待审核、待处理、风险预警等各类待办事项</div>
+          </div>
+          <div class="title-actions">
+            <button class="btn-outline">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+              全部标记已读
+            </button>
+            <button class="btn-outline">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              设置提醒
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Tab Navigation -->
+        <div class="tab-nav">
+          <div class="tab-item active">
+            全部待办
+            <span class="tab-badge active-badge">18</span>
+          </div>
+          <div class="tab-item">
+            待审核
+            <span class="tab-badge inactive-badge">8</span>
+          </div>
+          <div class="tab-item">
+            待处理
+            <span class="tab-badge inactive-badge">6</span>
+          </div>
+          <div class="tab-item">
+            风险预警
+            <span class="tab-badge inactive-badge">4</span>
+          </div>
+        </div>
+
+        <!-- 3. Stats Summary Bar -->
+        <div class="stats-bar">
+          <div class="stat-pill urgent">
+            <span class="stat-label">紧急</span>
+            <span class="stat-count">2</span>
+          </div>
+          <div class="stat-pill high">
+            <span class="stat-label">高优先级</span>
+            <span class="stat-count">5</span>
+          </div>
+          <div class="stat-pill normal">
+            <span class="stat-label">普通</span>
+            <span class="stat-count">8</span>
+          </div>
+          <div class="stat-pill low">
+            <span class="stat-label">低优先级</span>
+            <span class="stat-count">3</span>
+          </div>
+        </div>
+
+        <!-- 4. Todo List -->
+        <div class="todo-list">
+
+          <!-- Card 1: URGENT - 销售订单审核 -->
+          <div class="todo-card">
+            <div class="todo-accent urgent"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle urgent">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 14l2 2 4-4"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-urgent">紧急</span>
+                  销售订单 SO-20260702-003 等待审核
+                </div>
+                <div class="todo-desc">客户: 永辉超市朝阳店, 金额: ¥12,800</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    2小时前
+                  </span>
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    业务员: 李明
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  立即审核
+                </button>
+                <button class="btn-sm btn-outline-sm">转交</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: URGENT - 采购入库异常 -->
+          <div class="todo-card">
+            <div class="todo-accent urgent"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle urgent">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-urgent">紧急</span>
+                  采购入库 PI-20260702-001 实收数量异常
+                </div>
+                <div class="todo-desc">供应商: 华润万家的实收数量与订单不符</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    3小时前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  查看详情
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: HIGH - 采购订单审核 -->
+          <div class="todo-card">
+            <div class="todo-accent high"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle high">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><path d="M9 14l2 2 4-4"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-review">待审核</span>
+                  采购订单 PO-20260701-005 等待审核
+                </div>
+                <div class="todo-desc">供应商: 可口可乐中国, 金额: ¥56,800</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    5小时前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  立即审核
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 4: HIGH - 信用额度超限 -->
+          <div class="todo-card">
+            <div class="todo-accent high"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle high">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-warning">预警</span>
+                  客户 京客隆便利店 信用额度超限预警
+                </div>
+                <div class="todo-desc">信用额度 ¥30,000, 已用 ¥32,500, 超出 ¥2,500</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    4小时前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">调整额度</button>
+                <button class="btn-sm btn-outline-sm">通知客户</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5: HIGH - 低库存预警 -->
+          <div class="todo-card">
+            <div class="todo-accent high"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle high">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-stock">预警</span>
+                  商品 可口可乐330ml(东区分仓) 低库存预警
+                </div>
+                <div class="todo-desc">当前库存 50, 预警线 100, 安全库存 200</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    3小时前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  一键补货
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 6: NORMAL - 销售订单出库 -->
+          <div class="todo-card">
+            <div class="todo-accent normal"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle normal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><line x1="9" y1="12" x2="15" y2="12"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-review">待处理</span>
+                  销售订单 SO-20260701-008 等待出库确认
+                </div>
+                <div class="todo-desc">仓库: 主仓</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    6小时前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  确认出库
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 7: NORMAL - 对账单 -->
+          <div class="todo-card">
+            <div class="todo-accent normal"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle normal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  <span class="todo-tag tag-review">待处理</span>
+                  对账单 永辉超市朝阳店 6月对账已生成
+                </div>
+                <div class="todo-desc">对账金额 ¥128,500, 请及时发送</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    1天前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-primary-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  发送对账单
+                </button>
+                <button class="btn-sm btn-outline-sm">查看</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 8: NORMAL - 采购到货提醒 -->
+          <div class="todo-card">
+            <div class="todo-accent normal"></div>
+            <div class="todo-card-body">
+              <div class="todo-icon-circle normal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+              </div>
+              <div class="todo-content">
+                <div class="todo-title">
+                  采购订单 PO-20260630-002 到货提醒
+                </div>
+                <div class="todo-desc">预计到货日期为明天, 供应商: 蒙牛乳业</div>
+                <div class="todo-meta">
+                  <span class="todo-meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    1天前
+                  </span>
+                </div>
+              </div>
+              <div class="todo-actions">
+                <button class="btn-sm btn-outline-sm">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  查看
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 5. Load More -->
+        <div class="load-more-wrapper">
+          <button class="btn-load-more">
+            查看更多待办事项
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+        </div>
+
+      </main>
+    </div>
+
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      sidebar.classList.toggle('collapsed');
+      toggle.classList.toggle('collapsed-icon');
+    }
+
+    function toggleSubmenu(el) {
+      const submenu = el.nextElementSibling;
+      const arrow = el.querySelector('.menu-arrow');
+      if (submenu) {
+        submenu.classList.toggle('open');
+        if (arrow) arrow.classList.toggle('open');
+      }
+    }
+    lucide.createIcons();
+  </script>
+
+    <style>
+      /* === Global Reset === */
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+        color: var(--text-primary);
+        background: var(--surface-bg);
+        line-height: var(--line-height-normal);
+      }
+
+      /* === Layout Shell === */
+      .layout { display: flex; height: 100vh; overflow: hidden; }
+
+      /* ====== Sidebar ====== */
+      .sidebar {
+        width: var(--sidebar-width);
+        background: var(--surface-sidebar);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+        overflow: hidden;
+      }
+      .sidebar-brand {
+        height: var(--header-height);
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--border-sidebar);
+        gap: 6px;
+      }
+      .brand-mark {
+        width: 24px;
+      height: 24px;
+        border-radius: var(--radius-md);
+        background: var(--brand-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 13px;
+        font-weight: var(--font-weight-bold);
+        flex-shrink: 0;
+      }
+      .brand-text {
+        color: var(--text-sidebar);
+        font-size: 12px;
+        font-weight: var(--font-weight-semibold);
+        white-space: nowrap;
+      }
+
+      /* === Menu === */
+      .sidebar-menu {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 4px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-default) transparent;
+      }
+      .menu-group { margin-bottom: 0; }
+.menu-item {
+        display: flex;
+        align-items: center;
+        height: 28px;
+      padding: 0 6px;
+      border-radius: 3px;
+        color: var(--text-sidebar);
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s;
+        text-decoration: none;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .menu-item:hover {
+        background: var(--surface-sidebar-hover);
+        color: var(--text-sidebar);
+      }
+      .menu-item.active {
+        background: var(--surface-sidebar-active);
+        color: var(--text-sidebar-active);
+        font-weight: var(--font-weight-medium);
+      }
+    .menu-parent { font-weight: var(--font-weight-medium); margin-top: 2px; }
+      .menu-icon {
+        width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      justify-content: center;
+        flex-shrink: 0;
+        font-size: 12px;
+        display: flex;
+      align-items: center;
+    }
+      .menu-arrow {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--text-tertiary);
+      opacity: 0.5;
+        transition: transform 0.2s;
+      }
+      .menu-arrow.open { transform: rotate(90deg); }
+      .menu-submenu {
+        padding-left: 18px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+      }
+      .menu-submenu.open { max-height: 500px; }
+    .menu-submenu .menu-item { height: 26px; padding: 0 6px; font-size: 12px; color: var(--text-sidebar); }
+
+    /* === Sidebar Toggle === */
+    .sidebar-toggle {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; cursor: pointer; color: var(--text-secondary); transition: background 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .sidebar-toggle:hover { background: var(--surface-sidebar-hover); color: var(--text-primary); }
+    .sidebar.collapsed { width: 40px !important; overflow: hidden; }
+    .sidebar.collapsed .menu-text,
+    .sidebar.collapsed .menu-arrow, .sidebar.collapsed .user-info, .sidebar.collapsed .menu-submenu { display: none !important; }
+    .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0 8px; }
+    .sidebar.collapsed .menu-item { justify-content: center; padding: 0; height: 28px; }
+    .sidebar.collapsed .menu-icon { margin-right: 0; width: 14px; }
+      .user-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
+        flex-shrink: 0;
+      }
+      .user-info { overflow: hidden; }
+      .user-name {
+        color: var(--text-sidebar);
+        font-size: 12px;
+        font-weight: var(--font-weight-medium);
+        white-space: nowrap;
+      }
+      .user-role {
+        color: var(--text-tertiary);
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      /* === Main Area === */
+      .main-wrapper {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* === Header === */
+      .top-header {
+        height: var(--header-height);
+        background: var(--surface-header);
+        border-bottom: 1px solid var(--border-default);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 var(--space-6);
+        flex-shrink: 0;
+      }
+      .breadcrumb {
+        font-size: var(--font-size-base);
+        color: var(--text-secondary);
+      }
+      .breadcrumb span { color: var(--text-tertiary); margin: 0 var(--space-2); }
+      .breadcrumb .current { color: var(--text-primary); font-weight: var(--font-weight-medium); }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+      }
+      .header-icon-btn {
+        position: relative;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        color: var(--text-secondary);
+        transition: background 0.12s, color 0.12s;
+      }
+      .header-icon-btn:hover {
+        background: var(--surface-bg);
+        color: var(--text-primary);
+      }
+      .header-icon-btn svg { width: 20px; height: 20px; }
+      .badge-dot {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: var(--radius-full);
+        background: var(--state-error);
+        color: #fff;
+        font-size: 10px;
+        font-weight: var(--font-weight-bold);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .header-user {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        cursor: pointer;
+        padding: var(--space-1) var(--space-2);
+        border-radius: var(--radius-md);
+        transition: background 0.12s;
+      }
+      .header-user:hover { background: var(--surface-bg); }
+      .header-user-avatar {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+      }
+      .header-user-name {
+        font-size: var(--font-size-sm);
+        color: var(--text-primary);
+      }
+
+      /* === Content === */
+      .content {
+        flex: 1;
+        overflow-y: auto;
+        padding: var(--space-6);
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-default) transparent;
+      }
+
+      /* === Page Title Bar === */
+      .page-title-bar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: var(--space-5);
+      }
+      .page-title-bar h1 {
+        font-size: var(--font-size-xl);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+      }
+      .page-title-bar .subtitle {
+        font-size: var(--font-size-sm);
+        color: var(--text-tertiary);
+      }
+      .title-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        flex-shrink: 0;
+      }
+      .btn-outline {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        height: 34px;
+        padding: 0 var(--space-4);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-default);
+        background: var(--surface-card);
+        color: var(--text-secondary);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+        white-space: nowrap;
+      }
+      .btn-outline:hover {
+        border-color: var(--brand-primary);
+        color: var(--brand-primary);
+        background: var(--brand-primary-50);
+      }
+      .btn-outline svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      /* === Tab Navigation === */
+      .tab-nav {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        border-bottom: 1px solid var(--border-default);
+        margin-bottom: var(--space-5);
+        background: var(--surface-card);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        padding: 0 var(--space-4);
+      }
+      .tab-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        height: var(--tab-height);
+        padding: 0 var(--space-4);
+        font-size: var(--font-size-base);
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: color 0.15s, border-color 0.15s;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .tab-item:hover {
+        color: var(--text-primary);
+      }
+      .tab-item.active {
+        color: var(--brand-primary);
+        border-bottom-color: var(--brand-primary);
+        font-weight: var(--font-weight-medium);
+      }
+      .tab-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: var(--radius-full);
+        font-size: 11px;
+        font-weight: var(--font-weight-bold);
+        line-height: 1;
+      }
+      .tab-badge.active-badge {
+        background: var(--brand-primary);
+        color: var(--text-inverse);
+      }
+      .tab-badge.inactive-badge {
+        background: var(--surface-bg);
+        color: var(--text-tertiary);
+      }
+
+      /* === Stats Summary Bar === */
+      .stats-bar {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        margin-bottom: var(--space-5);
+      }
+      .stat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-4);
+        border-radius: var(--radius-full);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-medium);
+        color: var(--text-inverse);
+      }
+      .stat-pill.urgent {
+        background: var(--state-error);
+      }
+      .stat-pill.high {
+        background: #ED8936;
+      }
+      .stat-pill.normal {
+        background: var(--brand-primary);
+      }
+      .stat-pill.low {
+        background: var(--text-tertiary);
+      }
+      .stat-pill .stat-label {
+        font-weight: var(--font-weight-normal);
+        opacity: 0.9;
+      }
+      .stat-pill .stat-count {
+        font-weight: var(--font-weight-bold);
+      }
+
+      /* === Todo Card List === */
+      .todo-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+      .todo-card {
+        display: flex;
+        align-items: stretch;
+        background: var(--surface-card);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        transition: box-shadow 0.15s, border-color 0.15s;
+      }
+      .todo-card:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--brand-primary-200);
+      }
+      .todo-accent {
+        width: 4px;
+        flex-shrink: 0;
+      }
+      .todo-accent.urgent { background: var(--state-error); }
+      .todo-accent.high { background: #ED8936; }
+      .todo-accent.normal { background: var(--brand-primary); }
+      .todo-accent.low { background: var(--text-tertiary); }
+
+      .todo-card-body {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        padding: var(--space-4) var(--space-5);
+        gap: var(--space-4);
+        min-height: 0;
+      }
+
+      .todo-icon-circle {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .todo-icon-circle.urgent {
+        background: var(--state-error-bg);
+        color: var(--state-error);
+      }
+      .todo-icon-circle.high {
+        background: #FFFAF0;
+        color: #ED8936;
+      }
+      .todo-icon-circle.normal {
+        background: var(--state-info-bg);
+        color: var(--state-info);
+      }
+      .todo-icon-circle svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .todo-content {
+        flex: 1;
+        min-width: 0;
+      }
+      .todo-title {
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-primary);
+        margin-bottom: var(--space-1);
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+      }
+      .todo-title .todo-tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 6px;
+        border-radius: var(--radius-sm);
+        font-size: 11px;
+        font-weight: var(--font-weight-bold);
+        flex-shrink: 0;
+      }
+      .todo-tag.tag-urgent {
+        background: var(--state-error);
+        color: #fff;
+      }
+      .todo-tag.tag-review {
+        background: var(--state-info);
+        color: #fff;
+      }
+      .todo-tag.tag-warning {
+        background: #ED8936;
+        color: #fff;
+      }
+      .todo-tag.tag-stock {
+        background: var(--state-warning);
+        color: #fff;
+      }
+      .todo-desc {
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+        margin-bottom: var(--space-1);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .todo-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--space-4);
+        font-size: 13px;
+        color: var(--text-tertiary);
+      }
+      .todo-meta-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+      }
+
+      .todo-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        flex-shrink: 0;
+        margin-left: var(--space-4);
+      }
+      .btn-sm {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-1);
+        height: 28px;
+        padding: 0 var(--space-3);
+        border-radius: var(--radius-md);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition: background 0.12s, border-color 0.12s, color 0.12s;
+        white-space: nowrap;
+      }
+      .btn-sm svg {
+        width: 13px;
+        height: 13px;
+      }
+      .btn-primary-sm {
+        background: var(--brand-primary);
+        color: var(--text-inverse);
+        border: 1px solid var(--brand-primary);
+      }
+      .btn-primary-sm:hover {
+        background: var(--brand-primary-dark);
+        border-color: var(--brand-primary-dark);
+      }
+      .btn-outline-sm {
+        background: var(--surface-card);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-default);
+      }
+      .btn-outline-sm:hover {
+        border-color: var(--brand-primary);
+        color: var(--brand-primary);
+      }
+      .btn-danger-sm {
+        background: var(--surface-card);
+        color: var(--state-error);
+        border: 1px solid var(--state-error-light);
+      }
+      .btn-danger-sm:hover {
+        background: var(--state-error-bg);
+        border-color: var(--state-error);
+      }
+
+      /* === Load More === */
+      .load-more-wrapper {
+        display: flex;
+        justify-content: center;
+        margin-top: var(--space-6);
+      }
+      .btn-load-more {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-2);
+        height: 38px;
+        padding: 0 var(--space-8);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-default);
+        background: var(--surface-card);
+        color: var(--text-secondary);
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s, background 0.15s;
+      }
+      .btn-load-more:hover {
+        border-color: var(--brand-primary);
+        color: var(--brand-primary);
+        background: var(--brand-primary-50);
+      }
+      .btn-load-more svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* === Submenu Toggle Script === */
+    </style>
+</body>
+</html>

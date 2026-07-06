@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>库存余额 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+  <div style="display: flex; height: 100vh;">
+
+    <!-- ====== Sidebar ====== -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+
+      <!-- Menu -->
+      <nav class="sidebar-menu">
+  <div class="menu-item" data-dom-id="back-dashboard">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg></span>
+    <span class="menu-text">经营概览</span>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">基础资料</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+      <div class="menu-item"><span class="menu-text">客户资料</span></div>
+      <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+      <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">采购管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-purchase-order"><span class="menu-text">采购订单</span></div>
+      <div class="menu-item" data-dom-id="nav-purchase-inbound"><span class="menu-text">采购入库</span></div>
+      <div class="menu-item"><span class="menu-text">采购退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">销售管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-quick-order"><span class="menu-text">销售快速开单</span></div>
+      <div class="menu-item" data-dom-id="nav-sales-order"><span class="menu-text">销售订单</span></div>
+      <div class="menu-item"><span class="menu-text">销售出库</span></div>
+      <div class="menu-item"><span class="menu-text">销售退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">库存管理</span>
+      <span class="menu-arrow open">&#9654;</span>
+    </div>
+    <div class="menu-submenu open">
+      <div class="menu-item active" data-dom-id="nav-stock-balance"><span class="menu-text">库存余额</span></div>
+      <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+      <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+      <span class="menu-text">财务管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-ar"><span class="menu-text">应收账款</span></div>
+      <div class="menu-item"><span class="menu-text">应付账款</span></div>
+      <div class="menu-item"><span class="menu-text">收款管理</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">报表中心</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">销售报表</span></div>
+      <div class="menu-item"><span class="menu-text">采购报表</span></div>
+      <div class="menu-item"><span class="menu-text">库存报表</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">系统管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">用户管理</span></div>
+      <div class="menu-item"><span class="menu-text">角色权限</span></div>
+      <div class="menu-item"><span class="menu-text">系统设置</span></div>
+    </div>
+  </div>
+</nav>
+    </aside>
+
+    <!-- ====== Main Area ====== -->
+    <div class="main-wrapper">
+      <!-- Header -->
+      <header class="top-header">
+        <div class="breadcrumb">
+          首页 <span>/</span> 库存管理 <span>/</span> <span class="current">库存余额</span>
+        </div>
+        <div class="header-actions">
+          <!-- Notification -->
+          <div class="header-icon-btn" title="通知">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge-dot">3</span>
+          </div>
+          <!-- Todo -->
+          <div class="header-icon-btn" title="待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span class="badge-dot">12</span>
+          </div>
+          <!-- User Dropdown -->
+          <div class="header-user">
+            <div class="header-user-avatar">张</div>
+            <span class="header-user-name">张经理</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </header>
+
+      
+
+      <!-- Content -->
+      <main class="content">
+        <div class="content-inner">
+
+          <!-- KPI Summary Cards -->
+          <div class="kpi-row">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-icon-wrap kpi-icon-blue">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              </div>
+              <div class="kpi-info">
+                <div class="kpi-label">库存总量</div>
+                <div class="kpi-value">45,680 <span class="kpi-unit">件</span></div>
+              </div>
+            </div>
+            <div class="kpi-card kpi-green">
+              <div class="kpi-icon-wrap kpi-icon-green">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              </div>
+              <div class="kpi-info">
+                <div class="kpi-label">库存金额</div>
+                <div class="kpi-value">&yen;1,280,000</div>
+              </div>
+            </div>
+            <div class="kpi-card kpi-orange">
+              <div class="kpi-icon-wrap kpi-icon-orange">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              </div>
+              <div class="kpi-info">
+                <div class="kpi-label">低库存预警</div>
+                <div class="kpi-value">12 <span class="kpi-unit">种</span></div>
+              </div>
+            </div>
+            <div class="kpi-card kpi-red">
+              <div class="kpi-icon-wrap kpi-icon-red">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </div>
+              <div class="kpi-info">
+                <div class="kpi-label">负库存</div>
+                <div class="kpi-value">3 <span class="kpi-unit">种</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Query Bar -->
+                    <div class="query-bar">
+            <div class="query-row">
+              <div class="query-filters" id="queryFilters">
+                <span class="page-title-inline">库存余额</span>
+                <div class="query-item"><label>商品编码</label><input type="text" placeholder="请输入" style="width:130px;"></div>
+                <div class="query-item"><label>商品名称</label><input type="text" placeholder="请输入" style="width:150px;"></div>
+                <div class="query-item"><label>仓库</label><select style="width:100px;"><option value="">全部</option><option>主仓库</option><option>华东仓</option><option>华南仓</option></select></div>
+                <div class="query-item"><label>库存状态</label><select style="width:110px;"><option value="">全部</option><option>有库存</option><option>零库存</option><option>负库存</option></select></div>
+              </div>
+              <div class="query-toggle" id="queryToggle" onclick="toggleQueryExpand()" style="display:none;">
+                <span class="query-toggle-text">鏇村鏌ヨ</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="query-btn-row">
+              <div class="query-btn-left">
+                <button class="btn btn-outline">导出</button>
+                <button class="btn btn-outline">打印</button>
+                <button class="btn btn-primary btn-sm">查询</button>
+                <button class="btn btn-outline btn-sm">重置</button>
+              </div>
+              <div class="query-btn-right">
+                <button class="btn btn-primary btn-sm">鏌ヨ</button>
+                <button class="btn btn-outline btn-sm">閲嶇疆</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-bar">
+  <div class="tab-item active" data-tab="all">全部 (2456)</div>
+  <div class="tab-item" data-tab="instock">有库存 (2340)</div>
+  <div class="tab-item" data-tab="zero">零库存 (96)</div>
+  <div class="tab-item" data-tab="negative">负库存 (20)</div>
+</div>
+
+          <!-- Data Table -->
+          <div class="table-card">
+            <div class="table-wrapper">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th class="col-cb">
+                      <div class="custom-checkbox" id="checkAll" onclick="toggleAllCheckbox(this)"></div>
+                    </th>
+                    <th class="col-code sortable">商品编码<span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down active">&#9660;</span></span></th>
+                    <th class="col-name sortable">商品名称<span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span></th>
+                    <th class="col-category">分类</th>
+                    <th class="col-brand">品牌</th>
+                    <th class="col-spec">规格</th>
+                    <th class="col-unit">单位</th>
+                    <th class="col-wh">仓库</th>
+                    <th class="col-batch">批号</th>
+                    <th class="col-stock sortable">当前库存<span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span></th>
+                    <th class="col-available">可用库存</th>
+                    <th class="col-transit">在途数量</th>
+                    <th class="col-locked">锁定数量</th>
+                    <th class="col-amount sortable">库存金额<span class="sort-arrows"><span class="arrow-up">&#9650;</span><span class="arrow-down">&#9660;</span></span></th>
+                    <th class="col-warn">预警数量</th>
+                    <th class="col-status">库存状态</th>
+                    <th class="col-actions">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- Row 1: 正常 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP001001</td>
+                    <td class="col-name">农夫山泉饮用天然水 550ml</td>
+                    <td class="col-category">饮料</td>
+                    <td class="col-brand">农夫山泉</td>
+                    <td class="col-spec">550ml</td>
+                    <td class="col-unit">瓶</td>
+                    <td class="col-wh">主仓</td>
+                    <td class="col-batch">20250601</td>
+                    <td class="col-stock text-right stock-normal">1,580</td>
+                    <td class="col-available text-right avail-good">1,480</td>
+                    <td class="col-transit text-right transit-blue">200</td>
+                    <td class="col-locked text-right">100</td>
+                    <td class="col-amount text-right">&yen;1,896</td>
+                    <td class="col-warn text-right warn-small">(100)</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 2: 正常 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP001002</td>
+                    <td class="col-name">可口可乐 330ml</td>
+                    <td class="col-category">饮料</td>
+                    <td class="col-brand">可口可乐</td>
+                    <td class="col-spec">330ml</td>
+                    <td class="col-unit">罐</td>
+                    <td class="col-wh">东区分仓</td>
+                    <td class="col-batch">20250520</td>
+                    <td class="col-stock text-right stock-normal">860</td>
+                    <td class="col-available text-right avail-good">760</td>
+                    <td class="col-transit text-right transit-blue">0</td>
+                    <td class="col-locked text-right">100</td>
+                    <td class="col-amount text-right">&yen;2,064</td>
+                    <td class="col-warn text-right warn-small">(50)</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 3: 低库存 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP002001</td>
+                    <td class="col-name">统一老坛酸菜牛肉面 121g</td>
+                    <td class="col-category">方便食品</td>
+                    <td class="col-brand">统一</td>
+                    <td class="col-spec">121g</td>
+                    <td class="col-unit">桶</td>
+                    <td class="col-wh">主仓</td>
+                    <td class="col-batch">20250410</td>
+                    <td class="col-stock text-right stock-low">35</td>
+                    <td class="col-available text-right avail-low">15</td>
+                    <td class="col-transit text-right transit-blue">0</td>
+                    <td class="col-locked text-right">20</td>
+                    <td class="col-amount text-right">&yen;143.50</td>
+                    <td class="col-warn text-right warn-small">(50)</td>
+                    <td class="col-status"><span class="status-pill warning">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      低库存
+                    </span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 4: 正常 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP003001</td>
+                    <td class="col-name">金龙鱼转基因大豆油 5L</td>
+                    <td class="col-category">粮油调味</td>
+                    <td class="col-brand">金龙鱼</td>
+                    <td class="col-spec">5L</td>
+                    <td class="col-unit">桶</td>
+                    <td class="col-wh">西区分仓</td>
+                    <td class="col-batch">20250315</td>
+                    <td class="col-stock text-right stock-normal">145</td>
+                    <td class="col-available text-right avail-good">125</td>
+                    <td class="col-transit text-right transit-blue">50</td>
+                    <td class="col-locked text-right">20</td>
+                    <td class="col-amount text-right">&yen;7,030.50</td>
+                    <td class="col-warn text-right warn-small">(20)</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 5: 正常 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP004001</td>
+                    <td class="col-name">蒙牛纯牛奶 250ml*24盒</td>
+                    <td class="col-category">乳制品</td>
+                    <td class="col-brand">蒙牛</td>
+                    <td class="col-spec">250ml*24</td>
+                    <td class="col-unit">箱</td>
+                    <td class="col-wh">主仓</td>
+                    <td class="col-batch">20250625</td>
+                    <td class="col-stock text-right stock-normal">98</td>
+                    <td class="col-available text-right avail-good">78</td>
+                    <td class="col-transit text-right transit-blue">120</td>
+                    <td class="col-locked text-right">20</td>
+                    <td class="col-amount text-right">&yen;3,880.80</td>
+                    <td class="col-warn text-right warn-small">(30)</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 6: 零库存 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP005001</td>
+                    <td class="col-name">青岛啤酒经典 500ml*12听</td>
+                    <td class="col-category">酒水</td>
+                    <td class="col-brand">青岛啤酒</td>
+                    <td class="col-spec">500ml*12</td>
+                    <td class="col-unit">箱</td>
+                    <td class="col-wh">临时仓</td>
+                    <td class="col-batch">20250201</td>
+                    <td class="col-stock text-right stock-zero">0</td>
+                    <td class="col-available text-right avail-zero">0</td>
+                    <td class="col-transit text-right transit-blue">0</td>
+                    <td class="col-locked text-right">0</td>
+                    <td class="col-amount text-right">&yen;0</td>
+                    <td class="col-warn text-right warn-small">(10)</td>
+                    <td class="col-status"><span class="status-pill zero">零库存</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 7: 负库存 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP002002</td>
+                    <td class="col-name">康师傅红烧牛肉面 107g*5</td>
+                    <td class="col-category">方便食品</td>
+                    <td class="col-brand">康师傅</td>
+                    <td class="col-spec">107g*5</td>
+                    <td class="col-unit">组</td>
+                    <td class="col-wh">东区分仓</td>
+                    <td class="col-batch">20250510</td>
+                    <td class="col-stock text-right stock-negative">-8</td>
+                    <td class="col-available text-right avail-negative">-18</td>
+                    <td class="col-transit text-right transit-blue">0</td>
+                    <td class="col-locked text-right">10</td>
+                    <td class="col-amount text-right stock-negative">&yen;-89.60</td>
+                    <td class="col-warn text-right warn-small">(20)</td>
+                    <td class="col-status"><span class="status-pill error">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      负库存
+                    </span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 8: 低库存 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP006001</td>
+                    <td class="col-name">乐事薯片原味 104g</td>
+                    <td class="col-category">零食</td>
+                    <td class="col-brand">乐事</td>
+                    <td class="col-spec">104g</td>
+                    <td class="col-unit">袋</td>
+                    <td class="col-wh">主仓</td>
+                    <td class="col-batch">20250615</td>
+                    <td class="col-stock text-right stock-low">28</td>
+                    <td class="col-available text-right avail-low">18</td>
+                    <td class="col-transit text-right transit-blue">100</td>
+                    <td class="col-locked text-right">10</td>
+                    <td class="col-amount text-right">&yen;156.80</td>
+                    <td class="col-warn text-right warn-small">(30)</td>
+                    <td class="col-status"><span class="status-pill warning">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      低库存
+                    </span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 9: 正常 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP006002</td>
+                    <td class="col-name">旺仔牛奶 245g*12</td>
+                    <td class="col-category">乳制品</td>
+                    <td class="col-brand">旺旺</td>
+                    <td class="col-spec">245g*12</td>
+                    <td class="col-unit">箱</td>
+                    <td class="col-wh">西区分仓</td>
+                    <td class="col-batch">20250530</td>
+                    <td class="col-stock text-right stock-normal">72</td>
+                    <td class="col-available text-right avail-good">52</td>
+                    <td class="col-transit text-right transit-blue">0</td>
+                    <td class="col-locked text-right">20</td>
+                    <td class="col-amount text-right">&yen;2,361.60</td>
+                    <td class="col-warn text-right warn-small">(15)</td>
+                    <td class="col-status"><span class="status-pill active">正常</span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                  <!-- Row 10: 负库存 -->
+                  <tr>
+                    <td class="col-cb"><div class="custom-checkbox" onclick="toggleCheckbox(this)"></div></td>
+                    <td class="col-code">SP004002</td>
+                    <td class="col-name">海天酱油鲜味 1.9L</td>
+                    <td class="col-category">粮油调味</td>
+                    <td class="col-brand">海天</td>
+                    <td class="col-spec">1.9L</td>
+                    <td class="col-unit">瓶</td>
+                    <td class="col-wh">东区分仓</td>
+                    <td class="col-batch">20250420</td>
+                    <td class="col-stock text-right stock-negative">-5</td>
+                    <td class="col-available text-right avail-negative">-15</td>
+                    <td class="col-transit text-right transit-blue">50</td>
+                    <td class="col-locked text-right">10</td>
+                    <td class="col-amount text-right stock-negative">&yen;-46</td>
+                    <td class="col-warn text-right warn-small">(10)</td>
+                    <td class="col-status"><span class="status-pill error">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:3px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                      负库存
+                    </span></td>
+                    <td class="col-actions">
+                      <span class="action-link">库存流水</span><span class="action-sep">|</span><span class="action-link">库存调整</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination Bar -->
+            <div class="pagination-bar">
+              <div class="pagination-info">
+                <span>共 <strong style="color:var(--text-primary);">2,456</strong> 条</span>
+                <span style="color:var(--text-tertiary);">20条/页</span>
+                <span class="pagination-summary">本页合计: 库存总量 <strong style="color:var(--text-primary);font-family:var(--font-mono);">5,680</strong>件 | 库存金额 <strong style="color:var(--text-primary);font-family:var(--font-mono);">&yen;186,400</strong></span>
+              </div>
+              <div class="pagination-controls">
+                <button class="page-btn" disabled>&lt;</button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn">2</button>
+                <button class="page-btn">3</button>
+                <button class="page-btn">4</button>
+                <button class="page-btn">5</button>
+                <span class="page-text">...</span>
+                <button class="page-btn">123</button>
+                <button class="page-btn">&gt;</button>
+                <span class="page-text" style="margin-left:8px;">第 1/123 页</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      sidebar.classList.toggle('collapsed');
+      toggle.classList.toggle('collapsed-icon');
+    }
+
+    function toggleQueryExpand() {
+      const filters = document.getElementById('queryFilters');
+      const toggle = document.getElementById('queryToggle');
+      filters.classList.toggle('expanded');
+      toggle.classList.toggle('expanded');
+      const text = toggle.querySelector('.query-toggle-text');
+      text.textContent = filters.classList.contains('expanded') ? '收起查询' : '更多查询';
+    }
+
+    // Sidebar submenu toggle
+    function toggleSubmenu(el) {
+      const submenu = el.nextElementSibling;
+      const arrow = el.querySelector('.menu-arrow');
+      if (submenu && submenu.classList.contains('menu-submenu')) {
+        submenu.classList.toggle('open');
+        if (arrow) arrow.classList.toggle('open');
+      }
+    }
+
+    // Checkbox toggle
+    function toggleCheckbox(el) {
+      el.classList.toggle('checked');
+    }
+
+    // Select all toggle
+    function toggleAllCheckbox(el) {
+      const isChecked = el.classList.toggle('checked');
+      const checkboxes = document.querySelectorAll('.data-table tbody .custom-checkbox');
+      checkboxes.forEach(cb => {
+        if (isChecked) {
+          cb.classList.add('checked');
+        } else {
+          cb.classList.remove('checked');
+        }
+      });
+    }
+  </script>
+
+  <style>
+    /* === Base Reset & Layout === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-bg);
+    }
+
+    /* === Sidebar === */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--surface-sidebar);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .sidebar-brand {
+      padding: 8px 10px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      background: var(--brand-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-mark span {
+      color: #fff;
+      font-weight: var(--font-weight-bold);
+      font-size: 11px;
+    }
+    .brand-text {
+      color: var(--text-sidebar);
+      font-weight: var(--font-weight-semibold);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    /* === Menu === */
+    .sidebar-menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .menu-group { margin-bottom: 0; }
+.menu-item {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 3px;
+      color: var(--text-sidebar);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .menu-item:hover {
+      background: var(--surface-sidebar-hover);
+      color: var(--text-sidebar);
+    }
+    .menu-item.active {
+      background: var(--surface-sidebar-active);
+      color: var(--text-sidebar-active);
+      font-weight: var(--font-weight-medium);
+    }
+    .menu-parent { font-weight: var(--font-weight-medium); margin-top: 2px; }
+    .menu-icon {
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+    .menu-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    .menu-arrow.open { transform: rotate(90deg); }
+    .menu-submenu {
+      padding-left: 18px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+    }
+    .menu-submenu.open { max-height: 500px; }
+    .menu-submenu .menu-item { height: 26px; padding: 0 6px; font-size: 12px; color: var(--text-sidebar); }
+
+    /* === Sidebar Toggle === */
+    .sidebar-toggle {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; cursor: pointer; color: var(--text-secondary); transition: background 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .sidebar-toggle:hover { background: var(--surface-sidebar-hover); color: var(--text-primary); }
+    .sidebar.collapsed { width: 40px !important; overflow: hidden; }
+    .sidebar.collapsed .menu-text,
+    .sidebar.collapsed .menu-arrow, .sidebar.collapsed .user-info, .sidebar.collapsed .menu-submenu { display: none !important; }
+    .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0 8px; }
+    .sidebar.collapsed .menu-item { justify-content: center; padding: 0; height: 28px; }
+    .sidebar.collapsed .menu-icon { margin-right: 0; width: 14px; }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      flex-shrink: 0;
+    }
+    .user-info { overflow: hidden; }
+    .user-name {
+      color: var(--text-sidebar);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .user-role {
+      color: var(--text-tertiary);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    /* === Main Area === */
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* === Header === */
+    .top-header {
+      height: var(--header-height);
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .breadcrumb {
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+    }
+    .breadcrumb span { color: var(--text-tertiary); margin: 0 var(--space-2); }
+    .breadcrumb .current { color: var(--text-primary); font-weight: var(--font-weight-medium); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .header-icon-btn {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-icon-btn:hover {
+      background: var(--surface-bg);
+      color: var(--text-primary);
+    }
+    .header-icon-btn svg { width: 20px; height: 20px; }
+    .badge-dot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: var(--radius-full);
+      background: var(--state-error);
+      color: #fff;
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-md);
+      transition: background 0.12s;
+    }
+    .header-user:hover { background: var(--surface-bg); }
+    .header-user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+    }
+    .header-user-name {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+    }
+
+    /* === Content === */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-6);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+
+    /* === Page Title Bar === */
+    /* === Buttons === */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      height: 28px;
+      padding: 0 var(--space-4);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      outline: none;
+      font-family: var(--font-family);
+    }
+    .btn-primary {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: var(--brand-primary);
+    }
+    .btn-primary:hover {
+      background: var(--brand-primary-light);
+      border-color: var(--brand-primary-light);
+    }
+    .btn-outline {
+      background: var(--surface-card);
+      color: var(--text-primary);
+      border-color: var(--border-default);
+    }
+    .btn-outline:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .btn-sm {
+      height: 28px;
+      padding: 0 var(--space-3);
+      font-size: 12px;
+    }
+
+    /* === KPI Cards === */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--space-4);
+      margin-bottom: var(--space-4);
+    }
+    .kpi-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: var(--space-5) var(--space-5);
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      transition: box-shadow 0.15s;
+    }
+    .kpi-card:hover {
+      box-shadow: var(--shadow-md);
+    }
+    .kpi-card.kpi-blue { border-left: 3px solid var(--state-info); }
+    .kpi-card.kpi-green { border-left: 3px solid var(--state-success); }
+    .kpi-card.kpi-orange { border-left: 3px solid var(--state-warning); }
+    .kpi-card.kpi-red { border-left: 3px solid var(--state-error); }
+
+    .kpi-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .kpi-icon-blue { background: var(--state-info-bg); color: var(--state-info); }
+    .kpi-icon-green { background: var(--state-success-bg); color: var(--state-success); }
+    .kpi-icon-orange { background: var(--state-warning-bg); color: var(--state-warning); }
+    .kpi-icon-red { background: var(--state-error-bg); color: var(--state-error); }
+
+    .kpi-info { flex: 1; min-width: 0; }
+    .kpi-label {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-1);
+    }
+    .kpi-value {
+      font-size: var(--font-size-3xl);
+      font-weight: var(--font-weight-bold);
+      font-family: var(--font-mono);
+      color: var(--text-primary);
+      line-height: var(--line-height-tight);
+    }
+    .kpi-unit {
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-normal);
+      color: var(--text-secondary);
+      font-family: var(--font-family);
+    }
+
+    
+    .query-bar {
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--border-light);
+      padding: 0 16px;
+    }
+    .query-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 0 0;
+    }
+    .query-filters {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      flex-wrap: wrap;
+      max-height: 62px;
+      overflow: hidden;
+      transition: max-height 0.25s ease;
+    }
+    .query-filters.expanded { max-height: 200px; }
+    .query-filters .query-item { display: flex; align-items: center; gap: 4px; }
+    .query-filters .query-item label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; line-height: 1; }
+    .query-filters .page-title-inline { font-weight: 600; font-size: 15px; white-space: nowrap; margin-right: 4px; color: var(--text-primary); }
+    .query-filters .query-item input,
+    .query-filters .query-item select { height: 28px; padding: 0 8px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); background: var(--surface-input); outline: none; transition: border-color 0.15s; }
+    .query-filters .query-item input:focus,
+    .query-filters .query-item select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 2px rgba(22,119,255,0.08); }
+    .query-toggle { display: flex; align-items: center; gap: 2px; cursor: pointer; color: var(--brand-primary); font-size: 12px; white-space: nowrap; padding: 4px 0; flex-shrink: 0; user-select: none; }
+    .query-toggle:hover { opacity: 0.8; }
+    .query-toggle svg { transition: transform 0.25s; }
+    .query-toggle.expanded svg { transform: rotate(180deg); }
+    .query-btn-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 8px; border-top: 1px solid var(--border-light); margin-top: 8px; }
+    .query-btn-left { display: flex; align-items: center; gap: 6px; }
+    .query-btn-right { display: flex; align-items: center; gap: 6px; }
+
+    .tab-bar {
+      display: flex; align-items: center; gap: 0;
+      padding: 0 16px; border-bottom: 1px solid var(--border-light);
+      background: var(--surface-card);
+    }
+    .tab-bar .tab-item { padding: 8px 16px; font-size: 13px; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
+    .tab-bar .tab-item:hover { color: var(--brand-primary); }
+    .tab-bar .tab-item.active { color: var(--brand-primary); border-bottom-color: var(--brand-primary); font-weight: var(--font-weight-medium); }
+        /* === Data Table === */
+    .table-card {
+      background: var(--surface-card);
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      overflow-y: auto;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      min-width: 1600px;
+    }
+    .data-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .data-table thead th {
+      background: var(--surface-bg);
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-default);
+      text-align: left;
+      white-space: nowrap;
+      user-select: none;
+      height: 32px;
+    }
+    .data-table thead th.sortable { cursor: pointer; }
+    .data-table thead th.sortable:hover { color: var(--brand-primary); }
+    .sort-arrows {
+      display: inline-flex;
+      flex-direction: column;
+      margin-left: 4px;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .sort-arrows .arrow-up,
+    .sort-arrows .arrow-down {
+      font-size: 8px;
+      line-height: 8px;
+      color: var(--text-tertiary);
+    }
+    .sort-arrows .arrow-up.active,
+    .sort-arrows .arrow-down.active { color: var(--brand-primary); }
+    .data-table tbody td {
+      font-size: 13px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-primary);
+      height: 32px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: var(--font-family);
+    }
+    .data-table tbody tr:nth-child(even) { background: var(--surface-bg); }
+    .data-table tbody tr:hover { background: #EBF8FF; }
+
+    /* Column widths */
+    .data-table .col-cb { width: 40px; min-width: 40px; text-align: center; position: sticky; left: 0; z-index: 5; background: inherit; }
+    .data-table thead .col-cb { background: var(--surface-bg); z-index: 15; }
+    .data-table .col-code { width: 90px; min-width: 90px; font-family: var(--font-mono); }
+    .data-table .col-name { width: 180px; min-width: 180px; }
+    .data-table .col-category { width: 70px; min-width: 70px; }
+    .data-table .col-brand { width: 72px; min-width: 72px; }
+    .data-table .col-spec { width: 80px; min-width: 80px; }
+    .data-table .col-unit { width: 40px; min-width: 40px; text-align: center; }
+    .data-table .col-wh { width: 80px; min-width: 80px; }
+    .data-table .col-batch { width: 80px; min-width: 80px; font-family: var(--font-mono); font-size: var(--font-size-xs); }
+    .data-table .col-stock { width: 80px; min-width: 80px; text-align: right; font-family: var(--font-mono); }
+    .data-table .col-available { width: 80px; min-width: 80px; text-align: right; font-family: var(--font-mono); }
+    .data-table .col-transit { width: 70px; min-width: 70px; text-align: right; font-family: var(--font-mono); }
+    .data-table .col-locked { width: 70px; min-width: 70px; text-align: right; font-family: var(--font-mono); }
+    .data-table .col-amount { width: 100px; min-width: 100px; text-align: right; font-family: var(--font-mono); }
+    .data-table .col-warn { width: 65px; min-width: 65px; text-align: right; }
+    .data-table .col-status { width: 90px; min-width: 90px; text-align: center; }
+    .data-table .col-actions { width: 110px; min-width: 110px; text-align: center; position: sticky; right: 0; z-index: 5; background: inherit; }
+    .data-table thead .col-actions { background: var(--surface-bg); z-index: 15; }
+
+    /* Stock value colors */
+    .stock-normal { color: var(--text-primary); }
+    .stock-low { color: var(--state-warning); font-weight: var(--font-weight-semibold); }
+    .stock-zero { color: var(--text-tertiary); }
+    .stock-negative { color: var(--state-error); font-weight: var(--font-weight-semibold); }
+
+    /* Available stock colors */
+    .avail-good { color: var(--state-success); }
+    .avail-low { color: var(--state-warning); font-weight: var(--font-weight-medium); }
+    .avail-zero { color: var(--text-tertiary); }
+    .avail-negative { color: var(--state-error); font-weight: var(--font-weight-medium); }
+
+    /* Transit in blue */
+    .transit-blue { color: var(--state-info); }
+
+    /* Warning small text */
+    .warn-small { font-size: var(--font-size-xs); color: var(--text-tertiary); }
+
+    /* Text alignment utility */
+    .text-right { text-align: right; }
+
+    /* Checkbox */
+    .custom-checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--border-default);
+      border-radius: 3px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface-card);
+      transition: all 0.12s;
+      flex-shrink: 0;
+    }
+    .custom-checkbox:hover { border-color: var(--brand-primary-light); }
+    .custom-checkbox.checked {
+      background: var(--brand-primary);
+      border-color: var(--brand-primary);
+    }
+    .custom-checkbox.checked::after {
+      content: '';
+      width: 8px;
+      height: 5px;
+      border-left: 2px solid #fff;
+      border-bottom: 2px solid #fff;
+      transform: rotate(-45deg) translateY(-1px);
+    }
+
+    /* Status Pills */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .status-pill.active {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+    .status-pill.warning {
+      background: var(--state-warning-bg);
+      color: var(--state-warning);
+      border: 1px solid var(--state-warning-light);
+    }
+    .status-pill.zero {
+      background: var(--surface-bg);
+      color: var(--text-tertiary);
+      border: 1px solid var(--border-default);
+    }
+    .status-pill.error {
+      background: var(--state-error-bg);
+      color: var(--state-error);
+      border: 1px solid var(--state-error-light);
+    }
+
+    /* Action links */
+    .action-link {
+      font-size: var(--font-size-sm);
+      color: var(--text-link);
+      cursor: pointer;
+      transition: color 0.12s;
+      white-space: nowrap;
+    }
+    .action-link:hover { color: var(--brand-primary-dark); }
+    .action-sep { color: var(--border-default); margin: 0 4px; }
+
+    /* === Pagination Bar === */
+    .pagination-bar {
+      height: 32px;
+      background: var(--surface-card);
+      border-top: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-4);
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+    .pagination-info {
+      font-size: var(--font-size-xs);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+    .pagination-summary {
+      font-size: var(--font-size-xs);
+      color: var(--text-tertiary);
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .page-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      background: var(--surface-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.12s;
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .page-btn.active {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: var(--brand-primary);
+    }
+    .page-text {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin: 0 var(--space-1);
+    }
+
+    /* === Content layout for table page === */
+    .content-inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+  </style>
+</body>
+</html>
+

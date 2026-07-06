@@ -1,9 +1,25 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { post } from '../../../api/client.js'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
 })
+
+// 从后端加载真实下拉数据
+const supplierOptions = ref([])
+
+async function loadOptions() {
+  const params = { pageNo: 1, pageSize: 500, filters: {} }
+  try {
+    const sup = await post('/base/supplier/page', params).catch(() => ({ records: [] }))
+    supplierOptions.value = (sup.records || []).map(r => r.supplierName).filter(Boolean)
+  } catch (e) {
+    console.warn('加载下拉数据失败', e)
+  }
+}
+
+onMounted(loadOptions)
 
 // 计算小数位步长 - 称重品3位小数，非称重品整数
 const qtyStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
@@ -19,19 +35,8 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
       <div class="field">
         <label>默认供应商</label>
         <select v-model="modelValue.defaultSupplier">
-          <option value="">请选择默认供应商</option>
-          <option value="可口可乐经销">可口可乐经销</option>
-          <option value="百草味供应商">百草味供应商</option>
-          <option value="统一企业">统一企业</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>默认仓库</label>
-        <select v-model="modelValue.defaultWarehouse">
-          <option value="">请选择</option>
-          <option value="总仓">总仓</option>
-          <option value="东区仓">东区仓</option>
-          <option value="西区仓">西区仓</option>
+          <option value="">{{ supplierOptions.length ? '请选择' : '请先在【供应商资料】维护' }}</option>
+          <option v-for="opt in supplierOptions" :key="opt" :value="opt">{{ opt }}</option>
         </select>
       </div>
       <div class="field">
@@ -47,14 +52,14 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
         <label>产地</label>
         <input type="text" v-model="modelValue.origin" placeholder="如: 杭州" />
       </div>
-    </div>
-
-    <!-- 第二行 -->
-    <div class="row">
       <div class="field">
         <label>保质期(天)</label>
         <input type="number" v-model.number="modelValue.shelfLifeDays" placeholder="0" step="1" />
       </div>
+    </div>
+
+    <!-- 第二行 -->
+    <div class="row">
       <div class="field">
         <label>临期预警天数</label>
         <input type="number" v-model.number="modelValue.warningDays" placeholder="0" step="1" />
@@ -77,10 +82,6 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
           :step="stockLimitStep"
         />
       </div>
-    </div>
-
-    <!-- 第三行 -->
-    <div class="row">
       <div class="field">
         <label>采购起订量</label>
         <input
@@ -90,6 +91,10 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
           :step="qtyStep"
         />
       </div>
+    </div>
+
+    <!-- 第三行 -->
+    <div class="row">
       <div class="field">
         <label>单托盘大单位数量</label>
         <input type="number" v-model.number="modelValue.palletQty" placeholder="0" step="1" />
@@ -129,8 +134,8 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
 
 .field label {
   font-size: 12px;
-  font-weight: 600; /* 字段名称加粗 */
-  color: #303133;  /* 字段名称颜色加深 */
+  font-weight: 600;
+  color: #303133;
   min-width: 90px;
   text-align: right;
   flex-shrink: 0;
@@ -145,7 +150,7 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   font-size: 12px;
-  color: #606266;  /* 输入值颜色稍浅，与字段名区分 */
+  color: #606266;
   font-weight: 400;
   transition: all 0.2s;
   box-sizing: border-box;

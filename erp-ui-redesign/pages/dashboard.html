@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>经营概览 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body>
+  <div style="display: flex; height: 100vh;">
+
+    <!-- ====== Sidebar ====== -->
+    <aside class="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+
+      <!-- Menu -->
+      <nav class="sidebar-menu">
+  <div class="menu-item active" data-dom-id="back-dashboard">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg></span>
+    <span class="menu-text">经营概览</span>
+  </div>
+  <div class="menu-item" data-dom-id="nav-todo">
+    <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm1 3h8v1H4V5zm1 3h6v1H5V8zm0 3h4v1H5v-1z" fill="currentColor"/></svg></span>
+    <span class="menu-text">待办中心</span>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">基础资料</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+      <div class="menu-item" data-dom-id="nav-customer"><span class="menu-text">客户资料</span></div>
+      <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+      <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+      <span class="menu-text">采购管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-purchase-order"><span class="menu-text">采购订单</span></div>
+      <div class="menu-item" data-dom-id="nav-purchase-inbound"><span class="menu-text">采购入库</span></div>
+      <div class="menu-item"><span class="menu-text">采购退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">销售管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-quick-order"><span class="menu-text">销售快速开单</span></div>
+      <div class="menu-item" data-dom-id="nav-sales-order"><span class="menu-text">销售订单</span></div>
+      <div class="menu-item"><span class="menu-text">销售出库</span></div>
+      <div class="menu-item"><span class="menu-text">销售退货</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+      <span class="menu-text">库存管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-stock-balance"><span class="menu-text">库存余额</span></div>
+      <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+      <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+      <span class="menu-text">财务管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item" data-dom-id="nav-ar"><span class="menu-text">应收账款</span></div>
+      <div class="menu-item"><span class="menu-text">应付账款</span></div>
+      <div class="menu-item"><span class="menu-text">收款管理</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">报表中心</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">销售报表</span></div>
+      <div class="menu-item"><span class="menu-text">采购报表</span></div>
+      <div class="menu-item"><span class="menu-text">库存报表</span></div>
+    </div>
+  </div>
+  <div class="menu-group">
+    <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+      <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+      <span class="menu-text">系统管理</span>
+      <span class="menu-arrow">&#9654;</span>
+    </div>
+    <div class="menu-submenu">
+      <div class="menu-item"><span class="menu-text">用户管理</span></div>
+      <div class="menu-item"><span class="menu-text">角色权限</span></div>
+      <div class="menu-item"><span class="menu-text">系统设置</span></div>
+    </div>
+  </div>
+</nav>
+    </aside>
+
+    <!-- ====== Main Area ====== -->
+    <div class="main-wrapper">
+      <!-- Header -->
+      <header class="top-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="sidebar-toggle" onclick="toggleSidebar()" title="收起/展开菜单">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z" fill="currentColor"/></svg>
+          </div>
+          <div class="breadcrumb">
+          首页 <span>/</span> <span class="current">经营概览</span>
+        </div>
+        </div>
+        <div class="header-actions">
+          <!-- Notification -->
+          <div class="header-icon-btn" title="通知">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge-dot">3</span>
+          </div>
+          <!-- Todo -->
+          <div class="header-icon-btn" title="待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span class="badge-dot">12</span>
+          </div>
+          <!-- User Dropdown -->
+          <div class="header-user">
+            <div class="header-user-avatar">张</div>
+            <span class="header-user-name">张经理</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </header>
+
+      <!-- Dashboard Content -->
+      <main class="content">
+        <h1 class="content-title">经营概览</h1>
+
+        <!-- KPI Cards -->
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-label">今日销售额</div>
+            <div class="kpi-value">&#165;128,650</div>
+            <div class="kpi-trend up">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2L10 8H2L6 2z"/></svg>
+              12.5%
+            </div>
+          </div>
+          <div class="kpi-card green">
+            <div class="kpi-label">今日订单</div>
+            <div class="kpi-value">23</div>
+            <div class="kpi-trend up">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2L10 8H2L6 2z"/></svg>
+              8%
+            </div>
+          </div>
+          <div class="kpi-card teal">
+            <div class="kpi-label">今日收款</div>
+            <div class="kpi-value">&#165;85,200</div>
+            <div class="kpi-trend neutral">
+              --
+            </div>
+          </div>
+          <div class="kpi-card orange">
+            <div class="kpi-label">应收余额</div>
+            <div class="kpi-value">&#165;456,800</div>
+            <div class="kpi-trend down">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10L2 4h8L6 10z"/></svg>
+              3.2%
+            </div>
+          </div>
+          <div class="kpi-card red">
+            <div class="kpi-label">应付余额</div>
+            <div class="kpi-value">&#165;234,500</div>
+            <div class="kpi-trend down">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10L2 4h8L6 10z"/></svg>
+              1.8%
+            </div>
+          </div>
+          <div class="kpi-card purple">
+            <div class="kpi-label">库存金额</div>
+            <div class="kpi-value">&#165;1,280,000</div>
+            <div class="kpi-trend up">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2L10 8H2L6 2z"/></svg>
+              2.1%
+            </div>
+          </div>
+        </div>
+
+        <!-- Middle: Todo + Risk -->
+        <div class="grid-2">
+          <!-- 待办事项 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">待办事项</div>
+              <div class="card-action">查看全部 &gt;</div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div class="todo-item">
+                <div class="todo-left">采购单 PO-2025-0618 待审核</div>
+                <div class="todo-right">
+                  <span class="status-badge review">待审核</span>
+                  <span class="todo-time">10:30</span>
+                </div>
+              </div>
+              <div class="todo-item">
+                <div class="todo-left">客户"华联超市"信用超限提醒</div>
+                <div class="todo-right">
+                  <span class="status-badge error">紧急</span>
+                  <span class="todo-time">09:45</span>
+                </div>
+              </div>
+              <div class="todo-item">
+                <div class="todo-left">销售订单 SO-2025-1204 待发货</div>
+                <div class="todo-right">
+                  <span class="status-badge pending">待处理</span>
+                  <span class="todo-time">09:20</span>
+                </div>
+              </div>
+              <div class="todo-item">
+                <div class="todo-left">仓库A盘点结果确认</div>
+                <div class="todo-right">
+                  <span class="status-badge review">待审核</span>
+                  <span class="todo-time">昨日</span>
+                </div>
+              </div>
+              <div class="todo-item">
+                <div class="todo-left">供应商"东方食品"对账单确认</div>
+                <div class="todo-right">
+                  <span class="status-badge pending">待处理</span>
+                  <span class="todo-time">昨日</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 风险预警 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">风险预警</div>
+              <div class="card-action">查看详情 &gt;</div>
+            </div>
+            <div class="card-body">
+              <div class="risk-grid">
+                <div class="risk-item">
+                  <div class="risk-item-label">逾期应收</div>
+                  <div class="risk-item-value warn">8</div>
+                </div>
+                <div class="risk-item">
+                  <div class="risk-item-label">低库存商品</div>
+                  <div class="risk-item-value caution">12</div>
+                </div>
+                <div class="risk-item">
+                  <div class="risk-item-label">临期商品</div>
+                  <div class="risk-item-value notice">5</div>
+                </div>
+                <div class="risk-item">
+                  <div class="risk-item-label">信用超限客户</div>
+                  <div class="risk-item-value info">3</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom: Sales Trend + Ranking -->
+        <div class="grid-2">
+          <!-- 销售趋势 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">销售趋势</div>
+              <div class="card-action">本周 &gt;</div>
+            </div>
+            <div class="card-body">
+              <div class="bar-chart">
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;8.5w</div>
+                    <div class="bar" style="height: 55%;"></div>
+                  </div>
+                  <div class="bar-label">周一</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;12.3w</div>
+                    <div class="bar" style="height: 80%;"></div>
+                  </div>
+                  <div class="bar-label">周二</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;9.8w</div>
+                    <div class="bar" style="height: 63%;"></div>
+                  </div>
+                  <div class="bar-label">周三</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;15.2w</div>
+                    <div class="bar" style="height: 98%;"></div>
+                  </div>
+                  <div class="bar-label">周四</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;11.6w</div>
+                    <div class="bar" style="height: 75%;"></div>
+                  </div>
+                  <div class="bar-label">周五</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;7.2w</div>
+                    <div class="bar" style="height: 47%;"></div>
+                  </div>
+                  <div class="bar-label">周六</div>
+                </div>
+                <div class="bar-col">
+                  <div class="bar-wrapper">
+                    <div class="bar-value-label">&#165;5.1w</div>
+                    <div class="bar" style="height: 33%;"></div>
+                  </div>
+                  <div class="bar-label">周日</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 商品销售排行 TOP5 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">商品销售排行 TOP5</div>
+              <div class="card-action">更多 &gt;</div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div class="rank-item">
+                <div class="rank-number top1">1</div>
+                <div class="rank-name">金龙鱼大豆油 5L</div>
+                <div class="rank-bar-wrapper"><div class="rank-bar-fill" style="width: 100%;"></div></div>
+                <div class="rank-amount">&#165;68,500</div>
+              </div>
+              <div class="rank-item">
+                <div class="rank-number top2">2</div>
+                <div class="rank-name">蒙牛纯牛奶 250ml*24</div>
+                <div class="rank-bar-wrapper"><div class="rank-bar-fill" style="width: 82%;"></div></div>
+                <div class="rank-amount">&#165;56,200</div>
+              </div>
+              <div class="rank-item">
+                <div class="rank-number top3">3</div>
+                <div class="rank-name">康师傅方便面 红烧牛肉</div>
+                <div class="rank-bar-wrapper"><div class="rank-bar-fill" style="width: 68%;"></div></div>
+                <div class="rank-amount">&#165;45,800</div>
+              </div>
+              <div class="rank-item">
+                <div class="rank-number normal">4</div>
+                <div class="rank-name">可口可乐 330ml*24</div>
+                <div class="rank-bar-wrapper"><div class="rank-bar-fill" style="width: 55%;"></div></div>
+                <div class="rank-amount">&#165;38,400</div>
+              </div>
+              <div class="rank-item">
+                <div class="rank-number normal">5</div>
+                <div class="rank-name">青岛啤酒 500ml*12</div>
+                <div class="rank-bar-wrapper"><div class="rank-bar-fill" style="width: 42%;"></div></div>
+                <div class="rank-amount">&#165;29,600</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      sidebar.classList.toggle('collapsed');
+      toggle.classList.toggle('collapsed-icon');
+    }
+
+    // Sidebar submenu toggle
+    function toggleSubmenu(el) {
+      const submenu = el.nextElementSibling;
+      const arrow = el.querySelector('.menu-arrow');
+      if (submenu && submenu.classList.contains('menu-submenu')) {
+        submenu.classList.toggle('open');
+        if (arrow) arrow.classList.toggle('open');
+      }
+    }
+  </script>
+
+    <style>
+    /* === Base Reset & Layout === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-bg);
+    }
+
+    /* === Sidebar === */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--surface-sidebar);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .sidebar-brand {
+      padding: 8px 10px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      background: var(--brand-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-mark span {
+      color: #fff;
+      font-weight: var(--font-weight-bold);
+      font-size: 11px;
+    }
+    .brand-text {
+      color: var(--text-sidebar);
+      font-weight: var(--font-weight-semibold);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    /* === Menu === */
+    .sidebar-menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .menu-group { margin-bottom: 0; }
+.menu-item {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 3px;
+      color: var(--text-sidebar);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .menu-item:hover {
+      background: var(--surface-sidebar-hover);
+      color: var(--text-sidebar);
+    }
+    .menu-item.active {
+      background: var(--surface-sidebar-active);
+      color: var(--text-sidebar-active);
+      font-weight: var(--font-weight-medium);
+    }
+    .menu-parent { font-weight: var(--font-weight-medium); margin-top: 2px; }
+    .menu-icon {
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+    }
+    .menu-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    .menu-arrow.open { transform: rotate(90deg); }
+    .menu-submenu {
+      padding-left: 18px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+    }
+    .menu-submenu.open { max-height: 500px; }
+    .menu-submenu .menu-item { height: 26px; padding: 0 6px; font-size: 12px; color: var(--text-sidebar); }
+
+    /* === Sidebar Toggle === */
+    .sidebar-toggle {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; cursor: pointer; color: var(--text-secondary); transition: background 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .sidebar-toggle:hover { background: var(--surface-sidebar-hover); color: var(--text-primary); }
+    .sidebar.collapsed { width: 40px !important; overflow: hidden; }
+    .sidebar.collapsed .menu-text,
+    .sidebar.collapsed .menu-arrow, .sidebar.collapsed .user-info, .sidebar.collapsed .menu-submenu { display: none !important; }
+    .sidebar.collapsed .sidebar-brand { justify-content: center; padding: 0 8px; }
+    .sidebar.collapsed .menu-item { justify-content: center; padding: 0; height: 28px; }
+    .sidebar.collapsed .menu-icon { margin-right: 0; width: 14px; }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      flex-shrink: 0;
+    }
+    .user-info { overflow: hidden; }
+    .user-name {
+      color: var(--text-sidebar);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .user-role {
+      color: var(--text-tertiary);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    /* === Main Area === */
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* === Header === */
+    .top-header {
+      height: var(--header-height);
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .breadcrumb {
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+    }
+    .breadcrumb span { color: var(--text-tertiary); margin: 0 var(--space-2); }
+    .breadcrumb .current { color: var(--text-primary); font-weight: var(--font-weight-medium); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .header-icon-btn {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-icon-btn:hover {
+      background: var(--surface-bg);
+      color: var(--text-primary);
+    }
+    .header-icon-btn svg { width: 20px; height: 20px; }
+    .badge-dot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: var(--radius-full);
+      background: var(--state-error);
+      color: #fff;
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-md);
+      transition: background 0.12s;
+    }
+    .header-user:hover { background: var(--surface-bg); }
+    .header-user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+    }
+    .header-user-name {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+    }
+
+    /* === Content === */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-6);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .content-title {
+      font-size: var(--font-size-xl);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+      margin-bottom: var(--space-5);
+    }
+
+    /* === KPI Cards === */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: var(--space-4);
+      margin-bottom: var(--space-6);
+    }
+    .kpi-card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+      border-left: 4px solid var(--brand-primary);
+      position: relative;
+      transition: box-shadow 0.15s;
+    }
+    .kpi-card:hover { box-shadow: var(--shadow-md); }
+    .kpi-card.green { border-left-color: var(--state-success); }
+    .kpi-card.orange { border-left-color: var(--state-warning); }
+    .kpi-card.red { border-left-color: var(--state-error); }
+    .kpi-card.purple { border-left-color: #805AD5; }
+    .kpi-card.teal { border-left-color: #319795; }
+    .kpi-label {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
+    .kpi-value {
+      font-size: var(--font-size-3xl);
+      font-weight: var(--font-weight-bold);
+      color: var(--text-primary);
+      line-height: 1.2;
+      margin-bottom: var(--space-1);
+    }
+    .kpi-trend {
+      font-size: var(--font-size-xs);
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .kpi-trend.up { color: var(--state-success); }
+    .kpi-trend.down { color: var(--state-error); }
+    .kpi-trend.neutral { color: var(--text-tertiary); }
+
+    /* === Card Component === */
+    .card {
+      background: var(--surface-card);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-4) var(--space-5);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .card-title {
+      font-size: var(--font-size-base);
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-primary);
+    }
+    .card-action {
+      font-size: var(--font-size-sm);
+      color: var(--text-link);
+      cursor: pointer;
+      transition: color 0.12s;
+    }
+    .card-action:hover { color: var(--brand-primary-dark); }
+    .card-body { padding: var(--space-4) var(--space-5); }
+
+    /* === Two-column Grid === */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-5);
+      margin-bottom: var(--space-6);
+    }
+
+    /* === Todo List === */
+    .todo-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      padding: 0 var(--space-1);
+      border-bottom: 1px solid var(--border-light);
+      transition: background 0.1s;
+    }
+    .todo-item:last-child { border-bottom: none; }
+    .todo-item:nth-child(even) { background: var(--surface-bg); }
+    .todo-item:hover { background: var(--brand-primary-50); }
+    .todo-left {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+    }
+    .todo-right { display: flex; align-items: center; gap: var(--space-2); }
+    .todo-time { font-size: var(--font-size-xs); color: var(--text-tertiary); }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .status-badge.pending {
+      background: var(--state-warning-bg);
+      color: var(--state-warning);
+      border: 1px solid var(--state-warning-light);
+    }
+    .status-badge.review {
+      background: var(--state-info-bg);
+      color: var(--state-info);
+      border: 1px solid var(--state-info-light);
+    }
+    .status-badge.error {
+      background: var(--state-error-bg);
+      color: var(--state-error);
+      border: 1px solid var(--state-error-light);
+    }
+    .status-badge.success {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+
+    /* === Risk Warning Cards === */
+    .risk-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+    }
+    .risk-item {
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-light);
+      transition: border-color 0.15s;
+      cursor: pointer;
+    }
+    .risk-item:hover { border-color: var(--brand-primary-200); }
+    .risk-item-label {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-1);
+    }
+    .risk-item-value {
+      font-size: var(--font-size-2xl);
+      font-weight: var(--font-weight-bold);
+    }
+    .risk-item-value.warn { color: var(--state-error); }
+    .risk-item-value.caution { color: var(--state-warning); }
+    .risk-item-value.notice { color: var(--brand-primary); }
+    .risk-item-value.info { color: #805AD5; }
+
+    /* === Bar Chart === */
+    .bar-chart {
+      display: flex;
+      align-items: flex-end;
+      gap: var(--space-4);
+      height: 180px;
+      padding-top: var(--space-4);
+    }
+    .bar-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-2);
+      height: 100%;
+      justify-content: flex-end;
+    }
+    .bar-wrapper {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .bar {
+      width: 70%;
+      max-width: 40px;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      background: linear-gradient(180deg, var(--brand-primary-light), var(--brand-primary));
+      transition: opacity 0.15s;
+      position: relative;
+    }
+    .bar:hover { opacity: 0.85; }
+    .bar-label {
+      font-size: 11px;
+      color: var(--text-tertiary);
+      margin-top: var(--space-2);
+    }
+    .bar-value-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: var(--font-weight-medium);
+      margin-bottom: var(--space-1);
+    }
+
+    /* === Sales Ranking === */
+    .rank-item {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      padding: 0 var(--space-1);
+      border-bottom: 1px solid var(--border-light);
+    }
+    .rank-item:last-child { border-bottom: none; }
+    .rank-item:nth-child(even) { background: var(--surface-bg); }
+    .rank-number {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-bold);
+      margin-right: var(--space-3);
+      flex-shrink: 0;
+    }
+    .rank-number.top1 { background: var(--state-warning-bg); color: var(--state-warning); border: 1px solid var(--state-warning-light); }
+    .rank-number.top2 { background: var(--surface-bg); color: var(--text-secondary); border: 1px solid var(--border-default); }
+    .rank-number.top3 { background: #FFF5F5; color: var(--state-error); border: 1px solid var(--state-error-light); }
+    .rank-number.normal { background: var(--surface-bg); color: var(--text-tertiary); border: 1px solid var(--border-light); }
+    .rank-name {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .rank-bar-wrapper {
+      width: 120px;
+      height: 8px;
+      background: var(--surface-bg);
+      border-radius: var(--radius-full);
+      margin: 0 var(--space-3);
+      overflow: hidden;
+    }
+    .rank-bar-fill {
+      height: 100%;
+      border-radius: var(--radius-full);
+      background: linear-gradient(90deg, var(--brand-primary), var(--brand-primary-light));
+    }
+    .rank-amount {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      font-weight: var(--font-weight-medium);
+      min-width: 72px;
+      text-align: right;
+    }
+  </style>
+</body>
+</html>

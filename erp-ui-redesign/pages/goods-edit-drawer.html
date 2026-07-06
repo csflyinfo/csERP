@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>商品档案 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+
+    <!-- Layer 1: Background - Simplified Goods Archive List -->
+    <div class="bg-page">
+        <div class="bg-header">
+            <div class="bg-logo"></div>
+            <div style="width:120px;height:14px;background:#CBD5E0;border-radius:3px;"></div>
+            <div style="flex:1;"></div>
+            <div style="width:200px;height:28px;background:#EDF2F7;border-radius:6px;"></div>
+            <div style="width:80px;height:14px;background:#CBD5E0;border-radius:3px;"></div>
+        </div>
+        <div class="bg-sidebar">
+            <div class="sidebar-item"><div class="sidebar-dot"></div>仪表盘</div>
+            <div class="sidebar-item"><div class="sidebar-dot"></div>商品管理</div>
+            <div class="sidebar-item active"><div class="sidebar-dot"></div>商品档案</div>
+            <div class="sidebar-item"><div class="sidebar-dot"></div>采购管理</div>
+            <div class="sidebar-item"><div class="sidebar-dot"></div>销售管理</div>
+            <div class="sidebar-item"><div class="sidebar-dot"></div>库存管理</div>
+            <div class="sidebar-item"><div class="sidebar-dot"></div>财务管理</div>
+        </div>
+        <div class="bg-content">
+            <div class="bg-table-card">
+                <div class="bg-table-header">
+                    <div class="bg-table-title">商品档案</div>
+                    <div class="bg-table-actions">
+                        <span>+ 新增</span>
+                        <span>导入</span>
+                        <span>导出</span>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:40px;"><input type="checkbox" style="opacity:0.4;"></th>
+                            <th>商品编码</th>
+                            <th>商品名称</th>
+                            <th>商品分类</th>
+                            <th>品牌</th>
+                            <th>规格型号</th>
+                            <th>默认仓库</th>
+                            <th>标准售价</th>
+                            <th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="checkbox" style="opacity:0.3;"></td>
+                            <td>SP-20260701-003</td>
+                            <td>农夫山泉饮用天然水550ml</td>
+                            <td>饮料类</td>
+                            <td>农夫山泉</td>
+                            <td>550ml</td>
+                            <td>主仓</td>
+                            <td>2.00</td>
+                            <td><span style="color:#38A169;font-size:12px;">在售</span></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" style="opacity:0.3;"></td>
+                            <td>SP-20260630-012</td>
+                            <td>可口可乐330ml罐装</td>
+                            <td>饮料类</td>
+                            <td>可口可乐</td>
+                            <td>330ml</td>
+                            <td>主仓</td>
+                            <td>3.00</td>
+                            <td><span style="color:#38A169;font-size:12px;">在售</span></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" style="opacity:0.3;"></td>
+                            <td>SP-20260629-008</td>
+                            <td>统一老坛酸菜牛肉面</td>
+                            <td>零食类</td>
+                            <td>统一</td>
+                            <td>120g</td>
+                            <td>东区分仓</td>
+                            <td>4.50</td>
+                            <td><span style="color:#38A169;font-size:12px;">在售</span></td>
+                        </tr>
+                        <tr>
+                            <td><input type="checkbox" style="opacity:0.3;"></td>
+                            <td>SP-20260628-015</td>
+                            <td>蒙牛纯牛奶250ml</td>
+                            <td>日化类</td>
+                            <td>蒙牛</td>
+                            <td>250ml</td>
+                            <td>主仓</td>
+                            <td>3.50</td>
+                            <td><span style="color:#D69E2E;font-size:12px;">预警</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layer 2: Drawer Backdrop -->
+    <div class="drawer-backdrop" data-dom-id="drawer-backdrop"></div>
+
+    <!-- Layer 3: Drawer Panel -->
+    <div class="drawer-panel">
+
+        <!-- Drawer Header -->
+        <div class="drawer-header">
+            <div class="drawer-header-left">
+                <span class="drawer-title">新增商品</span>
+                <span class="drawer-badge">编码自动生成</span>
+            </div>
+            <div class="drawer-header-right">
+                <button class="btn" data-dom-id="btn-cancel">退出</button>
+                <button class="btn">保存</button>
+                <button class="btn btn-primary">保存并退出</button>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <a class="tab-pill active" data-tab="basic">基本信息</a>
+            <a class="tab-pill" data-tab="unit">多单位设置</a>
+            <a class="tab-pill" data-tab="stock">采购与库存</a>
+            <a class="tab-pill" data-tab="remark">备注与介绍</a>
+        </div>
+
+        <!-- Form Content -->
+        <div class="drawer-form-body">
+
+            <!-- Section: 基本信息 -->
+            <div class="section-card" id="section-basic" style="scroll-margin-top: 20px;">
+                <div class="section-title">基本信息</div>
+                <div class="section-body">
+                    <div class="form-grid">
+                        <!-- Row 1 -->
+                        <div class="form-group">
+                            <label class="form-label">商品编码</label>
+                            <input class="form-input" type="text" placeholder="留空自动生成" value="SP-20260702-001">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">商品名称<span class="required">*</span></label>
+                            <input class="form-input" type="text" value="农夫山泉饮用天然水550ml">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">商品分类</label>
+                            <select class="form-select">
+                                <option value="">请选择</option>
+                                <option value="drink" selected>饮料类</option>
+                                <option value="alcohol">酒水类</option>
+                                <option value="grain">粮油类</option>
+                                <option value="daily">日化类</option>
+                                <option value="snack">零食类</option>
+                                <option value="fresh">生鲜类</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">品牌</label>
+                            <select class="form-select">
+                                <option value="">请选择</option>
+                                <option value="nongfu" selected>农夫山泉</option>
+                                <option value="cola">可口可乐</option>
+                                <option value="tongyi">统一</option>
+                                <option value="kangshifu">康师傅</option>
+                                <option value="mengniu">蒙牛</option>
+                                <option value="yili">伊利</option>
+                                <option value="haitian">海天</option>
+                                <option value="jinlongyu">金龙鱼</option>
+                            </select>
+                        </div>
+                        <!-- Row 2 -->
+                        <div class="form-group">
+                            <label class="form-label">规格型号<span class="required">*</span></label>
+                            <input class="form-input" type="text" value="550ml">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">条形码</label>
+                            <input class="form-input" type="text" value="6921168509256">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">商品类型</label>
+                            <select class="form-select">
+                                <option value="normal" selected>正常商品</option>
+                                <option value="gift">赠品</option>
+                                <option value="sample">样品</option>
+                                <option value="service">服务商品</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">商品属性</label>
+                            <select class="form-select">
+                                <option value="common" selected>普通商品</option>
+                                <option value="weighted">称重商品</option>
+                                <option value="combo">组合商品</option>
+                                <option value="processed">加工商品</option>
+                            </select>
+                        </div>
+                        <!-- Row 3 -->
+                        <div class="form-group">
+                            <label class="form-label">默认仓库<span class="required">*</span></label>
+                            <select class="form-select">
+                                <option value="">请选择</option>
+                                <option value="main" selected>主仓</option>
+                                <option value="east">东区分仓</option>
+                                <option value="west">西区分仓</option>
+                                <option value="temp">临时仓</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">保质期天数</label>
+                            <input class="form-input" type="number" value="365">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">预警天数</label>
+                            <input class="form-input" type="number" value="30">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">存储属性</label>
+                            <select class="form-select">
+                                <option value="room" selected>常温</option>
+                                <option value="cold">冷藏</option>
+                                <option value="frozen">冷冻</option>
+                                <option value="cool">阴凉</option>
+                            </select>
+                        </div>
+                        <!-- Row 4 -->
+                        <div class="form-group">
+                            <label class="form-label">产地</label>
+                            <input class="form-input" type="text" value="浙江千岛湖">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">税率(%)</label>
+                            <input class="form-input" type="text" value="13">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">计价单位</label>
+                            <input class="form-input" type="text" value="瓶">
+                        </div>
+                        <div class="form-group"></div>
+                        <!-- Checkboxes -->
+                    </div>
+                    <div class="form-checkbox-group">
+                        <label class="form-checkbox">
+                            <input type="checkbox" checked>
+                            <span>可售</span>
+                        </label>
+                        <label class="form-checkbox">
+                            <input type="checkbox" checked>
+                            <span>可采购</span>
+                        </label>
+                        <label class="form-checkbox">
+                            <input type="checkbox" checked>
+                            <span>可退</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section: 多单位设置 -->
+            <div class="section-card" id="section-unit" style="scroll-margin-top: 20px;">
+                <div class="section-title">多单位设置</div>
+                <div class="section-body">
+                    <div class="unit-section-header">
+                        <div class="unit-price-linkage">
+                            <input type="checkbox" class="table-checkbox" checked id="priceLinkage">
+                            <label for="priceLinkage">启用价格联动</label>
+                        </div>
+                        <span class="unit-price-linkage-desc">启用后，修改任意单位价格或换算数量，其他单位价格将自动按比例换算</span>
+                    </div>
+                    <div class="unit-transpose-wrapper">
+                        <table class="unit-transpose-table">
+                            <colgroup>
+                                <col class="col-label">
+                                <col class="col-unit">
+                                <col class="col-unit">
+                                <col class="col-unit">
+                                <col class="col-add">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th class="col-label-header">属性</th>
+                                    <th>
+                                        <div class="unit-enable-label">
+                                            <input type="checkbox" class="table-checkbox" checked>
+                                            <span>小单位</span>
+                                        </div>
+                                    </th>
+                                    <th>
+                                        <div class="unit-enable-label">
+                                            <input type="checkbox" class="table-checkbox">
+                                            <span>大单位</span>
+                                        </div>
+                                    </th>
+                                    <th>
+                                        <div class="unit-enable-label">
+                                            <input type="checkbox" class="table-checkbox">
+                                            <span>中单位</span>
+                                        </div>
+                                    </th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="row-label">单位</td>
+                                    <td><select class="cell-select"><option value="" selected></option><option>瓶</option><option>个</option><option>只</option><option>盒</option><option>包</option><option>箱</option><option>kg</option><option>g</option></select></td>
+                                    <td class="unit-col-disabled"><select class="cell-select" disabled><option value="" selected>请选择</option><option>瓶</option><option>个</option><option>只</option><option>盒</option><option>包</option><option>箱</option><option>kg</option><option>g</option></select></td>
+                                    <td class="unit-col-disabled"><select class="cell-select" disabled><option value="" selected>请选择</option><option>瓶</option><option>个</option><option>只</option><option>盒</option><option>包</option><option>箱</option><option>kg</option><option>g</option></select></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">换算数量</td>
+                                    <td><input type="number" class="cell-input" value="1"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="24" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="12" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">条码</td>
+                                    <td><input type="text" class="cell-input" placeholder="输入条码"></td>
+                                    <td class="unit-col-disabled"><input type="text" class="cell-input disabled" placeholder="输入条码" readonly></td>
+                                    <td class="unit-col-disabled"><input type="text" class="cell-input disabled" placeholder="输入条码" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label required">标准售价</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">最低价</td>
+                                    <td><input type="number" class="cell-input" value="0.00" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0.00" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0.00" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">建议零售价</td>
+                                    <td><input type="number" class="cell-input" value="0.00" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0.00" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0.00" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">批发价</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">零售价</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">会员价</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.01"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">重量(kg)</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.001"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label">体积(m&sup3;)</td>
+                                    <td><input type="number" class="cell-input" value="0" step="0.001"></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td class="unit-col-disabled"><input type="number" class="cell-input disabled" value="0" readonly></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label cell-center">销售单位</td>
+                                    <td class="cell-center"><input type="checkbox" class="table-checkbox" checked></td>
+                                    <td class="cell-center unit-col-disabled"><input type="checkbox" class="table-checkbox" disabled></td>
+                                    <td class="cell-center unit-col-disabled"><input type="checkbox" class="table-checkbox" disabled></td>
+                                    <td></td>
+                                </tr>
+                                <tr>
+                                    <td class="row-label cell-center">采购单位</td>
+                                    <td class="cell-center"><input type="checkbox" class="table-checkbox" checked></td>
+                                    <td class="cell-center unit-col-disabled"><input type="checkbox" class="table-checkbox" disabled></td>
+                                    <td class="cell-center unit-col-disabled"><input type="checkbox" class="table-checkbox" disabled></td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button class="btn-add-unit">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                        添加单位
+                    </button>
+                </div>
+            </div>
+
+            <!-- Section: 采购与库存 -->
+            <div class="section-card" id="section-stock" style="scroll-margin-top: 20px;">
+                <div class="section-title">采购与库存</div>
+                <div class="section-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">默认供应商</label>
+                            <select class="form-select">
+                                <option value="">请选择</option>
+                                <option value="nongfu" selected>农夫山泉股份有限公司</option>
+                                <option value="cola">可口可乐中国</option>
+                                <option value="tongyi">统一企业中国</option>
+                                <option value="kangshifu">康师傅控股</option>
+                                <option value="mengniu">蒙牛乳业集团</option>
+                                <option value="yili">伊利实业集团</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">标准售价</label>
+                            <input class="form-input" type="number" value="2.00" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">参考进价</label>
+                            <input class="form-input" type="number" value="1.20" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">最低售价</label>
+                            <input class="form-input" type="number" value="1.00" step="0.01">
+                        </div>
+                        <!-- Row 2 -->
+                        <div class="form-group">
+                            <label class="form-label">建议零售价</label>
+                            <input class="form-input" type="number" value="2.50" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">起订量</label>
+                            <input class="form-input" type="number" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">库存上限</label>
+                            <input class="form-input" type="number" value="5000">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">库存下限</label>
+                            <input class="form-input" type="number" value="500">
+                        </div>
+                        <!-- Row 3 -->
+                        <div class="form-group">
+                            <label class="form-label">托盘装量</label>
+                            <input class="form-input" type="number" value="48">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">堆码层数</label>
+                            <input class="form-input" type="number" value="4">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">基础重量(kg)</label>
+                            <input class="form-input" type="number" value="0.55" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">基础体积(m&sup3;)</label>
+                            <input class="form-input" type="number" value="0.0006" step="0.0001">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section: 备注与介绍 -->
+            <div class="section-card" id="section-remark" style="scroll-margin-top: 20px;">
+                <div class="section-title">备注与介绍</div>
+                <div class="section-body">
+                    <div class="form-grid" style="grid-template-columns: 1fr;">
+                        <div class="form-group" style="grid-column: span 1;">
+                            <label class="form-label">商品介绍</label>
+                            <textarea class="form-textarea" rows="4" placeholder="请输入商品介绍"></textarea>
+                        </div>
+                        <div class="form-group" style="grid-column: span 1;">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-textarea" rows="3" placeholder="请输入备注信息"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section: 其他信息 (readonly) -->
+            <div class="section-card readonly">
+                <div class="section-title">其他信息</div>
+                <div class="section-body">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">创建时间</span>
+                            <span class="info-value">2026-07-02 10:30:00</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">创建人</span>
+                            <span class="info-value">admin</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">更新时间</span>
+                            <span class="info-value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">更新人</span>
+                            <span class="info-value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        <!-- End Form Body -->
+
+    </div>
+    <!-- End Drawer Panel -->
+
+    <script>
+        // Tab anchor scrolling
+        document.querySelectorAll('.tab-nav .tab-pill').forEach(tab => {
+            tab.addEventListener('click', function(e) {
+                e.preventDefault();
+                const tabName = this.dataset.tab;
+                const sectionMap = {
+                    'basic': 'section-basic',
+                    'unit': 'section-unit',
+                    'stock': 'section-stock',
+                    'remark': 'section-remark'
+                };
+                const target = document.getElementById(sectionMap[tabName]);
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+
+        // Update active tab on scroll
+        const drawerBody = document.querySelector('.drawer-form-body');
+        if (drawerBody) {
+            drawerBody.addEventListener('scroll', function() {
+                const sections = ['section-basic', 'section-unit', 'section-stock', 'section-remark'];
+                const tabKeys = ['basic', 'unit', 'stock', 'remark'];
+                for (let i = sections.length - 1; i >= 0; i--) {
+                    const section = document.getElementById(sections[i]);
+                    if (section) {
+                        const rect = section.getBoundingClientRect();
+                        if (rect.top <= 120) {
+                            document.querySelectorAll('.tab-nav .tab-pill').forEach(t => {
+                                t.classList.remove('active');
+                            });
+                            const activeTab = document.querySelector(`.tab-pill[data-tab="${tabKeys[i]}"]`);
+                            if (activeTab) {
+                                activeTab.classList.add('active');
+                            }
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Cancel button / backdrop click
+        document.querySelector('[data-dom-id="btn-cancel"]').addEventListener('click', function() {
+            document.querySelector('.drawer-panel').style.display = 'none';
+            document.querySelector('.drawer-backdrop').style.display = 'none';
+        });
+        document.querySelector('[data-dom-id="drawer-backdrop"]').addEventListener('click', function() {
+            document.querySelector('.drawer-panel').style.display = 'none';
+            this.style.display = 'none';
+        });
+    </script>
+
+
+    <style>
+        /* ===== Page Reset ===== */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font-family);
+            background: var(--surface-bg);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ===== Layer 1: Background Page ===== */
+        .bg-page {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--surface-bg);
+            z-index: 1;
+            opacity: 0.5;
+            filter: saturate(0.3) brightness(0.9);
+        }
+        .bg-page .bg-header {
+            height: 56px;
+            background: #fff;
+            border-bottom: 1px solid var(--border-default);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 16px;
+        }
+        .bg-page .bg-logo {
+            width: 32px; height: 32px;
+            background: var(--brand-primary);
+            border-radius: var(--radius-md);
+        }
+        .bg-page .bg-sidebar {
+            position: absolute;
+            top: 56px; left: 0; bottom: 0;
+            width: 240px;
+            background: var(--surface-sidebar);
+            padding: 12px 0;
+        }
+        .bg-page .sidebar-item {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 10px;
+            color: var(--text-sidebar);
+            font-size: 13px;
+            margin-bottom: 2px;
+        }
+        .bg-page .sidebar-item.active {
+            background: var(--surface-sidebar-active);
+            color: #fff;
+        }
+        .bg-page .sidebar-dot {
+            width: 8px; height: 8px;
+            border-radius: 2px;
+            background: currentColor;
+        }
+        .bg-page .bg-content {
+            position: absolute;
+            top: 56px; left: 240px; right: 0; bottom: 0;
+            padding: 20px;
+            overflow: hidden;
+        }
+        .bg-page .bg-table-card {
+            background: #fff;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-default);
+            overflow: hidden;
+        }
+        .bg-page .bg-table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .bg-page .bg-table-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .bg-page .bg-table-actions {
+            display: flex; gap: 8px;
+        }
+        .bg-page .bg-table-actions span {
+            height: 32px; padding: 0 12px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            font-size: 12px;
+            display: flex; align-items: center;
+            color: var(--text-secondary);
+            background: #fff;
+        }
+        .bg-page table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .bg-page th {
+            height: 40px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            background: var(--surface-bg);
+            padding: 0 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .bg-page td {
+            height: 44px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 0 16px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .bg-page td:first-child {
+            color: var(--text-link);
+            font-weight: 500;
+        }
+
+        /* ===== Layer 2: Drawer Backdrop ===== */
+        .drawer-backdrop {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.25);
+            z-index: 10;
+        }
+
+        /* ===== Layer 3: Drawer Panel ===== */
+        .drawer-panel {
+            position: fixed;
+            top: 0; right: 0; bottom: 0;
+            width: 1100px;
+            background: #fff;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+            border-radius: 12px 0 0 0;
+        }
+
+        /* ===== Drawer Header ===== */
+        .drawer-header {
+            height: 56px;
+            min-height: 56px;
+            border-bottom: 1px solid var(--border-default);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            background: #fff;
+        }
+        .drawer-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .drawer-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .drawer-badge {
+            display: inline-flex;
+            align-items: center;
+            height: 24px;
+            padding: 0 10px;
+            background: var(--brand-primary-50);
+            color: var(--brand-primary);
+            border: 1px solid var(--brand-primary-200);
+            border-radius: var(--radius-full);
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .drawer-header-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* ===== Buttons ===== */
+        .btn {
+            height: 32px;
+            padding: 0 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+            border: 1px solid var(--border-default);
+            background: #fff;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .btn:hover {
+            background: var(--surface-bg);
+            border-color: #CBD5E0;
+            color: var(--text-primary);
+        }
+        .btn-primary {
+            background: var(--state-success);
+            border-color: var(--state-success);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #2F855A;
+            border-color: #2F855A;
+            color: #fff;
+        }
+
+        /* ===== Tab Navigation ===== */
+        .tab-nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 12px 24px 0;
+            background: #fff;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .tab-pill {
+            height: 32px;
+            padding: 0 16px;
+            border-radius: var(--radius-full);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            transition: all 0.2s ease;
+            background: var(--surface-bg);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-default);
+            text-decoration: none;
+        }
+        .tab-pill:hover {
+            background: #EDF2F7;
+            color: var(--text-primary);
+            border-color: #CBD5E0;
+        }
+        .tab-pill.active {
+            background: var(--brand-primary);
+            color: #fff;
+            border-color: var(--brand-primary);
+        }
+
+        /* ===== Drawer Form Body ===== */
+        .drawer-form-body {
+            flex: 1;
+            overflow-y: auto;
+            background: var(--surface-bg);
+            padding: 20px 24px 40px;
+        }
+        .drawer-form-body::-webkit-scrollbar {
+            width: 6px;
+        }
+        .drawer-form-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .drawer-form-body::-webkit-scrollbar-thumb {
+            background: #CBD5E0;
+            border-radius: 3px;
+        }
+        .drawer-form-body::-webkit-scrollbar-thumb:hover {
+            background: #A0AEC0;
+        }
+
+        /* ===== Section Card ===== */
+        .section-card {
+            background: #fff;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-default);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .section-card.readonly {
+            background: var(--surface-bg);
+        }
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            padding: 16px 20px 12px;
+            border-bottom: 1px solid var(--border-light);
+        }
+        .section-body {
+            padding: 16px 20px 20px;
+        }
+
+        /* ===== Form Grid ===== */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px 20px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group.span-2 {
+            grid-column: span 2;
+        }
+        .form-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            line-height: 1;
+        }
+        .form-label .required {
+            color: var(--state-error);
+            margin-left: 2px;
+        }
+        .form-input {
+            height: 32px;
+            padding: 0 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            color: var(--text-primary);
+            background: var(--surface-input);
+            outline: none;
+            transition: all 0.15s ease;
+            font-family: var(--font-family);
+        }
+        .form-input:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+        }
+        .form-input::placeholder {
+            color: var(--text-tertiary);
+        }
+        .form-select {
+            height: 32px;
+            padding: 0 28px 0 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            color: var(--text-primary);
+            background: var(--surface-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 5l3 3 3-3' stroke='%23A0AEC0' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+            outline: none;
+            transition: all 0.15s ease;
+            font-family: var(--font-family);
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .form-select:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+        }
+        .form-textarea {
+            padding: 8px 10px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            color: var(--text-primary);
+            background: var(--surface-input);
+            outline: none;
+            transition: all 0.15s ease;
+            font-family: var(--font-family);
+            resize: vertical;
+            line-height: 1.5;
+        }
+        .form-textarea:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.15);
+        }
+        .form-textarea::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        /* ===== Checkbox ===== */
+        .form-checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding-top: 20px;
+        }
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .form-checkbox input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 1.5px solid var(--border-default);
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s ease;
+        }
+        .form-checkbox input[type="checkbox"]:checked {
+            background: var(--brand-primary);
+            border-color: var(--brand-primary);
+        }
+        .form-checkbox input[type="checkbox"]:checked::after {
+            content: '';
+            position: absolute;
+            top: 1px; left: 4px;
+            width: 4px; height: 8px;
+            border: 2px solid #fff;
+            border-top: none;
+            border-left: none;
+            transform: rotate(45deg);
+        }
+
+        /* ===== Multi-Unit Transposed Table ===== */
+        .unit-section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .unit-price-linkage {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .unit-price-linkage .table-checkbox {
+            width: 16px;
+            height: 16px;
+        }
+        .unit-price-linkage label {
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        .unit-price-linkage-desc {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            line-height: 1.4;
+        }
+        .unit-transpose-wrapper {
+            overflow-x: auto;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+        }
+        .unit-transpose-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+        .unit-transpose-table col.col-label { width: 120px; }
+        .unit-transpose-table col.col-unit { width: 1fr; }
+        .unit-transpose-table col.col-add { width: 50px; }
+        .unit-transpose-table thead th {
+            height: 32px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: var(--surface-bg);
+            padding: 0 8px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-default);
+            border-right: 1px solid var(--border-light);
+            white-space: nowrap;
+        }
+        .unit-transpose-table thead th:last-child { border-right: none; }
+        .unit-transpose-table thead th.col-label-header {
+            text-align: left;
+            width: 120px;
+        }
+        .unit-transpose-table thead th .unit-enable-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .unit-transpose-table tbody td {
+            height: 34px;
+            padding: 2px 6px;
+            border-bottom: 1px solid var(--border-light);
+            border-right: 1px solid var(--border-light);
+            font-size: 13px;
+            color: var(--text-primary);
+            vertical-align: middle;
+        }
+        .unit-transpose-table tbody td:last-child { border-right: none; }
+        .unit-transpose-table tbody td.row-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--surface-bg);
+            text-align: left;
+            padding-left: 12px;
+            white-space: nowrap;
+        }
+        .unit-transpose-table tbody td.row-label.required::after {
+            content: " *";
+            color: var(--state-error);
+        }
+        .unit-transpose-table tbody td.cell-center { text-align: center; }
+        .unit-transpose-table .cell-input {
+            width: 100%;
+            height: 26px;
+            padding: 0 6px;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            font-size: 12px;
+            color: var(--text-primary);
+            background: transparent;
+            outline: none;
+            font-family: var(--font-family);
+            transition: border-color 0.15s, background 0.15s;
+            text-align: right;
+        }
+        .unit-transpose-table .cell-input:hover {
+            border-color: var(--border-default);
+            background: var(--surface-card);
+        }
+        .unit-transpose-table .cell-input:focus {
+            border-color: var(--border-focus);
+            background: var(--surface-card);
+            box-shadow: 0 0 0 2px rgba(22,119,255,0.08);
+        }
+        .unit-transpose-table .cell-input:read-only,
+        .unit-transpose-table .cell-input.disabled {
+            color: var(--text-tertiary);
+            background: var(--surface-bg);
+            cursor: not-allowed;
+        }
+        .unit-transpose-table .cell-select {
+            width: 100%;
+            height: 26px;
+            padding: 0 4px;
+            border: 1px solid transparent;
+            border-radius: 3px;
+            font-size: 12px;
+            color: var(--text-primary);
+            background: transparent;
+            outline: none;
+            font-family: var(--font-family);
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        .unit-transpose-table .cell-select:hover {
+            border-color: var(--border-default);
+            background: var(--surface-card);
+        }
+        .unit-transpose-table .cell-select:disabled {
+            color: var(--text-tertiary);
+            cursor: not-allowed;
+        }
+        .unit-transpose-table .unit-col-disabled .cell-input,
+        .unit-transpose-table .unit-col-disabled .cell-select {
+            color: var(--text-tertiary);
+            background: var(--surface-bg);
+            cursor: not-allowed;
+        }
+        .unit-transpose-table .add-col-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed var(--border-default);
+            border-radius: 3px;
+            background: transparent;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            margin: 2px auto;
+            transition: all 0.15s;
+        }
+        .unit-transpose-table .add-col-btn:hover {
+            border-color: var(--brand-primary);
+            color: var(--brand-primary);
+            background: var(--state-info-bg);
+        }
+
+        /* ===== Toggle Switch ===== */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--border-default);
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            width: 16px; height: 16px;
+            left: 2px; bottom: 2px;
+            background: #fff;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--brand-primary);
+        }
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(16px);
+        }
+
+        /* ===== Add Unit Button ===== */
+        .btn-add-unit {
+            width: 100%;
+            height: 32px;
+            border: 1px dashed var(--border-default);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            color: var(--text-tertiary);
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+            margin-top: 8px;
+        }
+        .btn-add-unit:hover {
+            border-color: var(--brand-primary);
+            color: var(--brand-primary);
+            background: var(--state-info-bg);
+        }
+
+        /* ===== Readonly Info Grid ===== */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px 20px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .info-label {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            font-weight: 500;
+        }
+        .info-value {
+            font-size: 13px;
+            color: var(--text-secondary);
+            height: 32px;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            background: #EDF2F7;
+            border-radius: var(--radius-md);
+        }
+
+        /* ===== Checkbox in table ===== */
+        .table-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 1.5px solid var(--border-default);
+            border-radius: 3px;
+            background: #fff;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s ease;
+        }
+        .table-checkbox:checked {
+            background: var(--brand-primary);
+            border-color: var(--brand-primary);
+        }
+        .table-checkbox:checked::after {
+            content: '';
+            position: absolute;
+            top: 1px; left: 4px;
+            width: 4px; height: 8px;
+            border: 2px solid #fff;
+            border-top: none;
+            border-left: none;
+            transform: rotate(45deg);
+        }
+    </style>
+</body>
+</html>

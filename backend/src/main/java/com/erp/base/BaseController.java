@@ -286,9 +286,7 @@ public class BaseController {
     public ApiResponse<BaseSupplier> createSupplier(@RequestBody Map<String, Object> request) {
         BaseSupplier entity = new BaseSupplier();
         entity.setSupplierId(genId("S"));
-        entity.setSupplierCode((String) request.getOrDefault("supplierCode", entity.getSupplierId()));
-        entity.setSupplierName((String) request.getOrDefault("supplierName", "新供应商"));
-        entity.setStatus("NORMAL");
+        fillSupplierEntity(entity, request);
         supplierService.save(entity);
         return ApiResponse.ok(entity);
     }
@@ -298,10 +296,33 @@ public class BaseController {
         String code = (String) request.get("supplierCode");
         BaseSupplier entity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", code));
         if (entity == null) return ApiResponse.fail("404", "供应商不存在");
-        if (request.get("supplierName") != null) entity.setSupplierName((String) request.get("supplierName"));
-        if (request.get("status") != null) entity.setStatus((String) request.get("status"));
+        String originalCode = entity.getSupplierCode();
+        fillSupplierEntity(entity, request);
+        entity.setSupplierCode(originalCode);
         supplierService.updateById(entity);
         return ApiResponse.ok(null);
+    }
+
+    private void fillSupplierEntity(BaseSupplier entity, Map<String, Object> request) {
+        entity.setSupplierCode((String) request.getOrDefault("supplierCode", entity.getSupplierId()));
+        entity.setSupplierName((String) request.getOrDefault("supplierName", "新供应商"));
+        entity.setShortName((String) request.getOrDefault("shortName", ""));
+        entity.setSupplierType((String) request.getOrDefault("supplierType", "普通供应商"));
+        entity.setContactName((String) request.getOrDefault("contactName", ""));
+        entity.setPhone((String) request.getOrDefault("phone", ""));
+        entity.setDeliveryDays(parseInt(request.get("deliveryDays")));
+        entity.setSettlementMethod((String) request.getOrDefault("settlementMethod", "现结"));
+        entity.setAccountPeriodDays(parseInt(request.get("accountPeriodDays")));
+        entity.setDefaultBuyer((String) request.getOrDefault("defaultBuyer", ""));
+        entity.setDefaultReceiptAccount((String) request.getOrDefault("defaultReceiptAccount", ""));
+        entity.setInvoiceTitle((String) request.getOrDefault("invoiceTitle", ""));
+        entity.setTaxNo((String) request.getOrDefault("taxNo", ""));
+        entity.setAddress((String) request.getOrDefault("address", ""));
+        entity.setRemark((String) request.getOrDefault("remark", ""));
+        String status = (String) request.getOrDefault("status", "NORMAL");
+        if ("正常".equals(status)) status = "NORMAL";
+        else if ("停用".equals(status)) status = "STOPPED";
+        entity.setStatus(status);
     }
 
     public record CategorySaveRequest(
