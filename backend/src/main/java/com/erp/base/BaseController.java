@@ -74,14 +74,26 @@ public class BaseController {
     public ApiResponse<BaseCategory> createCategory(@RequestBody Map<String, Object> request) {
         BaseCategory entity = new BaseCategory();
         entity.setCategoryId(genId("CATE"));
-        String parentId = (String) request.getOrDefault("parentId", "");
-        String parentCode = (String) request.getOrDefault("parentCode", "");
-        String categoryCode = (String) request.getOrDefault("categoryCode", "");
-        String categoryName = (String) request.getOrDefault("categoryName", "新分类");
-        // 生成完整分类编码
-        String fullCode = (parentCode == null ? "" : parentCode) + (categoryCode == null ? "" : categoryCode);
-        if (fullCode.isBlank()) {
-            fullCode = entity.getCategoryId(); // 兜底避免唯一约束冲突
+        String parentCode = String.valueOf(request.getOrDefault("parentCode", "")).trim();
+        String categoryCode = String.valueOf(request.getOrDefault("categoryCode", "")).trim();
+        String categoryName = String.valueOf(request.getOrDefault("categoryName", "新分类")).trim();
+        // parentId：如果传了就用；否则根据 parentCode 反查
+        String parentId = String.valueOf(request.getOrDefault("parentId", "")).trim();
+        if ((parentId == null || parentId.isBlank()) && !parentCode.isBlank()) {
+            BaseCategory parent = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", parentCode));
+            if (parent != null) parentId = parent.getCategoryId();
+        }
+        // 生成完整分类编码：如果用户输入的编码已经以父编码开头，直接用；否则拼接
+        String fullCode;
+        if (parentCode.isBlank()) {
+            fullCode = categoryCode;
+        } else if (categoryCode.startsWith(parentCode)) {
+            fullCode = categoryCode;
+        } else {
+            fullCode = parentCode + categoryCode;
+        }
+        if (fullCode == null || fullCode.isBlank()) {
+            fullCode = entity.getCategoryId();
         }
         // 唯一性校验
         if (categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", fullCode)) != null) {
@@ -421,6 +433,161 @@ public class BaseController {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    // ============ 补齐 update/delete 接口 ============
+
+    @PostMapping("/unit/update")
+    public ApiResponse<Void> updateUnit(@RequestBody Map<String, Object> request) {
+        String code = (String) request.getOrDefault("unitCode", request.get("bizId"));
+        BaseUnit entity = unitService.getOne(new QueryWrapper<BaseUnit>().eq("unit_code", code).or().eq("unit_id", code));
+        if (entity == null) return ApiResponse.fail("404", "单位不存在");
+        if (request.get("unitName") != null) entity.setUnitName((String) request.get("unitName"));
+        if (request.get("canBaseUnit") != null) entity.setCanBaseUnit(Boolean.TRUE.equals(request.get("canBaseUnit")) || "是".equals(request.get("canBaseUnit")) || "true".equals(String.valueOf(request.get("canBaseUnit"))));
+        unitService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/unit/delete")
+    public ApiResponse<Void> deleteUnit(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("unitCode", request.getOrDefault("bizId", "")));
+        BaseUnit entity = unitService.getOne(new QueryWrapper<BaseUnit>().eq("unit_code", code).or().eq("unit_id", code));
+        if (entity == null) return ApiResponse.fail("404", "单位不存在");
+        unitService.removeById(entity.getUnitId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/unit/stop")
+    public ApiResponse<Void> stopUnit(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("unitCode", request.getOrDefault("bizId", "")));
+        BaseUnit entity = unitService.getOne(new QueryWrapper<BaseUnit>().eq("unit_code", code).or().eq("unit_id", code));
+        if (entity == null) return ApiResponse.fail("404", "单位不存在");
+        entity.setStatus("STOPPED");
+        unitService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/brand/update")
+    public ApiResponse<Void> updateBrand(@RequestBody Map<String, Object> request) {
+        String code = (String) request.getOrDefault("brandCode", request.get("bizId"));
+        BaseBrand entity = brandService.getOne(new QueryWrapper<BaseBrand>().eq("brand_code", code).or().eq("brand_id", code));
+        if (entity == null) return ApiResponse.fail("404", "品牌不存在");
+        if (request.get("brandName") != null) entity.setBrandName((String) request.get("brandName"));
+        if (request.get("simpleCode") != null) entity.setSimpleCode((String) request.get("simpleCode"));
+        brandService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/brand/delete")
+    public ApiResponse<Void> deleteBrand(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("brandCode", request.getOrDefault("bizId", "")));
+        BaseBrand entity = brandService.getOne(new QueryWrapper<BaseBrand>().eq("brand_code", code).or().eq("brand_id", code));
+        if (entity == null) return ApiResponse.fail("404", "品牌不存在");
+        brandService.removeById(entity.getBrandId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/brand/stop")
+    public ApiResponse<Void> stopBrand(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("brandCode", request.getOrDefault("bizId", "")));
+        BaseBrand entity = brandService.getOne(new QueryWrapper<BaseBrand>().eq("brand_code", code).or().eq("brand_id", code));
+        if (entity == null) return ApiResponse.fail("404", "品牌不存在");
+        entity.setStatus("STOPPED");
+        brandService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/warehouse/update")
+    public ApiResponse<Void> updateWarehouse(@RequestBody Map<String, Object> request) {
+        String code = (String) request.getOrDefault("warehouseCode", request.get("bizId"));
+        BaseWarehouse entity = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", code).or().eq("warehouse_id", code));
+        if (entity == null) return ApiResponse.fail("404", "仓库不存在");
+        if (request.get("warehouseName") != null) entity.setWarehouseName((String) request.get("warehouseName"));
+        if (request.get("warehouseType") != null) entity.setWarehouseType((String) request.get("warehouseType"));
+        if (request.get("inventoryType") != null) entity.setInventoryType((String) request.get("inventoryType"));
+        if (request.get("costGroup") != null) entity.setCostGroup((String) request.get("costGroup"));
+        if (request.get("managerName") != null) entity.setManagerName((String) request.get("managerName"));
+        warehouseService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/warehouse/delete")
+    public ApiResponse<Void> deleteWarehouse(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("warehouseCode", request.getOrDefault("bizId", "")));
+        BaseWarehouse entity = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", code).or().eq("warehouse_id", code));
+        if (entity == null) return ApiResponse.fail("404", "仓库不存在");
+        warehouseService.removeById(entity.getWarehouseId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/warehouse/stop")
+    public ApiResponse<Void> stopWarehouse(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("warehouseCode", request.getOrDefault("bizId", "")));
+        BaseWarehouse entity = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", code).or().eq("warehouse_id", code));
+        if (entity == null) return ApiResponse.fail("404", "仓库不存在");
+        entity.setStatus("STOPPED");
+        warehouseService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/category/delete")
+    public ApiResponse<Void> deleteCategory(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("categoryCode", request.getOrDefault("bizId", "")));
+        BaseCategory entity = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", code).or().eq("category_id", code));
+        if (entity == null) return ApiResponse.fail("404", "分类不存在");
+        // 有子分类则拒绝删除
+        long children = categoryService.count(new QueryWrapper<BaseCategory>().eq("parent_code", entity.getCategoryCode()));
+        if (children > 0) return ApiResponse.fail("400", "该分类存在子分类，请先删除子分类");
+        categoryService.removeById(entity.getCategoryId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/category/stop")
+    public ApiResponse<Void> stopCategory(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("categoryCode", request.getOrDefault("bizId", "")));
+        BaseCategory entity = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", code).or().eq("category_id", code));
+        if (entity == null) return ApiResponse.fail("404", "分类不存在");
+        entity.setStatus("STOPPED");
+        categoryService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/customer/delete")
+    public ApiResponse<Void> deleteCustomer(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("customerCode", request.getOrDefault("bizId", "")));
+        BaseCustomer entity = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", code).or().eq("customer_id", code));
+        if (entity == null) return ApiResponse.fail("404", "客户不存在");
+        customerService.removeById(entity.getCustomerId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/customer/stop")
+    public ApiResponse<Void> stopCustomer(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("customerCode", request.getOrDefault("bizId", "")));
+        BaseCustomer entity = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", code).or().eq("customer_id", code));
+        if (entity == null) return ApiResponse.fail("404", "客户不存在");
+        entity.setStatus("STOPPED");
+        customerService.updateById(entity);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/supplier/delete")
+    public ApiResponse<Void> deleteSupplier(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("supplierCode", request.getOrDefault("bizId", "")));
+        BaseSupplier entity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", code).or().eq("supplier_id", code));
+        if (entity == null) return ApiResponse.fail("404", "供应商不存在");
+        supplierService.removeById(entity.getSupplierId());
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/supplier/stop")
+    public ApiResponse<Void> stopSupplier(@RequestBody Map<String, Object> request) {
+        String code = String.valueOf(request.getOrDefault("supplierCode", request.getOrDefault("bizId", "")));
+        BaseSupplier entity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", code).or().eq("supplier_id", code));
+        if (entity == null) return ApiResponse.fail("404", "供应商不存在");
+        entity.setStatus("STOPPED");
+        supplierService.updateById(entity);
+        return ApiResponse.ok(null);
     }
 
     public record CategorySaveRequest(

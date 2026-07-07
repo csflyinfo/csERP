@@ -69,6 +69,10 @@ th { background: #f7fbff; color: #24415f; font-weight: 900; position: sticky; to
 .sortable-th:hover { color: var(--primary); background: #eaf4ff; }
 .num { text-align: right; font-family: Consolas, monospace; }
 .link { color: var(--primary); font-weight: 800; cursor: pointer; margin-right: 10px; }.link-btn{border:0;background:transparent;padding:0;font:inherit}
+.link-btn.danger-link { color: #f56c6c !important; }
+.link-btn.danger-link:hover { color: #d33 !important; }
+.tree-empty { padding: 20px 10px; text-align: center; color: #909399; font-size: 12px; line-height: 1.6; }
+.tree-indent { color: #c0c4cc; margin-right: 4px; font-family: monospace; }
 .badge { border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 800; }
 .ok { background: #dcfce7; color: #15803d; }
 .wait { background: #fff7ed; color: #c2410c; }

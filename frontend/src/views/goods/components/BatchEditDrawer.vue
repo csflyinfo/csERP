@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { post } from '../../../api/client.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -8,14 +9,45 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'save'])
 
+// 从后端加载真实下拉数据
+const categoryOpts = ref([])
+const brandOpts = ref([])
+const warehouseOpts = ref([])
+const supplierOpts = ref([])
+const employeeOpts = ref([])
+
+async function loadOpts() {
+  const params = { pageNo: 1, pageSize: 500, filters: {} }
+  try {
+    const [cat, brand, wh, sup, emp] = await Promise.all([
+      post('/base/category/page', params).catch(() => ({ records: [] })),
+      post('/base/brand/page', params).catch(() => ({ records: [] })),
+      post('/base/warehouse/page', params).catch(() => ({ records: [] })),
+      post('/base/supplier/page', params).catch(() => ({ records: [] })),
+      post('/base/master/employee/page', params).catch(() => ({ records: [] })),
+    ])
+    const allCats = cat.records || []
+    const parentCodes = new Set(allCats.map(r => r.parentCode).filter(Boolean))
+    categoryOpts.value = allCats.filter(r => !parentCodes.has(r.categoryCode)).map(r => r.categoryName).filter(Boolean)
+    brandOpts.value = (brand.records || []).map(r => r.brandName).filter(Boolean)
+    warehouseOpts.value = (wh.records || []).map(r => r.warehouseName).filter(Boolean)
+    supplierOpts.value = (sup.records || []).map(r => r.supplierName).filter(Boolean)
+    employeeOpts.value = (emp.records || []).map(r => r.employeeName).filter(Boolean)
+  } catch (e) {
+    console.warn('加载下拉数据失败', e)
+  }
+}
+
+onMounted(loadOpts)
+
 // PRD 定义的批量编辑字段配置（不含价格相关字段）
-const batchEditFieldsConfig = [
+const batchEditFieldsConfig = computed(() => [
   { key: 'goodsType', label: '商品类型', type: 'select', options: ['正常商品', '组合商品', '赠品', '服务商品'] },
-  { key: 'brandName', label: '品牌', type: 'select', options: ['农夫山泉', '可口可乐', '百草味', '统一企业', '康师傅'] },
-  { key: 'categoryName', label: '分类', type: 'select', options: ['瓶装水', '饮料', '方便食品', '日化百货', '休闲零食'] },
-  { key: 'defaultWarehouse', label: '默认仓库', type: 'select', options: ['总仓', '东区仓', '西区仓', '南区仓', '北区仓'] },
-  { key: 'defaultSupplier', label: '默认供应商', type: 'select', options: ['农夫山泉杭州经销', '可口可乐经销', '百草味供应商', '统一企业'] },
-  { key: 'goodsManager', label: '商品负责人', type: 'select', options: ['张三', '李四', '王五', '赵六'] },
+  { key: 'brandName', label: '品牌', type: 'select', options: brandOpts.value },
+  { key: 'categoryName', label: '分类', type: 'select', options: categoryOpts.value },
+  { key: 'defaultWarehouse', label: '默认仓库', type: 'select', options: warehouseOpts.value },
+  { key: 'defaultSupplier', label: '默认供应商', type: 'select', options: supplierOpts.value },
+  { key: 'goodsManager', label: '商品负责人', type: 'select', options: employeeOpts.value },
   { key: 'storageProperty', label: '存储属性', type: 'select', options: ['常温', '冷藏', '冷冻', '恒温', '避光'] },
   { key: 'shelfLifeDays', label: '保质期(天)', type: 'number', placeholder: '0' },
   { key: 'stockUpperLimit', label: '库存上限', type: 'number', placeholder: '0' },
@@ -27,7 +59,7 @@ const batchEditFieldsConfig = [
   { key: 'isWeighted', label: '是否称重', type: 'yesno' },
   { key: 'isPresale', label: '是否预售', type: 'yesno' },
   { key: 'status', label: '状态', type: 'select', options: ['正常', '停用', '待审核'] },
-]
+])
 
 // 表单数据 - 动态生成
 const formModel = ref({})
@@ -35,7 +67,7 @@ const formModel = ref({})
 // 初始化表单
 function initForm() {
   const form = {}
-  batchEditFieldsConfig.forEach(field => {
+  batchEditFieldsConfig.value.forEach(field => {
     let defaultValue = ''
     if (field.type === 'number') {
       defaultValue = 0
@@ -59,7 +91,7 @@ const hasSelectedField = computed(() => {
 // 重置表单
 function resetForm() {
   Object.keys(formModel.value).forEach(key => {
-    const field = batchEditFieldsConfig.find(f => f.key === key)
+    const field = batchEditFieldsConfig.value.find(f => f.key === key)
     formModel.value[key].enabled = false
     if (field.type === 'number') {
       formModel.value[key].value = 0

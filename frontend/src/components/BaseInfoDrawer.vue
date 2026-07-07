@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import { post } from '../api/client.js'
 
 const props = defineProps({
@@ -7,6 +7,23 @@ const props = defineProps({
   mode: { type: String, default: 'add' },
   moduleCode: { type: String, required: true }, // customer | supplier | warehouse | unit | brand | category
   editData: { type: Object, default: null },
+})
+
+// 上级分类下拉数据（分类模块用）
+const categoryParents = ref([])
+async function loadCategoryParents() {
+  try {
+    const data = await post('/base/category/page', { pageNo: 1, pageSize: 500, filters: {} })
+    categoryParents.value = (data.records || []).map(r => ({ code: r.categoryCode, name: r.categoryName }))
+  } catch (e) {
+    categoryParents.value = []
+  }
+}
+onMounted(() => {
+  if (props.moduleCode === 'category') loadCategoryParents()
+})
+watch(() => props.visible, (v) => {
+  if (v && props.moduleCode === 'category') loadCategoryParents()
 })
 
 const emit = defineEmits(['close', 'save'])
@@ -172,8 +189,8 @@ const fields = computed(() => {
       ]
     case 'category':
       return [
-        { key: 'parentCode', label: '上级编码' },
-        { key: 'categoryCode', label: '分类编码' },
+        { key: 'parentCode', label: '上级分类', type: 'select', options: [{ value: '', label: '（无 - 顶级分类）' }, ...categoryParents.value.map(c => ({ value: c.code, label: `${c.code}  ${c.name}` }))] },
+        { key: 'categoryCode', label: '分类编号', required: true },
         { key: 'categoryName', label: '分类名称', required: true },
         { key: 'taxRate', label: '税率', type: 'select', options: ['13%', '9%', '6%', '0%'] },
       ]
@@ -202,7 +219,11 @@ const fields = computed(() => {
               <span v-if="f.required" style="color:var(--danger)">*</span>
             </label>
             <select v-if="f.type === 'select'" v-model="form[f.key]">
-              <option v-for="opt in f.options" :key="opt" :value="opt">{{ opt }}</option>
+              <option
+                v-for="opt in f.options"
+                :key="typeof opt === 'object' ? opt.value : opt"
+                :value="typeof opt === 'object' ? opt.value : opt"
+              >{{ typeof opt === 'object' ? opt.label : opt }}</option>
             </select>
             <input v-else-if="f.type === 'number'" v-model.number="form[f.key]" type="number" />
             <textarea v-else-if="f.type === 'textarea'" v-model="form[f.key]" :placeholder="f.label" rows="2"></textarea>

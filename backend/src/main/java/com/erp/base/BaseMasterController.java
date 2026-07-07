@@ -92,6 +92,54 @@ public class BaseMasterController {
         return updateMasterStatus(request, "STOPPED", "STOP", "停用基础资料");
     }
 
+    @PostMapping("/delete")
+    public ApiResponse<Map<String, Object>> delete(@RequestBody Map<String, Object> request) {
+        String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
+        String bizId = String.valueOf(request.getOrDefault("bizId", ""));
+        boolean removed = false;
+        switch (moduleCode) {
+            case "priceGroup":
+                removed = priceGroupService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BasePriceGroup>()
+                        .eq("price_group_code", bizId).or().eq("price_group_id", bizId));
+                break;
+            case "territory":
+                removed = territoryService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseTerritory>()
+                        .eq("territory_code", bizId).or().eq("territory_id", bizId));
+                break;
+            case "routeLine":
+                removed = routeLineService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseRouteLine>()
+                        .eq("route_line_code", bizId).or().eq("route_line_id", bizId));
+                break;
+            case "employee":
+                removed = employeeService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseEmployee>()
+                        .eq("employee_code", bizId).or().eq("employee_id", bizId));
+                break;
+            case "department":
+                removed = departmentService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseDepartment>()
+                        .eq("department_code", bizId).or().eq("department_id", bizId));
+                break;
+            case "owner":
+                removed = ownerService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseOwner>()
+                        .eq("owner_code", bizId).or().eq("owner_id", bizId));
+                break;
+            case "expenseType":
+                removed = expenseTypeService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseExpenseType>()
+                        .eq("expense_type_code", bizId).or().eq("expense_type_id", bizId));
+                break;
+            case "counterparty":
+                removed = counterpartyService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseCounterparty>()
+                        .eq("counterparty_code", bizId).or().eq("counterparty_id", bizId));
+                break;
+            case "fundAccount":
+                removed = fundAccountService.remove(new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.erp.base.entity.BaseFundAccount>()
+                        .eq("fund_account_code", bizId).or().eq("fund_account_id", bizId));
+                break;
+        }
+        if (!removed) throw new IllegalArgumentException("基础资料不存在或删除失败");
+        log("base." + moduleCode, "DELETE", bizId, "删除基础资料");
+        return ApiResponse.ok(GenericResult.operation(moduleCode, "DELETE"));
+    }
+
     @PostMapping("/freeze")
     public ApiResponse<Map<String, Object>> freeze(@RequestBody Map<String, Object> request) {
         return updateMasterStatus(request, "FROZEN", "FREEZE", "冻结基础资料");

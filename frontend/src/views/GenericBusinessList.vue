@@ -18,6 +18,10 @@ const moduleCode = computed(() => route.meta?.module || '')
 const config = computed(() => moduleConfigs[moduleCode.value] || {})
 const roleCode = 'ADMIN'
 
+// 基础资料模块（用于列表操作列显示"编辑 删除"）
+const BASE_MODULES = ['goods', 'customer', 'supplier', 'warehouse', 'unit', 'brand', 'category', 'priceGroup', 'territory', 'routeLine', 'employee', 'department', 'owner', 'expenseType', 'counterparty', 'fundAccount']
+const isBaseModule = computed(() => BASE_MODULES.includes(moduleCode.value))
+
 // 商品编辑抽屉
 const showGoodsDrawer = ref(false)
 const drawerMode = ref('add') // add/edit
@@ -78,10 +82,10 @@ function openBaseDrawer(mode, code, rowData = null) {
 function closeBaseDrawer() {
   showBaseDrawer.value = false
 }
-function onBaseSave(result) {
+async function onBaseSave(result) {
   showBaseDrawer.value = false
-  loadRows()
   show(`${moduleConfigs[baseDrawerCode.value]?.title || '资料'}保存成功`)
+  await loadRows()
 }
 
 // 批量编辑
@@ -114,6 +118,7 @@ const formModel = ref({})
 const tableRows = ref([])
 const loading = ref(false)
 const selectedTreeNode = ref('全部')
+const dynamicTree = ref([])   // 动态加载的树节点 [{ code, name, level, hasChildren }]
 const columnSettings = ref({})
 const pageNo = ref(1)
 const pageSize = ref(20)
@@ -149,6 +154,10 @@ async function loadRows() {
     const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: roleCode } })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, config.value)) : []
     total.value = data.total || 0
+    // 分类模块同步刷新树
+    if (moduleCode.value === 'category') {
+      buildCategoryTree(data.records || [])
+    }
   } catch (error) {
     tableRows.value = []
     total.value = 0
@@ -156,6 +165,43 @@ async function loadRows() {
   } finally {
     loading.value = false
   }
+}
+
+// 从扁平分类列表构建树形展示（父->子）
+function buildCategoryTree(records) {
+  if (!records || records.length === 0) {
+    dynamicTree.value = []
+    return
+  }
+  // 用 categoryCode 做映射，parentCode 关联父节点
+  const map = {}
+  records.forEach(r => {
+    map[r.categoryCode] = { code: r.categoryCode, name: r.categoryName, parentCode: r.parentCode || '', children: [] }
+  })
+  const roots = []
+  Object.values(map).forEach(node => {
+    if (node.parentCode && map[node.parentCode]) {
+      map[node.parentCode].children.push(node)
+    } else {
+      roots.push(node)
+    }
+  })
+  // 按 code 排序
+  const sortRec = (list) => {
+    list.sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    list.forEach(n => sortRec(n.children))
+  }
+  sortRec(roots)
+  // 展平为带缩进的显示节点
+  const flat = [{ code: '', name: '全部分类', level: 0 }]
+  const walk = (nodes, level) => {
+    nodes.forEach(n => {
+      flat.push({ code: n.code, name: n.name, level })
+      if (n.children.length) walk(n.children, level + 1)
+    })
+  }
+  walk(roots, 1)
+  dynamicTree.value = flat
 }
 
 function resetRows() {
@@ -202,24 +248,12 @@ function show(message) {
   setTimeout(() => (feedback.value = ''), 2000)
 }
 
-// 商品保存后处理：新增插入列表，编辑更新列表
-function handleGoodsSave(goodsData) {
+// 商品保存后处理：从数据库重新加载列表，保证显示真实持久化的数据
+async function handleGoodsSave(goodsData) {
   console.log('handleGoodsSave:', goodsData)
-  const row = buildGoodsRow(goodsData)
-  if (drawerMode.value === 'edit' && editGoodsData.value) {
-    // 编辑模式：找到原行并更新
-    const idx = tableRows.value.findIndex(r => r.c1 === editGoodsData.value.c1)
-    if (idx >= 0) {
-      tableRows.value[idx] = row
-    } else {
-      tableRows.value.unshift(row)
-    }
-  } else {
-    // 新增模式：插入到列表顶部
-    tableRows.value.unshift(row)
-    total.value = tableRows.value.length
-  }
   show('商品保存成功')
+  showGoodsDrawer.value = false
+  await loadRows()
 }
 
 // 将商品对象转换为列表行格式
@@ -662,7 +696,19 @@ function numberValue(field, fallback = 0) {
   return Number.isFinite(value) ? value : fallback
 }
 
-function selectTreeNode(node) { selectedTreeNode.value = node.trim(); queryFilters.value = { ...queryFilters.value, treeNode: selectedTreeNode.value }; pageNo.value = 1; loadRows(); show(`已切换到：${selectedTreeNode.value}`) }
+function selectTreeNode(nodeOrCode) {
+  const value = typeof nodeOrCode === 'string' ? nodeOrCode.trim() : ''
+  selectedTreeNode.value = value
+  if (moduleCode.value === 'category') {
+    // 分类模块：点击树节点=视觉高亮，不做后台过滤（列表显示所有分类）
+    show(value ? `已高亮：${value}` : '已显示全部')
+    return
+  }
+  queryFilters.value = { ...queryFilters.value, treeNode: value }
+  pageNo.value = 1
+  loadRows()
+  show(value ? `已切换到：${value}` : '已显示全部')
+}
 async function handleQuery(filters = {}) { queryFilters.value = filters; pageNo.value = 1; await loadRows(); show(`${config.value.title}查询完成`) }
 function handleReset() { queryFilters.value = {}; pageNo.value = 1; loadRows(); show(`${config.value.title}查询条件已重置`) }
 function handleMore(fields) { openDialog('more', '更多查询条件', fields.join('、')) }
@@ -685,9 +731,26 @@ function handleSortChange(field) {
 </script>
 
 <template>
-  <div class="module-body" :class="{ 'with-tree': config.tree }">
-    <aside v-if="config.tree" class="module-tree">
-      <div v-for="node in config.treeNodes" :key="node" class="tree-node" :class="{ active: selectedTreeNode === node.trim() }" @click="selectTreeNode(node)">{{ node }}</div>
+  <div class="module-body" :class="{ 'with-tree': config.tree || moduleCode === 'category' }">
+    <aside v-if="config.tree || moduleCode === 'category'" class="module-tree">
+      <!-- 分类模块：动态树 -->
+      <template v-if="moduleCode === 'category'">
+        <div v-if="dynamicTree.length === 0" class="tree-empty">暂无分类，请点击右侧【新建分类】</div>
+        <div
+          v-for="node in dynamicTree"
+          :key="node.code || 'root'"
+          class="tree-node"
+          :class="{ active: selectedTreeNode === node.code }"
+          :style="{ paddingLeft: (12 + node.level * 16) + 'px' }"
+          @click="selectTreeNode(node.code)"
+        >
+          <span v-if="node.level > 0" class="tree-indent">└</span>{{ node.name }}
+        </div>
+      </template>
+      <!-- 其他模块：静态 treeNodes -->
+      <template v-else>
+        <div v-for="node in config.treeNodes" :key="node" class="tree-node" :class="{ active: selectedTreeNode === node.trim() }" @click="selectTreeNode(node)">{{ node }}</div>
+      </template>
     </aside>
 
     <section class="module-list">
@@ -717,7 +780,13 @@ function handleSortChange(field) {
         <template v-for="col in visibleColumns" #[col.key]="{ row }" :key="col.key">
           <span v-if="/状态/.test(col.title)" class="badge wait">{{ row[col.key] }}</span>
           <span v-else-if="/操作/.test(col.title)">
-            <button v-for="action in String(row[col.key]).split(' ')" :key="action" class="link link-btn" @click="handleAction(action, row)">{{ action }}</button>
+            <template v-if="isBaseModule">
+              <button class="link link-btn" @click="handleAction('编辑', row)">编辑</button>
+              <button class="link link-btn danger-link" @click="handleAction('删除', row)">删除</button>
+            </template>
+            <template v-else>
+              <button v-for="action in String(row[col.key]).split(' ')" :key="action" class="link link-btn" @click="handleAction(action, row)">{{ action }}</button>
+            </template>
           </span>
           <span v-else>{{ row[col.key] }}</span>
         </template>
