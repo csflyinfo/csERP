@@ -63,10 +63,15 @@ const defaultForm = {
   latestPurchasePrice: 0,
   minSalePrice: 0,
   suggestedRetailPrice: 0,
+  wholesalePrice: 0,
+  memberPrice: 0,
+  retailPrice: 0,
   minOrderQty: 0,
   stockUpperLimit: 0,
   stockLowerLimit: 0,
   defaultSupplier: '',
+  /** 默认采购单位（单位名称）；留空时采购单据按「大→中→小」默认逻辑 */
+  defaultPurchaseUnit: '',
   palletQty: 0,
   stackLayers: 0,
   baseWeight: 0,
@@ -106,11 +111,15 @@ function parseRowToForm(row) {
   form.latestPurchasePrice = raw.latestPurchasePrice != null ? Number(raw.latestPurchasePrice) : 0
   form.minSalePrice = raw.minSalePrice != null ? Number(raw.minSalePrice) : 0
   form.suggestedRetailPrice = raw.suggestedRetailPrice != null ? Number(raw.suggestedRetailPrice) : 0
+  form.wholesalePrice = raw.wholesalePrice != null ? Number(raw.wholesalePrice) : 0
+  form.memberPrice = raw.memberPrice != null ? Number(raw.memberPrice) : 0
+  form.retailPrice = raw.retailPrice != null ? Number(raw.retailPrice) : 0
   form.stockUpperLimit = raw.stockUpperLimit != null ? Number(raw.stockUpperLimit) : 0
   form.stockLowerLimit = raw.stockLowerLimit != null ? Number(raw.stockLowerLimit) : 0
   form.shelfLifeDays = raw.shelfLifeDays != null ? Number(raw.shelfLifeDays) : 0
   form.storageProperty = raw.storageProperty || '常温'
   form.defaultSupplier = raw.defaultSupplier || ''
+  form.defaultPurchaseUnit = raw.defaultPurchaseUnit || ''
   form.defaultWarehouse = raw.defaultWarehouse || ''
   form.canReturn = raw.canReturn !== false
   form.status = raw.status === 'STOPPED' ? '停用' : '正常'
@@ -244,6 +253,31 @@ function copyAsNew() {
   formErrors.value = {}
   alert('已复制商品信息，请填写新的商品编码后保存')
 }
+
+/** 快速调价：创建商品调价单草稿 → 打开商品调价抽屉 */
+async function onQuickAdjust() {
+  if (!formModel.value.goodsCode || !formModel.value.goodsName) {
+    alert('请先保存商品后再进行快速调价')
+    return
+  }
+  if (!confirm('将跳转到商品调价单，当前商品价格信息不会被保存，是否继续？\n\n提示：快速调价将创建一个仅包含该商品的调价单草稿，审核后价格生效。')) return
+
+  try {
+    const result = await post('/base/goods-price-adjust/save', {
+      goodsCode: formModel.value.goodsCode,
+      goodsName: formModel.value.goodsName,
+      goodsLocked: true,
+      remark: `快速调价 - ${formModel.value.goodsCode} ${formModel.value.goodsName}`,
+      items: []
+    })
+    emit('save', null)
+    closeDrawer()
+    const app = (await import('../../stores/app.js')).useAppStore()
+    app.openGoodsPriceAdjustDrawer(result.orderId, 'edit')
+  } catch (e) {
+    alert('创建调价单失败：' + (e.message || '未知错误'))
+  }
+}
 </script>
 
 <template>
@@ -294,7 +328,7 @@ function copyAsNew() {
           <!-- 基础信息 -->
           <div id="section-base" class="section-card">
             <div class="section-title">基本信息</div>
-            <BaseInfoForm :model-value="formModel" />
+            <BaseInfoForm :model-value="formModel" :reload-trigger="visible ? 1 : 0" />
           </div>
 
           <!-- 多单位设置 -->
@@ -303,8 +337,32 @@ function copyAsNew() {
             <MultiUnitMatrix
               :model-value="formModel.units"
               :is-weighted="formModel.isWeighted"
+              :visible="visible"
+              :goods-code="formModel.goodsCode"
+              :goods-name="formModel.goodsName"
+              :readonly="currentMode === 'edit'"
               @update:model-value="formModel.units = $event"
+              @quick-adjust="onQuickAdjust"
             />
+          </div>
+
+          <!-- 价格信息 -->
+          <div id="section-price" class="section-card">
+            <div class="section-title">价格信息</div>
+            <div class="price-info-grid">
+              <div class="field">
+                <label>批发价</label>
+                <input type="number" v-model.number="formModel.wholesalePrice" placeholder="0.00" step="0.01" />
+              </div>
+              <div class="field">
+                <label>会员价</label>
+                <input type="number" v-model.number="formModel.memberPrice" placeholder="0.00" step="0.01" />
+              </div>
+              <div class="field">
+                <label>零售价</label>
+                <input type="number" v-model.number="formModel.retailPrice" placeholder="0.00" step="0.01" />
+              </div>
+            </div>
           </div>
 
           <!-- 采购与库存 -->
@@ -634,6 +692,42 @@ function copyAsNew() {
   flex: 1;
   font-size: 12px;
   color: #606266;
+}
+
+/* 价格信息网格 —— 批发价 / 会员价 / 零售价 */
+.price-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 16px;
+  padding: 8px 0;
+}
+.price-info-grid .field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.price-info-grid .field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #303133;
+  min-width: 72px;
+  text-align: right;
+  flex-shrink: 0;
+  line-height: 32px;
+}
+.price-info-grid .field input {
+  flex: 1;
+  height: 32px; padding: 0 10px;
+  border: 1px solid #dcdfe6; border-radius: 4px;
+  font-size: 12px; color: #606266;
+  transition: all 0.2s;
+  box-sizing: border-box; min-width: 0;
+  outline: none; background: #fff;
+}
+.price-info-grid .field input:focus {
+  border-color: #409eff;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
 }
 
 @keyframes fadeIn {

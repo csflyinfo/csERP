@@ -1,8 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
+import * as echarts from 'echarts'
 import { get } from '../api/client.js'
-
-const echarts = window.echarts
 
 const loading = ref(true)
 const feedback = ref('')

@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>价格组管理 - 商贸云 ERP</title>
+    <style id="theme-vars">
+:root {
+  /* === Brand Colors - Tech Blue === */
+  --brand-primary: #1677FF;
+  --brand-primary-light: #4096FF;
+  --brand-primary-dark: #0958D9;
+  --brand-primary-50: #E6F4FF;
+  --brand-primary-100: #BAE0FF;
+  --brand-primary-200: #91CAFF;
+  --brand-primary-600: #1677FF;
+  --brand-primary-700: #0958D9;
+  --brand-primary-800: #003EB3;
+  --brand-primary-900: #002C8C;
+
+  /* === Semantic Colors === */
+  --state-success: #52C41A;
+  --state-success-light: #B7EB8F;
+  --state-success-bg: #F6FFED;
+  --state-warning: #FAAD14;
+  --state-warning-light: #FFF1B8;
+  --state-warning-bg: #FFFBE6;
+  --state-error: #FF4D4F;
+  --state-error-light: #FFCCC7;
+  --state-error-bg: #FFF2F0;
+  --state-info: #1677FF;
+  --state-info-light: #91CAFF;
+  --state-info-bg: #E6F4FF;
+
+  /* === Surface Colors === */
+  --surface-bg: #F5F7FA;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FFFFFF;
+  --surface-sidebar: #D6E4FF;
+  --surface-sidebar-hover: #E6F4FF;
+  --surface-sidebar-active: #1677FF;
+  --surface-header: #FFFFFF;
+  --surface-input: #FFFFFF;
+
+  /* === Text Colors === */
+  --text-primary: #141414;
+  --text-secondary: #595959;
+  --text-tertiary: #8C8C8C;
+  --text-inverse: #FFFFFF;
+  --text-sidebar: #1D2129;
+  --text-sidebar-active: #FFFFFF;
+  --text-link: #1677FF;
+
+  /* === Border Colors === */
+  --border-default: #E8E8E8;
+  --border-light: #F0F0F0;
+  --border-focus: #1677FF;
+  --border-sidebar: #D6E4FF;
+
+  /* === Spacing Scale === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* === Typography === */
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-md: 15px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --font-weight-extrabold: 800;
+
+  /* === Border Radius === */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* === Shadows === */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 15px rgba(0,0,0,0.05);
+  --shadow-xl: 0 20px 25px rgba(0,0,0,0.06);
+  --shadow-overlay: 0 25px 50px rgba(0,0,0,0.12);
+
+  /* === Layout Tokens === */
+  --sidebar-width: 160px;
+  --sidebar-collapsed-width: 40px;
+  --header-height: 48px;
+  --tab-height: 36px;
+  --table-header-height: 32px;
+  --table-row-height: 32px;
+  --toolbar-height: 40px;
+}
+
+/* === Typography Classes === */
+.font-display { font-family: var(--font-family); font-weight: var(--font-weight-bold); }
+.font-body { font-family: var(--font-family); font-weight: var(--font-weight-normal); }
+.font-mono { font-family: var(--font-mono); }
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-md { font-size: var(--font-size-md); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="https://unpkg.com/lucide@1.8.0/dist/umd/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-primary: var(--brand-primary);
+  }
+  @layer base {
+    body { background: var(--brand-background); color: var(--brand-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+    </style>
+    <style>
+      .status-pill.active { background: #F6FFED; color: #52C41A; border: 1px solid #B7EB8F; }
+      .status-pill.inactive { background: #F5F5F5; color: #8C8C8C; border: 1px solid #E8E8E8; }
+      .pg-name-link { color: var(--brand-primary); cursor: pointer; text-decoration: none; font-weight: 500; }
+      .pg-name-link:hover { text-decoration: underline; color: var(--brand-primary-dark); }
+    </style>
+</head>
+<body>
+  <div style="display: flex; height: 100vh;">
+
+    <!-- ====== Sidebar ====== -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark"><span>S</span></div>
+        <div class="brand-text">商贸云 ERP</div>
+      </div>
+      <nav class="sidebar-menu">
+        <div class="menu-item" data-dom-id="back-dashboard">
+          <span class="menu-icon">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.4"/></svg>
+          </span>
+          <span class="menu-text">经营概览</span>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2V3zm0 4h12v2H2V7zm0 4h8v2H2v-2z" fill="currentColor"/></svg></span>
+            <span class="menu-text">基础资料</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item" data-dom-id="nav-goods"><span class="menu-text">商品档案</span></div>
+            <div class="menu-item"><span class="menu-text">客户资料</span></div>
+            <div class="menu-item"><span class="menu-text">供应商资料</span></div>
+            <div class="menu-item"><span class="menu-text">仓库资料</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h3l1.5 3H14l-2 5H6.5L4 6 2 12V2z" fill="currentColor"/></svg></span>
+            <span class="menu-text">采购管理</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">采购订单</span></div>
+            <div class="menu-item"><span class="menu-text">采购入库</span></div>
+            <div class="menu-item"><span class="menu-text">采购退货</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M1 14l3-5 3 3 4-7 4 9H1z" fill="currentColor"/></svg></span>
+            <span class="menu-text">销售管理</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">销售快速开单</span></div>
+            <div class="menu-item"><span class="menu-text">销售订单</span></div>
+            <div class="menu-item"><span class="menu-text">销售出库</span></div>
+            <div class="menu-item"><span class="menu-text">销售退货</span></div>
+          </div>
+        </div>
+        <!-- 价格管理 (expanded) -->
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1v14M4 5h5.5a2.5 2.5 0 010 5H4M4 10h6.5a2.5 2.5 0 010 5H4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+            </span>
+            <span class="menu-text">价格管理</span>
+            <span class="menu-arrow open">&#9654;</span>
+          </div>
+          <div class="menu-submenu open">
+            <div class="menu-item active" data-dom-id="nav-price-group"><span class="menu-text">价格组管理</span></div>
+            <div class="menu-item" data-dom-id="nav-price-group-detail"><span class="menu-text">价格组商品价格</span></div>
+            <div class="menu-item" data-dom-id="nav-price-adjust"><span class="menu-text">调价单</span></div>
+            <div class="menu-item" data-dom-id="nav-price-log"><span class="menu-text">变价历史</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 2h10v1H3V2zm0 3h10v1H3V5zm0 3h10v1H3V8zm0 3h7v1H3v-1z" fill="currentColor"/></svg></span>
+            <span class="menu-text">库存管理</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">库存余额</span></div>
+            <div class="menu-item"><span class="menu-text">库存调拨</span></div>
+            <div class="menu-item"><span class="menu-text">库存盘点</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M1 6h14" stroke="currentColor" stroke-width="1.5"/><path d="M5 10h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+            <span class="menu-text">财务管理</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">应收账款</span></div>
+            <div class="menu-item"><span class="menu-text">应付账款</span></div>
+            <div class="menu-item"><span class="menu-text">收款管理</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 14V8h3v6H2zm4.5 0V4h3v10h-3zm4.5 0V1h3v13h-3z" fill="currentColor"/></svg></span>
+            <span class="menu-text">报表中心</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">销售报表</span></div>
+            <div class="menu-item"><span class="menu-text">采购报表</span></div>
+            <div class="menu-item"><span class="menu-text">库存报表</span></div>
+          </div>
+        </div>
+        <div class="menu-group">
+          <div class="menu-item menu-parent" onclick="toggleSubmenu(this)">
+            <span class="menu-icon"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 1a3.5 3.5 0 0 0-3.46 3H3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-1.54A3.5 3.5 0 0 0 8 1zm0 2a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z" fill="currentColor"/></svg></span>
+            <span class="menu-text">系统管理</span>
+            <span class="menu-arrow">&#9654;</span>
+          </div>
+          <div class="menu-submenu">
+            <div class="menu-item"><span class="menu-text">用户管理</span></div>
+            <div class="menu-item"><span class="menu-text">角色权限</span></div>
+            <div class="menu-item"><span class="menu-text">系统设置</span></div>
+          </div>
+        </div>
+      </nav>
+    </aside>
+
+    <div class="main-wrapper">
+      <header class="top-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="sidebar-toggle" onclick="toggleSidebar()" title="收起/展开菜单">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z" fill="currentColor"/></svg>
+          </div>
+          <div class="breadcrumb">首页 <span>/</span> 价格管理 <span>/</span> <span class="current">价格组管理</span></div>
+        </div>
+        <div class="header-actions">
+          <div class="header-icon-btn" title="通知">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="badge-dot">3</span>
+          </div>
+          <div class="header-icon-btn" title="待办">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span class="badge-dot">12</span>
+          </div>
+          <div class="header-user">
+            <div class="header-user-avatar">张</div>
+            <span class="header-user-name">张经理</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <div class="content-inner">
+          <div class="query-bar">
+            <div class="query-row">
+              <div class="query-filters" id="queryFilters">
+                <span class="page-title-inline">价格组管理</span>
+                <div class="query-item"><label>价格组名称</label><input class="query-input" type="text" placeholder="请输入价格组名称" style="width:180px;"></div>
+                <div class="query-item"><label>状态</label><select class="query-select" style="width:120px;"><option>全部</option><option>已启用</option><option>未启用</option></select></div>
+              </div>
+            </div>
+            <div class="query-btn-row">
+              <div class="query-btn-left">
+                <button class="btn btn-outline" data-dom-id="btn-adjust-list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>查看调价单</button>
+              </div>
+              <div class="query-btn-right">
+                <button class="btn btn-primary btn-sm">查询</button>
+                <button class="btn btn-outline btn-sm">重置</button>
+              </div>
+            </div>
+          </div>
+          <div class="table-card">
+            <div class="table-wrapper">
+              <table class="data-table" style="min-width:1000px;">
+                <thead>
+                  <tr>
+                    <th style="width:200px;">价格组名称</th>
+                    <th style="width:320px;">备注</th>
+                    <th style="width:130px;text-align:right;">已设价商品数</th>
+                    <th style="width:130px;text-align:right;">已启用商品数</th>
+                    <th style="width:100px;text-align:center;">状态</th>
+                    <th style="width:160px;text-align:center;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><a class="pg-name-link" data-dom-id="btn-price-detail">01 超市渠道价</a></td>
+                    <td>适用于全国连锁超市渠道</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">328</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">312</td>
+                    <td style="text-align:center;"><span class="status-pill active">已启用</span></td>
+                    <td style="text-align:center;"><span class="action-link" data-dom-id="btn-edit-group">编辑</span><span class="action-sep">|</span><span class="action-link danger">禁用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">02 批发渠道价</a></td>
+                    <td>适用于批发市场经销商</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">156</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">150</td>
+                    <td style="text-align:center;"><span class="status-pill active">已启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">禁用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">03 线上商城价</a></td>
+                    <td>适用于官方线上商城</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">412</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">400</td>
+                    <td style="text-align:center;"><span class="status-pill active">已启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">禁用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">04 便利店渠道价</a></td>
+                    <td>便利店终端零售</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">88</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">85</td>
+                    <td style="text-align:center;"><span class="status-pill active">已启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">禁用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">05 B端大客户价</a></td>
+                    <td>战略合作伙伴专属价</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">45</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">40</td>
+                    <td style="text-align:center;"><span class="status-pill active">已启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link danger">禁用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">06 价格组 06</a></td>
+                    <td style="color:var(--text-tertiary);">—</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:center;"><span class="status-pill inactive">未启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link">启用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">07 价格组 07</a></td>
+                    <td style="color:var(--text-tertiary);">—</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:center;"><span class="status-pill inactive">未启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link">启用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">08 价格组 08</a></td>
+                    <td style="color:var(--text-tertiary);">—</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:center;"><span class="status-pill inactive">未启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link">启用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">09 价格组 09</a></td>
+                    <td style="color:var(--text-tertiary);">—</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:center;"><span class="status-pill inactive">未启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link">启用</span></td>
+                  </tr>
+                  <tr>
+                    <td><a class="pg-name-link">10 价格组 10</a></td>
+                    <td style="color:var(--text-tertiary);">—</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:right;font-family:var(--font-mono);">0</td>
+                    <td style="text-align:center;"><span class="status-pill inactive">未启用</span></td>
+                    <td style="text-align:center;"><span class="action-link">编辑</span><span class="action-sep">|</span><span class="action-link">启用</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination-bar">
+              <div class="pagination-info">
+                <span>共 <strong style="color:var(--text-primary);">10</strong> 条</span>
+                <span style="color:var(--text-tertiary);">系统预置 10 个价格组</span>
+              </div>
+              <div class="pagination-controls">
+                <button class="page-btn" disabled>&lt;</button>
+                <button class="page-btn active">1</button>
+                <button class="page-btn" disabled>&gt;</button>
+                <span class="page-text" style="margin-left:8px;">第 1/1 页</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Sidebar collapse/expand toggle
+    function toggleSidebar() {
+      const sidebar = document.querySelector('.sidebar');
+      const toggle = document.querySelector('.sidebar-toggle');
+      sidebar.classList.toggle('collapsed');
+      toggle.classList.toggle('collapsed-icon');
+    }
+
+    function toggleQueryExpand() {
+      const filters = document.getElementById('queryFilters');
+      const toggle = document.getElementById('queryToggle');
+      filters.classList.toggle('expanded');
+      toggle.classList.toggle('expanded');
+      const text = toggle.querySelector('.query-toggle-text');
+      text.textContent = filters.classList.contains('expanded') ? '收起查询' : '更多查询';
+    }
+
+    // Sidebar submenu toggle
+    function toggleSubmenu(el) {
+      const submenu = el.nextElementSibling;
+      const arrow = el.querySelector('.menu-arrow');
+      if (submenu && submenu.classList.contains('menu-submenu')) {
+        submenu.classList.toggle('open');
+        if (arrow) arrow.classList.toggle('open');
+      }
+    }
+  </script>
+
+  <style>
+    /* === Base Reset & Layout === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      color: var(--text-primary);
+      background: var(--surface-bg);
+    }
+
+    /* === Sidebar === */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background: var(--surface-sidebar);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .sidebar-brand {
+      padding: 8px 10px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      background: var(--brand-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .brand-mark span {
+      color: #fff;
+      font-weight: var(--font-weight-bold);
+      font-size: 11px;
+    }
+    .brand-text {
+      color: var(--text-sidebar);
+      font-weight: var(--font-weight-semibold);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .sidebar-search {
+      padding: 0 8px 8px;
+    }
+    .sidebar-search input {
+      width: 100%;
+      height: 26px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-sidebar);
+      background: var(--surface-card);
+      color: var(--text-sidebar);
+      padding: 0 var(--space-3);
+      font-size: var(--font-size-sm);
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .sidebar-search input::placeholder { color: var(--text-tertiary); }
+    .sidebar-search input:focus {
+      border-color: var(--brand-primary-light);
+      background: var(--surface-card);
+    }
+
+    /* === Menu === */
+    .sidebar-menu {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .menu-group { margin-bottom: 0; }
+    .menu-item {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 3px;
+      color: var(--text-sidebar);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      text-decoration: none;
+      white-space: nowrap;
+      user-select: none;
+      letter-spacing: 0;
+    }
+    .menu-parent {
+      font-weight: var(--font-weight-medium);
+      margin-top: 2px;
+    }
+    .menu-item:hover {
+      background: var(--surface-sidebar-hover);
+      color: var(--text-sidebar);
+    }
+    .menu-item.active {
+      background: var(--surface-sidebar-active);
+      color: var(--text-sidebar-active);
+      font-weight: var(--font-weight-medium);
+    }
+    .menu-icon {
+      width: 14px;
+      height: 14px;
+      text-align: center;
+      margin-right: 4px;
+      flex-shrink: 0;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .menu-arrow {
+      margin-left: auto;
+      font-size: 10px;
+      color: var(--text-tertiary);
+      opacity: 0.5;
+      transition: transform 0.2s;
+    }
+    .menu-arrow.open { transform: rotate(90deg); color: var(--text-sidebar); }
+    .menu-submenu {
+      padding-left: 18px;
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.2s ease;
+    }
+    .menu-submenu .menu-item {
+      height: 26px;
+      padding: 0 6px;
+      font-size: 12px;
+      color: var(--text-sidebar);
+    }
+    .menu-submenu.open { max-height: 500px; }
+
+    /* === Sidebar Toggle === */
+    .sidebar-toggle {
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .sidebar-toggle:hover {
+      background: var(--surface-sidebar-hover);
+      color: var(--text-primary);
+    }
+    .sidebar.collapsed {
+      width: 40px !important;
+      overflow: hidden;
+    }
+    .sidebar.collapsed .brand-text,
+    .sidebar.collapsed .sidebar-search,
+    .sidebar.collapsed .menu-group-label,
+    .sidebar.collapsed .menu-text,
+    .sidebar.collapsed .menu-arrow,
+    .sidebar.collapsed .user-info,
+    .sidebar.collapsed .menu-submenu {
+      display: none !important;
+    }
+    .sidebar.collapsed .sidebar-brand {
+      justify-content: center;
+      padding: 10px 8px 8px;
+    }
+    .sidebar.collapsed .menu-item {
+      justify-content: center;
+      padding: 0;
+      height: 36px;
+    }
+    .sidebar.collapsed .menu-icon {
+      margin-right: 0;
+      width: 20px;
+    }
+    .sidebar.collapsed .sidebar-user {
+      justify-content: center;
+    }
+    .sidebar.collapsed .menu-group {
+      margin-bottom: 4px;
+    }
+    .sidebar-toggle.collapsed-icon svg {
+      transform: rotate(180deg);
+    }
+
+    /* === Sidebar Bottom User === */
+    .sidebar-user {
+      padding: 8px;
+      border-top: 1px solid var(--border-sidebar);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      flex-shrink: 0;
+    }
+    .user-info { overflow: hidden; }
+    .user-name {
+      color: var(--text-sidebar);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .user-role {
+      color: var(--text-tertiary);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    /* === Main Area === */
+    .main-wrapper {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* === Header === */
+    .top-header {
+      height: var(--header-height);
+      background: var(--surface-header);
+      border-bottom: 1px solid var(--border-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-6);
+      flex-shrink: 0;
+    }
+    .breadcrumb {
+      font-size: var(--font-size-base);
+      color: var(--text-secondary);
+    }
+    .breadcrumb span { color: var(--text-tertiary); margin: 0 var(--space-2); }
+    .breadcrumb .current { color: var(--text-primary); font-weight: var(--font-weight-medium); }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .header-icon-btn {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+    }
+    .header-icon-btn:hover {
+      background: var(--surface-bg);
+      color: var(--text-primary);
+    }
+    .header-icon-btn svg { width: 20px; height: 20px; }
+    .badge-dot {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      min-width: 16px;
+      height: 16px;
+      border-radius: var(--radius-full);
+      background: var(--state-error);
+      color: #fff;
+      font-size: 10px;
+      font-weight: var(--font-weight-bold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .header-user {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      cursor: pointer;
+      padding: var(--space-1) var(--space-2);
+      border-radius: var(--radius-md);
+      transition: background 0.12s;
+    }
+    .header-user:hover { background: var(--surface-bg); }
+    .header-user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-dark));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+    }
+    .header-user-name {
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+    }
+
+    /* === Content === */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-6);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+
+    /* === Page Title Bar === */
+    /* === Buttons === */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-1);
+      height: 32px;
+      padding: 0 var(--space-4);
+      font-size: 13px;
+      font-weight: var(--font-weight-medium);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+      border: 1px solid transparent;
+      outline: none;
+      font-family: var(--font-family);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-light));
+      color: #fff;
+      border-color: var(--brand-primary);
+      box-shadow: 0 2px 6px rgba(43, 108, 176, 0.3);
+    }
+    .btn-primary:hover {
+      box-shadow: 0 4px 12px rgba(43, 108, 176, 0.4);
+      transform: translateY(-1px);
+    }
+    .btn-outline {
+      background: var(--surface-card);
+      color: var(--text-primary);
+      border-color: var(--border-default);
+    }
+    .btn-outline:hover {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .btn-sm {
+      height: 28px;
+      padding: 0 var(--space-3);
+      font-size: 12px;
+    }
+
+    /* === Query Bar === */
+    
+    .query-row { display: contents; }
+    .query-item {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 4px;
+    }
+    .query-item label {
+      font-size: var(--font-size-xs);
+      color: var(--text-secondary);
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    .query-input,
+    .query-select {
+      height: 28px;
+      padding: 0 var(--space-3);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      background: var(--surface-input);
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: var(--font-family);
+    }
+    .query-input {
+      width: 220px;
+    }
+    .query-select {
+      width: 140px;
+      appearance: auto;
+    }
+    .query-input:focus,
+    .query-select:focus {
+      border-color: var(--brand-primary-light);
+      box-shadow: 0 0 0 2px var(--brand-primary-50);
+    }
+    .query-input::placeholder {
+      color: var(--text-tertiary);
+    }
+    .query-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      align-self: flex-end;
+    }
+    .query-expand {
+      font-size: var(--font-size-sm);
+      color: var(--text-link);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.12s;
+    }
+    .query-expand:hover { color: var(--brand-primary-dark); }
+
+    /* === Tips Bar === */
+    .tips-bar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 4px var(--space-4);
+      background: var(--state-warning-bg);
+      border: none;
+      border-radius: 0;
+      margin-bottom: 0;
+      font-size: var(--font-size-xs);
+      color: #975A16;
+    }
+    .tips-bar svg {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      color: var(--state-warning);
+    }
+
+    /* === Data Table === */
+    .table-card {
+      background: var(--surface-card);
+      border: none;
+      border-radius: 0;
+      box-shadow: none;
+      overflow: hidden;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-wrapper {
+      overflow-x: auto;
+      overflow-y: auto;
+      flex: 1;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-default) transparent;
+    }
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      min-width: 1400px;
+    }
+    .data-table thead {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .data-table thead th {
+      background: var(--surface-bg);
+      font-size: 12px;
+      font-weight: var(--font-weight-semibold);
+      color: var(--text-secondary);
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-default);
+      text-align: left;
+      white-space: nowrap;
+      user-select: none;
+      height: 32px;
+    }
+    .data-table thead th.sortable {
+      cursor: pointer;
+    }
+    .data-table thead th.sortable:hover {
+      color: var(--brand-primary);
+    }
+    .sort-arrows {
+      display: inline-flex;
+      flex-direction: column;
+      margin-left: 4px;
+      line-height: 1;
+      vertical-align: middle;
+    }
+    .sort-arrows .arrow-up,
+    .sort-arrows .arrow-down {
+      font-size: 8px;
+      line-height: 8px;
+      color: var(--text-tertiary);
+    }
+    .sort-arrows .arrow-up.active,
+    .sort-arrows .arrow-down.active {
+      color: var(--brand-primary);
+    }
+    .data-table tbody td {
+      font-size: 13px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border-light);
+      color: var(--text-primary);
+      height: 32px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .data-table tbody tr:nth-child(even) {
+      background: var(--surface-bg);
+    }
+    .data-table tbody tr:hover {
+      background: #EBF8FF;
+    }
+
+    /* Column widths */
+    .col-order-no { width: 160px; min-width: 160px; }
+    .col-date { width: 100px; min-width: 100px; }
+    .col-customer { width: 120px; min-width: 120px; }
+    .col-salesman { width: 80px; min-width: 80px; }
+    .col-warehouse { width: 80px; min-width: 80px; }
+    .col-amount { width: 100px; min-width: 100px; text-align: right; font-family: var(--font-mono); font-size: 13px; }
+    .col-received { width: 100px; min-width: 100px; text-align: right; font-family: var(--font-mono); font-size: 13px; }
+    .col-unreceived { width: 100px; min-width: 100px; text-align: right; font-family: var(--font-mono); font-size: 13px; }
+    .col-cost { width: 100px; min-width: 100px; text-align: right; font-family: var(--font-mono); font-size: 13px; }
+    .col-status { width: 80px; min-width: 80px; text-align: center; }
+    .col-delivery-status { width: 80px; min-width: 80px; text-align: center; }
+    .col-sign-status { width: 80px; min-width: 80px; text-align: center; }
+    .col-actions { width: 160px; min-width: 160px; text-align: center; }
+
+    /* Order number link */
+    .order-link {
+      color: var(--text-link);
+      text-decoration: none;
+      cursor: pointer;
+      font-weight: var(--font-weight-medium);
+      transition: color 0.12s;
+    }
+    .order-link:hover {
+      color: var(--brand-primary-dark);
+      text-decoration: underline;
+    }
+
+    /* Status Badges */
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: var(--font-weight-medium);
+      white-space: nowrap;
+    }
+    /* 审核状态 */
+    .status-pill.pending {
+      background: var(--state-warning-bg);
+      color: var(--state-warning);
+      border: 1px solid var(--state-warning-light);
+    }
+    .status-pill.approved {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+    .status-pill.closed {
+      background: var(--surface-bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+    }
+    /* 出库状态 */
+    .status-pill.not-delivered {
+      background: var(--surface-bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+    }
+    .status-pill.partial-delivered {
+      background: var(--state-warning-bg);
+      color: var(--state-warning);
+      border: 1px solid var(--state-warning-light);
+    }
+    .status-pill.delivered {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+    /* 签收状态 */
+    .status-pill.not-signed {
+      background: var(--surface-bg);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-default);
+    }
+    .status-pill.partial-signed {
+      background: var(--state-warning-bg);
+      color: var(--state-warning);
+      border: 1px solid var(--state-warning-light);
+    }
+    .status-pill.signed {
+      background: var(--state-success-bg);
+      color: var(--state-success);
+      border: 1px solid var(--state-success-light);
+    }
+
+    /* Action links */
+    .action-link {
+      font-size: var(--font-size-sm);
+      color: var(--text-link);
+      cursor: pointer;
+      transition: color 0.12s;
+      white-space: nowrap;
+    }
+    .action-link:hover { color: var(--brand-primary-dark); }
+    .action-link.danger:hover { color: var(--state-error); }
+    .action-sep {
+      color: var(--border-default);
+      margin: 0 6px;
+    }
+
+    /* === Pagination Bar === */
+    .pagination-bar {
+      height: 32px;
+      background: var(--surface-card);
+      border-top: 1px solid var(--border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 var(--space-4);
+      flex-shrink: 0;
+      font-size: var(--font-size-xs);
+    }
+    .pagination-info {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+    }
+    .pagination-summary {
+      font-size: var(--font-size-sm);
+      color: var(--text-tertiary);
+    }
+    .pagination-summary strong {
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+    }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .page-size-select {
+      height: 28px;
+      padding: 0 var(--space-2);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      font-size: var(--font-size-sm);
+      color: var(--text-primary);
+      background: var(--surface-card);
+      outline: none;
+      font-family: var(--font-family);
+      appearance: auto;
+    }
+    .page-size-select:focus {
+      border-color: var(--brand-primary-light);
+    }
+    .page-btn {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-sm);
+      background: var(--surface-card);
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.12s;
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--brand-primary);
+      color: var(--brand-primary);
+      background: var(--brand-primary-50);
+    }
+    .page-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .page-btn.active {
+      background: var(--brand-primary);
+      color: #fff;
+      border-color: var(--brand-primary);
+    }
+    .page-text {
+      font-size: var(--font-size-sm);
+      color: var(--text-secondary);
+      margin: 0 var(--space-1);
+    }
+
+    /* === Content layout for table page === */
+    .content-inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+  </style>
+</body>
+</html>

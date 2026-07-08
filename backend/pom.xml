@@ -61,6 +61,16 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Flyway: DB schema versioning; core 覆盖 H2，mysql 模块用于 MySQL 方言 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -92,6 +102,19 @@
             <groupId>com.alibaba</groupId>
             <artifactId>easyexcel</artifactId>
             <version>3.3.4</version>
+        </dependency>
+
+        <!-- MinIO: 图片对象存储（签收照/退货照/门店照/交账照） -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>8.5.14</version>
+        </dependency>
+
+        <!-- Caffeine: 本地缓存（字典/看板聚合数据） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <!-- Security -->

@@ -1,0 +1,134 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>交账管理 - TMS调度管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+.page{padding:12px;height:100vh}
+.card{height:100%;display:flex;flex-direction:column}
+.status .tip{color:#98a2b3;font-size:13px;margin-left:auto}
+.stat-row{display:flex;gap:14px;margin:6px 0 14px}
+.stat-card{flex:1;background:#f8fafc;border:1px solid #e5eaf2;border-radius:8px;padding:14px 18px}
+.stat-card .num{font-size:24px;font-weight:800;font-family:Consolas,monospace;color:#1677ff}
+.stat-card .lbl{font-size:12px;color:#667085;margin-top:4px}
+.stat-card.warn .num{color:#c2410c}
+.stat-card.ok .num{color:#15803d}
+.stat-card.bad .num{color:#b91c1c}
+.drawer{position:fixed;top:0;right:0;width:820px;height:100vh;background:#fff;box-shadow:-12px 0 40px rgba(16,24,40,.18);z-index:30;display:none;flex-direction:column}
+.drawer.show{display:flex}
+.dh{height:54px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #e5eaf2;font-size:18px;font-weight:700}
+.dh .close{margin-left:auto;font-size:26px;color:#98a2b3;cursor:pointer}
+.dtabs{height:46px;display:flex;gap:30px;padding:0 20px;border-bottom:1px solid #d0d5dd}
+.dtabs span{height:46px;line-height:46px;cursor:pointer;color:#667085}
+.dtabs .on{color:#1677ff;border-bottom:2px solid #1677ff;font-weight:700}
+.dbody{flex:1;overflow:auto;padding:20px 24px}
+.dsec{font-size:15px;font-weight:700;margin:14px 0 16px}
+.dsec:before{content:"";display:inline-block;width:4px;height:14px;background:#1677ff;margin-right:8px;vertical-align:-1px}
+.amt-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:10px 0}
+.amt-card{border:1px solid #e5eaf2;border-radius:8px;padding:14px;text-align:center}
+.amt-card .a-lbl{font-size:12px;color:#667085}
+.amt-card .a-num{font-size:20px;font-weight:800;font-family:Consolas,monospace;margin-top:6px;color:#344054}
+.amt-card.green .a-num{color:#15803d}
+.amt-card.red .a-num{color:#b91c1c}
+.amt-card.blue .a-num{color:#1677ff}
+.diff-box{border:1px solid #fecdd3;background:#fff1f2;border-radius:8px;padding:12px 14px;margin:14px 0}
+.diff-box .db-t{font-weight:700;color:#9f1239}
+.diff-box .db-d{color:#9f1239;font-size:13px;margin-top:4px}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0}
+.photo-grid .ph{aspect-ratio:4/3;background:linear-gradient(135deg,#d1fae5,#a7f3d0);border:1px solid #6ee7b7;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#065f46;font-size:12px}
+</style></head><body>
+<div class="page"><div class="card">
+  <div class="status">
+    <span class="on">全部</span><span>待审核</span><span>已审核</span><span>差异争议</span>
+    <span class="tip">交账日期 2026-08-13 · 共 5 单</span>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-card"><div class="num">¥48,920</div><div class="lbl">应收总额</div></div>
+    <div class="stat-card ok"><div class="num">¥42,680</div><div class="lbl">已交回金额</div></div>
+    <div class="stat-card warn"><div class="num">¥3,240</div><div class="lbl">退货金额</div></div>
+    <div class="stat-card bad"><div class="num">¥120</div><div class="lbl">差异金额</div></div>
+    <div class="stat-card"><div class="num">5</div><div class="lbl">交账单数</div></div>
+  </div>
+
+  <div class="query">
+    <input placeholder="交账单号 / 司机 / 调度单号" class="wide">
+    <select><option>全部司机</option><option>张三</option><option>王五</option></select>
+    <select><option>全部状态</option><option>待审核</option><option>已审核</option><option>差异争议</option></select>
+    <input type="date" value="2026-08-13">
+    <span class="spacer"></span>
+    <button class="btn">导出</button>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <tr><th>交账单号</th><th>调度单</th><th>司机</th><th>门店</th><th>应收</th><th>实收现金</th><th>线上收款</th><th>退货</th><th>应交回</th><th>差异</th><th>状态</th><th>操作</th></tr>
+      <tr><td class="link" onclick="openDrawer('ST20260813-001')">ST20260813-001</td><td>D20260813-001</td><td>张三</td><td>12</td><td>¥18,640</td><td>¥8,200</td><td>¥9,800</td><td>¥640</td><td>¥7,560</td><td><span style="color:#b91c1c;font-weight:700">-¥120</span></td><td><span class="badge bad">差异争议</span></td><td><span class="link" onclick="openDrawer('ST20260813-001')">审核</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('ST20260813-003')">ST20260813-003</td><td>D20260813-003</td><td>王五</td><td>8</td><td>¥12,320</td><td>¥5,600</td><td>¥6,720</td><td>¥0</td><td>¥5,600</td><td><span style="color:#15803d">¥0</span></td><td><span class="badge ok">已审核</span></td><td><span class="link" onclick="openDrawer('ST20260813-003')">详情</span></td></tr>
+      <tr><td class="link">ST20260813-005</td><td>D20260813-005</td><td>孙七</td><td>5</td><td>¥8,960</td><td>¥4,200</td><td>¥4,760</td><td>¥0</td><td>¥4,200</td><td><span style="color:#98a2b3">—</span></td><td><span class="badge wait">待审核</span></td><td><span class="link" onclick="toast('打开审核')">审核</span></td></tr>
+    </table>
+  </div>
+
+  <div class="foot"><div class="right"><button class="pagebtn">‹</button><button class="pagebtn on">1</button><button class="pagebtn">2</button><button class="pagebtn">›</button><span style="color:#667085;font-size:13px">共 5 条</span></div></div>
+</div></div>
+
+<!-- 审核抽屉 -->
+<div class="drawer" id="drawer">
+  <div class="dh"><span id="dNo">ST20260813-001</span> · 交账审核<span class="close" onclick="closeDrawer()">×</span></div>
+  <div class="dtabs"><span class="on">交账汇总</span><span>收款明细</span><span>退货明细</span><span>结算照片</span></div>
+  <div class="dbody">
+    <div class="dsec">交账基本信息</div>
+    <div class="form2">
+      <label class="field">交账单号<input value="ST20260813-001" disabled></label>
+      <label class="field">调度单<input value="D20260813-001" disabled></label>
+      <label class="field">司机<input value="张三 · 京A·12345" disabled></label>
+      <label class="field">交账时间<input value="2026-08-13 17:20" disabled></label>
+      <label class="field">门店数<input value="12 店" disabled></label>
+      <label class="field">已签收<input value="12 店" disabled></label>
+    </div>
+
+    <div class="dsec">金额汇总</div>
+    <div class="amt-grid">
+      <div class="amt-card"><div class="a-lbl">应收总额</div><div class="a-num">¥18,640.00</div></div>
+      <div class="amt-card green"><div class="a-lbl">实收现金</div><div class="a-num">¥8,200.00</div></div>
+      <div class="amt-card green"><div class="a-lbl">线上收款</div><div class="a-num">¥9,800.00</div></div>
+      <div class="amt-card red"><div class="a-lbl">退货金额</div><div class="a-num">¥640.00</div></div>
+      <div class="amt-card"><div class="a-lbl">司机垫付退款</div><div class="a-num">¥640.00</div></div>
+      <div class="amt-card blue"><div class="a-lbl">应交回现金</div><div class="a-num">¥7,560.00</div></div>
+      <div class="amt-card blue"><div class="a-lbl">实际交回</div><div class="a-num">¥7,440.00</div></div>
+      <div class="amt-card red"><div class="a-lbl">差异金额</div><div class="a-num">-¥120.00</div></div>
+      <div class="amt-card"><div class="a-lbl">差异原因</div><div class="a-num" style="font-size:13px">司机称找零误差</div></div>
+    </div>
+
+    <div class="diff-box"><div class="db-t">⚠️ 存在差异：-¥120.00</div><div class="db-d">司机实际交回现金 ¥7,440，应交回 ¥7,560，短款 ¥120。司机备注：好又多超市找零误差。请财务核对后选择审核通过或标记争议。</div></div>
+
+    <div class="dsec">结算照片（4 张）</div>
+    <div class="photo-grid">
+      <div class="ph">📷 现金清点照</div>
+      <div class="ph">📱 微信收款截图</div>
+      <div class="ph">📱 支付宝收款截图</div>
+      <div class="ph">🧾 POS签购单</div>
+    </div>
+
+    <div class="dsec">收款明细（12 店）</div>
+    <table class="matrix">
+      <tr><th>门店</th><th>应收</th><th>收款方式</th><th>实收</th><th>退货</th><th>状态</th></tr>
+      <tr><td>华联超市(西湖店)</td><td>¥1,280</td><td>现金</td><td>¥1,280</td><td>—</td><td><span class="badge ok">已收</span></td></tr>
+      <tr><td>物美超市(海淀店)</td><td>¥2,460</td><td>微信</td><td>¥2,460</td><td>—</td><td><span class="badge ok">已收</span></td></tr>
+      <tr><td>超市发(学院路店)</td><td>¥1,890</td><td>现金+支付宝</td><td>¥1,250</td><td>¥640</td><td><span class="badge ok">已收</span></td></tr>
+      <tr><td>好又多超市(建设路)</td><td>¥5,680</td><td>现金</td><td>¥5,680</td><td>—</td><td><span class="badge wait">差异</span></td></tr>
+    </table>
+
+    <div class="dsec">审核意见</div>
+    <label class="field">审核备注<textarea placeholder="如：差异 ¥120 系找零误差，已与司机确认，按短款处理"></textarea></label>
+  </div>
+  <div style="height:64px;border-top:1px solid #e5eaf2;display:flex;justify-content:flex-end;gap:12px;align-items:center;padding:0 20px">
+    <button class="btn danger" onclick="toast('已标记为差异争议，转司机核对');closeDrawer()">标记争议</button>
+    <button class="btn" onclick="closeDrawer()">取消</button>
+    <button class="btn primary" onclick="toast('交账单 ST20260813-001 审核通过，差异 -¥120 记入司机短款');closeDrawer()">审核通过</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script>
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2800)}
+function openDrawer(no){document.getElementById('dNo').textContent=no;document.getElementById('drawer').classList.add('show')}
+function closeDrawer(){document.getElementById('drawer').classList.remove('show')}
+</script>
+</body></html>

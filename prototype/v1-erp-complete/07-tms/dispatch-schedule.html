@@ -1,0 +1,132 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>排线调度 - TMS调度管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+.page{padding:0;height:100vh}
+.sch-head{height:56px;background:#fff;border-bottom:1px solid #e5eaf2;display:flex;align-items:center;padding:0 20px}
+.sch-head h2{font-size:18px;margin:0}
+.sch-body{height:calc(100vh - 56px - 64px);display:grid;grid-template-columns:1fr 1.1fr 320px;gap:10px;padding:10px}
+.panel{background:#fff;border:1px solid #e5eaf2;border-radius:6px;display:flex;flex-direction:column;overflow:hidden}
+.panel-title{height:42px;display:flex;align-items:center;padding:0 16px;font-weight:700;border-bottom:1px solid #eef2f6;background:#f9fafb;font-size:14px}
+.panel-title .cnt{margin-left:auto;color:#98a2b3;font-weight:400;font-size:12px}
+.pool-list{flex:1;overflow:auto;padding:8px}
+.pool-item{border:1px solid #e5eaf2;border-radius:6px;padding:10px 12px;margin-bottom:8px;cursor:pointer;background:#fff;transition:.15s}
+.pool-item:hover{border-color:#1677ff;background:#f5f9ff}
+.pool-item.sel{border-color:#1677ff;background:#eef6ff}
+.pool-item .pi-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.pool-item .pi-no{font-weight:700;color:#1677ff;font-size:13px;font-family:Consolas,monospace}
+.pool-item .pi-cust{font-size:14px;font-weight:600;margin:2px 0}
+.pool-item .pi-addr{font-size:12px;color:#667085}
+.pool-item .pi-meta{display:flex;gap:12px;font-size:12px;color:#667085;margin-top:4px}
+.pool-item .pi-meta b{color:#344054;font-family:Consolas,monospace}
+.truck-list{flex:1;overflow:auto;padding:8px}
+.truck-card{border:1px solid #e5eaf2;border-radius:6px;padding:12px;margin-bottom:10px;cursor:pointer;background:#fff}
+.truck-card.sel{border-color:#15803d;background:#f0fdf4}
+.truck-card .tc-top{display:flex;justify-content:space-between;align-items:center}
+.truck-card .tc-plate{font-weight:800;font-size:15px;font-family:Consolas,monospace;color:#344054}
+.truck-card .tc-driver{font-size:13px;color:#475467;margin-top:2px}
+.truck-card .tc-line{font-size:12px;color:#667085;margin-top:2px}
+.truck-card .tc-cap{margin-top:8px;background:#f5f7fa;border-radius:4px;height:8px;overflow:hidden}
+.truck-card .tc-cap i{display:block;height:100%;background:#1677ff}
+.truck-card .tc-meta{display:flex;justify-content:space-between;font-size:12px;color:#667085;margin-top:6px}
+.truck-card .tc-assigned{margin-top:8px;border-top:1px dashed #e5eaf2;padding-top:8px}
+.truck-card .tc-assigned .as-item{font-size:12px;color:#475467;padding:2px 0;display:flex;justify-content:space-between}
+.seq-list{flex:1;overflow:auto;padding:8px 16px}
+.seq-item{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e5eaf2;border-radius:6px;margin-bottom:8px;background:#fff}
+.seq-item .seq-no{width:26px;height:26px;border-radius:50%;background:#1677ff;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+.seq-item .seq-body{flex:1}
+.seq-item .seq-cust{font-weight:600;font-size:13px}
+.seq-item .seq-addr{font-size:12px;color:#667085}
+.seq-item .seq-meta{font-size:12px;color:#475467}
+.seq-item .seq-ops{display:flex;gap:6px}
+.seq-item .seq-ops button{width:28px;height:28px;border:1px solid #dbe3ef;background:#fff;border-radius:4px;cursor:pointer}
+.sch-foot{height:64px;border-top:1px solid #e5eaf2;display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:0 20px;background:#fff}
+</style></head><body>
+<div class="page">
+  <div class="sch-head">
+    <h2>排线调度 · D20260813-002（草稿）</h2>
+    <span style="margin-left:16px;color:#667085;font-size:13px">调度日期 2026-08-13</span>
+    <span class="spacer" style="flex:1"></span>
+    <button class="btn">取消</button>
+    <button class="btn">保存草稿</button>
+    <button class="btn primary" onclick="toast('调度单 D20260813-002 已确认，已分配 6 店 35 件给司机张三(京A·12345)，等待司机 APP 装车')">确认调度</button>
+  </div>
+
+  <div class="sch-body">
+    <!-- 左：待调度发货单池 -->
+    <div class="panel">
+      <div class="panel-title">待调度发货单 / 退货单<span class="cnt">朝阳线 · 8 发货 + 2 取退</span></div>
+      <div class="pool-list">
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813001</span><span class="badge ok">已分配</span></div><div class="pi-cust">华联超市(西湖店)</div><div class="pi-addr">📍 文三路128号</div><div class="pi-meta"><span>SKU <b>3</b></span><span>件数 <b>6</b></span><span>¥<b>1,280</b></span></div></div>
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813002</span><span class="badge ok">已分配</span></div><div class="pi-cust">物美超市(海淀店)</div><div class="pi-addr">📍 中关村大街1号</div><div class="pi-meta"><span>SKU <b>5</b></span><span>件数 <b>12</b></span><span>¥<b>2,460</b></span></div><div class="pi-meta" style="color:#c2410c">🔄 该客户有退货单 XTSQ202608130002(5件) 待回收，已自动带入</div></div>
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813003</span><span class="badge ok">已分配</span></div><div class="pi-cust">超市发(学院路店)</div><div class="pi-addr">📍 学院路15号</div><div class="pi-meta"><span>SKU <b>4</b></span><span>件数 <b>8</b></span><span>¥<b>1,890</b></span></div></div>
+        <div class="pool-item"><div class="pi-top"><span class="pi-no">📦 FH20260813004</span><span class="badge wait">待分配</span></div><div class="pi-cust">711便利店(三里屯店)</div><div class="pi-addr">📍 三里屯路8号</div><div class="pi-meta"><span>SKU <b>2</b></span><span>件数 <b>4</b></span><span>¥<b>680</b></span></div></div>
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813005</span><span class="badge ok">已分配</span></div><div class="pi-cust">美佳便利店(解放路)</div><div class="pi-addr">📍 解放路66号</div><div class="pi-meta"><span>SKU <b>6</b></span><span>件数 <b>15</b></span><span>¥<b>3,120</b></span></div></div>
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813006</span><span class="badge ok">已分配</span></div><div class="pi-cust">好又多超市(建设路)</div><div class="pi-addr">📍 建设路128号</div><div class="pi-meta"><span>SKU <b>8</b></span><span>件数 <b>22</b></span><span>¥<b>5,680</b></span></div></div>
+        <div class="pool-item sel"><div class="pi-top"><span class="pi-no">📦 FH20260813007</span><span class="badge ok">已分配</span></div><div class="pi-cust">全家便利店(文一店)</div><div class="pi-addr">📍 文一路99号</div><div class="pi-meta"><span>SKU <b>3</b></span><span>件数 <b>7</b></span><span>¥<b>1,420</b></span></div></div>
+        <div class="pool-item sel" style="border-color:#fed7aa;background:#fff7ed"><div class="pi-top"><span class="pi-no" style="color:#c2410c">🔄 XTSQ202608130002</span><span class="badge" style="background:#fff7ed;border:1px solid #fed7aa;color:#c2410c">取退·已带入</span></div><div class="pi-cust">物美超市(海淀店)</div><div class="pi-addr">📍 中关村大街1号</div><div class="pi-meta"><span>SKU <b>2</b></span><span>待回收 <b>5</b>件</span><span>¥<b>-980</b></span></div></div>
+        <div class="pool-item" style="border-color:#fed7aa;background:#fff7ed"><div class="pi-top"><span class="pi-no" style="color:#c2410c">🔄 XTSQ202608130007</span><span class="badge" style="background:#fff7ed;border:1px solid #fed7aa;color:#c2410c">取退·待分配</span></div><div class="pi-cust">全家便利店(文一店)</div><div class="pi-addr">📍 文一路99号</div><div class="pi-meta"><span>SKU <b>1</b></span><span>待回收 <b>3</b>件</span><span>¥<b>-420</b></span></div></div>
+      </div>
+      <div style="padding:10px 12px;border-top:1px solid #eef2f6;color:#667085;font-size:12px">📦 发货单 / 🔄 退货单(取货任务，不占载重)。指派发货单时同客户已安排调度退货单自动带入</div>
+    </div>
+
+    <!-- 中：车辆/司机资源池 -->
+    <div class="panel">
+      <div class="panel-title">车辆 / 司机资源池<span class="cnt">朝阳线 · 3 车</span></div>
+      <div class="truck-list">
+        <div class="truck-card sel">
+          <div class="tc-top"><span class="tc-plate">京A·12345</span><span class="badge ok">已选</span></div>
+          <div class="tc-driver">👨 张三 · 13800138000</div>
+          <div class="tc-line">线路：朝阳线 · 4.2米厢式</div>
+          <div class="tc-cap"><i style="width:58%"></i></div>
+          <div class="tc-meta"><span>已装 35 / 60 件</span><span>6 店</span></div>
+          <div class="tc-assigned">
+            <div style="font-size:12px;color:#98a2b3;margin-bottom:4px">已分配发货单</div>
+            <div class="as-item"><span>FH...001 华联超市</span><span>6件</span></div>
+            <div class="as-item"><span>FH...002 物美超市</span><span>12件</span></div>
+            <div class="as-item"><span>FH...003 超市发</span><span>8件</span></div>
+            <div class="as-item"><span>FH...005 美佳便利店</span><span>15件</span></div>
+            <div class="as-item"><span>FH...006 好又多超市</span><span>22件</span></div>
+            <div class="as-item"><span>FH...007 全家便利店</span><span>7件</span></div>
+            <div class="as-item" style="color:#c2410c"><span>🔄 XTSQ...002 物美(取退)</span><span>5件</span></div>
+          </div>
+        </div>
+        <div class="truck-card">
+          <div class="tc-top"><span class="tc-plate">京B·67890</span><span class="badge wait">空闲</span></div>
+          <div class="tc-driver">👨 李四 · 13900139000</div>
+          <div class="tc-line">线路：朝阳线 · 3.8米厢式</div>
+          <div class="tc-cap"><i style="width:0%"></i></div>
+          <div class="tc-meta"><span>0 / 45 件</span><span>0 店</span></div>
+        </div>
+        <div class="truck-card">
+          <div class="tc-top"><span class="tc-plate">京C·24680</span><span class="badge wait">空闲</span></div>
+          <div class="tc-driver">👨 王五 · 13700137000</div>
+          <div class="tc-line">线路：文三线 · 4.2米厢式</div>
+          <div class="tc-cap"><i style="width:0%"></i></div>
+          <div class="tc-meta"><span>0 / 60 件</span><span>0 店</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：配送顺序调整 -->
+    <div class="panel">
+      <div class="panel-title">配送顺序<span class="cnt">京A·12345 · 6 店</span></div>
+      <div class="seq-list">
+        <div class="seq-item"><div class="seq-no">1</div><div class="seq-body"><div class="seq-cust">华联超市(西湖店)</div><div class="seq-addr">📍 文三路128号</div><div class="seq-meta">6件 · ¥1,280</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+        <div class="seq-item"><div class="seq-no">2</div><div class="seq-body"><div class="seq-cust">物美超市(海淀店)</div><div class="seq-addr">📍 中关村大街1号</div><div class="seq-meta">📦 12件 · ¥2,460 &nbsp;|&nbsp; 🔄 取退 5件 · ¥-980</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+        <div class="seq-item"><div class="seq-no">3</div><div class="seq-body"><div class="seq-cust">超市发(学院路店)</div><div class="seq-addr">📍 学院路15号</div><div class="seq-meta">8件 · ¥1,890</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+        <div class="seq-item"><div class="seq-no">4</div><div class="seq-body"><div class="seq-cust">美佳便利店(解放路)</div><div class="seq-addr">📍 解放路66号</div><div class="seq-meta">15件 · ¥3,120</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+        <div class="seq-item"><div class="seq-no">5</div><div class="seq-body"><div class="seq-cust">好又多超市(建设路)</div><div class="seq-addr">📍 建设路128号</div><div class="seq-meta">22件 · ¥5,680</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+        <div class="seq-item"><div class="seq-no">6</div><div class="seq-body"><div class="seq-cust">全家便利店(文一店)</div><div class="seq-addr">📍 文一路99号</div><div class="seq-meta">7件 · ¥1,420</div></div><div class="seq-ops"><button>↑</button><button>↓</button><button>×</button></div></div>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid #eef2f6;color:#667085;font-size:12px">↑↓ 调整配送顺序，× 移出本车</div>
+    </div>
+  </div>
+
+  <div class="sch-foot">
+    <span style="color:#667085;font-size:13px;margin-right:auto">已分配 6 店 / 70 件 / ¥16,850.00 · 载重率 58% · 含 1 张退货取退单（5件，不占载重）</span>
+    <button class="btn">取消</button>
+    <button class="btn primary" onclick="toast('调度单 D20260813-002 已确认：6 店 70 件发货 + 1 张退货单(5件)取退，指派司机张三(京A·12345)，退货单物流状态→已调度')">确认调度</button>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+<script>function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2800)}</script>
+</body></html>

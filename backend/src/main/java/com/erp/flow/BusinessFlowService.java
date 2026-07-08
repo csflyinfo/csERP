@@ -70,7 +70,7 @@ public class BusinessFlowService {
 
         return map(
                 "salesOrder", map("orderNo", orderNo, "status", BizState.APPROVED, "effect", "锁定库存"),
-                "salesOutbound", map("outboundNo", outboundNo, "status", BizState.APPROVED, "effect", "扣减库存，释放锁定，生成销售收货单"),
+                "salesOutbound", map("outboundNo", outboundNo, "status", BizState.APPROVED, "effect", "扣减库存，释放锁定，生成销售发货单"),
                 "salesReceipt", map("receiptNo", receiptNo, "status", BizState.APPROVED, "effect", "生成应收"),
                 "ar", ar,
                 "stock", stock.get("SP001@总仓")

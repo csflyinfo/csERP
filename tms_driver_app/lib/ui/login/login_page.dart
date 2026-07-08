@@ -1,0 +1,155 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/app_config.dart';
+import '../../config/theme.dart';
+import '../../providers/auth_provider.dart';
+
+/// 司机登录页（对齐原型 screen-login）。
+class LoginPage extends ConsumerStatefulWidget {
+  const LoginPage({super.key});
+
+  @override
+  ConsumerState<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends ConsumerState<LoginPage> {
+  final _mobileCtrl = TextEditingController(text: '');
+  final _codeCtrl = TextEditingController(text: AppConfig.devVerifyCode);
+  bool _loading = false;
+  bool _obscure = true;
+
+  @override
+  void dispose() {
+    _mobileCtrl.dispose();
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    final mobile = _mobileCtrl.text.trim();
+    if (mobile.isEmpty) {
+      _toast('请输入手机号');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await ref.read(authProvider.notifier).login(mobile, _codeCtrl.text.trim());
+    } catch (e) {
+      _toast('登录失败：${e.toString().replaceFirst("Exception: ", "")}');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 顶部蓝色区 + 底部白色登录卡（对齐原型 Screen A）
+            Expanded(
+              child: Column(
+                children: [
+                  // 蓝色头部
+                  Expanded(
+                    flex: 4,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [TmsTheme.accent, TmsTheme.accent]),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 64, height: 64,
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(20)),
+                            child: const Center(child: Text('🚚', style: TextStyle(fontSize: 32))),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text('TMS 司机配送', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          const Text('Driver Delivery System', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 白色登录卡（圆角向上）
+                  Expanded(
+                    flex: 5,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(topLeft: Radius.circular(20), topRight: Radius.circular(20)),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _inputField('手机号 / 工号', _mobileCtrl, placeholder: '请输入手机号或司机工号'),
+                          const SizedBox(height: 14),
+                          _inputField('验证码', _codeCtrl, placeholder: '请输入验证码（开发期固定 888888）', obscure: _obscure,
+                            suffix: IconButton(
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20, color: TmsTheme.muted),
+                              onPressed: () => setState(() => _obscure = !_obscure),
+                            )),
+                          const Spacer(),
+                          ElevatedButton(
+                            onPressed: _loading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: TmsTheme.accent,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: _loading
+                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                : const Text('登 录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text('首次登录需联系管理员开通账号', textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _inputField(String label, TextEditingController ctrl, {String placeholder = '', bool obscure = false, Widget? suffix}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: TmsTheme.muted, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        TextField(
+          controller: ctrl,
+          obscureText: obscure,
+          decoration: InputDecoration(
+            hintText: placeholder,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            suffixIcon: suffix,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.accent, width: 1.5)),
+          ),
+        ),
+      ],
+    );
+  }
+}

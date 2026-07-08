@@ -68,6 +68,23 @@ export async function downloadBlob(path, body = {}) {
   return response.blob()
 }
 
+/**
+ * GET 方式下载文件流（返回 Blob）
+ */
+export async function getBlob(path) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'GET',
+    headers: authHeaders(),
+  })
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY)
+    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
+    throw new Error('登录已过期')
+  }
+  if (!response.ok) throw new Error('下载失败')
+  return response.blob()
+}
+
 export function saveTextFile(fileName, content, mimeType = 'text/plain;charset=UTF-8') {
   const blob = new Blob([content || ''], { type: mimeType })
   const url = URL.createObjectURL(blob)

@@ -1,0 +1,140 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>销售退货单 - 销售管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+.page{padding:12px;height:100vh}
+.card{height:100%;display:flex;flex-direction:column}
+.status .tip{color:#98a2b3;font-size:13px;margin-left:auto}
+.ls{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+.ls.unset{background:#f2f4f7;color:#667085;border:1px solid #eaecf0}
+.ls.arranged{background:#fff7ed;border:1px solid #fed7aa;color:#c2410c}
+.ls.dispatched{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}
+.ls.recycled{background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d}
+.drawer{position:fixed;top:0;right:0;width:820px;height:100vh;background:#fff;box-shadow:-12px 0 40px rgba(16,24,40,.18);z-index:30;display:none;flex-direction:column}
+.drawer.show{display:flex}
+.dh{height:54px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #e5eaf2;font-size:18px;font-weight:700}
+.dh .close{margin-left:auto;font-size:26px;color:#98a2b3;cursor:pointer}
+.dtabs{height:46px;display:flex;gap:30px;padding:0 20px;border-bottom:1px solid #d0d5dd}
+.dtabs span{height:46px;line-height:46px;cursor:pointer;color:#667085}
+.dtabs .on{color:#1677ff;border-bottom:2px solid #1677ff;font-weight:700}
+.dbody{flex:1;overflow:auto;padding:20px 24px}
+.dsec{font-size:15px;font-weight:700;margin:14px 0 16px}
+.dsec:before{content:"";display:inline-block;width:4px;height:14px;background:#1677ff;margin-right:8px;vertical-align:-1px}
+.flow-line{display:flex;align-items:center;gap:6px;margin:10px 0 18px;flex-wrap:wrap}
+.flow-step{display:flex;align-items:center;gap:6px}
+.flow-step .nd{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;background:#f2f4f7;color:#98a2b3;border:1px solid #eaecf0}
+.flow-step.on .nd{background:#1677ff;color:#fff;border-color:#1677ff}
+.flow-step.done .nd{background:#bbf7d0;color:#15803d;border-color:#86efac}
+.flow-step .lb{font-size:13px;color:#667085}
+.flow-step.on .lb{color:#1677ff;font-weight:700}
+.flow-step.done .lb{color:#15803d}
+.flow-arrow{color:#cbd5e1;font-size:16px}
+.arrange-box{border:2px solid #c2410c;border-radius:8px;padding:16px;background:#fff7ed;margin-top:16px}
+.arrange-box .ab-t{font-weight:700;color:#c2410c;margin-bottom:10px}
+.arrange-box .ab-d{color:#92400e;font-size:13px;line-height:1.7}
+.badge.rt{background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d}
+</style></head><body>
+<div class="page"><div class="card">
+  <div class="status">
+    <span class="on">全部</span><span>未安排</span><span>已安排调度</span><span>已调度</span><span>司机已回收</span>
+    <span class="tip">销售退货单 · 共 6 单（司机回收型）</span>
+  </div>
+
+  <div class="query">
+    <input placeholder="退货单号 / 客户" class="wide">
+    <select><option>全部物流状态</option><option>未安排</option><option>已安排调度</option><option>已调度</option><option>司机已回收</option></select>
+    <select><option>全部退货类型</option><option>司机回收(DRIVER)</option><option>无司机(WAREHOUSE)</option></select>
+    <select><option>全部司机</option><option>张三</option><option>赵六</option></select>
+    <input type="date" value="2026-08-13">
+    <span class="spacer"></span>
+    <button class="btn">导出</button>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <tr><th>退货单号</th><th>客户</th><th>退货类型</th><th>退货数量</th><th>签收数量</th><th>司机</th><th>调度单</th><th>退货原因</th><th>单据状态</th><th>物流状态</th><th>操作</th></tr>
+      <tr><td class="link" onclick="openDrawer('XTSQ202608130001','unset')">XTSQ202608130001</td><td>华联超市(西湖店)</td><td><span class="badge rt">司机回收</span></td><td>3</td><td>—</td><td>—</td><td>—</td><td>商品临期</td><td><span class="badge wait">待审核</span></td><td><span class="ls unset">未安排</span></td><td><span class="link" onclick="openDrawer('XTSQ202608130001','unset')">安排调度</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('XTSQ202608130002','arranged')">XTSQ202608130002</td><td>物美超市(海淀店)</td><td><span class="badge rt">司机回收</span></td><td>5</td><td>—</td><td>—</td><td>—</td><td>商品破损</td><td><span class="badge ok">已审核</span></td><td><span class="ls arranged">已安排调度</span></td><td><span class="link" onclick="toast('已在调度池，请前往排线调度指派司机')">前往排线</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('XTSQ202608130003','dispatched')">XTSQ202608130003</td><td>超市发(学院路店)</td><td><span class="badge rt">司机回收</span></td><td>2</td><td>—</td><td>张三</td><td class="link">D20260813-001</td><td>错发退货</td><td><span class="badge ok">已审核</span></td><td><span class="ls dispatched">已调度</span></td><td><span class="link" onclick="toast('司机张三待上门回收，可在司机APP查看')">查看行程</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('XTSQ202608130004','recycled')">XTSQ202608130004</td><td>美佳便利店(解放路)</td><td><span class="badge rt">司机回收</span></td><td>8</td><td>8</td><td>赵六</td><td class="link">D20260813-004</td><td>滞销退货</td><td><span class="badge ok">已审核</span></td><td><span class="ls recycled">司机已回收</span></td><td><span class="link" onclick="toast('司机已回收 8 件，待返仓验收')">回收明细</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('XTSQ202608130005','recycled')">XTSQ202608130005</td><td>好又多超市(建设路)</td><td><span class="badge rt">司机回收</span></td><td>4</td><td>3</td><td>赵六</td><td class="link">D20260813-004</td><td>商品破损</td><td><span class="badge ok">已审核</span></td><td><span class="ls recycled">司机已回收</span></td><td><span class="link" onclick="toast('司机实收 3 件（少 1 件），差异待处理')">回收明细</span></td></tr>
+      <tr><td class="link">XTSQ202608130006</td><td>全家便利店(文一店)</td><td><span class="badge">无司机</span></td><td>2</td><td>—</td><td>—</td><td>—</td><td>客户自退</td><td><span class="badge ok">已审核</span></td><td><span class="ls unset">未安排</span></td><td><span style="color:#98a2b3">无司机不调度</span></td></tr>
+    </table>
+  </div>
+
+  <div class="foot"><div class="right"><button class="pagebtn">‹</button><button class="pagebtn on">1</button><button class="pagebtn">›</button><span style="color:#667085;font-size:13px">共 6 条</span></div></div>
+</div></div>
+
+<!-- 详情/安排调度抽屉 -->
+<div class="drawer" id="drawer">
+  <div class="dh"><span id="dNo">XTSQ202608130001</span> · 销售退货单<span class="close" onclick="closeDrawer()">×</span></div>
+  <div class="dtabs"><span class="on">退货单信息</span><span>物流状态</span><span>退货明细</span><span>回收记录</span></div>
+  <div class="dbody">
+    <div class="dsec">退货单基本信息</div>
+    <div class="form2">
+      <label class="field">退货单号<input value="XTSQ202608130001" disabled></label>
+      <label class="field">退货类型<input value="司机回收(DRIVER)" disabled></label>
+      <label class="field">客户<input value="华联超市(西湖店)" disabled></label>
+      <label class="field">退货数量<input value="3 件" disabled></label>
+      <label class="field">签收数量<input value="—（待司机回收）" disabled></label>
+      <label class="field">退货原因<input value="商品临期" disabled></label>
+      <label class="field">单据状态<input value="待审核" disabled></label>
+      <label class="field">物流状态<input value="未安排" disabled></label>
+    </div>
+
+    <div class="dsec">物流状态流转</div>
+    <div class="flow-line" id="flowLine">
+      <div class="flow-step done"><div class="nd">1</div><div class="lb">未安排</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step on"><div class="nd">2</div><div class="lb">已安排调度</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="nd">3</div><div class="lb">已调度</div></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step"><div class="nd">4</div><div class="lb">司机已回收</div></div>
+    </div>
+    <div style="color:#667085;font-size:12px;margin-top:-8px">当前：未安排 → 点【安排调度】进入调度池参与排线</div>
+
+    <div class="dsec">退货明细</div>
+    <table class="matrix">
+      <tr><th>商品</th><th>批次</th><th>单位</th><th>退货数量</th><th>签收数量</th><th>差异</th></tr>
+      <tr><td>农夫山泉500ml*24</td><td>B202608</td><td>箱</td><td>2</td><td>—</td><td>—</td></tr>
+      <tr><td>康师傅红烧牛肉面</td><td>B202607</td><td>箱</td><td>1</td><td>—</td><td>—</td></tr>
+    </table>
+
+    <div class="dsec">安排调度</div>
+    <div class="arrange-box" id="arrangeBox">
+      <div class="ab-t">🔄 安排调度 · 退货单进入调度池</div>
+      <div class="ab-d">
+        确认后系统将：<br>
+        ① 更新物流状态为 <b>「已安排调度」</b>，退货单进入配送任务池；<br>
+        ② 调度员可在「排线调度」主动指派司机，或在指派该客户发货单时<b>自动提示</b>一并指派本退货单；<br>
+        ③ 指派司机后物流状态 →「已调度」，回写司机/调度单/行程；<br>
+        ④ 司机 APP 退货签收后 →「司机已回收」，回写签收数量。<br>
+        注：退货单作为"取货"任务参与排线，不占用车辆载重（逆向物流）。
+      </div>
+      <label class="field" style="margin-top:10px">安排备注<textarea placeholder="如：随朝阳线明日回收，请司机到店一并取退"></textarea></label>
+    </div>
+  </div>
+  <div style="height:64px;border-top:1px solid #e5eaf2;display:flex;justify-content:flex-end;gap:12px;align-items:center;padding:0 20px">
+    <button class="btn" onclick="closeDrawer()">取消</button>
+    <button class="btn" onclick="closeDrawer()">查看明细</button>
+    <button class="btn primary" id="arrangeBtn" onclick="toast('已安排调度：物流状态→已安排调度，退货单已进入调度池，可前往排线调度指派司机');closeDrawer()">确认安排调度</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script>
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',3200)}
+function setFlow(status){
+  var steps=document.querySelectorAll('#flowLine .flow-step');
+  var map={unset:0,arranged:1,dispatched:2,recycled:3};
+  var cur=map[status];
+  steps.forEach(function(s,i){s.classList.remove('done','on');if(i<cur){s.classList.add('done')}else if(i===cur){s.classList.add('on')}});
+  var btn=document.getElementById('arrangeBtn');
+  var box=document.getElementById('arrangeBox');
+  if(status==='unset'){btn.style.display='';btn.textContent='确认安排调度';box.style.display=''}
+  else if(status==='arranged'){btn.style.display='';btn.textContent='取消安排调度';box.style.display=''}
+  else{btn.style.display='none';box.style.display='none'}
+}
+function openDrawer(no,status){document.getElementById('dNo').textContent=no;setFlow(status||'unset');document.getElementById('drawer').classList.add('show')}
+function closeDrawer(){document.getElementById('drawer').classList.remove('show')}
+</script>
+</body></html>

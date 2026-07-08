@@ -1,0 +1,118 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>改派返仓 - TMS调度管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+.page{padding:12px;height:100vh}
+.card{height:100%;display:flex;flex-direction:column}
+.status .tip{color:#98a2b3;font-size:13px;margin-left:auto}
+.drawer{position:fixed;top:0;right:0;width:820px;height:100vh;background:#fff;box-shadow:-12px 0 40px rgba(16,24,40,.18);z-index:30;display:none;flex-direction:column}
+.drawer.show{display:flex}
+.dh{height:54px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #e5eaf2;font-size:18px;font-weight:700}
+.dh .close{margin-left:auto;font-size:26px;color:#98a2b3;cursor:pointer}
+.dtabs{height:46px;display:flex;gap:30px;padding:0 20px;border-bottom:1px solid #d0d5dd}
+.dtabs span{height:46px;line-height:46px;cursor:pointer;color:#667085}
+.dtabs .on{color:#1677ff;border-bottom:2px solid #1677ff;font-weight:700}
+.dbody{flex:1;overflow:auto;padding:20px 24px}
+.dsec{font-size:15px;font-weight:700;margin:14px 0 16px}
+.dsec:before{content:"";display:inline-block;width:4px;height:14px;background:#1677ff;margin-right:8px;vertical-align:-1px}
+.reason-card{border:1px solid #fecdd3;background:#fff1f2;border-radius:8px;padding:12px 14px;margin-bottom:16px}
+.reason-card .rc-t{font-weight:700;color:#9f1239;font-size:14px}
+.reason-card .rc-d{color:#9f1239;font-size:13px;margin-top:4px}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0}
+.photo-grid .ph{aspect-ratio:4/3;background:#f5f7fa;border:1px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#98a2b3;font-size:12px}
+.photo-grid .ph.has{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border:1px solid #6ee7b7;color:#065f46}
+.handle-box{border:2px solid #1677ff;border-radius:8px;padding:16px;background:#f5f9ff;margin-top:16px}
+.handle-box .hb-t{font-weight:700;color:#1677ff;margin-bottom:10px}
+.handle-box .hb-d{color:#475467;font-size:13px;line-height:1.7}
+.handle-box .hb-d b{color:#b54708}
+.badge.rp{background:#fff7ed;border:1px solid #fed7aa;color:#c2410c}
+</style></head><body>
+<div class="page"><div class="card">
+  <div class="status">
+    <span class="on">全部</span><span>待验收</span><span>已验收·待改派</span><span>已改派</span>
+    <span class="tip">改派返仓 · 共 4 单</span>
+  </div>
+
+  <div class="query">
+    <input placeholder="改派返仓单号 / 发货单号 / 客户" class="wide">
+    <select><option>全部原因</option><option>客户不在</option><option>地址错误</option><option>联系不上</option><option>客户要求改天</option></select>
+    <select><option>全部司机</option><option>张三</option><option>赵六</option><option>王五</option><option>孙七</option></select>
+    <input type="date" value="2026-08-13">
+    <span class="spacer"></span>
+    <button class="btn">导出</button>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <tr><th>改派返仓单号</th><th>调度单</th><th>发货单</th><th>客户</th><th>司机</th><th>待改派件数</th><th>原因</th><th>改送日期</th><th>留证</th><th>状态</th><th>操作</th></tr>
+      <tr><td class="link" onclick="openDrawer('GPRC202608130001')">GPRC202608130001</td><td>D20260813-004</td><td>FH20260813009</td><td>旺旺超市(拱北店)</td><td>赵六</td><td>18</td><td><span class="badge bad">客户不在</span></td><td>2026-08-14</td><td>3 张</td><td><span class="badge wait">在途返仓中</span></td><td><span class="link" onclick="openDrawer('GPRC202608130001')">验收</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('GPRC202608130002')">GPRC202608130002</td><td>D20260813-001</td><td>FH20260813011</td><td>天天便利店</td><td>张三</td><td>6</td><td><span class="badge bad">地址错误</span></td><td>2026-08-15</td><td>2 张</td><td><span class="badge wait">在途返仓中</span></td><td><span class="link" onclick="openDrawer('GPRC202608130002')">验收</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('GPRC202608130003')">GPRC202608130003</td><td>D20260813-003</td><td>FH20260813015</td><td>惠民商店</td><td>王五</td><td>9</td><td><span class="badge bad">联系不上</span></td><td>2026-08-14</td><td>2 张</td><td><span class="badge rp">已验收·待改派</span></td><td><span class="link" onclick="toast('已回调度池，标记【返仓改派】，可重新安排派送')">查看改派</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('GPRC202608130004')">GPRC202608130004</td><td>D20260813-005</td><td>FH20260813020</td><td>顺发小卖部</td><td>孙七</td><td>3</td><td><span class="badge bad">客户要求改天</span></td><td>2026-08-16</td><td>1 张</td><td><span class="badge ok">已改派</span></td><td><span class="link" onclick="toast('已于 08-14 重新派送并签收')">改派记录</span></td></tr>
+    </table>
+  </div>
+
+  <div class="foot"><div class="right"><button class="pagebtn">‹</button><button class="pagebtn on">1</button><button class="pagebtn">›</button><span style="color:#667085;font-size:13px">共 4 条</span></div></div>
+</div></div>
+
+<!-- 验收抽屉 -->
+<div class="drawer" id="drawer">
+  <div class="dh"><span id="dNo">GPRC202608130001</span> · 改派返仓验收<span class="close" onclick="closeDrawer()">×</span></div>
+  <div class="dtabs"><span class="on">返仓信息</span><span>留证照片</span><span>验收明细</span><span>改派记录</span></div>
+  <div class="dbody">
+    <div class="dsec">改派返仓基本信息</div>
+    <div class="form2">
+      <label class="field">改派返仓单号<input value="GPRC202608130001" disabled></label>
+      <label class="field">关联调度单<input value="D20260813-004" disabled></label>
+      <label class="field">关联发货单<input value="FH20260813009" disabled></label>
+      <label class="field">关联出库单<input value="CK20260813009（已审核·不反审核）" disabled></label>
+      <label class="field">客户<input value="旺旺超市(拱北店)" disabled></label>
+      <label class="field">司机<input value="赵六 · 京D·13579" disabled></label>
+      <label class="field">待改派件数<input value="18 件" disabled></label>
+      <label class="field">改送日期<input value="2026-08-14" disabled></label>
+      <label class="field">返仓状态<input value="在途返仓中" disabled></label>
+      <label class="field">改派次数<input value="0（本次为首次改派）" disabled></label>
+    </div>
+
+    <div class="dsec">无法配送原因</div>
+    <div class="reason-card"><div class="rc-t">🏠 客户不在</div><div class="rc-d">司机 10:45 到达门店，门店关门无人收货。电话联系客户称外出，要求改天再送。备注：门店卷帘门关闭，店内无灯光。客户确认 08-14 上午可收货。</div></div>
+
+    <div class="dsec">留证照片（3 张）</div>
+    <div class="photo-grid">
+      <div class="ph has">📷 门店关门照<br>10:45 拍摄</div>
+      <div class="ph has">📞 电话联系截图</div>
+      <div class="ph has">🚚 车辆在店照</div>
+    </div>
+
+    <div class="dsec">返仓货物明细（待仓库验收）</div>
+    <table class="matrix">
+      <tr><th>商品</th><th>批次</th><th>计划配送</th><th>未配送</th><th>司机上报返仓</th><th>仓库实收</th><th>差异</th></tr>
+      <tr><td>农夫山泉500ml*24</td><td>B202608</td><td>5</td><td>5</td><td>5</td><td contenteditable>5</td><td>0</td></tr>
+      <tr><td>康师傅红烧牛肉面</td><td>B202607</td><td>8</td><td>8</td><td>8</td><td contenteditable>8</td><td>0</td></tr>
+      <tr><td>海天酱油1L*6</td><td>B202606</td><td>5</td><td>5</td><td>5</td><td contenteditable>5</td><td>0</td></tr>
+    </table>
+
+    <div class="dsec">验收处理说明</div>
+    <div class="handle-box">
+      <div class="hb-t">🔄 改派返仓 · 不反审核出库单、库存不变</div>
+      <div class="hb-d">
+        验收确认后系统将：<br>
+        ① <b>出库单 CK20260813009 保持已审核</b>，不反审核、库存不回退（货物暂存仓库暂存区）；<br>
+        ② 原发货单 FH20260813009 配送状态更新为「待改派」，<b>回调度池可重新安排派送</b>；<br>
+        ③ 发货单标记 <b>【返仓改派】</b>，改派次数 +1；<br>
+        ④ 到改送日期 2026-08-14 自动进入任务池，调度员可重新排线派送（复用原出库单，不重复出库）。
+      </div>
+      <label class="field" style="margin-top:10px">验收备注<textarea placeholder="如：实收数量与司机上报一致，货物完好，可重新派送"></textarea></label>
+    </div>
+  </div>
+  <div style="height:64px;border-top:1px solid #e5eaf2;display:flex;justify-content:flex-end;gap:12px;align-items:center;padding:0 20px">
+    <button class="btn" onclick="closeDrawer()">取消</button>
+    <button class="btn primary" onclick="toast('验收完成：出库单未反审核、库存不变；发货单 FH20260813009 已回调度池，标记【返仓改派】，改派次数 1');closeDrawer()">确认验收</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script>
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',3200)}
+function openDrawer(no){document.getElementById('dNo').textContent=no;document.getElementById('drawer').classList.add('show')}
+function closeDrawer(){document.getElementById('drawer').classList.remove('show')}
+</script>
+</body></html>

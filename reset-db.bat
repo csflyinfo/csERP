@@ -23,8 +23,16 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8080 " ^| findstr "LISTENIN
 )
 timeout /t 2 /nobreak >nul
 
-echo [2/3] Delete DB files...
+echo [2/3] Backup then delete DB files...
 if exist "backend\data\erp-v1.mv.db" (
+  rem 自动备份到 backend/data/backups/erp-v1-YYYYMMDD-HHMMSS.mv.db
+  rem 防止误重置抹掉手工建的基础资料 —— 阶段五后强化的安全兜底
+  if not exist "backend\data\backups" mkdir "backend\data\backups"
+  for /f "tokens=1-3 delims=/- " %%a in ("%date%") do set _d=%%a%%b%%c
+  for /f "tokens=1-2 delims=:. " %%a in ("%time%") do set _t=%%a%%b
+  set _t=%_t: =0%
+  copy /Y "backend\data\erp-v1.mv.db" "backend\data\backups\erp-v1-%_d%-%_t%.mv.db" >nul
+  echo    Backup saved: backend\data\backups\erp-v1-%_d%-%_t%.mv.db
   del /F /Q "backend\data\erp-v1.mv.db"
   echo    erp-v1.mv.db deleted
 )

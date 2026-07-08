@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS base_category (
+CREATE TABLE base_category (
   category_id VARCHAR(32) PRIMARY KEY,
   parent_id VARCHAR(32),
   parent_code VARCHAR(50),
@@ -7,10 +7,11 @@ CREATE TABLE IF NOT EXISTS base_category (
   default_tax_rate VARCHAR(20),
   goods_count INT DEFAULT 0,
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  external_code VARCHAR(50)
 );
 
-CREATE TABLE IF NOT EXISTS base_unit (
+CREATE TABLE base_unit (
   unit_id VARCHAR(32) PRIMARY KEY,
   unit_code VARCHAR(50) NOT NULL UNIQUE,
   unit_name VARCHAR(100) NOT NULL,
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS base_unit (
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS base_brand (
+CREATE TABLE base_brand (
   brand_id VARCHAR(32) PRIMARY KEY,
   brand_code VARCHAR(50) NOT NULL UNIQUE,
   brand_name VARCHAR(100) NOT NULL,
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS base_brand (
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS base_warehouse (
+CREATE TABLE base_warehouse (
   warehouse_id VARCHAR(32) PRIMARY KEY,
   warehouse_code VARCHAR(50) NOT NULL UNIQUE,
   warehouse_name VARCHAR(100) NOT NULL,
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS base_warehouse (
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS base_goods (
+CREATE TABLE base_goods (
   goods_id VARCHAR(32) PRIMARY KEY,
   goods_code VARCHAR(50) NOT NULL UNIQUE,
   goods_name VARCHAR(200) NOT NULL,
@@ -63,20 +64,28 @@ CREATE TABLE IF NOT EXISTS base_goods (
   default_warehouse VARCHAR(100),
   can_return BOOLEAN DEFAULT TRUE,
   current_stock DECIMAL(18,2) DEFAULT 0,
-  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  simple_code VARCHAR(100),
+  goods_level VARCHAR(50),
+  tax_rate VARCHAR(20),
+  goods_manager VARCHAR(100),
+  can_sale BOOLEAN DEFAULT TRUE,
+  can_purchase BOOLEAN DEFAULT TRUE,
+  is_weighted BOOLEAN DEFAULT FALSE,
+  is_presale BOOLEAN DEFAULT FALSE,
+  origin VARCHAR(100),
+  warning_days INT DEFAULT 0,
+  min_order_qty DECIMAL(18,3) DEFAULT 0,
+  pallet_qty INT DEFAULT 0,
+  stack_layers INT DEFAULT 0,
+  base_weight DECIMAL(18,3) DEFAULT 0,
+  base_volume DECIMAL(18,6) DEFAULT 0,
+  goods_intro VARCHAR(1000),
+  remark VARCHAR(500),
+  unit_config VARCHAR(4000)
 );
 
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS goods_type VARCHAR(50) DEFAULT '正常商品';
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS shelf_life_days INT DEFAULT 0;
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS storage_property VARCHAR(50) DEFAULT '常温';
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS suggested_retail_price DECIMAL(18,2) DEFAULT 0;
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS stock_upper_limit DECIMAL(18,2) DEFAULT 0;
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS stock_lower_limit DECIMAL(18,2) DEFAULT 0;
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS default_supplier VARCHAR(100);
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS default_warehouse VARCHAR(100);
-ALTER TABLE base_goods ADD COLUMN IF NOT EXISTS can_return BOOLEAN DEFAULT TRUE;
-
-CREATE TABLE IF NOT EXISTS base_customer (
+CREATE TABLE base_customer (
   customer_id VARCHAR(32) PRIMARY KEY,
   customer_code VARCHAR(50) NOT NULL UNIQUE,
   customer_name VARCHAR(100) NOT NULL,
@@ -98,7 +107,7 @@ CREATE TABLE IF NOT EXISTS base_customer (
   status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS base_supplier (
+CREATE TABLE base_supplier (
   supplier_id VARCHAR(32) PRIMARY KEY,
   supplier_code VARCHAR(50) NOT NULL UNIQUE,
   supplier_name VARCHAR(100) NOT NULL,
@@ -114,10 +123,181 @@ CREATE TABLE IF NOT EXISTS base_supplier (
   invoice_title VARCHAR(200),
   tax_no VARCHAR(100),
   ap_balance DECIMAL(18,2) DEFAULT 0,
-  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL'
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  address VARCHAR(500),
+  remark VARCHAR(500)
 );
 
-CREATE TABLE IF NOT EXISTS base_customer_price_adjust (
+-- ============================================================
+-- 主档扩展表（片区/线路/部门/费用类型/人员/货主/往来单位/资金账户/价格组）
+-- ============================================================
+CREATE TABLE base_territory (
+  territory_id VARCHAR(32) PRIMARY KEY,
+  territory_code VARCHAR(50) NOT NULL UNIQUE,
+  territory_name VARCHAR(100) NOT NULL,
+  city VARCHAR(100),
+  coverage VARCHAR(200),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE base_route_line (
+  route_line_id VARCHAR(32) PRIMARY KEY,
+  route_line_code VARCHAR(50) NOT NULL UNIQUE,
+  route_line_name VARCHAR(100) NOT NULL,
+  driver VARCHAR(100),
+  coverage VARCHAR(200),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  creator_name VARCHAR(100)
+);
+
+-- 线路：补齐创建人字段（历史库通过 IF NOT EXISTS 幂等升级）
+
+CREATE TABLE base_department (
+  department_id VARCHAR(32) PRIMARY KEY,
+  department_code VARCHAR(50) NOT NULL UNIQUE,
+  department_name VARCHAR(100) NOT NULL,
+  parent_code VARCHAR(50),
+  head_count INT DEFAULT 0,
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE base_expense_type (
+  expense_type_id VARCHAR(32) PRIMARY KEY,
+  expense_type_code VARCHAR(50) NOT NULL UNIQUE,
+  expense_type_name VARCHAR(100) NOT NULL,
+  direction VARCHAR(20),
+  cost_participation VARCHAR(20),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  parent_code VARCHAR(50)
+);
+
+-- 费用类型树形结构：上级编码
+
+CREATE TABLE base_employee (
+  employee_id VARCHAR(32) PRIMARY KEY,
+  employee_code VARCHAR(50) NOT NULL UNIQUE,
+  employee_name VARCHAR(100) NOT NULL,
+  department VARCHAR(100),
+  position VARCHAR(100),
+  mobile VARCHAR(50),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  gender VARCHAR(10),
+  owner_name VARCHAR(100),
+  id_card VARCHAR(50),
+  education VARCHAR(50),
+  address VARCHAR(200),
+  is_salesman BOOLEAN DEFAULT FALSE,
+  is_salesman_admin BOOLEAN DEFAULT FALSE,
+  parent_salesman VARCHAR(100),
+  is_buyer BOOLEAN DEFAULT FALSE,
+  is_warehouse_keeper BOOLEAN DEFAULT FALSE,
+  is_deliveryman BOOLEAN DEFAULT FALSE
+);
+
+-- 人员按 PRD 扩展字段
+
+CREATE TABLE base_owner (
+  owner_id VARCHAR(32) PRIMARY KEY,
+  owner_code VARCHAR(50) NOT NULL UNIQUE,
+  owner_name VARCHAR(100) NOT NULL,
+  owner_type VARCHAR(50),
+  platform VARCHAR(100),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE base_counterparty_type (
+  type_id VARCHAR(32) PRIMARY KEY,
+  type_code VARCHAR(50) NOT NULL UNIQUE,
+  type_name VARCHAR(100) NOT NULL,
+  sort_order INT DEFAULT 0,
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE base_counterparty (
+  counterparty_id VARCHAR(32) PRIMARY KEY,
+  counterparty_code VARCHAR(50) NOT NULL UNIQUE,
+  counterparty_name VARCHAR(100) NOT NULL,
+  counterparty_type VARCHAR(50),
+  contact_name VARCHAR(100),
+  phone VARCHAR(50),
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  type_code VARCHAR(50)
+);
+
+-- 往来单位银行账户（子表，一对多）
+CREATE TABLE base_counterparty_bank_account (
+  bank_account_id VARCHAR(32) PRIMARY KEY,
+  counterparty_code VARCHAR(50) NOT NULL,
+  account_name VARCHAR(200),
+  bank_name VARCHAR(200),
+  bank_account_no VARCHAR(100),
+  branch_name VARCHAR(200),
+  is_default TINYINT(1) DEFAULT 0,
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_bcba_code ON base_counterparty_bank_account(counterparty_code);
+
+-- 往来单位开票信息（子表，一对多）
+CREATE TABLE base_counterparty_invoice_info (
+  invoice_info_id VARCHAR(32) PRIMARY KEY,
+  counterparty_code VARCHAR(50) NOT NULL,
+  invoice_title VARCHAR(200),
+  tax_no VARCHAR(100),
+  bank_name VARCHAR(200),
+  bank_account_no VARCHAR(100),
+  address VARCHAR(300),
+  phone VARCHAR(50),
+  is_default TINYINT(1) DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_bcii_code ON base_counterparty_invoice_info(counterparty_code);
+
+CREATE TABLE base_fund_account (
+  fund_account_id VARCHAR(32) PRIMARY KEY,
+  fund_account_code VARCHAR(50) NOT NULL UNIQUE,
+  fund_account_name VARCHAR(100) NOT NULL,
+  account_type VARCHAR(50),
+  balance DECIMAL(18,2) DEFAULT 0,
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  parent_code VARCHAR(50),
+  is_system BOOLEAN DEFAULT FALSE
+);
+
+-- 资金账户扩展字段：树形结构 & 系统默认账户保护标记
+
+CREATE TABLE base_price_group (
+  price_group_id VARCHAR(32) PRIMARY KEY,
+  price_group_code VARCHAR(50) NOT NULL UNIQUE,
+  price_group_name VARCHAR(100) NOT NULL,
+  enabled BOOLEAN DEFAULT TRUE,
+  sort_order INT DEFAULT 0,
+  remark VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'NORMAL',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE base_customer_price_adjust (
   adjust_id VARCHAR(32) PRIMARY KEY,
   adjust_no VARCHAR(50) NOT NULL UNIQUE,
   customer_code VARCHAR(50) NOT NULL,
@@ -133,7 +313,7 @@ CREATE TABLE IF NOT EXISTS base_customer_price_adjust (
   remark VARCHAR(500)
 );
 
-CREATE TABLE IF NOT EXISTS base_customer_price_adjust_detail (
+CREATE TABLE base_customer_price_adjust_detail (
   detail_id VARCHAR(32) PRIMARY KEY,
   adjust_id VARCHAR(32) NOT NULL,
   goods_code VARCHAR(50) NOT NULL,
@@ -147,7 +327,7 @@ CREATE TABLE IF NOT EXISTS base_customer_price_adjust_detail (
   cost_price DECIMAL(18,2)
 );
 
-CREATE TABLE IF NOT EXISTS base_customer_price (
+CREATE TABLE base_customer_price (
   price_id VARCHAR(32) PRIMARY KEY,
   adjust_no VARCHAR(50) NOT NULL,
   customer_code VARCHAR(50) NOT NULL,
@@ -166,7 +346,7 @@ CREATE TABLE IF NOT EXISTS base_customer_price (
   effective_status VARCHAR(20) NOT NULL DEFAULT 'EFFECTIVE'
 );
 
-CREATE TABLE IF NOT EXISTS inv_stock_balance (
+CREATE TABLE inv_stock_balance (
   balance_id VARCHAR(32) PRIMARY KEY,
   goods_code VARCHAR(50) NOT NULL,
   goods_name VARCHAR(200) NOT NULL,
@@ -182,7 +362,7 @@ CREATE TABLE IF NOT EXISTS inv_stock_balance (
   last_inout_time TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS inv_stock_ledger (
+CREATE TABLE inv_stock_ledger (
   ledger_id VARCHAR(32) PRIMARY KEY,
   ledger_no VARCHAR(50) NOT NULL UNIQUE,
   occurred_at TIMESTAMP NOT NULL,
@@ -199,7 +379,7 @@ CREATE TABLE IF NOT EXISTS inv_stock_ledger (
   operator_name VARCHAR(100)
 );
 
-CREATE TABLE IF NOT EXISTS pur_order (
+CREATE TABLE pur_order (
   order_id VARCHAR(32) PRIMARY KEY,
   order_no VARCHAR(50) NOT NULL UNIQUE,
   supplier VARCHAR(100) NOT NULL,
@@ -219,13 +399,7 @@ CREATE TABLE IF NOT EXISTS pur_order (
   audit_info VARCHAR(200)
 );
 
-ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS owner_name VARCHAR(100);
-ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS expected_arrival_date DATE;
-ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS settlement_method VARCHAR(50);
-ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS cost_amount DECIMAL(18,2) DEFAULT 0;
-ALTER TABLE pur_order ADD COLUMN IF NOT EXISTS audit_info VARCHAR(200);
-
-CREATE TABLE IF NOT EXISTS pur_order_detail (
+CREATE TABLE pur_order_detail (
   detail_id VARCHAR(32) PRIMARY KEY,
   order_id VARCHAR(32) NOT NULL,
   line_type VARCHAR(50) DEFAULT '正常',
@@ -240,7 +414,7 @@ CREATE TABLE IF NOT EXISTS pur_order_detail (
   cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS sales_order (
+CREATE TABLE sales_order (
   order_id VARCHAR(32) PRIMARY KEY,
   order_no VARCHAR(50) NOT NULL UNIQUE,
   customer VARCHAR(100) NOT NULL,
@@ -261,12 +435,7 @@ CREATE TABLE IF NOT EXISTS sales_order (
   audit_info VARCHAR(200)
 );
 
-ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS line_type VARCHAR(50) DEFAULT '正常';
-ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS cost_amount DECIMAL(18,2) DEFAULT 0;
-ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS creator_name VARCHAR(100);
-ALTER TABLE sales_order ADD COLUMN IF NOT EXISTS audit_info VARCHAR(200);
-
-CREATE TABLE IF NOT EXISTS sales_order_detail (
+CREATE TABLE sales_order_detail (
   detail_id VARCHAR(32) PRIMARY KEY,
   order_id VARCHAR(32) NOT NULL,
   line_type VARCHAR(50) DEFAULT '正常',
@@ -282,7 +451,7 @@ CREATE TABLE IF NOT EXISTS sales_order_detail (
   cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS pur_inbound (
+CREATE TABLE pur_inbound (
   inbound_id VARCHAR(32) PRIMARY KEY,
   inbound_no VARCHAR(50) NOT NULL UNIQUE,
   source_order VARCHAR(50),
@@ -297,7 +466,7 @@ CREATE TABLE IF NOT EXISTS pur_inbound (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS pur_inbound_detail (
+CREATE TABLE pur_inbound_detail (
   detail_id VARCHAR(32) PRIMARY KEY,
   inbound_id VARCHAR(32) NOT NULL,
   goods_code VARCHAR(50),
@@ -316,7 +485,7 @@ CREATE TABLE IF NOT EXISTS pur_inbound_detail (
   allocated_expense DECIMAL(18,2) DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS sales_outbound (
+CREATE TABLE sales_outbound (
   outbound_id VARCHAR(32) PRIMARY KEY,
   outbound_no VARCHAR(50) NOT NULL UNIQUE,
   source_order VARCHAR(50),
@@ -332,7 +501,7 @@ CREATE TABLE IF NOT EXISTS sales_outbound (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS sales_outbound_detail (
+CREATE TABLE sales_outbound_detail (
   detail_id VARCHAR(32) PRIMARY KEY,
   outbound_id VARCHAR(32) NOT NULL,
   goods_code VARCHAR(50),
@@ -347,7 +516,7 @@ CREATE TABLE IF NOT EXISTS sales_outbound_detail (
   cost_amount DECIMAL(18,2) DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS fin_ar (
+CREATE TABLE fin_ar (
   ar_id VARCHAR(32) PRIMARY KEY,
   ar_no VARCHAR(50) NOT NULL UNIQUE,
   source_bill VARCHAR(50) NOT NULL,
@@ -362,7 +531,7 @@ CREATE TABLE IF NOT EXISTS fin_ar (
   status VARCHAR(20) NOT NULL DEFAULT 'UNVERIFIED'
 );
 
-CREATE TABLE IF NOT EXISTS fin_ap (
+CREATE TABLE fin_ap (
   ap_id VARCHAR(32) PRIMARY KEY,
   ap_no VARCHAR(50) NOT NULL UNIQUE,
   source_bill VARCHAR(50) NOT NULL,
@@ -374,7 +543,7 @@ CREATE TABLE IF NOT EXISTS fin_ap (
   status VARCHAR(20) NOT NULL DEFAULT 'UNVERIFIED'
 );
 
-CREATE TABLE IF NOT EXISTS fin_fund_ledger (
+CREATE TABLE fin_fund_ledger (
   ledger_id VARCHAR(32) PRIMARY KEY,
   ledger_no VARCHAR(50) NOT NULL UNIQUE,
   fund_account VARCHAR(100) NOT NULL,
@@ -386,7 +555,7 @@ CREATE TABLE IF NOT EXISTS fin_fund_ledger (
   operator_name VARCHAR(100)
 );
 
-CREATE TABLE IF NOT EXISTS fin_receipt_bill (
+CREATE TABLE fin_receipt_bill (
   receipt_id VARCHAR(32) PRIMARY KEY,
   receipt_no VARCHAR(50) NOT NULL UNIQUE,
   object_name VARCHAR(100) NOT NULL,
@@ -399,7 +568,7 @@ CREATE TABLE IF NOT EXISTS fin_receipt_bill (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS fin_payment_bill (
+CREATE TABLE fin_payment_bill (
   payment_id VARCHAR(32) PRIMARY KEY,
   payment_no VARCHAR(50) NOT NULL UNIQUE,
   object_name VARCHAR(100) NOT NULL,
@@ -412,7 +581,7 @@ CREATE TABLE IF NOT EXISTS fin_payment_bill (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS biz_simple_bill (
+CREATE TABLE biz_simple_bill (
   bill_id VARCHAR(32) PRIMARY KEY,
   bill_type VARCHAR(50) NOT NULL,
   bill_no VARCHAR(50) NOT NULL UNIQUE,
@@ -427,7 +596,7 @@ CREATE TABLE IF NOT EXISTS biz_simple_bill (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS fin_expense_bill (
+CREATE TABLE fin_expense_bill (
   expense_id VARCHAR(32) PRIMARY KEY,
   expense_no VARCHAR(50) NOT NULL UNIQUE,
   direction VARCHAR(20) NOT NULL,
@@ -440,7 +609,7 @@ CREATE TABLE IF NOT EXISTS fin_expense_bill (
   status VARCHAR(20) DEFAULT 'PENDING'
 );
 
-CREATE TABLE IF NOT EXISTS sys_user_runtime (
+CREATE TABLE sys_user_runtime (
   user_id VARCHAR(32) PRIMARY KEY,
   username VARCHAR(50) NOT NULL UNIQUE,
   display_name VARCHAR(100) NOT NULL,
@@ -451,7 +620,7 @@ CREATE TABLE IF NOT EXISTS sys_user_runtime (
   status VARCHAR(20) DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS sys_role_runtime (
+CREATE TABLE sys_role_runtime (
   role_id VARCHAR(32) PRIMARY KEY,
   role_code VARCHAR(50) NOT NULL UNIQUE,
   role_name VARCHAR(100) NOT NULL,
@@ -461,9 +630,8 @@ CREATE TABLE IF NOT EXISTS sys_role_runtime (
   data_scope VARCHAR(100) DEFAULT 'ALL',
   status VARCHAR(20) DEFAULT 'NORMAL'
 );
-ALTER TABLE sys_role_runtime ADD COLUMN IF NOT EXISTS data_scope VARCHAR(100) DEFAULT 'ALL';
 
-CREATE TABLE IF NOT EXISTS sys_param_runtime (
+CREATE TABLE sys_param_runtime (
   param_id VARCHAR(32) PRIMARY KEY,
   param_key VARCHAR(100) NOT NULL UNIQUE,
   param_name VARCHAR(100) NOT NULL,
@@ -473,7 +641,7 @@ CREATE TABLE IF NOT EXISTS sys_param_runtime (
   remark VARCHAR(500)
 );
 
-CREATE TABLE IF NOT EXISTS sys_bill_no_rule_runtime (
+CREATE TABLE sys_bill_no_rule_runtime (
   rule_id VARCHAR(32) PRIMARY KEY,
   bill_type VARCHAR(100) NOT NULL UNIQUE,
   prefix VARCHAR(20) NOT NULL,
@@ -484,7 +652,7 @@ CREATE TABLE IF NOT EXISTS sys_bill_no_rule_runtime (
   status VARCHAR(20) DEFAULT 'NORMAL'
 );
 
-CREATE TABLE IF NOT EXISTS sys_operation_log_runtime (
+CREATE TABLE sys_operation_log_runtime (
   log_id VARCHAR(32) PRIMARY KEY,
   operate_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   operator_name VARCHAR(100),
@@ -495,7 +663,7 @@ CREATE TABLE IF NOT EXISTS sys_operation_log_runtime (
   detail VARCHAR(1000)
 );
 
-CREATE TABLE IF NOT EXISTS sys_export_task_runtime (
+CREATE TABLE sys_export_task_runtime (
   task_id VARCHAR(32) PRIMARY KEY,
   task_no VARCHAR(50) NOT NULL UNIQUE,
   report_name VARCHAR(100),
@@ -507,7 +675,7 @@ CREATE TABLE IF NOT EXISTS sys_export_task_runtime (
   finished_at TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS sys_import_task_runtime (
+CREATE TABLE sys_import_task_runtime (
   task_id VARCHAR(32) PRIMARY KEY,
   task_no VARCHAR(50) NOT NULL UNIQUE,
   module_code VARCHAR(100),
@@ -520,3 +688,89 @@ CREATE TABLE IF NOT EXISTS sys_import_task_runtime (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   finished_at TIMESTAMP
 );
+
+CREATE TABLE sys_notification (
+  notify_id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  content VARCHAR(1000),
+  notify_type VARCHAR(50) DEFAULT 'SYSTEM',
+  module_code VARCHAR(100),
+  biz_no VARCHAR(100),
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE sys_todo (
+  todo_id VARCHAR(32) PRIMARY KEY,
+  title VARCHAR(200) NOT NULL,
+  module_code VARCHAR(100),
+  biz_no VARCHAR(100),
+  biz_id VARCHAR(100),
+  priority VARCHAR(20) DEFAULT 'NORMAL',
+  status VARCHAR(20) DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ========== 性能优化索引 ==========
+-- 基础资料索引
+CREATE INDEX idx_goods_code ON base_goods(goods_code);
+CREATE INDEX idx_goods_name ON base_goods(goods_name);
+CREATE INDEX idx_goods_category ON base_goods(category_name);
+CREATE INDEX idx_goods_brand ON base_goods(brand_name);
+CREATE INDEX idx_goods_status ON base_goods(status);
+
+CREATE INDEX idx_customer_code ON base_customer(customer_code);
+CREATE INDEX idx_customer_name ON base_customer(customer_name);
+CREATE INDEX idx_customer_status ON base_customer(status);
+
+CREATE INDEX idx_supplier_code ON base_supplier(supplier_code);
+CREATE INDEX idx_supplier_name ON base_supplier(supplier_name);
+
+-- 采购订单索引
+CREATE INDEX idx_pur_order_no ON pur_order(order_no);
+CREATE INDEX idx_pur_order_supplier ON pur_order(supplier);
+CREATE INDEX idx_pur_order_status ON pur_order(status);
+CREATE INDEX idx_pur_order_date ON pur_order(bill_date);
+CREATE INDEX idx_pur_order_detail_order ON pur_order_detail(order_id);
+
+-- 销售订单索引
+CREATE INDEX idx_sales_order_no ON sales_order(order_no);
+CREATE INDEX idx_sales_order_customer ON sales_order(customer);
+CREATE INDEX idx_sales_order_status ON sales_order(status);
+CREATE INDEX idx_sales_order_date ON sales_order(bill_date);
+CREATE INDEX idx_sales_order_detail_order ON sales_order_detail(order_id);
+
+-- 入库出库索引
+CREATE INDEX idx_pur_inbound_no ON pur_inbound(inbound_no);
+CREATE INDEX idx_pur_inbound_order ON pur_inbound(source_order);
+CREATE INDEX idx_pur_inbound_status ON pur_inbound(status);
+CREATE INDEX idx_sales_outbound_no ON sales_outbound(outbound_no);
+CREATE INDEX idx_sales_outbound_order ON sales_outbound(source_order);
+CREATE INDEX idx_sales_outbound_status ON sales_outbound(status);
+
+-- 库存索引
+CREATE INDEX idx_stock_goods ON inv_stock_balance(goods_code);
+CREATE INDEX idx_stock_warehouse ON inv_stock_balance(warehouse);
+CREATE INDEX idx_stock_goods_warehouse ON inv_stock_balance(goods_code, warehouse);
+CREATE INDEX idx_ledger_goods ON inv_stock_ledger(goods_code);
+CREATE INDEX idx_ledger_warehouse ON inv_stock_ledger(warehouse);
+CREATE INDEX idx_ledger_bill ON inv_stock_ledger(source_bill);
+
+-- 财务索引
+CREATE INDEX idx_fin_ar_customer ON fin_ar(customer);
+CREATE INDEX idx_fin_ar_status ON fin_ar(status);
+CREATE INDEX idx_fin_ap_supplier ON fin_ap(supplier);
+CREATE INDEX idx_fin_ap_status ON fin_ap(status);
+CREATE INDEX idx_fund_ledger_account ON fin_fund_ledger(fund_account);
+CREATE INDEX idx_fund_ledger_bill ON fin_fund_ledger(source_bill);
+
+-- 系统表索引
+CREATE INDEX idx_user_username ON sys_user_runtime(username);
+CREATE INDEX idx_user_status ON sys_user_runtime(status);
+CREATE INDEX idx_role_code ON sys_role_runtime(role_code);
+CREATE INDEX idx_notify_read ON sys_notification(is_read, created_at);
+CREATE INDEX idx_notify_type ON sys_notification(notify_type);
+CREATE INDEX idx_todo_status ON sys_todo(status);
+CREATE INDEX idx_todo_module ON sys_todo(module_code);
+CREATE INDEX idx_log_time ON sys_operation_log_runtime(operate_at);
+CREATE INDEX idx_log_module ON sys_operation_log_runtime(module_code);

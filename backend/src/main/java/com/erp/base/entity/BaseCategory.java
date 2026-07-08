@@ -14,6 +14,7 @@ public class BaseCategory {
     private String categoryCode;
     private String categoryName;
     private String defaultTaxRate;
+    private String externalCode;
     private Integer goodsCount;
     private String status;
 
@@ -34,6 +35,9 @@ public class BaseCategory {
 
     public String getDefaultTaxRate() { return defaultTaxRate; }
     public void setDefaultTaxRate(String defaultTaxRate) { this.defaultTaxRate = defaultTaxRate; }
+
+    public String getExternalCode() { return externalCode; }
+    public void setExternalCode(String externalCode) { this.externalCode = externalCode; }
 
     public Integer getGoodsCount() { return goodsCount; }
     public void setGoodsCount(Integer goodsCount) { this.goodsCount = goodsCount; }

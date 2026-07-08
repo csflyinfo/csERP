@@ -61,11 +61,18 @@ docker-compose down -v
 
 ## 配置说明
 
-### MySQL 初始化
+### 数据库初始化（Flyway）
 
-数据库表结构和种子数据在容器首次启动时自动初始化：
-- `backend/src/main/resources/db/migration/V1__schema.sql` — 建表语句
-- `backend/src/main/resources/db/migration/V2__seed_data.sql` — 初始数据
+V1.0 使用 [Flyway](https://flywaydb.org/) 进行 schema 版本管理。应用启动时自动执行未应用的迁移脚本：
+
+- `backend/src/main/resources/db/migration/V1__schema.sql` — 建表 DDL（49 张表 + 49 条索引，MySQL 8 兼容）
+- `backend/src/main/resources/db/migration/V2__seed_data.sql` — 系统 seed 数据（管理员 / 角色 / 参数 / 单据编号规则 / 默认往来单位类型 / 默认资金账户，采用 `INSERT ... ON DUPLICATE KEY UPDATE` 语法）
+
+**首次启动**：Flyway 会自动建表并写入 seed，无需手动操作。
+**升级**：后续 schema 演进直接新增 `V3__xxx.sql` / `V4__xxx.sql`，Flyway 保证同一版本只执行一次。
+**元数据表**：`flyway_schema_history` 记录已执行版本。
+
+> 说明：docker-compose.yml 不再挂载 `db/migration` 到 `docker-entrypoint-initdb.d`，避免 MySQL 首次启动跑一遍脚本与 Flyway 冲突。
 
 ### 环境变量
 
@@ -81,16 +88,25 @@ docker-compose down -v
 
 ## 常见问题
 
-### 1. MySQL 初始化失败
+### 1. Flyway 迁移失败
 
-如果 MySQL 容器报错初始化脚本执行失败，检查：
+启动时若 `flyway_schema_history` 表报 SQL 语法错误，检查后端日志：
+
+```bash
+docker-compose logs backend | grep -A 3 Flyway
+```
+
+常见原因：`db/migration/` 里的脚本手动改过导致 checksum 不一致。**已应用的迁移脚本不允许再修改**，如需修正请新增 `V{N+1}__xxx.sql`。修复历史 checksum 只能用 `flyway repair`（生产禁用）。
+
+### 2. MySQL 初始化失败
+
+如果 MySQL 容器无法启动，检查：
+
 ```bash
 docker-compose logs mysql
 ```
 
-确保 `db/migration/` 目录下没有语法错误的 SQL。
-
-### 2. 后端连接 MySQL 超时
+### 3. 后端连接 MySQL 超时
 
 backend 容器会等待 MySQL 健康检查通过后才启动。如果 MySQL 启动较慢，可以延长健康检查间隔：
 ```yaml
@@ -99,12 +115,14 @@ healthcheck:
   retries: 10
 ```
 
-### 3. 前端页面刷新 404
+### 4. 前端页面刷新 404
 
 Nginx 已配置 `try_files $uri $uri/ /index.html;`，支持 Vue Router 的 history 模式。
 
-### 4. 密码安全
+### 5. 密码安全
 
-首次登录后，admin 的明文密码会自动升级为 BCrypt 加密。生产环境请修改：
-- `docker-compose.yml` 中所有默认密码
-- `JWT_SECRET` 环境变量
+V1.0 采用严格 BCrypt 校验，`data.sql` seed 密码为 `admin123` 的 BCrypt 哈希。生产环境务必：
+
+- 修改 `docker-compose.yml` 中所有默认密码
+- 修改 `JWT_SECRET` 环境变量
+- 首次登录后立刻在 UI 里修改 admin 密码

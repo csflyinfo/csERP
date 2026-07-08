@@ -24,6 +24,12 @@ public class BaseGoods {
     private Integer shelfLifeDays;
     private String storageProperty;
     private BigDecimal suggestedRetailPrice;
+    /** 批发价 */
+    private BigDecimal wholesalePrice;
+    /** 会员价 */
+    private BigDecimal memberPrice;
+    /** 零售价 */
+    private BigDecimal retailPrice;
     private BigDecimal stockUpperLimit;
     private BigDecimal stockLowerLimit;
     private String defaultSupplier;
@@ -50,6 +56,8 @@ public class BaseGoods {
     private String goodsIntro;
     private String remark;
     private String unitConfig;
+    /** 默认采购单位（单位名称，如「箱」）；设置后采购单据添加商品时优先取此单位 */
+    private String defaultPurchaseUnit;
 
     public String getGoodsId() { return goodsId; }
     public void setGoodsId(String goodsId) { this.goodsId = goodsId; }
@@ -95,6 +103,15 @@ public class BaseGoods {
 
     public BigDecimal getSuggestedRetailPrice() { return suggestedRetailPrice; }
     public void setSuggestedRetailPrice(BigDecimal suggestedRetailPrice) { this.suggestedRetailPrice = suggestedRetailPrice; }
+
+    public BigDecimal getWholesalePrice() { return wholesalePrice; }
+    public void setWholesalePrice(BigDecimal wholesalePrice) { this.wholesalePrice = wholesalePrice; }
+
+    public BigDecimal getMemberPrice() { return memberPrice; }
+    public void setMemberPrice(BigDecimal memberPrice) { this.memberPrice = memberPrice; }
+
+    public BigDecimal getRetailPrice() { return retailPrice; }
+    public void setRetailPrice(BigDecimal retailPrice) { this.retailPrice = retailPrice; }
 
     public BigDecimal getStockUpperLimit() { return stockUpperLimit; }
     public void setStockUpperLimit(BigDecimal stockUpperLimit) { this.stockUpperLimit = stockUpperLimit; }
@@ -170,4 +187,6 @@ public class BaseGoods {
 
     public String getUnitConfig() { return unitConfig; }
     public void setUnitConfig(String unitConfig) { this.unitConfig = unitConfig; }
+    public String getDefaultPurchaseUnit() { return defaultPurchaseUnit; }
+    public void setDefaultPurchaseUnit(String defaultPurchaseUnit) { this.defaultPurchaseUnit = defaultPurchaseUnit; }
 }

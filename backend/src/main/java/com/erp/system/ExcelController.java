@@ -111,7 +111,7 @@ public class ExcelController {
         response.setCharacterEncoding("utf-8");
         response.setHeader("Content-Disposition", "attachment;filename=" + fileName);
 
-        List<List<String>> head = buildHead(moduleCode);
+        List<List<String>> head = buildTemplateHead(moduleCode);
         List<List<Object>> demo = buildDemoRow(moduleCode);
 
         EasyExcel.write(response.getOutputStream())
@@ -130,6 +130,7 @@ public class ExcelController {
             case "warehouse" -> "SELECT warehouse_code, warehouse_name, warehouse_type, inventory_type, cost_group, manager_name, status FROM base_warehouse ORDER BY warehouse_code";
             case "purchaseOrder" -> "SELECT order_no, supplier, buyer, warehouse, bill_date, amount, inbound_amount, payment_status, arrival_status, status FROM pur_order ORDER BY order_no DESC";
             case "salesOrder" -> "SELECT order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, outbound_status, sign_status, status FROM sales_order ORDER BY order_no DESC";
+            case "expenseType" -> "SELECT expense_type_code, expense_type_name, parent_code, direction, cost_participation, status FROM base_expense_type ORDER BY COALESCE(parent_code, ''), expense_type_code";
             default -> "SELECT '示例数据' as demo";
         };
         return jdbcTemplate.queryForList(sql);
@@ -143,11 +144,18 @@ public class ExcelController {
             case "warehouse" -> List.of(List.of("仓库编码"), List.of("仓库名称"), List.of("仓库类型"), List.of("存货类型"), List.of("成本组"), List.of("负责人"), List.of("状态"));
             case "purchaseOrder" -> List.of(List.of("采购单号"), List.of("供应商"), List.of("采购员"), List.of("仓库"), List.of("单据日期"), List.of("订单金额"), List.of("入库金额"), List.of("付款状态"), List.of("到货状态"), List.of("状态"));
             case "salesOrder" -> List.of(List.of("销售单号"), List.of("客户"), List.of("业务员"), List.of("仓库"), List.of("单据日期"), List.of("订单金额"), List.of("已收金额"), List.of("未收金额"), List.of("出库状态"), List.of("签收状态"), List.of("状态"));
+            case "expenseType" -> List.of(List.of("费用类型编码"), List.of("费用类型名称"), List.of("上级费用类型"), List.of("费用方向"), List.of("成本参与"), List.of("状态"));
             default -> List.of(List.of("字段1"), List.of("字段2"), List.of("字段3"));
         };
     }
 
     private List<List<Object>> buildBody(List<Map<String, Object>> data, String moduleCode) {
+        // 费用类型导出需要把 parent_code 翻译为上级名称，先构建 code -> name 索引
+        Map<String, String> expenseNameMap = new HashMap<>();
+        if ("expenseType".equals(moduleCode)) {
+            jdbcTemplate.queryForList("SELECT expense_type_code, expense_type_name FROM base_expense_type")
+                    .forEach(r -> expenseNameMap.put(String.valueOf(r.get("expense_type_code")), String.valueOf(r.get("expense_type_name"))));
+        }
         List<List<Object>> result = new ArrayList<>();
         for (Map<String, Object> row : data) {
             result.add(switch (moduleCode) {
@@ -157,10 +165,43 @@ public class ExcelController {
                 case "warehouse" -> List.of(row.get("warehouse_code"), row.get("warehouse_name"), row.get("warehouse_type"), row.get("inventory_type"), row.get("cost_group"), row.get("manager_name"), row.get("status"));
                 case "purchaseOrder" -> List.of(row.get("order_no"), row.get("supplier"), row.get("buyer"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("inbound_amount"), row.get("payment_status"), row.get("arrival_status"), row.get("status"));
                 case "salesOrder" -> List.of(row.get("order_no"), row.get("customer"), row.get("salesman"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("paid_amount"), row.get("unpaid_amount"), row.get("outbound_status"), row.get("sign_status"), row.get("status"));
+                case "expenseType" -> {
+                    String parentCode = row.get("parent_code") == null ? "" : String.valueOf(row.get("parent_code"));
+                    String parentName = parentCode.isEmpty() ? "" : expenseNameMap.getOrDefault(parentCode, parentCode);
+                    yield Arrays.asList(
+                            row.get("expense_type_code"),
+                            row.get("expense_type_name"),
+                            parentName,
+                            row.get("direction"),
+                            row.get("cost_participation"),
+                            statusText(row.get("status")));
+                }
                 default -> List.of(row.values().toArray());
             });
         }
         return result;
+    }
+
+    private static String statusText(Object status) {
+        if (status == null) return "";
+        return switch (String.valueOf(status)) {
+            case "NORMAL", "ACTIVE" -> "正常";
+            case "STOPPED", "INACTIVE" -> "停用";
+            case "FROZEN" -> "冻结";
+            default -> String.valueOf(status);
+        };
+    }
+
+    /**
+     * 导入模板表头：与列表展示字段解耦，仅列出必要的可导入列。
+     * 用户下载模板 → 填数据 → 上传，与导出的字段口径可能不同。
+     */
+    private List<List<String>> buildTemplateHead(String moduleCode) {
+        return switch (moduleCode) {
+            case "expenseType" -> List.of(List.of("类型编号"), List.of("类型名称"), List.of("上级编号"), List.of("方向"));
+            // 其它模块暂沿用导出表头
+            default -> buildHead(moduleCode);
+        };
     }
 
     private List<List<Object>> buildDemoRow(String moduleCode) {
@@ -169,6 +210,10 @@ public class ExcelController {
             case "customer" -> List.of(List.of("C002", "测试客户", "零售商超", "李经理", "13800000001", "西湖区", "朝阳线", "张三", "普通", "月结", "25日", "次月5日", 30000.00, "测试公司", "9133****", "NORMAL"));
             case "supplier" -> List.of(List.of("G002", "测试供应商", "测试简称", "普通供应商", "王经理", "0571-8888", 3, "月结30天", 30, "测试公司", "9133****", "NORMAL"));
             case "warehouse" -> List.of(List.of("W003", "测试仓库", "正常仓", "平台主仓", "CG01", "赵六", "NORMAL"));
+            case "expenseType" -> List.of(
+                    List.of("FY001", "运输费", "", "支出"),
+                    List.of("FY001-01", "长途运输费", "FY001", "支出")
+            );
             default -> List.of(List.of("示例值1", "示例值2", "示例值3"));
         };
     }
@@ -191,6 +236,7 @@ public class ExcelController {
                 "INSERT INTO base_warehouse(warehouse_id, warehouse_code, warehouse_name, warehouse_type, inventory_type, cost_group, manager_name, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'NORMAL')",
                 "WH" + System.currentTimeMillis(), row.get(0), row.get(1), row.get(2), row.get(3), row.get(4), row.get(5)
             );
+            case "expenseType" -> insertExpenseTypeRow(row);
             default -> throw new IllegalArgumentException("暂不支持的导入模块：" + moduleCode);
         }
     }
@@ -202,4 +248,83 @@ public class ExcelController {
     private Integer parseInt(String val) {
         try { return Integer.parseInt(val); } catch (Exception e) { return 0; }
     }
+
+    /**
+     * 费用类型导入行处理：
+     *   列顺序：类型编号(0) | 类型名称(1) | 上级编号(2) | 方向(3)
+     * 规则：
+     *   - 类型名称必填；上级编号为空视为一级；上级编号非空必须存在于 base_expense_type。
+     *   - 类型名称在全表内不可重复。
+     *   - 类型编号为空时按上级前缀自动生成 (一级 FY + 3 位序号，二级及以下 上级编号 + '-' + 2 位序号)。
+     *   - 方向仅接受 收入/支出，为空默认 支出。
+     */
+    private void insertExpenseTypeRow(Map<Integer, String> row) {
+        String code = trim(row.get(0));
+        String name = trim(row.get(1));
+        String parentCode = trim(row.get(2));
+        String direction = trim(row.get(3));
+
+        if (name.isEmpty()) throw new IllegalArgumentException("类型名称不能为空");
+
+        // 方向校验
+        if (direction.isEmpty()) direction = "支出";
+        if (!"收入".equals(direction) && !"支出".equals(direction)) {
+            throw new IllegalArgumentException("方向仅支持 收入/支出，当前值：" + direction);
+        }
+
+        // 上级存在性校验
+        if (!parentCode.isEmpty()) {
+            Integer pc = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM base_expense_type WHERE expense_type_code = ?", Integer.class, parentCode);
+            if (pc == null || pc == 0) {
+                throw new IllegalArgumentException("上级编号 " + parentCode + " 不存在，请先建立上级类型");
+            }
+        }
+
+        // 名称唯一性校验
+        Integer nameCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM base_expense_type WHERE expense_type_name = ?", Integer.class, name);
+        if (nameCount != null && nameCount > 0) {
+            throw new IllegalArgumentException("类型名称 " + name + " 已存在，不可重复");
+        }
+
+        // 编码生成/校验
+        if (code.isEmpty()) {
+            code = nextExpenseTypeCode(parentCode);
+        } else {
+            Integer codeCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM base_expense_type WHERE expense_type_code = ?", Integer.class, code);
+            if (codeCount != null && codeCount > 0) {
+                throw new IllegalArgumentException("类型编号 " + code + " 已存在");
+            }
+        }
+
+        String id = "ET" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        jdbcTemplate.update(
+                "INSERT INTO base_expense_type(expense_type_id, expense_type_code, expense_type_name, parent_code, direction, status) VALUES (?, ?, ?, ?, ?, 'NORMAL')",
+                id, code, name, parentCode.isEmpty() ? null : parentCode, direction);
+    }
+
+    private String nextExpenseTypeCode(String parentCode) {
+        if (parentCode == null || parentCode.isEmpty()) {
+            // 一级：FY + 3 位流水
+            for (int i = 1; i <= 999; i++) {
+                String candidate = String.format("FY%03d", i);
+                Integer c = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM base_expense_type WHERE expense_type_code = ?", Integer.class, candidate);
+                if (c == null || c == 0) return candidate;
+            }
+            return "FY" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
+        }
+        // 子级：上级编号-2 位流水
+        for (int i = 1; i <= 99; i++) {
+            String candidate = parentCode + "-" + String.format("%02d", i);
+            Integer c = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM base_expense_type WHERE expense_type_code = ?", Integer.class, candidate);
+            if (c == null || c == 0) return candidate;
+        }
+        return parentCode + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 4).toUpperCase();
+    }
+
+    private static String trim(String s) { return s == null ? "" : s.trim(); }
 }

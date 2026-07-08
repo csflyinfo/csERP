@@ -1,0 +1,7 @@
+-- V39: 费用单明细增加商品/品牌/数量/单价字段
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS goods_code VARCHAR(50);
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS goods_name VARCHAR(200);
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS brand_name VARCHAR(100);
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS qty DECIMAL(18,2) DEFAULT 1;
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS price DECIMAL(18,4) DEFAULT 0;
+ALTER TABLE fin_expense_detail ADD COLUMN IF NOT EXISTS amount DECIMAL(18,2) DEFAULT 0;

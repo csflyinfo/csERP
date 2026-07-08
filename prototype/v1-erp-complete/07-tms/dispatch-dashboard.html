@@ -1,0 +1,126 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>调度看板 - TMS调度管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+body{background:#0f172a;color:#e2e8f0}
+.page{padding:14px;height:100vh;display:flex;flex-direction:column;gap:12px}
+.db-head{display:flex;align-items:center;justify-content:space-between}
+.db-head h1{margin:0;font-size:22px;color:#fff;letter-spacing:2px}
+.db-head h1:before{content:"📊 ";font-size:20px}
+.db-head .time{color:#94a3b8;font-family:Consolas,monospace;font-size:14px}
+.db-head .time .live{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.3}}
+.kpi-row{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.kpi{background:linear-gradient(135deg,#1e293b,#172033);border:1px solid #334155;border-radius:10px;padding:16px 18px;position:relative;overflow:hidden}
+.kpi .k-lbl{font-size:12px;color:#94a3b8}
+.kpi .k-num{font-size:30px;font-weight:800;font-family:Consolas,monospace;margin-top:6px;color:#fff}
+.kpi .k-sub{font-size:11px;color:#64748b;margin-top:4px}
+.kpi.blue .k-num{color:#60a5fa}.kpi.green .k-num{color:#4ade80}.kpi.amber .k-num{color:#fbbf24}.kpi.red .k-num{color:#f87171}.kpi.purple .k-num{color:#c084fc}.kpi.cyan .k-num{color:#22d3ee}
+.kpi:after{content:"";position:absolute;right:-10px;top:-10px;width:60px;height:60px;border-radius:50%;opacity:.08}
+.kpi.blue:after{background:#60a5fa}.kpi.green:after{background:#4ade80}.kpi.amber:after{background:#fbbf24}
+.db-main{flex:1;display:grid;grid-template-columns:1.4fr 1fr;gap:12px;min-height:0}
+.db-panel{background:#1e293b;border:1px solid #334155;border-radius:10px;display:flex;flex-direction:column;overflow:hidden}
+.db-pt{height:42px;display:flex;align-items:center;padding:0 16px;font-weight:700;border-bottom:1px solid #334155;font-size:14px;color:#e2e8f0}
+.db-pt:before{content:"";display:inline-block;width:4px;height:14px;background:#60a5fa;margin-right:8px}
+.db-pt .cnt{margin-left:auto;color:#64748b;font-weight:400;font-size:12px}
+.db-pb{flex:1;overflow:auto;padding:12px}
+.map-area{flex:1;position:relative;background:radial-gradient(ellipse at center,#1a2540 0%,#0f172a 100%);overflow:hidden}
+.map-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(96,165,250,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(96,165,250,.06) 1px,transparent 1px);background-size:50px 50px}
+.map-area svg{position:absolute;inset:0;width:100%;height:100%}
+.truck-dot{position:absolute;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:#60a5fa;border:2px solid #fff;box-shadow:0 0 12px rgba(96,165,250,.8);cursor:pointer}
+.truck-dot.warn{background:#fbbf24;box-shadow:0 0 12px rgba(251,191,36,.8)}
+.truck-dot.bad{background:#f87171;box-shadow:0 0 12px rgba(248,113,113,.8)}
+.truck-dot .td-lbl{position:absolute;left:18px;top:-6px;white-space:nowrap;background:#1e293b;border:1px solid #334155;padding:2px 6px;border-radius:4px;font-size:11px;color:#e2e8f0}
+.alert-list .al-item{background:#172033;border:1px solid #334155;border-left:3px solid #f87171;border-radius:6px;padding:10px 12px;margin-bottom:8px;font-size:13px}
+.al-item.warn{border-left-color:#fbbf24}
+.al-item .al-t{font-weight:700;color:#fca5a5}
+.al-item.warn .al-t{color:#fcd34d}
+.al-item .al-d{color:#94a3b8;font-size:12px;margin-top:3px}
+.al-item .al-time{color:#64748b;font-size:11px;margin-top:4px}
+.rank-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #334155}
+.rank-row:last-child{border:0}
+.rr-no{width:24px;height:24px;border-radius:50%;background:#334155;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
+.rank-row:nth-child(1) .rr-no{background:#fbbf24;color:#78350f}
+.rank-row:nth-child(2) .rr-no{background:#cbd5e1;color:#475569}
+.rank-row:nth-child(3) .rr-no{background:#d97706;color:#78350f}
+.rr-name{flex:1;font-size:13px}
+.rr-bar{width:120px;height:6px;background:#334155;border-radius:3px;overflow:hidden}
+.rr-bar i{display:block;height:100%;background:linear-gradient(90deg,#4ade80,#22d3ee)}
+.rr-val{font-family:Consolas,monospace;font-weight:700;color:#4ade80;width:50px;text-align:right;font-size:13px}
+.trend-chart{height:160px;display:flex;align-items:flex-end;gap:6px;padding:10px 4px}
+.trend-bar{flex:1;background:linear-gradient(180deg,#60a5fa,#3b82f6);border-radius:4px 4px 0 0;position:relative;min-height:6px}
+.trend-bar.signed{background:linear-gradient(180deg,#4ade80,#22c55e)}
+.trend-bar .tb-lbl{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10px;color:#64748b}
+.trend-bar .tb-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:10px;color:#94a3b8;font-family:Consolas,monospace}
+</style></head><body>
+<div class="page">
+
+  <div class="db-head">
+    <h1>调度配送看板</h1>
+    <div class="time"><span class="live"></span>2026-08-13 11:08:25 · 数据每 60s 刷新</div>
+  </div>
+
+  <div class="kpi-row">
+    <div class="kpi blue"><div class="k-lbl">今日调度单</div><div class="k-num">8</div><div class="k-sub">已完成 2 · 配送中 3</div></div>
+    <div class="kpi green"><div class="k-lbl">已签收门店</div><div class="k-num">28</div><div class="k-sub">/ 48 店 · 58%</div></div>
+    <div class="kpi amber"><div class="k-lbl">配送中</div><div class="k-num">20</div><div class="k-sub">3 辆车在途</div></div>
+    <div class="kpi cyan"><div class="k-lbl">待配送</div><div class="k-num">20</div><div class="k-sub">2 辆待发车</div></div>
+    <div class="kpi purple"><div class="k-num" style="font-size:24px">¥48,920</div><div class="k-sub" style="margin-top:8px">应收总额 · 已收 ¥42,680</div></div>
+    <div class="kpi red"><div class="k-lbl">异常告警</div><div class="k-num">3</div><div class="k-sub">1 返仓 · 1 差异 · 1 超时</div></div>
+  </div>
+
+  <div class="db-main">
+    <!-- 左：车辆实时地图 -->
+    <div class="db-panel">
+      <div class="db-pt">车辆实时位置<span class="cnt">3 辆在途 · 30s 刷新</span></div>
+      <div class="map-area">
+        <div class="map-grid"></div>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <path d="M10,80 L30,60 L50,65 L70,40 L85,30" fill="none" stroke="#334155" stroke-width="1.5"/>
+          <path d="M20,20 L40,30 L50,65 L60,80" fill="none" stroke="#334155" stroke-width="1.5"/>
+          <path d="M15,78 L30,60 L50,65" fill="none" stroke="#60a5fa" stroke-width="1.2" stroke-dasharray="3 2" opacity=".7"/>
+          <path d="M20,90 L45,75 L70,85" fill="none" stroke="#4ade80" stroke-width="1.2" stroke-dasharray="3 2" opacity=".7"/>
+        </svg>
+        <div class="truck-dot" style="left:48%;top:62%"><div class="td-lbl">🚚 京A·12345 张三 8/12</div></div>
+        <div class="truck-dot warn" style="left:45%;top:75%"><div class="td-lbl">🚚 京D·13579 赵六 3/10 异常</div></div>
+        <div class="truck-dot" style="left:70%;top:85%"><div class="td-lbl">🚚 京E·88664 孙七 1/5</div></div>
+      </div>
+    </div>
+
+    <!-- 右：异常告警 + 司机排行 -->
+    <div style="display:flex;flex-direction:column;gap:12px;min-height:0">
+      <div class="db-panel" style="flex:1">
+        <div class="db-pt">异常告警<span class="cnt">3 条</span></div>
+        <div class="db-pb alert-list">
+          <div class="al-item"><div class="al-t">🔴 改派返仓</div><div class="al-d">旺旺超市(拱北店) · 客户不在 · 18件待返仓验收</div><div class="al-time">京D·13579 赵六 · 10:45</div></div>
+          <div class="al-item warn"><div class="al-t">🟡 交账差异</div><div class="al-d">张三交账 ST20260813-001 短款 ¥120，待财务审核</div><div class="al-time">京A·12345 张三 · 17:20</div></div>
+          <div class="al-item warn"><div class="al-t">🟡 签收超时</div><div class="al-d">全家便利店(文一店) 已到店 25 分钟未签收</div><div class="al-time">京E·88664 孙七 · 11:00</div></div>
+        </div>
+      </div>
+      <div class="db-panel" style="flex:1">
+        <div class="db-pt">司机配送效率排行<span class="cnt">今日</span></div>
+        <div class="db-pb">
+          <div class="rank-row"><div class="rr-no">1</div><div class="rr-name">张三 · 京A·12345</div><div class="rr-bar"><i style="width:100%"></i></div><div class="rr-val">12店</div></div>
+          <div class="rank-row"><div class="rr-no">2</div><div class="rr-name">赵六 · 京D·13579</div><div class="rr-bar"><i style="width:83%"></i></div><div class="rr-val">10店</div></div>
+          <div class="rank-row"><div class="rr-no">3</div><div class="rr-name">王五 · 京C·24680</div><div class="rr-bar"><i style="width:66%"></i></div><div class="rr-val">8店</div></div>
+          <div class="rank-row"><div class="rr-no">4</div><div class="rr-name">孙七 · 京E·88664</div><div class="rr-bar"><i style="width:41%"></i></div><div class="rr-val">5店</div></div>
+          <div class="rank-row"><div class="rr-no">5</div><div class="rr-name">李四 · 京B·67890</div><div class="rr-bar"><i style="width:41%"></i></div><div class="rr-val">5店</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部：签收率趋势 -->
+  <div class="db-panel">
+    <div class="db-pt">近 7 日签收率趋势<span class="cnt">平均 92.4%</span></div>
+    <div class="trend-chart">
+      <div class="trend-bar signed" style="height:78%"><span class="tb-val">94%</span><span class="tb-lbl">8/7</span></div>
+      <div class="trend-bar signed" style="height:88%"><span class="tb-val">96%</span><span class="tb-lbl">8/8</span></div>
+      <div class="trend-bar signed" style="height:82%"><span class="tb-val">95%</span><span class="tb-lbl">8/9</span></div>
+      <div class="trend-bar" style="height:70%"><span class="tb-val">88%</span><span class="tb-lbl">8/10</span></div>
+      <div class="trend-bar signed" style="height:86%"><span class="tb-val">96%</span><span class="tb-lbl">8/11</span></div>
+      <div class="trend-bar signed" style="height:90%"><span class="tb-val">97%</span><span class="tb-lbl">8/12</span></div>
+      <div class="trend-bar" style="height:58%"><span class="tb-val">58%</span><span class="tb-lbl">今日</span></div>
+    </div>
+  </div>
+
+</div>
+</body></html>

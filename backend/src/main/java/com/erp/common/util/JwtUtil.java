@@ -22,13 +22,18 @@ public class JwtUtil {
     }
 
     public String generateToken(String userId, String username, String displayName) {
+        return generateToken(userId, username, displayName, null);
+    }
+
+    public String generateToken(String userId, String username, String displayName, String roleCode) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expiration);
-        return Jwts.builder()
+        JwtBuilder b = Jwts.builder()
                 .subject(username)
                 .claim("userId", userId)
-                .claim("displayName", displayName)
-                .issuedAt(now)
+                .claim("displayName", displayName);
+        if (roleCode != null && !roleCode.isBlank()) b.claim("roleCode", roleCode);
+        return b.issuedAt(now)
                 .expiration(expiry)
                 .signWith(secretKey)
                 .compact();

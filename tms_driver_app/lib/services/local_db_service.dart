@@ -1,0 +1,340 @@
+import 'dart:convert';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+
+/// 本地 SQLite 数据库服务（P6 离线能力）。
+///
+/// 表结构：
+/// - cached_tasks:       缓存当天配送任务（调度单+明细快照）
+/// - pending_actions:    离线操作队列（签收/装车/发车/退货等）
+/// - gps_tracks:         GPS 轨迹本地缓存（待批量补传）
+/// - sync_log:           同步日志（成功/失败记录，用于排查）
+///
+/// 队列优先级（pending_actions.priority 字段）：
+///   1=装车/发车  2=签收  3=照片上传  4=定位上报  5=其他
+class LocalDbService {
+  LocalDbService._();
+  static final LocalDbService instance = LocalDbService._();
+
+  Database? _db;
+
+  /// 初始化数据库（App 启动时调用一次）。
+  Future<Database> init() async {
+    if (_db != null) return _db!;
+    final docDir = await getApplicationDocumentsDirectory();
+    final dbPath = p.join(docDir.path, 'tms_driver.db');
+    _db = await openDatabase(
+      dbPath,
+      version: 1,
+      onCreate: _onCreate,
+    );
+    return _db!;
+  }
+
+  /// Web 模式下 sqflite 不可用，所有操作返回安全默认值。
+  bool get isInitialized => _db != null;
+
+  Database get db {
+    if (_db == null) throw StateError('LocalDbService 未初始化，请先调用 init()');
+    return _db!;
+  }
+
+  Future<void> _onCreate(Database db, int version) async {
+    // 1. 缓存任务表：存储当天拉取的配送任务快照
+    await db.execute('''
+      CREATE TABLE cached_tasks (
+        dispatch_id   TEXT PRIMARY KEY,
+        dispatch_no   TEXT,
+        status        TEXT,
+        vehicle_plate TEXT,
+        route_line    TEXT,
+        driver_id     TEXT,
+        driver_name   TEXT,
+        task_json     TEXT NOT NULL,
+        cached_at     TEXT NOT NULL,
+        synced_at     TEXT
+      )
+    ''');
+
+    // 2. 离线操作队列：网络恢复后按优先级 + FIFO 上传
+    await db.execute('''
+      CREATE TABLE pending_actions (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        action_type   TEXT NOT NULL,
+        action_key    TEXT,
+        method        TEXT NOT NULL,
+        path          TEXT NOT NULL,
+        body_json     TEXT,
+        file_path     TEXT,
+        biz_type      TEXT,
+        priority      INTEGER NOT NULL DEFAULT 5,
+        status        TEXT NOT NULL DEFAULT 'PENDING',
+        retry_count   INTEGER NOT NULL DEFAULT 0,
+        max_retry     INTEGER NOT NULL DEFAULT 5,
+        error_msg     TEXT,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX idx_pending_status_priority ON pending_actions(status, priority, id)');
+
+    // 3. GPS 轨迹缓存：定时采集，批量补传
+    await db.execute('''
+      CREATE TABLE gps_tracks (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        driver_id   TEXT NOT NULL,
+        dispatch_id TEXT,
+        trip_id     TEXT,
+        longitude   REAL NOT NULL,
+        latitude    REAL NOT NULL,
+        speed       REAL,
+        heading     REAL,
+        accuracy    REAL,
+        loc_time    TEXT NOT NULL,
+        synced      INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX idx_gps_synced ON gps_tracks(synced, id)');
+
+    // 4. 同步日志
+    await db.execute('''
+      CREATE TABLE sync_log (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        action_type TEXT,
+        action_key  TEXT,
+        status      TEXT NOT NULL,
+        error_msg   TEXT,
+        created_at  TEXT NOT NULL
+      )
+    ''');
+  }
+
+  // ==================== pending_actions 队列操作 ====================
+
+  /// 入队一条离线操作。
+  /// actionType: LOADING_START / LOADING_CONFIRM / DEPART / SIGN / RETURN_SIGN / UPLOAD_PHOTO / GPS_REPORT 等
+  /// priority: 1(装车/发车) 2(签收) 3(照片) 4(定位) 5(其他)
+  Future<int> enqueueAction({
+    required String actionType,
+    String? actionKey,
+    required String method,
+    required String path,
+    Map<String, dynamic>? body,
+    String? filePath,
+    String? bizType,
+    int priority = 5,
+    int maxRetry = 5,
+  }) async {
+    final now = DateTime.now().toIso8601String();
+    return await db.insert('pending_actions', {
+      'action_type': actionType,
+      'action_key': actionKey,
+      'method': method,
+      'path': path,
+      'body_json': body != null ? jsonEncode(body) : null,
+      'file_path': filePath,
+      'biz_type': bizType,
+      'priority': priority,
+      'status': 'PENDING',
+      'retry_count': 0,
+      'max_retry': maxRetry,
+      'created_at': now,
+      'updated_at': now,
+    });
+  }
+
+  /// 取出待处理操作（按优先级升序 + FIFO）。
+  Future<List<Map<String, dynamic>>> getPendingActions({int limit = 10}) async {
+    return await db.query(
+      'pending_actions',
+      where: "status = 'PENDING'",
+      orderBy: 'priority ASC, id ASC',
+      limit: limit,
+    );
+  }
+
+  /// 标记成功并删除。
+  Future<void> markActionSuccess(int id) async {
+    await db.delete('pending_actions', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// 标记失败，增加重试计数；超过最大重试次数标记为 FAILED。
+  Future<void> markActionFailed(int id, String error) async {
+    final rows = await db.query('pending_actions',
+        where: 'id = ?', whereArgs: [id], limit: 1);
+    if (rows.isEmpty) return;
+    final row = rows.first;
+    int retryCount = (row['retry_count'] as int?) ?? 0;
+    int maxRetry = (row['max_retry'] as int?) ?? 5;
+    retryCount++;
+    String status = retryCount >= maxRetry ? 'FAILED' : 'PENDING';
+    await db.update(
+      'pending_actions',
+      {
+        'retry_count': retryCount,
+        'status': status,
+        'error_msg': error,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// 统计待处理数量（UI 提示用）。
+  Future<int> pendingCount() async {
+    final result = await db.rawQuery(
+        "SELECT COUNT(*) as cnt FROM pending_actions WHERE status = 'PENDING'");
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// 统计失败数量。
+  Future<int> failedCount() async {
+    final result = await db.rawQuery(
+        "SELECT COUNT(*) as cnt FROM pending_actions WHERE status = 'FAILED'");
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  // ==================== cached_tasks 操作 ====================
+
+  /// 缓存任务快照（登录后/刷新时调用）。
+  Future<void> cacheTask(String dispatchId, Map<String, dynamic> taskData) async {
+    final now = DateTime.now().toIso8601String();
+    await db.insert('cached_tasks', {
+      'dispatch_id': dispatchId,
+      'dispatch_no': taskData['dispatchNo'] ?? '',
+      'status': taskData['status'] ?? '',
+      'vehicle_plate': taskData['vehiclePlate'] ?? '',
+      'route_line': taskData['routeLine'] ?? '',
+      'driver_id': taskData['driverId'] ?? '',
+      'driver_name': taskData['driverName'] ?? '',
+      'task_json': jsonEncode(taskData),
+      'cached_at': now,
+      'synced_at': now,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 批量缓存任务。
+  Future<void> cacheTasks(List<Map<String, dynamic>> tasks) async {
+    final batch = db.batch();
+    for (final t in tasks) {
+      final dispatchId = t['dispatchId']?.toString() ?? '';
+      if (dispatchId.isEmpty) continue;
+      final now = DateTime.now().toIso8601String();
+      batch.insert('cached_tasks', {
+        'dispatch_id': dispatchId,
+        'dispatch_no': t['dispatchNo'] ?? '',
+        'status': t['status'] ?? '',
+        'vehicle_plate': t['vehiclePlate'] ?? '',
+        'route_line': t['routeLine'] ?? '',
+        'driver_id': t['driverId'] ?? '',
+        'driver_name': t['driverName'] ?? '',
+        'task_json': jsonEncode(t),
+        'cached_at': now,
+        'synced_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// 读取所有缓存任务。
+  Future<List<Map<String, dynamic>>> getCachedTasks() async {
+    final rows = await db.query('cached_tasks', orderBy: 'dispatch_no ASC');
+    return rows.map((r) {
+      final json = r['task_json'] as String?;
+      return json != null ? jsonDecode(json) as Map<String, dynamic> : <String, dynamic>{};
+    }).toList();
+  }
+
+  /// 按 dispatchId 读取缓存任务。
+  Future<Map<String, dynamic>?> getCachedTask(String dispatchId) async {
+    final rows = await db.query('cached_tasks',
+        where: 'dispatch_id = ?', whereArgs: [dispatchId], limit: 1);
+    if (rows.isEmpty) return null;
+    final json = rows.first['task_json'] as String?;
+    return json != null ? jsonDecode(json) as Map<String, dynamic> : null;
+  }
+
+  /// 清理过期缓存（保留当天）。
+  Future<int> cleanExpiredTasks() async {
+    final today = DateTime.now();
+    final cutoff = DateTime(today.year, today.month, today.day)
+        .toIso8601String();
+    return await db.delete('cached_tasks',
+        where: 'cached_at < ?', whereArgs: [cutoff]);
+  }
+
+  // ==================== gps_tracks 操作 ====================
+
+  /// 缓存一条 GPS 轨迹。
+  Future<int> cacheGpsTrack({
+    required String driverId,
+    String? dispatchId,
+    String? tripId,
+    required double longitude,
+    required double latitude,
+    double? speed,
+    double? heading,
+    double? accuracy,
+    required String locTime,
+  }) async {
+    return await db.insert('gps_tracks', {
+      'driver_id': driverId,
+      'dispatch_id': dispatchId,
+      'trip_id': tripId,
+      'longitude': longitude,
+      'latitude': latitude,
+      'speed': speed,
+      'heading': heading,
+      'accuracy': accuracy,
+      'loc_time': locTime,
+      'synced': 0,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
+  /// 取未同步的 GPS 轨迹（批量补传用）。
+  Future<List<Map<String, dynamic>>> getUnsyncedGpsTracks({int limit = 100}) async {
+    return await db.query('gps_tracks',
+        where: 'synced = 0', orderBy: 'id ASC', limit: limit);
+  }
+
+  /// 标记 GPS 轨迹已同步（批量）。
+  Future<void> markGpsSynced(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final placeholders = List.filled(ids.length, '?').join(',');
+    await db.rawUpdate(
+        'UPDATE gps_tracks SET synced = 1 WHERE id IN ($placeholders)', ids);
+  }
+
+  /// 清理已同步的 GPS 轨迹（保留最近 7 天）。
+  Future<int> cleanSyncedGpsTracks() async {
+    final cutoff =
+        DateTime.now().subtract(const Duration(days: 7)).toIso8601String();
+    return await db.delete('gps_tracks',
+        where: 'synced = 1 AND created_at < ?', whereArgs: [cutoff]);
+  }
+
+  /// 未同步 GPS 数量。
+  Future<int> unsyncedGpsCount() async {
+    final result =
+        await db.rawQuery('SELECT COUNT(*) as cnt FROM gps_tracks WHERE synced = 0');
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  // ==================== sync_log 操作 ====================
+
+  Future<void> logSync(String actionType, String? actionKey, String status,
+      {String? error}) async {
+    await db.insert('sync_log', {
+      'action_type': actionType,
+      'action_key': actionKey,
+      'status': status,
+      'error_msg': error,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+}

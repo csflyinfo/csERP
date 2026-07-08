@@ -153,7 +153,7 @@
       "createdAt": 1751400006000,
       "canvasData": {
         "x": 0,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -180,7 +180,7 @@
       "createdAt": 1751400004000,
       "canvasData": {
         "x": 620,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -324,7 +324,7 @@
       "createdAt": 1751400009000,
       "canvasData": {
         "x": 1240,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -346,7 +346,7 @@
       "createdAt": 1751400010000,
       "canvasData": {
         "x": 1860,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -368,7 +368,7 @@
       "createdAt": 1751400011000,
       "canvasData": {
         "x": 2480,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -390,7 +390,7 @@
       "createdAt": 1751400012000,
       "canvasData": {
         "x": 3100,
-        "y": 1508,
+        "y": 2262,
         "group": 0
       },
       "devMetadata": {
@@ -399,6 +399,277 @@
           {
             "domId": "back-dashboard",
             "targetPageId": "page-dashboard",
+            "hideEdge": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-brand-edit-dialog",
+      "title": "新增品牌",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400014000,
+      "canvasData": {
+        "x": 3720,
+        "y": 2262,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/brand-edit-dialog.html",
+        "interactions": [
+          {
+            "domId": "btn-cancel",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "取消"
+          },
+          {
+            "domId": "btn-close",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          },
+          {
+            "domId": "btn-confirm",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "保存"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-category-edit-dialog",
+      "title": "新增产品类别",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400015000,
+      "canvasData": {
+        "x": 4340,
+        "y": 2262,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/category-edit-dialog.html",
+        "interactions": [
+          {
+            "domId": "btn-cancel",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "取消"
+          },
+          {
+            "domId": "btn-close",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "关闭"
+          },
+          {
+            "domId": "btn-confirm",
+            "targetPageId": "page-goods-edit-drawer",
+            "hideEdge": true,
+            "transitionLabel": "保存"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-price-group",
+      "title": "价格组管理",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400016000,
+      "canvasData": {
+        "x": 0,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/price-group.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group-detail",
+            "targetPageId": "page-price-group-detail",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-adjust",
+            "targetPageId": "page-price-adjust-list",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-log",
+            "targetPageId": "page-price-change-log",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-price-detail",
+            "targetPageId": "page-price-group-detail",
+            "transitionLabel": "查看商品价格"
+          },
+          {
+            "domId": "btn-adjust-list",
+            "targetPageId": "page-price-adjust-list",
+            "transitionLabel": "查看调价单"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-price-group-detail",
+      "title": "价格组商品价格",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400017000,
+      "canvasData": {
+        "x": 620,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/price-group-detail.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group",
+            "targetPageId": "page-price-group",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-adjust",
+            "targetPageId": "page-price-adjust-list",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-log",
+            "targetPageId": "page-price-change-log",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-adjust-list",
+            "targetPageId": "page-price-adjust-list",
+            "transitionLabel": "查看调价单"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-price-adjust-list",
+      "title": "调价单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400018000,
+      "canvasData": {
+        "x": 1240,
+        "y": 1508,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/price-adjust-list.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group",
+            "targetPageId": "page-price-group",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group-detail",
+            "targetPageId": "page-price-group-detail",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-log",
+            "targetPageId": "page-price-change-log",
+            "hideEdge": true
+          },
+          {
+            "domId": "btn-new-adjust",
+            "targetPageId": "page-price-adjust-form",
+            "transitionLabel": "新建调价单"
+          },
+          {
+            "domId": "btn-view-adjust",
+            "targetPageId": "page-price-adjust-form",
+            "transitionLabel": "查看详情"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-price-adjust-form",
+      "title": "新建调价单",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400019000,
+      "canvasData": {
+        "x": 0,
+        "y": 1885,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/price-adjust-form.html",
+        "interactions": [
+          {
+            "domId": "btn-cancel",
+            "targetPageId": "page-price-adjust-list",
+            "hideEdge": true,
+            "transitionLabel": "取消"
+          },
+          {
+            "domId": "btn-submit-adjust",
+            "targetPageId": "page-price-adjust-list",
+            "transitionLabel": "提交审核"
+          }
+        ]
+      }
+    },
+    {
+      "id": "page-price-change-log",
+      "title": "变价历史",
+      "type": "page",
+      "version": 1,
+      "createdAt": 1751400020000,
+      "canvasData": {
+        "x": 4960,
+        "y": 2262,
+        "group": 0
+      },
+      "devMetadata": {
+        "htmlSrc": "pages/price-change-log.html",
+        "interactions": [
+          {
+            "domId": "back-dashboard",
+            "targetPageId": "page-dashboard",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group",
+            "targetPageId": "page-price-group",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-group-detail",
+            "targetPageId": "page-price-group-detail",
+            "hideEdge": true
+          },
+          {
+            "domId": "nav-price-adjust",
+            "targetPageId": "page-price-adjust-list",
             "hideEdge": true
           }
         ]

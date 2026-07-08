@@ -358,12 +358,21 @@ body {
     </div>
     <div class="home-section">
       <div class="section-title">🔄 退货回收任务 <span class="more" onclick="switchScreen('return')">进入 →</span></div>
-      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="switchScreen('return')">
+      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="navigateToReturnSign(0)">
         <div class="seq" style="background:#FFF3E0;color:var(--tms-warning)">🔄</div>
         <div class="info">
-          <div class="cust">永辉超市(朝阳店)</div>
-          <div class="addr">朝阳区朝阳路8号 · 退货2项共5箱</div>
-          <div class="meta">RT20260610001 · 退货回收入库</div>
+          <div class="cust">超市发(学院路店)</div>
+          <div class="addr">海淀区学院路15号 · 退货2项共2件</div>
+          <div class="meta">XTSQ202608130003 · 调度单 D20260813-001 · 物流状态：已调度</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-warning">待回收</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="navigateToReturnSign(1)">
+        <div class="seq" style="background:#FFF3E0;color:var(--tms-warning)">🔄</div>
+        <div class="info">
+          <div class="cust">物美超市(海淀店)</div>
+          <div class="addr">海淀区中关村大街1号 · 退货2项共5件</div>
+          <div class="meta">XTSQ202608130002 · 调度单 D20260813-002 · 物流状态：已调度</div>
         </div>
         <div class="status-badge"><span class="badge badge-warning">待回收</span></div>
       </div>
@@ -507,28 +516,100 @@ body {
     </div>
   </div>
 
-  <!-- ==================== SCREEN: Return Collection ==================== -->
+  <!-- ==================== SCREEN: Return Collection List ==================== -->
   <div class="screen" id="screen-return">
     <div style="background:#fff;padding:16px 20px;border-bottom:1px solid var(--tms-border);display:flex;align-items:center;gap:12px">
       <button class="back-btn" onclick="switchScreen('home')" style="width:36px;height:36px;border-radius:50%;background:var(--tms-bg);border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">←</button>
-      <div style="flex:1"><div style="font-size:16px;font-weight:700">退货回收</div><div style="font-size:12px;color:var(--tms-text-muted)">从客户处回收退货商品</div></div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:700">退货回收</div><div style="font-size:12px;color:var(--tms-text-muted)">已调度给您的退货单 · 到店一并取回</div></div>
+    </div>
+    <div style="padding:16px 16px 8px;display:flex;gap:8px">
+      <div style="flex:1;background:#FFF3E0;border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--tms-warning)" id="returnPendingCnt">2</div>
+        <div style="font-size:11px;color:var(--tms-text-secondary)">待回收退货单</div>
+      </div>
+      <div style="flex:1;background:#E8F5E9;border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--tms-success)" id="returnDoneCnt">1</div>
+        <div style="font-size:11px;color:var(--tms-text-secondary)">已回收</div>
+      </div>
+      <div style="flex:1;background:var(--tms-primary-light);border-radius:12px;padding:12px;text-align:center">
+        <div style="font-size:22px;font-weight:700;color:var(--tms-primary)" id="returnTotalQty">7</div>
+        <div style="font-size:11px;color:var(--tms-text-secondary)">待回收总件数</div>
+      </div>
+    </div>
+    <div style="padding:8px 16px 100px">
+      <div style="font-size:12px;color:var(--tms-text-secondary);margin:8px 0">待回收（物流状态：已调度）</div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="navigateToReturnSign(0)">
+        <div class="seq" style="background:#FFF3E0;color:var(--tms-warning)">🔄</div>
+        <div class="info">
+          <div class="cust">超市发(学院路店)</div>
+          <div class="addr">XTSQ202608130003 · 学院路15号</div>
+          <div class="meta">退货 2 件 · 调度单 D20260813-001 · 随第3站配送</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-warning">待回收</span></div>
+      </div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-warning);" onclick="navigateToReturnSign(1)">
+        <div class="seq" style="background:#FFF3E0;color:var(--tms-warning)">🔄</div>
+        <div class="info">
+          <div class="cust">物美超市(海淀店)</div>
+          <div class="addr">XTSQ202608130002 · 中关村大街1号</div>
+          <div class="meta">退货 5 件 · 调度单 D20260813-002 · 随第2站配送</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-warning">待回收</span></div>
+      </div>
+      <div style="font-size:12px;color:var(--tms-text-secondary);margin:16px 0 8px">已回收（物流状态：司机已回收）</div>
+      <div class="task-mini-card" style="border-left-color:var(--tms-success);opacity:0.85">
+        <div class="seq" style="background:#E8F5E9;color:var(--tms-success)">✓</div>
+        <div class="info">
+          <div class="cust">华联超市(西湖店)</div>
+          <div class="addr">XTSQ202608130001 · 文三路128号</div>
+          <div class="meta">退货 3 件 · 实收 3 件 · 09:50 已签收</div>
+        </div>
+        <div class="status-badge"><span class="badge badge-success">已回收</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SCREEN: Return Sign-off Detail ==================== -->
+  <div class="screen" id="screen-return-sign">
+    <div class="detail-header">
+      <button class="back-btn" onclick="switchScreen('return')">←</button>
+      <div class="title" id="returnSignTitle">退货签收</div>
+      <div class="seq-num" id="returnSignNo">XTSQ...</div>
     </div>
     <div class="detail-content">
       <div class="detail-card">
-        <h4>📋 退货申请单</h4>
-        <div class="info-row"><span class="label">退货单号</span><span class="value">RT20260610001</span></div>
-        <div class="info-row"><span class="label">客户</span><span class="value">永辉超市(朝阳店)</span></div>
-        <div class="info-row"><span class="label">原销售单</span><span class="value">SO20260609008</span></div>
+        <h4>🔄 退货单信息</h4>
+        <div class="info-row"><span class="label">退货单号</span><span class="value" id="rsNo">XTSQ202608130003</span></div>
+        <div class="info-row"><span class="label">客户</span><span class="value" id="rsCust">超市发(学院路店)</span></div>
+        <div class="info-row"><span class="label">地址</span><span class="value" id="rsAddr">学院路15号</span></div>
+        <div class="info-row"><span class="label">调度单</span><span class="value" id="rsDispatch">D20260813-001</span></div>
+        <div class="info-row"><span class="label">当前物流状态</span><span class="value"><span class="badge badge-primary" id="rsStatus">已调度</span></span></div>
       </div>
       <div class="detail-card">
-        <h4>📦 待回收商品 (2项)</h4>
-        <div class="product-mini"><span class="icon">🍜</span><div class="info"><div class="name">康师傅红烧牛肉面</div><div class="spec">批次20251201 · 退货3箱</div></div><div class="qty" style="color:var(--tms-warning)">×3</div></div>
-        <div class="product-mini"><span class="icon">🧂</span><div class="info"><div class="name">海天酱油</div><div class="spec">批次20260301 · 退货2箱</div></div><div class="qty" style="color:var(--tms-warning)">×2</div></div>
+        <h4>📦 退货商品 · 录入实收数量 <span style="font-size:11px;color:var(--tms-text-muted);font-weight:400">（实收可小于退货数）</span></h4>
+        <div id="rsProductList"></div>
+        <div style="margin-top:10px;padding:10px;background:var(--tms-bg);border-radius:8px;font-size:12px;color:var(--tms-text-secondary);display:flex;justify-content:space-between">
+          <span>合计：退货 <b id="rsTotalReturn">2</b> 件</span>
+          <span>实收 <b id="rsTotalSigned" style="color:var(--tms-success)">0</b> 件</span>
+          <span>差异 <b id="rsTotalDiff" style="color:var(--tms-danger)">-2</b> 件</span>
+        </div>
+      </div>
+      <div class="detail-card">
+        <h4>📸 回收拍照</h4>
+        <div class="photo-row" style="display:flex;gap:10px">
+          <div class="photo-box" style="flex:1;height:90px;background:#F9FAFB;border:2px dashed var(--tms-border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:24px;cursor:pointer;color:var(--tms-text-muted)" onclick="this.innerHTML='📸<div style=font-size:10px>已拍照</div>'">📷<div style="font-size:10px">退货商品</div></div>
+          <div class="photo-box" style="flex:1;height:90px;background:#F9FAFB;border:2px dashed var(--tms-border);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:24px;cursor:pointer;color:var(--tms-text-muted)" onclick="this.innerHTML='📸<div style=font-size:10px>已拍照</div>'">📷<div style="font-size:10px">客户确认</div></div>
+        </div>
+        <textarea placeholder="备注说明（如：少件/包装破损情况）" style="width:100%;height:60px;margin-top:10px;border:1px solid var(--tms-border);border-radius:8px;padding:10px;font-size:13px;resize:none"></textarea>
+      </div>
+      <div class="detail-card">
+        <h4>✍️ 客户确认签名</h4>
+        <div class="sign-pad" id="returnSignPad" onclick="signReturnHere()" style="height:120px">点击此处客户电子签名</div>
       </div>
     </div>
-    <div class="btn-row" style="padding:12px 20px 20px">
-      <button class="btn btn-outline" style="flex:1" onclick="switchScreen('home')">暂不回收</button>
-      <button class="btn btn-success" style="flex:1.5" onclick="showToast('✅ 退货回收确认！共5箱已装车，请送回仓库', 'success');switchScreen('home')">✅ 确认回收装车</button>
+    <div class="btn-row" style="position:sticky;bottom:0;background:var(--tms-bg);padding:12px 20px 20px">
+      <button class="btn btn-outline" style="flex:1" onclick="switchScreen('return')">暂不签收</button>
+      <button class="btn btn-success btn-lg" style="flex:1.8" onclick="confirmReturnSign()">✅ 确认退货签收</button>
     </div>
   </div>
 
@@ -707,6 +788,115 @@ function showToast(msg, type) {
     toast.style.transition = 'opacity 0.3s ease';
     setTimeout(() => toast.remove(), 300);
   }, 2000);
+}
+
+// ========== RETURN SIGN-OFF ==========
+tmsState.returnOrders = [
+  {
+    no: 'XTSQ202608130003', cust: '超市发(学院路店)', addr: '学院路15号', dispatch: 'D20260813-001',
+    products: [
+      { icon: '🍜', name: '康师傅红烧牛肉面', spec: '批次B202607 · 箱', returnQty: 1, signedQty: 0 },
+      { icon: '🧂', name: '海天酱油 500ml', spec: '批次B202606 · 箱', returnQty: 1, signedQty: 0 }
+    ]
+  },
+  {
+    no: 'XTSQ202608130002', cust: '物美超市(海淀店)', addr: '中关村大街1号', dispatch: 'D20260813-002',
+    products: [
+      { icon: '🧴', name: '农夫山泉500ml*24', spec: '批次B202608 · 箱', returnQty: 2, signedQty: 0 },
+      { icon: '🥤', name: '可口可乐330ml*24', spec: '批次B202607 · 箱', returnQty: 3, signedQty: 0 }
+    ]
+  }
+];
+tmsState.currentReturn = 0;
+
+function navigateToReturnSign(index) {
+  tmsState.currentReturn = index;
+  const r = tmsState.returnOrders[index];
+  // 重置实收数量为退货数量（默认全收）
+  r.products.forEach(p => p.signedQty = p.returnQty);
+  document.getElementById('returnSignTitle').textContent = '退货签收 · ' + r.cust;
+  document.getElementById('returnSignNo').textContent = r.no;
+  document.getElementById('rsNo').textContent = r.no;
+  document.getElementById('rsCust').textContent = r.cust;
+  document.getElementById('rsAddr').textContent = r.addr;
+  document.getElementById('rsDispatch').textContent = r.dispatch;
+  document.getElementById('returnSignPad').innerHTML = '点击此处客户电子签名';
+  renderReturnProducts();
+  switchScreen('return-sign');
+}
+
+function renderReturnProducts() {
+  const r = tmsState.returnOrders[tmsState.currentReturn];
+  const list = document.getElementById('rsProductList');
+  list.innerHTML = r.products.map((p, i) => `
+    <div class="product-mini" style="align-items:center;padding:10px 0">
+      <span class="icon">${p.icon}</span>
+      <div class="info">
+        <div class="name">${p.name}</div>
+        <div class="spec">${p.spec} · 退货 ${p.returnQty} 件</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="adjustSigned(${i},-1)" style="width:30px;height:30px;border:1px solid var(--tms-border);background:#fff;border-radius:6px;font-size:16px;cursor:pointer">−</button>
+        <input id="signedInput${i}" type="number" min="0" max="${p.returnQty}" value="${p.signedQty}" oninput="onSignedInput(${i},this.value)"
+          style="width:46px;height:30px;text-align:center;border:1px solid var(--tms-border);border-radius:6px;font-size:14px;font-weight:600">
+        <button onclick="adjustSigned(${i},1)" style="width:30px;height:30px;border:1px solid var(--tms-border);background:#fff;border-radius:6px;font-size:16px;cursor:pointer">+</button>
+      </div>
+    </div>`).join('');
+  updateReturnTotals();
+}
+
+function adjustSigned(i, delta) {
+  const p = tmsState.returnOrders[tmsState.currentReturn].products[i];
+  p.signedQty = Math.max(0, Math.min(p.returnQty, p.signedQty + delta));
+  document.getElementById('signedInput' + i).value = p.signedQty;
+  updateReturnTotals();
+}
+
+function onSignedInput(i, val) {
+  const p = tmsState.returnOrders[tmsState.currentReturn].products[i];
+  let v = parseInt(val) || 0;
+  v = Math.max(0, Math.min(p.returnQty, v));
+  p.signedQty = v;
+  updateReturnTotals();
+}
+
+function updateReturnTotals() {
+  const r = tmsState.returnOrders[tmsState.currentReturn];
+  const totalReturn = r.products.reduce((s, p) => s + p.returnQty, 0);
+  const totalSigned = r.products.reduce((s, p) => s + p.signedQty, 0);
+  const diff = totalSigned - totalReturn;
+  document.getElementById('rsTotalReturn').textContent = totalReturn;
+  document.getElementById('rsTotalSigned').textContent = totalSigned;
+  const diffEl = document.getElementById('rsTotalDiff');
+  diffEl.textContent = (diff >= 0 ? '+' : '') + diff;
+  diffEl.style.color = diff === 0 ? 'var(--tms-success)' : 'var(--tms-danger)';
+}
+
+function signReturnHere() {
+  document.getElementById('returnSignPad').innerHTML =
+    '<span style="font-size:28px;color:#333;font-family:cursive">客户已确认</span><div style="font-size:10px;color:var(--tms-text-muted)">签名时间：2026-08-13 10:30</div>';
+}
+
+function confirmReturnSign() {
+  const r = tmsState.returnOrders[tmsState.currentReturn];
+  const totalSigned = r.products.reduce((s, p) => s + p.signedQty, 0);
+  const totalReturn = r.products.reduce((s, p) => s + p.returnQty, 0);
+  // 更新物流状态为"司机已回收"，回写签收数量
+  document.getElementById('rsStatus').textContent = '司机已回收';
+  document.getElementById('rsStatus').className = 'badge badge-success';
+  const diffTip = totalSigned < totalReturn ? `（少 ${totalReturn - totalSigned} 件，差异待处理）` : '';
+  showToast(`✅ 退货签收成功！物流状态 → 司机已回收，签收数量 ${totalSigned} 件已回写退货单${diffTip}`, 'success');
+  // 从待回收列表移除（原型演示：返回列表）
+  setTimeout(() => {
+    tmsState.returnOrders.splice(tmsState.currentReturn, 1);
+    const pending = document.getElementById('returnPendingCnt');
+    const done = document.getElementById('returnDoneCnt');
+    const total = document.getElementById('returnTotalQty');
+    if (pending) pending.textContent = Math.max(0, parseInt(pending.textContent) - 1);
+    if (done) done.textContent = parseInt(done.textContent) + 1;
+    if (total) total.textContent = Math.max(0, parseInt(total.textContent) - totalReturn);
+    switchScreen('return');
+  }, 1200);
 }
 </script>
 

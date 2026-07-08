@@ -2,25 +2,30 @@ package com.erp.auth;
 
 import com.erp.common.util.JwtUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Component;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-@Component
+// 由 SecurityConfig 通过 addFilterBefore 挂到 Spring Security 过滤链，不作 @Component 以免被 Boot 二次注册。
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final Set<String> PUBLIC_PREFIXES = Set.of(
             "/auth/login",
             "/auth/logout",
-            "/actuator/health"
+            "/actuator/health",
+            "/tms/app/login"
     );
 
     private final JwtUtil jwtUtil;
@@ -58,8 +63,25 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 将用户信息存入 request attribute，供后续使用
-        request.setAttribute("currentUsername", jwtUtil.getUsernameFromToken(token));
-        filterChain.doFilter(request, response);
+        Claims claims = jwtUtil.parseToken(token);
+        String username = claims.getSubject();
+        String roleCode = String.valueOf(claims.getOrDefault("roleCode", ""));
+
+        request.setAttribute("currentUsername", username);
+        request.setAttribute("currentRoleCode", roleCode);
+
+        // 把角色写入 Spring Security 上下文，供 authorizeHttpRequests 授权规则使用
+        List<SimpleGrantedAuthority> authorities = roleCode == null || roleCode.isBlank()
+                ? List.of()
+                : List.of(new SimpleGrantedAuthority("ROLE_" + roleCode));
+        UsernamePasswordAuthenticationToken auth =
+                new UsernamePasswordAuthenticationToken(username, null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        try {
+            filterChain.doFilter(request, response);
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 }

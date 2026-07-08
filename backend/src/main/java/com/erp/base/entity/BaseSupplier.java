@@ -19,6 +19,14 @@ public class BaseSupplier {
     private Integer deliveryDays;
     private String settlementMethod;
     private Integer accountPeriodDays;
+    // 账期设置（按 docs/账期管理-产品说明.md）
+    private String settlementType;   // PREPAY / COD / TERM
+    private String termType;         // FIXED / WEEKLY / SEMI_MONTH / MONTHLY
+    private Integer termDays;
+    private String cutoffDay;
+    private String paymentMode;      // A / B
+    private Integer termMonths;
+    private String paymentDay;
     private String defaultBuyer;
     private String defaultReceiptAccount;
     private String invoiceTitle;
@@ -27,6 +35,8 @@ public class BaseSupplier {
     private String status;
     private String address;
     private String remark;
+    private String deliveryMethod;
+    private String defaultLogisticsCompany;
 
     public String getSupplierId() { return supplierId; }
     public void setSupplierId(String supplierId) { this.supplierId = supplierId; }
@@ -58,6 +68,27 @@ public class BaseSupplier {
     public Integer getAccountPeriodDays() { return accountPeriodDays; }
     public void setAccountPeriodDays(Integer accountPeriodDays) { this.accountPeriodDays = accountPeriodDays; }
 
+    public String getSettlementType() { return settlementType; }
+    public void setSettlementType(String settlementType) { this.settlementType = settlementType; }
+
+    public String getTermType() { return termType; }
+    public void setTermType(String termType) { this.termType = termType; }
+
+    public Integer getTermDays() { return termDays; }
+    public void setTermDays(Integer termDays) { this.termDays = termDays; }
+
+    public String getCutoffDay() { return cutoffDay; }
+    public void setCutoffDay(String cutoffDay) { this.cutoffDay = cutoffDay; }
+
+    public String getPaymentMode() { return paymentMode; }
+    public void setPaymentMode(String paymentMode) { this.paymentMode = paymentMode; }
+
+    public Integer getTermMonths() { return termMonths; }
+    public void setTermMonths(Integer termMonths) { this.termMonths = termMonths; }
+
+    public String getPaymentDay() { return paymentDay; }
+    public void setPaymentDay(String paymentDay) { this.paymentDay = paymentDay; }
+
     public String getDefaultBuyer() { return defaultBuyer; }
     public void setDefaultBuyer(String defaultBuyer) { this.defaultBuyer = defaultBuyer; }
 
@@ -81,4 +112,10 @@ public class BaseSupplier {
 
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
+
+    public String getDeliveryMethod() { return deliveryMethod; }
+    public void setDeliveryMethod(String deliveryMethod) { this.deliveryMethod = deliveryMethod; }
+
+    public String getDefaultLogisticsCompany() { return defaultLogisticsCompany; }
+    public void setDefaultLogisticsCompany(String defaultLogisticsCompany) { this.defaultLogisticsCompany = defaultLogisticsCompany; }
 }

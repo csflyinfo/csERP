@@ -12,7 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,43 +30,52 @@ public class InventoryController {
 
     @PostMapping("/balance/page")
     public ApiResponse<PageResult<Map<String, Object>>> balancePage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT goods_code goodsCode,
-                       goods_name goodsName,
-                       warehouse,
-                       batch_no batchNo,
-                       physical_qty physicalQty,
-                       locked_qty lockedQty,
-                       frozen_qty frozenQty,
-                       available_qty availableQty,
-                       purchase_on_way purchaseOnWay,
-                       cost_price costPrice,
-                       stock_amount stockAmount,
-                       last_inout_time lastInoutTime
-                FROM inv_stock_balance
-                ORDER BY goods_code, warehouse
-                """), request));
+        // 按 goods_code + warehouse 聚合到 goods 维度（跨批次合计）
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT b.goods_code, MIN(b.goods_name) AS goods_name, b.warehouse,
+                       SUM(b.physical_qty) AS physical_qty, SUM(b.locked_qty) AS locked_qty,
+                       SUM(b.frozen_qty) AS frozen_qty, SUM(b.available_qty) AS available_qty,
+                       SUM(b.purchase_on_way) AS purchase_on_way,
+                       MAX(b.cost_price) AS cost_price, SUM(b.stock_amount) AS stock_amount,
+                       MAX(b.last_inout_time) AS last_inout_time,
+                       MIN(g.spec) AS spec, MIN(g.barcode) AS barcode,
+                       MIN(g.category_name) AS category_name, MIN(g.brand_name) AS brand_name,
+                       MIN(g.base_unit) AS base_unit,
+                       MIN(g.default_supplier) AS default_supplier,
+                       MIN(g.storage_property) AS storage_property,
+                       MIN(g.goods_manager) AS goods_manager,
+                       MIN(g.unit_config) AS unit_config
+                FROM inv_stock_balance b
+                LEFT JOIN base_goods g ON b.goods_code = g.goods_code
+                GROUP BY b.goods_code, b.warehouse
+                ORDER BY b.goods_code, b.warehouse
+                """);
+        List<Map<String, Object>> mapped = rows.stream()
+                .map(InventoryController::camelize)
+                .filter(r -> matchesStockFilters(r, request.filters()))
+                .toList();
+        return ApiResponse.ok(pageWithSummary(mapped, request));
     }
 
     @PostMapping("/ledger/page")
     public ApiResponse<PageResult<Map<String, Object>>> ledgerPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT ledger_no ledgerNo,
-                       occurred_at occurredAt,
-                       source_bill sourceBill,
-                       goods_code goodsCode,
-                       goods_name goodsName,
-                       warehouse,
-                       batch_no batchNo,
-                       CASE direction WHEN 'IN' THEN '入库' ELSE '出库' END direction,
-                       qty,
-                       cost_price costPrice,
-                       amount,
-                       balance_qty balanceQty,
-                       operator_name operator
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse,
+                       batch_no, direction, qty, cost_price, amount, balance_qty, operator_name
                 FROM inv_stock_ledger
                 ORDER BY occurred_at DESC, ledger_no DESC
-                """), request));
+                """);
+        List<Map<String, Object>> mapped = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> row = camelize(r);
+            // 「方向」列友好展示
+            String dir = String.valueOf(row.getOrDefault("direction", ""));
+            row.put("direction", "IN".equals(dir) ? "入库" : "OUT".equals(dir) ? "出库" : dir);
+            // operator_name → operator（前端映射）
+            row.put("operator", row.get("operatorName"));
+            mapped.add(row);
+        }
+        return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
     @PostMapping("/lock/page")
@@ -83,18 +95,32 @@ public class InventoryController {
 
     @PostMapping("/batch/page")
     public ApiResponse<PageResult<Map<String, Object>>> batchPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT goods_code goodsCode,
-                       goods_name goodsName,
-                       warehouse,
-                       batch_no batchNo,
-                       physical_qty qty,
-                       cost_price costPrice,
-                       '正常' status
-                FROM inv_stock_balance
-                WHERE batch_no IS NOT NULL
-                ORDER BY goods_code, warehouse, batch_no
-                """), request));
+        // 走 inv_batch_stock 拿真实批次层数据；JOIN base_goods 补商品扩展字段
+        // 锁定/冻结/可用数量：批次表没有单独维护，用商品仓库维度的比例分摊估算（简化：直接用 batch.qty 作为 physical，其它按 balance 分摊）
+        // V1.0 简化：批次层的 locked/frozen/available 直接从 inv_stock_balance 取对应 warehouse+goods 的值（不区分批次；后续增强）
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT bs.batch_stock_id, bs.goods_code, bs.goods_name, bs.warehouse, bs.batch_no,
+                       bs.production_date, bs.expiry_date,
+                       bs.qty AS physical_qty,
+                       COALESCE(bs.locked_qty, 0) AS locked_qty,
+                       COALESCE(bs.frozen_qty, 0) AS frozen_qty,
+                       (bs.qty - COALESCE(bs.locked_qty, 0) - COALESCE(bs.frozen_qty, 0)) AS available_qty,
+                       bs.cost_price, bs.stock_amount, bs.last_inout_time,
+                       g.spec, g.barcode, g.category_name, g.brand_name, g.base_unit,
+                       g.default_supplier, g.storage_property, g.goods_manager,
+                       g.unit_config,
+                       '正常' AS status
+                FROM inv_batch_stock bs
+                LEFT JOIN base_goods g ON bs.goods_code = g.goods_code
+                WHERE bs.batch_no IS NOT NULL
+                ORDER BY bs.goods_code, bs.warehouse, bs.production_date, bs.batch_no
+                """);
+        List<Map<String, Object>> mapped = rows.stream()
+                .map(InventoryController::camelize)
+                .filter(r -> matchesStockFilters(r, request.filters()))
+                .filter(r -> matchesBatchFilters(r, request.filters()))
+                .toList();
+        return ApiResponse.ok(pageWithSummary(mapped, request));
     }
 
     @PostMapping("/warning/page")
@@ -183,56 +209,6 @@ public class InventoryController {
             "qty", qty,
             "sourceWarehouse", sourceWarehouse,
             "targetWarehouse", targetWarehouse
-        ));
-    }
-
-    @PostMapping("/damage/page")
-    public ApiResponse<PageResult<Map<String, Object>>> damagePage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT bill_no damageNo, warehouse, reason damageType, qty, amount costAmount,
-                       goods_code goodsCode, goods_name goodsName,
-                       CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM biz_simple_bill WHERE bill_type='DAMAGE' ORDER BY bill_no DESC
-                """), request));
-    }
-
-    @PostMapping("/damage/audit")
-    @Transactional
-    public ApiResponse<Map<String, Object>> auditDamage(@RequestBody Map<String, Object> request) {
-        List<Map<String, Object>> bills = jdbcTemplate.queryForList(
-            "SELECT * FROM biz_simple_bill WHERE bill_type='DAMAGE' AND (bill_id=? OR bill_no=? OR bill_no=(SELECT bill_no FROM biz_simple_bill WHERE bill_type='DAMAGE' ORDER BY bill_no DESC LIMIT 1))",
-            request.get("bizId"), request.get("bizId"));
-        if (bills.isEmpty()) {
-            throw new IllegalArgumentException("报损单不存在");
-        }
-        Map<String, Object> bill = bills.get(0);
-        String goodsCode = String.valueOf(bill.getOrDefault("GOODS_CODE", "SP001"));
-        String goodsName = String.valueOf(bill.getOrDefault("GOODS_NAME", ""));
-        String warehouse = String.valueOf(bill.getOrDefault("WAREHOUSE", "总仓"));
-        BigDecimal qty = toBigDecimal(bill.get("QTY"));
-
-        BigDecimal costPrice = getCostPrice(goodsCode, warehouse);
-        BigDecimal amount = qty.multiply(costPrice);
-
-        // 扣减库存
-        deductStock(goodsCode, warehouse, qty);
-
-        // 更新单据状态
-        jdbcTemplate.update(
-            "UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_id=?",
-            bill.get("BILL_ID"));
-
-        // 生成出库流水
-        BigDecimal balance = getBalanceQty(goodsCode, warehouse);
-        insertLedger(goodsCode, goodsName, warehouse, "OUT", qty, costPrice, amount, balance,
-            String.valueOf(bill.get("BILL_NO")));
-
-        return ApiResponse.ok(Map.of(
-            "status", "APPROVED",
-            "effect", "报损已审核：扣减 " + warehouse + " " + goodsCode + " " + qty + " 件",
-            "goodsCode", goodsCode,
-            "qty", qty,
-            "warehouse", warehouse
         ));
     }
 
@@ -383,5 +359,210 @@ public class InventoryController {
         } catch (NumberFormatException e) {
             return BigDecimal.ZERO;
         }
+    }
+
+    // ============ 库存查询多筛选 + 页脚合计 支持 ============
+
+    /**
+     * 库存查询通用筛选：
+     *  - keyword：商品编号 / 名称 / 条码 模糊
+     *  - warehouses[]：仓库多选（数组或逗号分隔）
+     *  - categories[] / brands[] / suppliers[] / managers[] / storageProperties[]：多选
+     *  - showZero=false 时过滤 physical_qty <= 0
+     */
+    @SuppressWarnings("unchecked")
+    private static boolean matchesStockFilters(Map<String, Object> row, Map<String, Object> filters) {
+        if (filters == null || filters.isEmpty()) return true;
+
+        String keyword = strLower(filters.get("keyword"));
+        if (!keyword.isBlank()) {
+            String hay = strLower(row.get("goodsCode")) + " " + strLower(row.get("goodsName")) + " " + strLower(row.get("barcode"));
+            if (!hay.contains(keyword)) return false;
+        }
+
+        if (!matchesMulti(row.get("warehouse"), filters.get("warehouses"))) return false;
+        if (!matchesMulti(row.get("categoryName"), filters.get("categories"))) return false;
+        if (!matchesMulti(row.get("brandName"), filters.get("brands"))) return false;
+        if (!matchesMulti(row.get("defaultSupplier"), filters.get("suppliers"))) return false;
+        if (!matchesMulti(row.get("goodsManager"), filters.get("managers"))) return false;
+        if (!matchesMulti(row.get("storageProperty"), filters.get("storageProperties"))) return false;
+
+        Object showZero = filters.get("showZero");
+        boolean show = showZero != null && "true".equalsIgnoreCase(String.valueOf(showZero));
+        if (!show) {
+            Object q = row.get("physicalQty");
+            double v = q instanceof Number n ? n.doubleValue()
+                    : (q == null ? 0.0 : Double.parseDouble(String.valueOf(q)));
+            if (v <= 0) return false;
+        }
+        return true;
+    }
+
+    private static boolean matchesBatchFilters(Map<String, Object> row, Map<String, Object> filters) {
+        if (filters == null || filters.isEmpty()) return true;
+        String batchNo = strLower(filters.get("batchNo"));
+        if (!batchNo.isBlank() && !strLower(row.get("batchNo")).contains(batchNo)) return false;
+        String pdFrom = strLower(filters.get("productionDateFrom"));
+        String pdTo = strLower(filters.get("productionDateTo"));
+        if (!pdFrom.isBlank() || !pdTo.isBlank()) {
+            String pd = strLower(row.get("productionDate")).substring(0, Math.min(10, strLower(row.get("productionDate")).length()));
+            if (!pdFrom.isBlank() && pd.compareTo(pdFrom) < 0) return false;
+            if (!pdTo.isBlank() && pd.compareTo(pdTo) > 0) return false;
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean matchesMulti(Object rowVal, Object filterVal) {
+        if (filterVal == null) return true;
+        List<String> options = new ArrayList<>();
+        if (filterVal instanceof List<?> list) {
+            for (Object o : list) if (o != null && !String.valueOf(o).isBlank()) options.add(String.valueOf(o));
+        } else {
+            String s = String.valueOf(filterVal);
+            if (s.isBlank()) return true;
+            for (String x : s.split(",")) if (!x.isBlank()) options.add(x.trim());
+        }
+        if (options.isEmpty()) return true;
+        String rv = rowVal == null ? "" : String.valueOf(rowVal);
+        return options.contains(rv);
+    }
+
+    private static String strLower(Object v) {
+        return v == null ? "" : String.valueOf(v).trim().toLowerCase(Locale.ROOT);
+    }
+
+    /** 分页并附加 summary（数量/金额合计），用于表格页脚显示。 */
+    private static PageResult<Map<String, Object>> pageWithSummary(List<Map<String, Object>> filteredRecords, PageRequest request) {
+        BigDecimal physicalQtySum = BigDecimal.ZERO;
+        BigDecimal lockedQtySum = BigDecimal.ZERO;
+        BigDecimal availableQtySum = BigDecimal.ZERO;
+        BigDecimal stockAmountSum = BigDecimal.ZERO;
+        BigDecimal availableStockAmountSum = BigDecimal.ZERO;
+        for (Map<String, Object> r : filteredRecords) {
+            physicalQtySum = physicalQtySum.add(toBd(r.get("physicalQty")));
+            lockedQtySum = lockedQtySum.add(toBd(r.get("lockedQty")));
+            BigDecimal avail = toBd(r.get("availableQty"));
+            availableQtySum = availableQtySum.add(avail);
+            stockAmountSum = stockAmountSum.add(toBd(r.get("stockAmount")));
+            availableStockAmountSum = availableStockAmountSum.add(avail.multiply(toBd(r.get("costPrice"))));
+        }
+        int pageNo = request.safePageNo();
+        int pageSize = request.safePageSize();
+        int fromIndex = Math.min((pageNo - 1) * pageSize, filteredRecords.size());
+        int toIndex = Math.min(fromIndex + pageSize, filteredRecords.size());
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("physicalQtySum", physicalQtySum);
+        summary.put("lockedQtySum", lockedQtySum);
+        summary.put("availableQtySum", availableQtySum);
+        summary.put("stockAmountSum", stockAmountSum.setScale(2, RoundingMode.HALF_UP));
+        summary.put("availableStockAmountSum", availableStockAmountSum.setScale(2, RoundingMode.HALF_UP));
+        return new PageResult<>(filteredRecords.subList(fromIndex, toIndex), pageNo, pageSize, filteredRecords.size(), summary);
+    }
+
+    private static BigDecimal toBd(Object v) {
+        if (v == null) return BigDecimal.ZERO;
+        if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Number n) return new BigDecimal(n.toString());
+        try { return new BigDecimal(String.valueOf(v)); } catch (Exception e) { return BigDecimal.ZERO; }
+    }
+
+    // ============ 批次库存 · 锁定 / 取消锁定 ============
+
+    /**
+     * 锁定批次库存的指定数量。
+     * 同步更新 inv_stock_balance.locked_qty / available_qty 供「库存查询」显示。
+     */
+    @PostMapping("/batch/lock")
+    @Transactional
+    public ApiResponse<Map<String, Object>> batchLock(@RequestBody Map<String, Object> req) {
+        String batchStockId = String.valueOf(req.getOrDefault("batchStockId", ""));
+        BigDecimal qty = toBd(req.get("qty"));
+        if (batchStockId.isBlank() || "null".equals(batchStockId)) {
+            throw new IllegalArgumentException("批次记录 ID 缺失，请刷新查询后重试");
+        }
+        if (qty.signum() <= 0) {
+            throw new IllegalArgumentException("锁定数量必须大于 0");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT goods_code, goods_name, warehouse, qty, locked_qty FROM inv_batch_stock WHERE batch_stock_id = ?",
+                batchStockId);
+        if (rows.isEmpty()) throw new IllegalArgumentException("批次不存在：" + batchStockId);
+        Map<String, Object> r = camelize(rows.get(0));
+        BigDecimal batchQty = toBd(r.get("qty"));
+        BigDecimal locked = toBd(r.get("lockedQty"));
+        BigDecimal available = batchQty.subtract(locked);
+        if (qty.compareTo(available) > 0) {
+            throw new IllegalArgumentException("锁定数量超过可用批次数量：可用 " + available);
+        }
+        // 更新批次表
+        jdbcTemplate.update(
+                "UPDATE inv_batch_stock SET locked_qty = COALESCE(locked_qty, 0) + ? WHERE batch_stock_id = ?",
+                qty, batchStockId);
+        // 联动 inv_stock_balance（按 goods_code + warehouse）
+        String goodsCode = String.valueOf(r.get("goodsCode"));
+        String warehouse = String.valueOf(r.get("warehouse"));
+        jdbcTemplate.update("""
+                UPDATE inv_stock_balance
+                SET locked_qty = COALESCE(locked_qty, 0) + ?,
+                    available_qty = physical_qty - COALESCE(locked_qty, 0) - COALESCE(frozen_qty, 0) - ?
+                WHERE goods_code = ? AND warehouse = ?
+                """, qty, qty, goodsCode, warehouse);
+        return ApiResponse.ok(Map.of(
+                "batchStockId", batchStockId,
+                "lockedQty", qty,
+                "effect", "已锁定 " + qty + " 件（" + goodsCode + " / " + warehouse + "）"
+        ));
+    }
+
+    @PostMapping("/batch/unlock")
+    @Transactional
+    public ApiResponse<Map<String, Object>> batchUnlock(@RequestBody Map<String, Object> req) {
+        String batchStockId = String.valueOf(req.getOrDefault("batchStockId", ""));
+        BigDecimal qty = toBd(req.get("qty"));
+        if (batchStockId.isBlank() || "null".equals(batchStockId)) {
+            throw new IllegalArgumentException("批次记录 ID 缺失，请刷新查询后重试");
+        }
+        if (qty.signum() <= 0) {
+            throw new IllegalArgumentException("取消锁定数量必须大于 0");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT goods_code, warehouse, locked_qty FROM inv_batch_stock WHERE batch_stock_id = ?",
+                batchStockId);
+        if (rows.isEmpty()) throw new IllegalArgumentException("批次不存在");
+        Map<String, Object> r = camelize(rows.get(0));
+        BigDecimal locked = toBd(r.get("lockedQty"));
+        if (qty.compareTo(locked) > 0) {
+            throw new IllegalArgumentException("取消锁定数量超过已锁定：已锁 " + locked);
+        }
+        jdbcTemplate.update(
+                "UPDATE inv_batch_stock SET locked_qty = locked_qty - ? WHERE batch_stock_id = ?",
+                qty, batchStockId);
+        String goodsCode = String.valueOf(r.get("goodsCode"));
+        String warehouse = String.valueOf(r.get("warehouse"));
+        jdbcTemplate.update("""
+                UPDATE inv_stock_balance
+                SET locked_qty = COALESCE(locked_qty, 0) - ?,
+                    available_qty = physical_qty - (COALESCE(locked_qty, 0) - ?) - COALESCE(frozen_qty, 0)
+                WHERE goods_code = ? AND warehouse = ?
+                """, qty, qty, goodsCode, warehouse);
+        return ApiResponse.ok(Map.of("batchStockId", batchStockId, "effect", "已取消锁定 " + qty + " 件"));
+    }
+
+    /** H2 大写 key → 驼峰。 */
+    private static Map<String, Object> camelize(Map<String, Object> row) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : row.entrySet()) {
+            String k = e.getKey().toLowerCase(Locale.ROOT);
+            StringBuilder sb = new StringBuilder();
+            boolean upper = false;
+            for (char c : k.toCharArray()) {
+                if (c == '_') { upper = true; continue; }
+                sb.append(upper ? Character.toUpperCase(c) : c);
+                upper = false;
+            }
+            out.put(sb.toString(), e.getValue());
+        }
+        return out;
     }
 }

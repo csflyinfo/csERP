@@ -26,6 +26,8 @@ public record PageResult<T>(
         if (filters == null || filters.isEmpty()) return records;
         List<String> values = filters.entrySet().stream()
                 .filter(entry -> entry.getValue() != null)
+                // 非数据过滤字段（前端携带的上下文），跳过文本模糊匹配
+                .filter(entry -> !"roleCode".equals(entry.getKey()))
                 .filter(entry -> !("treeNode".equals(entry.getKey()) && String.valueOf(entry.getValue()).startsWith("全部")))
                 .map(entry -> String.valueOf(entry.getValue()).trim().toLowerCase(Locale.ROOT))
                 .filter(value -> !value.isBlank())

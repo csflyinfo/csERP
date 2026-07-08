@@ -1,44 +1,33 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
-import { post } from '../../../api/client.js'
+import { computed } from 'vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
 })
-
-// 从后端加载真实下拉数据
-const supplierOptions = ref([])
-
-async function loadOptions() {
-  const params = { pageNo: 1, pageSize: 500, filters: {} }
-  try {
-    const sup = await post('/base/supplier/page', params).catch(() => ({ records: [] }))
-    supplierOptions.value = (sup.records || []).map(r => r.supplierName).filter(Boolean)
-  } catch (e) {
-    console.warn('加载下拉数据失败', e)
-  }
-}
-
-onMounted(loadOptions)
 
 // 计算小数位步长 - 称重品3位小数，非称重品整数
 const qtyStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
 
 // 库存上下限步长
 const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
+
+/**
+ * 「默认采购单位」下拉选项 —— 取自多单位配置里已启用且填了单位名的行。
+ * 设置后：采购订单 / 采购退货申请添加该商品时，采购单位默认取此值；
+ * 留空则沿用「大单位 → 中单位 → 小单位」的默认逻辑。
+ */
+const purchaseUnitOptions = computed(() => {
+  const units = props.modelValue.units || []
+  return units
+      .filter(u => u && u.enabled !== false && u.unitName)
+      .map(u => ({ name: u.unitName, label: `${u.unitName}（${u.unitType}）` }))
+})
 </script>
 
 <template>
   <div class="stock-purchase-form">
-    <!-- 第一行 -->
+    <!-- 第一行：存储属性 · 产地 · 保质期 · 临期预警 -->
     <div class="row">
-      <div class="field">
-        <label>默认供应商</label>
-        <select v-model="modelValue.defaultSupplier">
-          <option value="">{{ supplierOptions.length ? '请选择' : '请先在【供应商资料】维护' }}</option>
-          <option v-for="opt in supplierOptions" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
-      </div>
       <div class="field">
         <label>存储属性</label>
         <select v-model="modelValue.storageProperty">
@@ -46,6 +35,13 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
           <option value="冷藏">冷藏</option>
           <option value="冷冻">冷冻</option>
           <option value="恒温">恒温</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>默认采购单位</label>
+        <select v-model="modelValue.defaultPurchaseUnit">
+          <option value="">未设置（按大→中→小）</option>
+          <option v-for="o in purchaseUnitOptions" :key="o.name" :value="o.name">{{ o.label }}</option>
         </select>
       </div>
       <div class="field">
@@ -58,7 +54,7 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
       </div>
     </div>
 
-    <!-- 第二行 -->
+    <!-- 第二行：临期预警 · 库存上限 · 下限 · 采购起订量 -->
     <div class="row">
       <div class="field">
         <label>临期预警天数</label>
@@ -93,7 +89,7 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
       </div>
     </div>
 
-    <!-- 第三行 -->
+    <!-- 第三行：单托盘大单位数量 · 堆码层数 -->
     <div class="row">
       <div class="field">
         <label>单托盘大单位数量</label>

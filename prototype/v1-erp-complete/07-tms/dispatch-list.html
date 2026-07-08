@@ -1,0 +1,107 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>调度单列表 - TMS调度管理</title><link rel="stylesheet" href="../assets/module-style.css">
+<style>
+.page{padding:12px;height:100vh}
+.card{height:100%;display:flex;flex-direction:column}
+.status .tip{color:#98a2b3;font-size:13px;margin-left:auto}
+.prog{display:inline-flex;align-items:center;gap:4px}
+.prog i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5eaf2}
+.prog i.on{background:#1677ff}
+.prog i.ok{background:#15803d}
+.prog i.bad{background:#b91c1c}
+.drawer{position:fixed;top:0;right:0;width:760px;height:100vh;background:#fff;box-shadow:-12px 0 40px rgba(16,24,40,.18);z-index:30;display:none;flex-direction:column}
+.drawer.show{display:flex}
+.dh{height:54px;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid #e5eaf2;font-size:18px;font-weight:700}
+.dh .close{margin-left:auto;font-size:26px;color:#98a2b3;cursor:pointer}
+.dtabs{height:46px;display:flex;gap:30px;padding:0 20px;border-bottom:1px solid #d0d5dd}
+.dtabs span{height:46px;line-height:46px;cursor:pointer;color:#667085}
+.dtabs .on{color:#1677ff;border-bottom:2px solid #1677ff;font-weight:700}
+.dbody{flex:1;overflow:auto;padding:20px 24px}
+.dsec{font-size:15px;font-weight:700;margin:14px 0 16px}
+.dsec:before{content:"";display:inline-block;width:4px;height:14px;background:#1677ff;margin-right:8px;vertical-align:-1px}
+.trip-item{border:1px solid #e5eaf2;border-radius:6px;padding:12px;margin-bottom:10px}
+.trip-item .ti-top{display:flex;justify-content:space-between;align-items:center}
+.trip-item .ti-cust{font-weight:600;font-size:14px}
+.trip-item .ti-addr{font-size:12px;color:#667085;margin-top:2px}
+.trip-item .ti-meta{display:flex;gap:16px;font-size:12px;color:#475467;margin-top:6px}
+.tl{display:flex;gap:10px;padding:10px 0}
+.tl .node{width:14px;display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+.tl .node i{width:10px;height:10px;border-radius:50%;background:#1677ff}
+.tl .node i.gray{background:#cbd5e1}
+.tl .node i.ok{background:#15803d}
+.tl .node i.bad{background:#b91c1c}
+.tl .node .ln{flex:1;width:2px;background:#e5eaf2;margin:2px 0}
+.tl .nb{padding-bottom:10px;flex:1}
+.tl .nb .t{font-size:13px;font-weight:600}
+.tl .nb .s{font-size:12px;color:#667085}
+</style></head><body>
+<div class="page"><div class="card">
+  <div class="status">
+    <span class="on">全部</span><span>待装车</span><span>已装车</span><span>配送中</span><span>已完成</span><span>异常</span>
+    <span class="tip">调度日期 2026-08-13 · 共 8 单</span>
+  </div>
+
+  <div class="query">
+    <input placeholder="调度单号 / 司机 / 车牌" class="wide">
+    <select><option>全部线路</option><option>朝阳线</option><option>文三线</option><option>拱北线</option></select>
+    <select><option>全部状态</option><option>草稿</option><option>待装车</option><option>配送中</option><option>已完成</option></select>
+    <input type="date" value="2026-08-13">
+    <span class="spacer"></span>
+    <button class="btn">导出</button>
+    <button class="btn primary" onclick="toast('打开排线调度页面')">新建调度单</button>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <tr><th>调度单号</th><th>调度日期</th><th>线路</th><th>车辆</th><th>司机</th><th>门店数</th><th>总件数</th><th>总金额</th><th>进度</th><th>状态</th><th>操作</th></tr>
+      <tr><td class="link" onclick="openDrawer('D20260813-001')">D20260813-001</td><td>2026-08-13</td><td>朝阳线</td><td>京A·12345</td><td>张三</td><td>12</td><td>86</td><td>¥18,640.00</td><td><span class="prog"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i></i><i></i><i></i><i></i></span> 8/12</td><td><span class="badge wait">配送中</span></td><td><span class="link" onclick="openDrawer('D20260813-001')">详情</span><span class="link" onclick="toast('跳转在途监控')">在途</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('D20260813-002')">D20260813-002</td><td>2026-08-13</td><td>朝阳线</td><td>京A·12345</td><td>张三</td><td>6</td><td>70</td><td>¥16,850.00</td><td><span class="prog"><i></i><i></i><i></i><i></i><i></i><i></i></span> 0/6</td><td><span class="badge wait">待装车</span></td><td><span class="link" onclick="openDrawer('D20260813-002')">详情</span><span class="link" onclick="toast('已取消调度')">取消</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('D20260813-003')">D20260813-003</td><td>2026-08-13</td><td>文三线</td><td>京C·24680</td><td>王五</td><td>8</td><td>54</td><td>¥12,320.00</td><td><span class="prog"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i></span> 8/8</td><td><span class="badge ok">已完成</span></td><td><span class="link" onclick="openDrawer('D20260813-003')">详情</span><span class="link" onclick="toast('打开交账单')">交账</span></td></tr>
+      <tr><td class="link" onclick="openDrawer('D20260813-004')">D20260813-004</td><td>2026-08-13</td><td>拱北线</td><td>京D·13579</td><td>赵六</td><td>10</td><td>92</td><td>¥21,580.00</td><td><span class="prog"><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="bad"></i><i></i><i></i><i></i><i></i><i></i><i></i></span> 3/10</td><td><span class="badge bad">异常</span></td><td><span class="link" onclick="openDrawer('D20260813-004')">详情</span><span class="link" onclick="toast('1店改派返仓，已回调度池')">处理</span></td></tr>
+      <tr><td class="link">D20260813-005</td><td>2026-08-13</td><td>三里屯线</td><td>京E·88664</td><td>孙七</td><td>5</td><td>38</td><td>¥8,960.00</td><td><span class="prog"><i class="ok"></i><i></i><i></i><i></i><i></i></span> 1/5</td><td><span class="badge wait">配送中</span></td><td><span class="link">详情</span><span class="link" onclick="toast('跳转在途监控')">在途</span></td></tr>
+    </table>
+  </div>
+
+  <div class="foot"><div class="right"><button class="pagebtn">‹</button><button class="pagebtn on">1</button><button class="pagebtn">2</button><button class="pagebtn">›</button><span style="color:#667085;font-size:13px">共 8 条</span></div></div>
+</div></div>
+
+<!-- 详情抽屉 -->
+<div class="drawer" id="drawer">
+  <div class="dh"><span id="dNo">D20260813-001</span> · 调度单详情<span class="close" onclick="closeDrawer()">×</span></div>
+  <div class="dtabs"><span class="on">基本信息</span><span>配送行程</span><span>签收记录</span><span>操作日志</span></div>
+  <div class="dbody">
+    <div class="dsec">调度信息</div>
+    <div class="form2">
+      <label class="field">调度单号<input value="D20260813-001" disabled></label>
+      <label class="field">调度日期<input value="2026-08-13" disabled></label>
+      <label class="field">线路<input value="朝阳线" disabled></label>
+      <label class="field">车辆<input value="京A·12345" disabled></label>
+      <label class="field">司机<input value="张三" disabled></label>
+      <label class="field">状态<input value="配送中" disabled></label>
+      <label class="field">门店数<input value="12" disabled></label>
+      <label class="field">总件数<input value="86" disabled></label>
+      <label class="field">总金额<input value="¥18,640.00" disabled></label>
+      <label class="field">已签收<input value="8 店" disabled></label>
+    </div>
+
+    <div class="dsec">配送行程（12 店）</div>
+    <div class="trip-item"><div class="ti-top"><span class="ti-cust">1. 华联超市(西湖店) <span class="badge ok">已签收</span></span><span style="color:#667085;font-size:12px">09:45</span></div><div class="ti-addr">📍 文三路128号 · 距起点 1.2km</div><div class="ti-meta"><span>6件</span><span>¥1,280</span><span>全部签收</span><span class="link">查看照片</span></div></div>
+    <div class="trip-item"><div class="ti-top"><span class="ti-cust">2. 物美超市(海淀店) <span class="badge ok">已签收</span></span><span style="color:#667085;font-size:12px">10:12</span></div><div class="ti-addr">📍 中关村大街1号 · 距上店 3.5km</div><div class="ti-meta"><span>12件</span><span>¥2,460</span><span>全部签收</span><span class="link">查看照片</span></div></div>
+    <div class="trip-item"><div class="ti-top"><span class="ti-cust">3. 超市发(学院路店) <span class="badge ok">已签收</span></span><span style="color:#667085;font-size:12px">10:38</span></div><div class="ti-addr">📍 学院路15号 · 距上店 2.1km</div><div class="ti-meta"><span>8件</span><span>¥1,890</span><span>部分签收(7/8)</span><span class="link">查看照片</span></div></div>
+    <div class="trip-item"><div class="ti-top"><span class="ti-cust">9. 美佳便利店(解放路) <span class="badge wait">待配送</span></span><span style="color:#667085;font-size:12px">—</span></div><div class="ti-addr">📍 解放路66号 · 距上店 5.8km</div><div class="ti-meta"><span>15件</span><span>¥3,120</span><span>等待签收</span></div></div>
+
+    <div class="dsec">调度状态时间线</div>
+    <div class="tl"><div class="node"><i class="ok"></i><div class="ln"></div></div><div class="nb"><div class="t">已调度</div><div class="s">张三 · 京A·12345 · 08:30</div></div></div>
+    <div class="tl"><div class="node"><i class="ok"></i><div class="ln"></div></div><div class="nb"><div class="t">装车完成</div><div class="s">司机 APP 确认 · 86件 · 09:05</div></div></div>
+    <div class="tl"><div class="node"><i class="ok"></i><div class="ln"></div></div><div class="nb"><div class="t">已发车</div><div class="s">起始里程 128540km · 09:08</div></div></div>
+    <div class="tl"><div class="node"><i class="ok"></i><div class="ln"></div></div><div class="nb"><div class="t">配送中</div><div class="s">已签收 8/12 店 · 当前第9店途中</div></div></div>
+    <div class="tl"><div class="node"><i class="gray"></i></div><div class="nb"><div class="t" style="color:#98a2b3">已完成（待全部签收 + 交账）</div></div></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script>
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2400)}
+function openDrawer(no){document.getElementById('dNo').textContent=no;document.getElementById('drawer').classList.add('show')}
+function closeDrawer(){document.getElementById('drawer').classList.remove('show')}
+</script>
+</body></html>

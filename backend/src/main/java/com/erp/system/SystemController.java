@@ -44,8 +44,10 @@ public class SystemController {
                         menu("supplier", "供应商资料", "/base/supplier"),
                         menu("warehouse", "仓库资料", "/base/warehouse"),
                         menu("priceGroup", "价格组设置", "/base/price-group"),
+                        menu("goodsPriceAdjust", "商品综合调价单", "/base/goods-price-adjust"),
                         menu("customerPrice", "客户价格调整单", "/base/customer-price-adjust"),
                         menu("customerPriceQuery", "客户价格查询", "/base/customer-price-query"),
+                        menu("customerPriceChange", "客户商品变价查询", "/base/customer-price-change"),
                         menu("territory", "片区管理", "/base/territory"),
                         menu("routeLine", "线路管理", "/base/route-line"),
                         menu("employee", "人员信息", "/base/employee"),
@@ -59,6 +61,8 @@ public class SystemController {
                         menu("purchaseOrder", "采购订单", "/purchase/order"),
                         menu("purchaseInbound", "采购入库", "/purchase/inbound"),
                         menu("purchaseReceipt", "采购收货单", "/purchase/receipt"),
+                        menu("purchaseReturnApply", "采购退货申请", "/purchase/return-apply"),
+                        menu("purchaseReturnOutbound", "采购退货出库", "/purchase/return-outbound"),
                         menu("purchaseReturn", "采购退货单", "/purchase/return"),
                         menu("purchaseExpense", "采购费用单", "/purchase/expense"),
                         menu("purchaseInvoice", "采购发票", "/purchase/invoice")
@@ -67,17 +71,16 @@ public class SystemController {
                         menu("quickOrder", "销售快速开单", "/sales/quick-order"),
                         menu("salesOrder", "销售订单", "/sales/order"),
                         menu("salesOutbound", "销售出库", "/sales/outbound"),
-                        menu("salesReceipt", "销售收货单", "/sales/receipt"),
+                        menu("salesReceipt", "销售发货单", "/sales/receipt"),
+                        menu("rejectInbound", "拒收入库单", "/sales/reject-inbound"),
                         menu("salesReturn", "销售退货单", "/sales/return"),
                         menu("salesInvoice", "销售发票", "/sales/invoice"),
                         menu("flyOrder", "飞单", "/sales/fly-order"),
                         menu("emptyAdjust", "客户空退空出", "/sales/empty-adjust")
                 ),
                 menu("inventory", "库存管理", null,
-                        menu("stockBalance", "库存余额", "/inventory/balance"),
+                        menu("stockBalance", "库存查询", "/inventory/balance"),
                         menu("stockLedger", "库存流水", "/inventory/ledger"),
-                        menu("stockLock", "库存锁定", "/inventory/lock"),
-                        menu("batchStock", "批次库存", "/inventory/batch"),
                         menu("stockWarning", "库存预警", "/inventory/warning"),
                         menu("transfer", "调拨单", "/inventory/transfer"),
                         menu("damage", "报损单", "/inventory/damage"),
@@ -120,6 +123,19 @@ public class SystemController {
                         menu("importList", "导入列表", "/system/import-list"),
                         menu("exportCenter", "导出中心", "/system/export-center"),
                         menu("log", "操作日志", "/system/operation-log")
+                ),
+                menu("tms", "运输管理", null,
+                        menu("tms-dispatch-pool", "配送任务池", "/tms/dispatch-pool"),
+                        menu("tms-dispatch-list", "调度单管理", "/tms/dispatch-list"),
+                        menu("tms-return-dispatch", "退货单调度", "/tms/return-dispatch"),
+                        menu("tms-delivery-monitor", "在途监控", "/tms/delivery-monitor"),
+                        menu("tms-sign-verify", "签收核销", "/tms/sign-verify"),
+                        menu("tms-driver-return", "司机退货单", "/tms/driver-return"),
+                        menu("tms-reschedule-return", "改派返仓单", "/tms/reschedule-return"),
+                        menu("tms-customer-reject", "客户拒收单", "/tms/customer-reject"),
+                        menu("tms-settlement", "交账单管理", "/tms/settlement"),
+                        menu("tms-store-location", "门店定位审核", "/tms/store-location"),
+                        menu("tms-dashboard", "调度看板", "/tms/dashboard")
                 )
         )));
     }
@@ -503,7 +519,7 @@ public class SystemController {
 
     private Set<String> menuScope(String roleCode) {
         if ("SALE".equalsIgnoreCase(roleCode)) {
-            return Set.of("dashboard", "sales", "quickOrder", "salesOrder", "salesOutbound", "salesReceipt", "salesReturn", "salesInvoice", "inventory", "stockBalance", "stockLedger", "stockLock", "exportCenter", "log");
+            return Set.of("dashboard", "sales", "quickOrder", "salesOrder", "salesOutbound", "salesReceipt", "rejectInbound", "salesReturn", "salesInvoice", "inventory", "stockBalance", "stockLedger", "exportCenter", "log");
         }
         if ("PURCHASE".equalsIgnoreCase(roleCode)) {
             return Set.of("dashboard", "base", "goods", "supplier", "purchase", "purchaseOrder", "purchaseInbound", "purchaseReceipt", "purchaseReturn", "purchaseExpense", "purchaseInvoice", "stockBalance", "exportCenter", "log");

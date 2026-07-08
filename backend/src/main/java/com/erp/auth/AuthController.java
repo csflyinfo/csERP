@@ -37,17 +37,10 @@ public class AuthController {
             log("LOGIN", request.username(), "FAIL", "账号不存在");
             throw new IllegalArgumentException("账号或密码错误");
         }
-        String storedPassword = (String) user.getOrDefault("password", "admin123");
-        boolean passwordMatch = passwordEncoder.matches(request.password(), storedPassword);
-        // 兼容旧数据：若存储的不是 BCrypt 哈希，则回退到明文比对并自动升级
-        if (!passwordMatch && !storedPassword.startsWith("$2a$")) {
-            passwordMatch = storedPassword.equals(request.password());
-            if (passwordMatch) {
-                // 自动升级为 BCrypt
-                String encoded = passwordEncoder.encode(request.password());
-                jdbcTemplate.update("UPDATE sys_user_runtime SET password = ? WHERE username = ?", encoded, request.username());
-            }
-        }
+        String storedPassword = (String) user.getOrDefault("password", "");
+        // 严格 BCrypt 校验，不再允许明文回退。DB 中存储必须是 BCrypt 哈希。
+        boolean passwordMatch = storedPassword != null && storedPassword.startsWith("$2a$")
+                && passwordEncoder.matches(request.password(), storedPassword);
         if (!passwordMatch) {
             log("LOGIN", request.username(), "FAIL", "密码错误");
             throw new IllegalArgumentException("账号或密码错误");
@@ -56,7 +49,8 @@ public class AuthController {
         String token = jwtUtil.generateToken(
                 String.valueOf(user.get("userId")),
                 request.username(),
-                String.valueOf(user.get("displayName"))
+                String.valueOf(user.get("displayName")),
+                String.valueOf(user.getOrDefault("roleCode", ""))
         );
         log("LOGIN", request.username(), "SUCCESS", "用户登录成功");
 
