@@ -154,10 +154,13 @@ async function loadRows() {
     const data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: roleCode } })
     tableRows.value = data.records?.length ? data.records.map(record => mapRecordToRow(record, config.value)) : []
     total.value = data.total || 0
+<<<<<<< HEAD
     // 分类模块同步刷新树
     if (moduleCode.value === 'category') {
       buildCategoryTree(data.records || [])
     }
+=======
+>>>>>>> 883115edf03d9c00556132be1a3b8459bb99e146
   } catch (error) {
     tableRows.value = []
     total.value = 0
