@@ -82,16 +82,25 @@ function fmtDiff(v) {
   return (n > 0 ? '+' : '') + n.toFixed(2)
 }
 
+// QueryBar 为配置式组件：只认 :fields，且以中文 label 为 key 回传（详见 components/QueryBar.vue）
+const queryFields = [
+  '交账单号',
+  { label: '状态', type: 'select', options: statusOptions },
+  '司机',
+  '线路',
+  { label: '交账日期', type: 'date', key: 'settleDate' },
+]
+
 async function loadList() {
   loading.value = true
   feedback.value = ''
   try {
-    const res = await post('/tms/settlement/page', {
+    const data = await post('/tms/settlement/page', {
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       filters: queryFilters.value,
     })
-    tableRows.value = (res.data?.records || []).map(r => ({
+    tableRows.value = (data.records || []).map(r => ({
       c0: r.settlementNo,
       c1: r.settleDate,
       c2: r.driverName,
@@ -107,7 +116,7 @@ async function loadList() {
       c12: '操作',
       _raw: r,
     }))
-    total.value = res.data?.total || 0
+    total.value = data.total || 0
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -115,8 +124,21 @@ async function loadList() {
   }
 }
 
-function onSearch(filters) {
-  queryFilters.value = filters || {}
+// QueryBar 以中文 label 为 key 回传，这里映射为后端 filters 字段名
+function onQuery(filters) {
+  const f = {}
+  if (filters['交账单号']) f.settlementNo = filters['交账单号']
+  if (filters['状态']) f.status = filters['状态']
+  if (filters['司机']) f.driverName = filters['司机']
+  if (filters['线路']) f.routeLine = filters['线路']
+  if (filters.settleDate) f.settleDate = filters.settleDate
+  queryFilters.value = f
+  pageNo.value = 1
+  loadList()
+}
+
+function onReset() {
+  queryFilters.value = {}
   pageNo.value = 1
   loadList()
 }
@@ -126,13 +148,19 @@ function onPageChange(p) {
   loadList()
 }
 
+function onPageSizeChange(s) {
+  pageSize.value = s
+  pageNo.value = 1
+  loadList()
+}
+
 async function viewDetail(row) {
   detailOpen.value = true
   detailLoading.value = true
   detail.value = { photos: [], signRecords: [] }
   try {
     const res = await get(`/tms/settlement/${row._raw.settlementId}`)
-    detail.value = res.data || {}
+    detail.value = res || {}
   } catch (e) {
     feedback.value = '加载详情失败：' + (e.message || '')
   } finally {
@@ -211,16 +239,7 @@ onMounted(loadList)
       </div>
     </div>
 
-    <QueryBar @search="onSearch" @reset="() => { queryFilters = {}; loadList() }">
-      <select v-model="queryFilters.status" class="sel">
-        <option value="">全部状态</option>
-        <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
-      <input v-model="queryFilters.driverName" class="inp" placeholder="司机姓名" />
-      <input v-model="queryFilters.settlementNo" class="inp" placeholder="交账单号" />
-      <input v-model="queryFilters.routeLine" class="inp" placeholder="线路" />
-      <input v-model="queryFilters.settleDate" class="inp" type="date" />
-    </QueryBar>
+    <QueryBar :fields="queryFields" :max-visible="queryFields.length" @query="onQuery" @reset="onReset" />
 
     <ProTable
       :columns="columns"
@@ -230,6 +249,7 @@ onMounted(loadList)
       :page-size="pageSize"
       :total="total"
       @page-change="onPageChange"
+      @page-size-change="onPageSizeChange"
     >
       <template #c10="{ row }">
         <span :style="{ color: Number(row._raw.diffAmount) > 0 ? '#e6a23c' : Number(row._raw.diffAmount) < 0 ? '#f56c6c' : '#999' }">

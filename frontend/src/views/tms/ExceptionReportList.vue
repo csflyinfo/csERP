@@ -188,7 +188,7 @@ onMounted(() => { loadRows() })
     <div class="page-ops">
       <button class="btn" @click="loadRows">刷新</button>
     </div>
-    <QueryBar :fields="queryFields" @query="onQuery" @reset="onReset" />
+    <QueryBar :fields="queryFields" :max-visible="queryFields.length" @query="onQuery" @reset="onReset" />
     <div v-if="loading" class="tips-inline"><span>正在加载...</span></div>
     <ProTable title="异常上报列表" :columns="columns" :rows="tableRows"
               :page-no="pageNo" :page-size="pageSize" :total="total"

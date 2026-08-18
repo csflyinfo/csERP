@@ -30,7 +30,7 @@ async function loadTrips() {
       pageNo: 1, pageSize: 100,
       filters: { status: fStatus.value, driverName: fDriverName.value }
     })
-    trips.value = res.data?.records || []
+    trips.value = res.records || []
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -48,7 +48,7 @@ async function loadSignRecords(tripId) {
   signLoading.value = true
   try {
     const res = await get(`/tms/trip/${tripId}/sign-records`)
-    signRows.value = res.data || []
+    signRows.value = res || []
   } catch (e) {
     feedback.value = '签收记录加载失败：' + (e.message || '')
   } finally {
@@ -73,7 +73,7 @@ async function batchVerify() {
   }
   try {
     const res = await post('/tms/sign/batch-verify', { signIds: [...checkedSigns.value], action: 'PASS' })
-    feedback.value = `批量核销 ${res.data?.verified || 0} 条`
+    feedback.value = `批量核销 ${res?.verified || 0} 条`
     checkedSigns.value.clear()
     if (selectedTrip.value) await loadSignRecords(selectedTrip.value.tripId)
   } catch (e) {

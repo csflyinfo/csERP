@@ -70,16 +70,24 @@ const reasonMap = {
 
 const reasonLabel = (code) => reasonMap[code] || code
 
+// QueryBar 为配置式组件：只认 :fields，且以中文 label 为 key 回传（详见 components/QueryBar.vue）
+const queryFields = [
+  '拒收单号',
+  { label: '状态', type: 'select', options: statusOptions },
+  '司机',
+  '客户',
+]
+
 async function loadList() {
   loading.value = true
   feedback.value = ''
   try {
-    const res = await post('/tms/customer-reject/page', {
+    const data = await post('/tms/customer-reject/page', {
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       filters: queryFilters.value,
     })
-    tableRows.value = (res.data?.records || []).map(r => ({
+    tableRows.value = (data.records || []).map(r => ({
       c0: r.rejectNo,
       c1: r.receiptNo,
       c2: r.customerName,
@@ -92,7 +100,7 @@ async function loadList() {
       c9: '操作',
       _raw: r,
     }))
-    total.value = res.data?.total || 0
+    total.value = data.total || 0
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -106,7 +114,7 @@ async function viewDetail(row) {
   feedback.value = ''
   try {
     const res = await get(`/tms/customer-reject/${row._raw.rejectId}`)
-    detail.value = res.data || { details: [], photos: [] }
+    detail.value = res || { details: [], photos: [] }
   } catch (e) {
     feedback.value = '加载详情失败：' + (e.message || '')
   } finally {
@@ -150,7 +158,7 @@ async function submitReceive() {
     const res = await post(`/tms/customer-reject/${receiveRejectId.value}/receive`, {
       items: receiveItems.value.map(it => ({ detailId: it.detailId, actualReceiveQty: it.actualReceiveQty })),
     })
-    const inboundNo = res.data?.rejectInboundNo
+    const inboundNo = res?.rejectInboundNo
     feedback.value = `仓库收货成功，已生成拒收入库单：${inboundNo || '无'}`
     receiveOpen.value = false
     detailOpen.value = false
@@ -179,8 +187,26 @@ function onPageChange(p) {
   loadList()
 }
 
-function onSearch(filters) {
-  queryFilters.value = filters
+function onPageSizeChange(s) {
+  pageSize.value = s
+  pageNo.value = 1
+  loadList()
+}
+
+// QueryBar 以中文 label 为 key 回传，这里映射为后端 filters 字段名
+function onQuery(filters) {
+  const f = {}
+  if (filters['拒收单号']) f.rejectNo = filters['拒收单号']
+  if (filters['状态']) f.status = filters['状态']
+  if (filters['司机']) f.driverName = filters['司机']
+  if (filters['客户']) f.customerName = filters['客户']
+  queryFilters.value = f
+  pageNo.value = 1
+  loadList()
+}
+
+function onReset() {
+  queryFilters.value = {}
   pageNo.value = 1
   loadList()
 }
@@ -197,15 +223,7 @@ onMounted(loadList)
       </div>
     </div>
 
-    <QueryBar @search="onSearch" @reset="() => { queryFilters = {}; loadList() }">
-      <select v-model="queryFilters.status" class="sel">
-        <option value="">全部状态</option>
-        <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
-      <input v-model="queryFilters.driverName" class="inp" placeholder="司机姓名" />
-      <input v-model="queryFilters.customerName" class="inp" placeholder="客户名称" />
-      <input v-model="queryFilters.rejectNo" class="inp" placeholder="拒收单号" />
-    </QueryBar>
+    <QueryBar :fields="queryFields" @query="onQuery" @reset="onReset" />
 
     <div v-if="feedback" class="feedback">{{ feedback }}</div>
 
@@ -217,6 +235,7 @@ onMounted(loadList)
       :page-size="pageSize"
       :total="total"
       @page-change="onPageChange"
+      @page-size-change="onPageSizeChange"
     >
       <template #c8="{ row }">
         <span :class="['tag', statusMap[row._raw.status]?.cls || 'tag-gray']">{{ row.c8 }}</span>

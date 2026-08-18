@@ -2,8 +2,9 @@
 import { ref, watch } from 'vue'
 
 const props = defineProps({
-  // fields 可以是字符串（简单文本框）或对象 { label, type?, options?, keyFrom?, keyTo? }
-  //   type: 'select' | 'dateRange' | 'text'（默认）
+  // fields 可以是字符串（简单文本框）或对象 { label, type?, options?, key?, keyFrom?, keyTo? }
+  //   type: 'select' | 'dateRange' | 'date' | 'text'（默认）
+  //   key: 覆盖回传字段名（默认取 label 去空格/冒号后的结果）
   fields: { type: Array, default: () => ['关键字', '状态'] },
   // 初始默认值 { fieldKey: value }；日期段用 keyFrom/keyTo 直接对应
   defaults: { type: Object, default: () => ({}) },
@@ -16,6 +17,7 @@ const values = ref({ ...props.defaults })
 
 function labelOf(f) { return typeof f === 'string' ? f : (f?.label || '') }
 function fieldKey(f) {
+  if (typeof f === 'object' && f?.key) return f.key
   return labelOf(f).replace(/[\s/：:]+/g, '_')
 }
 function optionsOf(f) {
@@ -72,6 +74,7 @@ watch(() => props.fields, () => reset())
             {{ typeof opt === 'object' ? opt.label : opt }}
           </option>
         </select>
+        <input v-else-if="typeOf(f) === 'date'" type="date" v-model="values[fieldKey(f)]" @keydown.enter="query" />
         <input v-else v-model="values[fieldKey(f)]" :placeholder="labelOf(f)" @keydown.enter="query" />
       </div>
     </template>

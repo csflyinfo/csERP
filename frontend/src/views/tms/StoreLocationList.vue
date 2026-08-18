@@ -61,16 +61,23 @@ function fmtCoord(lat, lng) {
   return `${lat}, ${lng}`
 }
 
+// QueryBar 为配置式组件：只认 :fields，且以中文 label 为 key 回传（详见 components/QueryBar.vue）
+const queryFields = [
+  { label: '状态', type: 'select', options: statusOptions },
+  '客户',
+  '提交司机',
+]
+
 async function loadList() {
   loading.value = true
   feedback.value = ''
   try {
-    const res = await post('/tms/store-location/page', {
+    const data = await post('/tms/store-location/page', {
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       filters: queryFilters.value,
     })
-    tableRows.value = (res.data?.records || []).map(r => ({
+    tableRows.value = (data.records || []).map(r => ({
       c0: r.customerCode || '-',
       c1: r.customerName,
       c2: fmtCoord(r.oldLat, r.oldLng),
@@ -81,7 +88,7 @@ async function loadList() {
       c7: '操作',
       _raw: r,
     }))
-    total.value = res.data?.total || 0
+    total.value = data.total || 0
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -89,8 +96,19 @@ async function loadList() {
   }
 }
 
-function onSearch(filters) {
-  queryFilters.value = filters || {}
+// QueryBar 以中文 label 为 key 回传，这里映射为后端 filters 字段名
+function onQuery(filters) {
+  const f = {}
+  if (filters['状态']) f.status = filters['状态']
+  if (filters['客户']) f.customerName = filters['客户']
+  if (filters['提交司机']) f.driverName = filters['提交司机']
+  queryFilters.value = f
+  pageNo.value = 1
+  loadList()
+}
+
+function onReset() {
+  queryFilters.value = {}
   pageNo.value = 1
   loadList()
 }
@@ -100,13 +118,19 @@ function onPageChange(p) {
   loadList()
 }
 
+function onPageSizeChange(s) {
+  pageSize.value = s
+  pageNo.value = 1
+  loadList()
+}
+
 async function viewDetail(row) {
   detailOpen.value = true
   detailLoading.value = true
   detail.value = {}
   try {
     const res = await get(`/tms/store-location/${row._raw.logId}`)
-    detail.value = res.data || {}
+    detail.value = res || {}
   } catch (e) {
     feedback.value = '加载详情失败：' + (e.message || '')
   } finally {
@@ -163,14 +187,7 @@ onMounted(loadList)
       <button class="btn" @click="loadList">刷新</button>
     </div>
 
-    <QueryBar @search="onSearch" @reset="() => { queryFilters = {}; loadList() }">
-      <select v-model="queryFilters.status" class="sel">
-        <option value="">全部状态</option>
-        <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
-      <input v-model="queryFilters.customerName" class="inp" placeholder="客户名称" />
-      <input v-model="queryFilters.driverName" class="inp" placeholder="提交司机" />
-    </QueryBar>
+    <QueryBar :fields="queryFields" @query="onQuery" @reset="onReset" />
 
     <ProTable
       :columns="columns"
@@ -180,6 +197,7 @@ onMounted(loadList)
       :page-size="pageSize"
       :total="total"
       @page-change="onPageChange"
+      @page-size-change="onPageSizeChange"
     >
       <template #c6="{ row }">
         <span :class="['tag', statusMap[row._raw.status]?.cls || 'tag-gray']">{{ row.c6 }}</span>

@@ -67,6 +67,14 @@ const statusMap = {
   REDISPATCHED: { text: '已重新派送', cls: 'tag-green' },
 }
 
+// QueryBar 为配置式组件：只认 :fields，且以中文 label 为 key 回传（详见 components/QueryBar.vue）
+const queryFields = [
+  '改派返仓单号',
+  { label: '状态', type: 'select', options: statusOptions },
+  '司机',
+  '客户',
+]
+
 const reasonMap = {
   CUSTOMER_ABSENT: '客户不在',
   ADDRESS_ERROR: '地址错误',
@@ -86,7 +94,7 @@ async function loadList() {
       pageSize: pageSize.value,
       filters: queryFilters.value,
     })
-    tableRows.value = (res.data?.records || []).map(r => ({
+    tableRows.value = (res.records || []).map(r => ({
       c0: r.returnNo,
       c1: r.receiptNo,
       c2: r.customerName,
@@ -99,7 +107,7 @@ async function loadList() {
       c9: '操作',
       _raw: r,
     }))
-    total.value = res.data?.total || 0
+    total.value = res.total || 0
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -113,7 +121,7 @@ async function viewDetail(row) {
   feedback.value = ''
   try {
     const res = await get(`/tms/reschedule-return/${row._raw.returnId}`)
-    detail.value = res.data || { details: [], photos: [] }
+    detail.value = res || { details: [], photos: [] }
   } catch (e) {
     feedback.value = '加载详情失败：' + (e.message || '')
   } finally {
@@ -165,7 +173,7 @@ async function openPool() {
   feedback.value = ''
   try {
     const res = await post('/tms/reschedule-return/pool', { pageNo: 1, pageSize: 100, filters: {} })
-    poolRows.value = res.data?.records || []
+    poolRows.value = res.records || []
   } catch (e) {
     feedback.value = '加载改派池失败：' + (e.message || '')
   } finally {
@@ -190,8 +198,26 @@ function onPageChange(p) {
   loadList()
 }
 
-function onSearch(filters) {
-  queryFilters.value = filters
+function onPageSizeChange(s) {
+  pageSize.value = s
+  pageNo.value = 1
+  loadList()
+}
+
+// QueryBar 以中文 label 为 key 回传，这里映射为后端 filters 字段名
+function onQuery(filters) {
+  const f = {}
+  if (filters['改派返仓单号']) f.returnNo = filters['改派返仓单号']
+  if (filters['状态']) f.status = filters['状态']
+  if (filters['司机']) f.driverName = filters['司机']
+  if (filters['客户']) f.customerName = filters['客户']
+  queryFilters.value = f
+  pageNo.value = 1
+  loadList()
+}
+
+function onReset() {
+  queryFilters.value = {}
   pageNo.value = 1
   loadList()
 }
@@ -209,15 +235,7 @@ onMounted(loadList)
       </div>
     </div>
 
-    <QueryBar @search="onSearch" @reset="() => { queryFilters = {}; loadList() }">
-      <select v-model="queryFilters.status" class="sel">
-        <option value="">全部状态</option>
-        <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
-      <input v-model="queryFilters.driverName" class="inp" placeholder="司机姓名" />
-      <input v-model="queryFilters.customerName" class="inp" placeholder="客户名称" />
-      <input v-model="queryFilters.returnNo" class="inp" placeholder="改派返仓单号" />
-    </QueryBar>
+    <QueryBar :fields="queryFields" @query="onQuery" @reset="onReset" />
 
     <div v-if="feedback" class="feedback">{{ feedback }}</div>
 
@@ -229,6 +247,7 @@ onMounted(loadList)
       :page-size="pageSize"
       :total="total"
       @page-change="onPageChange"
+      @page-size-change="onPageSizeChange"
     >
       <template #c8="{ row }">
         <span :class="['tag', statusMap[row._raw.status]?.cls || 'tag-gray']">{{ row.c8 }}</span>

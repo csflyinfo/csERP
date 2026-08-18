@@ -50,16 +50,25 @@ const statusMap = {
   WAREHOUSED: { text: '已入库', cls: 'tag-green' },
 }
 
+// QueryBar 为配置式组件：只认 :fields，且以中文 label 为 key 回传（详见 components/QueryBar.vue）
+const queryFields = [
+  '退货单号',
+  { label: '状态', type: 'select', options: statusOptions },
+  '司机',
+  '客户',
+  { label: '退货日期', type: 'dateRange', keyFrom: 'startDate', keyTo: 'endDate' },
+]
+
 async function loadList() {
   loading.value = true
   feedback.value = ''
   try {
-    const res = await post('/tms/driver-return/page', {
+    const data = await post('/tms/driver-return/page', {
       pageNo: pageNo.value,
       pageSize: pageSize.value,
       filters: queryFilters.value,
     })
-    tableRows.value = (res.data?.records || []).map(r => ({
+    tableRows.value = (data.records || []).map(r => ({
       c0: r.driverReturnNo,
       c1: r.returnApplyNo,
       c2: r.returnDate,
@@ -73,7 +82,7 @@ async function loadList() {
       c10: '查看详情',
       _raw: r,
     }))
-    total.value = res.data?.total || 0
+    total.value = data.total || 0
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -87,7 +96,7 @@ async function viewDetail(row) {
   feedback.value = ''
   try {
     const res = await get(`/tms/driver-return/${row._raw.driverReturnId}`)
-    detail.value = res.data || { details: [], photos: [], inbounds: [] }
+    detail.value = res || { details: [], photos: [], inbounds: [] }
   } catch (e) {
     feedback.value = '加载详情失败：' + (e.message || '')
   } finally {
@@ -100,10 +109,35 @@ function onPageChange(p) {
   loadList()
 }
 
-function onSearch(filters) {
-  queryFilters.value = filters
+function onPageSizeChange(s) {
+  pageSize.value = s
   pageNo.value = 1
   loadList()
+}
+
+// QueryBar 以中文 label 为 key 回传，这里映射为后端 filters 字段名
+function onQuery(filters) {
+  const f = {}
+  if (filters['退货单号']) f.driverReturnNo = filters['退货单号']
+  if (filters['状态']) f.status = filters['状态']
+  if (filters['司机']) f.driverName = filters['司机']
+  if (filters['客户']) f.customerName = filters['客户']
+  if (filters.startDate) f.startDate = filters.startDate
+  if (filters.endDate) f.endDate = filters.endDate
+  queryFilters.value = f
+  pageNo.value = 1
+  loadList()
+}
+
+function onReset() {
+  queryFilters.value = {}
+  pageNo.value = 1
+  loadList()
+}
+
+// 模板里不能直接用 window（不在 Vue 模板全局白名单内），需经方法透出
+function openPhoto(url) {
+  if (url) window.open(url, '_blank')
 }
 
 onMounted(loadList)
@@ -118,17 +152,7 @@ onMounted(loadList)
       </div>
     </div>
 
-    <QueryBar @search="onSearch" @reset="() => { queryFilters = {}; loadList() }">
-      <select v-model="queryFilters.status" class="sel">
-        <option value="">全部状态</option>
-        <option v-for="o in statusOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-      </select>
-      <input v-model="queryFilters.driverName" class="inp" placeholder="司机姓名" />
-      <input v-model="queryFilters.customerName" class="inp" placeholder="客户名称" />
-      <input v-model="queryFilters.driverReturnNo" class="inp" placeholder="退货单号" />
-      <input v-model="queryFilters.startDate" class="inp" type="date" placeholder="开始日期" />
-      <input v-model="queryFilters.endDate" class="inp" type="date" placeholder="结束日期" />
-    </QueryBar>
+    <QueryBar :fields="queryFields" :max-visible="queryFields.length" @query="onQuery" @reset="onReset" />
 
     <div v-if="feedback" class="feedback">{{ feedback }}</div>
 
@@ -140,6 +164,7 @@ onMounted(loadList)
       :page-size="pageSize"
       :total="total"
       @page-change="onPageChange"
+      @page-size-change="onPageSizeChange"
     >
       <template #c9="{ row }">
         <span :class="['tag', statusMap[row._raw.status]?.cls || 'tag-gray']">{{ row.c9 }}</span>
@@ -213,7 +238,7 @@ onMounted(loadList)
             <h4>现场照片 ({{ detail.photos?.length || 0 }})</h4>
             <div v-if="detail.photos?.length" class="photo-grid">
               <div v-for="p in detail.photos" :key="p.photoId" class="photo-item">
-                <img :src="p.photoUrl" :alt="p.photoType" @click="window.open(p.photoUrl)" />
+                <img :src="p.photoUrl" :alt="p.photoType" @click="openPhoto(p.photoUrl)" />
                 <span>{{ p.photoType }}</span>
               </div>
             </div>
