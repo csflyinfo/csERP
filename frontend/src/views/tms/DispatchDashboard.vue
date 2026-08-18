@@ -24,7 +24,7 @@ async function loadList() {
   loading.value = true
   try {
     const res = await post('/tms/dispatch/monitor', { status: filterStatus.value })
-    list.value = res.data || []
+    list.value = res || []
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {

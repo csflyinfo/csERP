@@ -34,7 +34,7 @@ async function loadList() {
   loading.value = true
   try {
     const res = await post('/tms/dispatch/monitor', { status: filterStatus.value })
-    list.value = res.data || []
+    list.value = res || []
   } catch (e) {
     feedback.value = '加载失败：' + (e.message || '')
   } finally {
@@ -48,7 +48,7 @@ async function showTrack(row) {
   trackLoading.value = true
   try {
     const res = await get(`/tms/dispatch/${row.dispatchId}/track`)
-    trackRows.value = res.data || []
+    trackRows.value = res || []
   } catch (e) {
     feedback.value = '轨迹加载失败：' + (e.message || '')
   } finally {
@@ -61,7 +61,7 @@ async function showSignRecords(row) {
   signLoading.value = true
   try {
     const res = await get(`/tms/trip/${row.tripId || row.dispatchId}/sign-records`)
-    signRows.value = res.data || []
+    signRows.value = res || []
   } catch (e) {
     feedback.value = '签收记录加载失败：' + (e.message || '')
   } finally {
