@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -32,10 +33,13 @@ public class TmsDispatchController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final TmsNotifyService notifyService;
 
-    public TmsDispatchController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public TmsDispatchController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                 TmsNotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.notifyService = notifyService;
     }
 
     /**
@@ -267,6 +271,11 @@ public class TmsDispatchController {
                     """, dispatchId);
         }
         TmsUtil.log(jdbcTemplate, "tms.dispatch", "ASSIGN", dispatchId, "调度单分配司机：" + driverName);
+
+        // 通知司机有新任务。放在业务写库之后，且发送服务内部吞异常，
+        // 不会因为发消息失败导致派单回滚（本方法有 @Transactional）
+        notifyNewTask(dispatchId, driverId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("dispatchId", dispatchId);
         result.put("driverName", driverName);
@@ -373,6 +382,42 @@ public class TmsDispatchController {
                 "total", total, "completed", completed, "delivering", delivering, "assigned", assigned,
                 "loadedQty", loadedQty, "storeCount", storeCount
         ));
+    }
+
+    /**
+     * 给司机发「新任务」消息。
+     *
+     * 标题里带上门店数与单量：司机在通知栏一眼就能判断今天工作量，
+     * 不必点进 APP 逐单数。查不到调度单信息时用兜底文案，不阻断派单。
+     */
+    private void notifyNewTask(String dispatchId, String driverId) {
+        String dispatchNo = dispatchId;
+        String summary = "";
+        try {
+            List<Map<String, Object>> d = TmsUtil.queryCamel(jdbcTemplate, """
+                    SELECT dispatch_no, dispatch_date, store_count, loaded_qty, return_qty, vehicle_plate
+                      FROM tms_dispatch WHERE dispatch_id = ?
+                    """, dispatchId);
+            if (!d.isEmpty()) {
+                Map<String, Object> r = d.get(0);
+                if (!TmsUtil.str(r.get("dispatchNo")).isEmpty()) dispatchNo = TmsUtil.str(r.get("dispatchNo"));
+                summary = "配送日期 " + TmsUtil.str(r.get("dispatchDate"))
+                        + "，门店 " + TmsUtil.toInt(r.get("storeCount")) + " 家"
+                        + "，配送 " + TmsUtil.toBd(r.get("loadedQty")) + " 件";
+                // 取货件数为 0 时不显示，避免「取货 0 件」这种噪音
+                if (TmsUtil.toBd(r.get("returnQty")).signum() > 0) {
+                    summary += "，取货 " + TmsUtil.toBd(r.get("returnQty")) + " 件";
+                }
+                summary += "，车辆 " + TmsUtil.str(r.get("vehiclePlate"));
+            }
+        } catch (Exception ignore) {
+            // 摘要拿不到也要把消息发出去，司机至少知道有新任务
+        }
+        notifyService.notifyDriver(driverId, TmsNotifyService.TYPE_NEW_TASK,
+                TmsNotifyService.LEVEL_IMPORTANT,
+                "新配送任务 " + dispatchNo,
+                summary.isEmpty() ? "您有一张新的配送任务，请及时查看。" : summary,
+                "DISPATCH", dispatchId, dispatchNo);
     }
 
     private String resolveDispatchStatus(String status) {

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/launch_service.dart';
@@ -21,6 +22,7 @@ import '../return/return_list_page.dart';
 import '../return/warehouse_return_page.dart';
 import '../settlement/settlement_page.dart';
 import 'history_page.dart';
+import 'notification_page.dart';
 import 'profile_page.dart';
 
 /// 今日工作台 + 底部 Tab（对齐原型 Screen B）。
@@ -66,6 +68,61 @@ class _HomePageState extends ConsumerState<HomePage> {
     final val = tasks.value;
     if (val == null) return 0;
     return val.details.where((d) => d.isReturn && d.status == 'PENDING').length;
+  }
+}
+
+/// 顶栏消息铃铛：未读角标 + 进入消息中心。
+///
+/// 独立成 ConsumerWidget 而不是写在 _TodayContent 里：
+/// 未读数每分钟轮询一次，若与工作台同一个 build 作用域，
+/// 每次轮询都会重建整张任务列表，长列表下会有可感知的卡顿。
+class _NotifyBell extends ConsumerWidget {
+  const _NotifyBell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(notifyUnreadProvider).value;
+    final count = unread?.unreadCount ?? 0;
+    final urgent = (unread?.urgentCount ?? 0) > 0;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        IconButton(
+          icon: Icon(
+            count > 0 ? Icons.notifications_active : Icons.notifications_none,
+            color: Colors.white,
+          ),
+          tooltip: '消息中心',
+          onPressed: () {
+            final navigator = Navigator.of(context);
+            navigator
+                .push(MaterialPageRoute(builder: (_) => const NotificationPage()))
+                .then((_) => ref.read(notifyUnreadProvider.notifier).refresh());
+          },
+        ),
+        if (count > 0)
+          Positioned(
+            right: 6,
+            top: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              constraints: const BoxConstraints(minWidth: 15),
+              decoration: BoxDecoration(
+                // 有紧急消息时用更深的红，与普通未读区分
+                color: urgent ? const Color(0xFFB91C1C) : TmsTheme.bad,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white, width: 1),
+              ),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -162,8 +219,8 @@ class _TodayContent extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('今日工作台'),
         actions: [
-          const Icon(Icons.notifications_none, color: Colors.white),
-          const SizedBox(width: 12),
+          const _NotifyBell(),
+          const SizedBox(width: 4),
           Padding(padding: const EdgeInsets.only(right: 16), child: Center(child: Text(driverName, style: const TextStyle(color: Colors.white, fontSize: 13)))),
         ],
       ),

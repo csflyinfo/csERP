@@ -5,6 +5,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.sales.RejectInboundController;
+import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -40,13 +41,16 @@ public class TmsCustomerRejectController {
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
     private final RejectInboundController rejectInboundController;
+    private final TmsNotifyService notifyService;
 
     public TmsCustomerRejectController(JdbcTemplate jdbcTemplate,
                                        BillNoGenerator billNoGen,
-                                       RejectInboundController rejectInboundController) {
+                                       RejectInboundController rejectInboundController,
+                                       TmsNotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.rejectInboundController = rejectInboundController;
+        this.notifyService = notifyService;
     }
 
     // ========================================================================
@@ -452,6 +456,9 @@ public class TmsCustomerRejectController {
 
         TmsUtil.log(jdbcTemplate, "tms.customer-reject", "RECEIVE", rejectNo,
                 "客户拒收单仓库收货：" + receiptNo + " → JSRK：" + (inboundNo == null ? "未生成" : inboundNo));
+        notifyRejectDriver(rejectId, rejectNo, TmsNotifyService.LEVEL_NORMAL,
+                "拒收货物已入库 " + rejectNo,
+                "仓库已完成收货确认，收货单 " + receiptNo + "，共 " + totalReceiveQty + " 件。");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("rejectId", rejectId);
         result.put("rejectNo", rejectNo);
@@ -493,6 +500,27 @@ public class TmsCustomerRejectController {
         jdbcTemplate.update("UPDATE tms_customer_reject SET status='COMPLETED' WHERE reject_id=?", rejectId);
         TmsUtil.log(jdbcTemplate, "tms.customer-reject", "COMPLETE", rejectNo,
                 "客户拒收单完结：" + rejectNo);
+        notifyRejectDriver(rejectId, rejectNo, TmsNotifyService.LEVEL_NORMAL,
+                "拒收单已完结 " + rejectNo,
+                "拒收入库已审核通过，该单据流程结束，无需再跟进。");
         return ApiResponse.ok(Map.of("rejectId", rejectId, "rejectNo", rejectNo, "status", "COMPLETED"));
+    }
+
+    // ==================== 通知 ====================
+
+    /**
+     * 向拒收单的上报司机推送状态回执。
+     * driver_id 单独查一次，不并入业务 SQL 的 SELECT 列，避免业务查询承担通知职责后被误改。
+     */
+    private void notifyRejectDriver(String rejectId, String rejectNo, String level,
+                                    String title, String content) {
+        try {
+            List<String> ids = jdbcTemplate.queryForList(
+                    "SELECT driver_id FROM tms_customer_reject WHERE reject_id = ?", String.class, rejectId);
+            if (ids.isEmpty()) return;
+            notifyService.notifyDriver(ids.get(0), TmsNotifyService.TYPE_REJECT_RESULT,
+                    level, title, content, "REJECT", rejectId, rejectNo);
+        } catch (Exception ignore) {
+        }
     }
 }

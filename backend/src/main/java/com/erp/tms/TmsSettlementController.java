@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -36,10 +37,13 @@ public class TmsSettlementController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final TmsNotifyService notifyService;
 
-    public TmsSettlementController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public TmsSettlementController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                   TmsNotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.notifyService = notifyService;
     }
 
     // ========================================================================
@@ -415,6 +419,10 @@ public class TmsSettlementController {
                 """, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(), auditRemark, settlementId);
         TmsUtil.log(jdbcTemplate, "tms.settlement", "AUDIT", settlementNo,
                 "交账单审核通过：" + settlementNo + (auditRemark.isEmpty() ? "" : "（" + auditRemark + "）"));
+        // 回执司机：交账关系到司机自己的钱，审核结果必须主动告知
+        notifySettleResult(settlementId, settlementNo, TmsNotifyService.LEVEL_NORMAL,
+                "交账已通过 " + settlementNo,
+                "您的交账单已审核通过。" + (auditRemark.isEmpty() ? "" : "备注：" + auditRemark));
         return ApiResponse.ok(Map.of("settlementId", settlementId, "settlementNo", settlementNo, "status", "APPROVED"));
     }
 
@@ -442,6 +450,29 @@ public class TmsSettlementController {
                 """, diffReason, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(), settlementId);
         TmsUtil.log(jdbcTemplate, "tms.settlement", "DISPUTE", settlementNo,
                 "交账单标记差异争议：" + settlementNo + "（" + diffReason + "）");
+        // 差异争议用 URGENT：司机需要尽快核实金额，拖过当天现金流水就查不清了
+        notifySettleResult(settlementId, settlementNo, TmsNotifyService.LEVEL_URGENT,
+                "交账存在差异 " + settlementNo,
+                "财务标记差异争议，请尽快核实。原因：" + diffReason);
         return ApiResponse.ok(Map.of("settlementId", settlementId, "settlementNo", settlementNo, "status", "DISPUTED"));
+    }
+
+    /**
+     * 给交账单所属司机发结果回执。
+     *
+     * 单独查 driver_id：audit/dispute 的业务 SQL 只关心状态流转，
+     * 不该为了发消息去扩列。
+     */
+    private void notifySettleResult(String settlementId, String settlementNo, String level,
+                                    String title, String content) {
+        try {
+            List<String> ids = jdbcTemplate.queryForList(
+                    "SELECT driver_id FROM tms_settlement WHERE settlement_id = ?", String.class, settlementId);
+            if (ids.isEmpty()) return;
+            notifyService.notifyDriver(ids.get(0), TmsNotifyService.TYPE_SETTLE_RESULT,
+                    level, title, content, "SETTLEMENT", settlementId, settlementNo);
+        } catch (Exception ignore) {
+            // 回执失败不影响交账单状态
+        }
     }
 }

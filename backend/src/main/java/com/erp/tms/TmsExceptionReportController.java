@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -44,10 +45,13 @@ public class TmsExceptionReportController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final TmsNotifyService notifyService;
 
-    public TmsExceptionReportController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public TmsExceptionReportController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                        TmsNotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.notifyService = notifyService;
     }
 
     /**
@@ -214,6 +218,11 @@ public class TmsExceptionReportController {
                         + (customerName.isEmpty() ? "" : "，客户：" + customerName)
                         + "，照片：" + savedPhotos + " 张");
 
+        // 反向通知调度员：司机在路上出问题，调度员必须主动看到，
+        // 而不是等司机打电话或自己刷异常列表
+        notifyDispatchers(reportNo, exceptionType, severity, driverName, customerName,
+                TmsUtil.str(body.get("description")), reportId);
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reportId", reportId);
         result.put("reportNo", reportNo);
@@ -361,6 +370,13 @@ public class TmsExceptionReportController {
                 TmsUtil.str(b.get("handleResult")), reportId);
         if (n > 0) {
             TmsUtil.log(jdbcTemplate, "tms.exception", "HANDLE", reportNo, "调度员接手处理异常");
+            // 回执司机：司机上报后最想知道的是「有人管了没」，
+            // 只在真正状态流转时发，重复点击不会刷屏
+            notifyReporter(reportId, reportNo, TmsNotifyService.LEVEL_NORMAL,
+                    "异常已受理 " + reportNo,
+                    "调度员 " + handler + " 已接手处理您上报的异常。"
+                            + (TmsUtil.str(b.get("handleResult")).isEmpty()
+                               ? "" : "处理说明：" + TmsUtil.str(b.get("handleResult"))));
         }
         return ApiResponse.ok(Map.of("reportId", reportId, "status", "HANDLING", "updated", n));
     }
@@ -394,12 +410,63 @@ public class TmsExceptionReportController {
                  WHERE report_id=?
                 """, handleResult, now, handler, now, reportId);
         TmsUtil.log(jdbcTemplate, "tms.exception", "CLOSE", reportNo, "异常关闭：" + handleResult);
+        // 回执司机处理结论。用 IMPORTANT：结论往往含「自行垫付」「改约明日」等
+        // 需要司机执行的动作，不能和普通通知一样被划走
+        notifyReporter(reportId, reportNo, TmsNotifyService.LEVEL_IMPORTANT,
+                "异常已处理完毕 " + reportNo,
+                "处理结论：" + handleResult);
         return ApiResponse.ok(Map.of("reportId", reportId, "status", "CLOSED"));
     }
 
     // ========================================================================
     // 内部方法
     // ========================================================================
+
+    /**
+     * 给上报人（司机）发处理回执。
+     *
+     * driver_id 在此单独查一次而非从调用处传：handle/close 原本只 SELECT 了
+     * report_id/report_no/status，为发消息去扩大它们的查询列会让业务 SQL 承担
+     * 通知的职责，后续维护者容易误删。
+     */
+    private void notifyReporter(String reportId, String reportNo, String level,
+                                String title, String content) {
+        try {
+            List<String> ids = jdbcTemplate.queryForList(
+                    "SELECT driver_id FROM tms_exception_report WHERE report_id = ?", String.class, reportId);
+            if (ids.isEmpty()) return;
+            notifyService.notifyDriver(ids.get(0), TmsNotifyService.TYPE_EXCEPTION_REPLY,
+                    level, title, content, "EXCEPTION", reportId, reportNo);
+        } catch (Exception ignore) {
+            // 回执失败不影响异常单状态流转
+        }
+    }
+
+    /**
+     * 把司机上报的异常推给调度员。
+     *
+     * 严重度直接映射消息级别：URGENT 的异常（车辆故障、交通事故）
+     * 在调度端要能置顶显示，否则和「包装破损」混在一起就失去了预警价值。
+     */
+    private void notifyDispatchers(String reportNo, String exceptionType, String severity,
+                                   String driverName, String customerName,
+                                   String description, String reportId) {
+        try {
+            List<String> users = notifyService.findDispatcherUsernames();
+            if (users.isEmpty()) return;
+            String level = "URGENT".equals(severity) ? TmsNotifyService.LEVEL_URGENT
+                    : TmsNotifyService.LEVEL_IMPORTANT;
+            String title = "司机异常上报：" + typeName(exceptionType)
+                    + (driverName.isEmpty() ? "" : "（" + driverName + "）");
+            StringBuilder content = new StringBuilder("单号 " + reportNo);
+            if (!customerName.isEmpty()) content.append("，客户 ").append(customerName);
+            if (!description.isEmpty()) content.append("，说明：").append(description);
+            notifyService.notifyUsers(users, TmsNotifyService.TYPE_EXCEPTION_ALERT,
+                    level, title, content.toString(), "EXCEPTION", reportId, reportNo);
+        } catch (Exception ignore) {
+            // 告警失败不影响司机上报成功
+        }
+    }
 
     /** 异常上报配置项（来自 sys_param_runtime，读取失败时用内置默认值兜底）。 */
     private record ExceptionConfig(boolean photoRequired, Set<String> urgentTypes) {}

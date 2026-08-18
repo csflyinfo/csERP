@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -37,10 +38,13 @@ public class TmsRescheduleReturnController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final TmsNotifyService notifyService;
 
-    public TmsRescheduleReturnController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public TmsRescheduleReturnController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                         TmsNotifyService notifyService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.notifyService = notifyService;
     }
 
     // ========================================================================
@@ -382,6 +386,9 @@ public class TmsRescheduleReturnController {
 
         TmsUtil.log(jdbcTemplate, "tms.reschedule-return", "CHECK", returnId,
                 "ERP 验收改派返仓单：" + receiptNo + " → 发货单回调度池");
+        notifyReturnDriver(returnId, TmsNotifyService.LEVEL_NORMAL,
+                "返仓货物已验收",
+                "发货单 " + receiptNo + " 的返仓货物已完成验收，将重新安排配送。");
         return ApiResponse.ok(Map.of("returnId", returnId, "status", "CHECKED", "receiptNo", receiptNo));
     }
 
@@ -426,6 +433,28 @@ public class TmsRescheduleReturnController {
         jdbcTemplate.update("UPDATE sales_receipt SET dispatch_status='UNDISPATCHED', dispatch_id=NULL, trip_id=NULL WHERE receipt_no=?", receiptNo);
         TmsUtil.log(jdbcTemplate, "tms.reschedule-return", "REDISPATCH", returnId,
                 "改派返仓单重新纳入调度：" + receiptNo);
+        notifyReturnDriver(returnId, TmsNotifyService.LEVEL_NORMAL,
+                "返仓单已重新纳入调度",
+                "发货单 " + receiptNo + " 已回到调度池，等待重新派单。");
         return ApiResponse.ok(Map.of("returnId", returnId, "status", "REDISPATCHED", "receiptNo", receiptNo));
+    }
+
+    // ==================== 通知 ====================
+
+    /**
+     * 向改派返仓单的上报司机推送处理进度。
+     * return_no 作为业务单号一并带上，便于 APP 侧展示与追溯。
+     */
+    private void notifyReturnDriver(String returnId, String level, String title, String content) {
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT driver_id, return_no FROM tms_reschedule_return WHERE return_id = ?", returnId);
+            if (rows.isEmpty()) return;
+            String driverId = TmsUtil.str(rows.get(0).get("driver_id"));
+            String returnNo = TmsUtil.str(rows.get(0).get("return_no"));
+            notifyService.notifyDriver(driverId, TmsNotifyService.TYPE_RESCHEDULE_RESULT,
+                    level, title, content, "RESCHEDULE", returnId, returnNo);
+        } catch (Exception ignore) {
+        }
     }
 }
