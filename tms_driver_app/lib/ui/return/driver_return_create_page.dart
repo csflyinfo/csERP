@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/driver_return.dart';
 import '../../providers/driver_return_provider.dart';
@@ -210,7 +210,12 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) setState(() => _photos.add(photo));
   }
 
@@ -233,11 +238,10 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
     }
     setState(() => _submitting = true);
     try {
-      final photoUrlList = <String>[];
-      for (final p in _photos) {
-        final upResult = await ApiService.instance.uploadImage(File(p.path), bizType: 'RETURN');
-        photoUrlList.add(upResult['url'] as String);
-      }
+      final photoUrlList = await ApiService.instance.uploadImagesOrDefer(
+        _photos.map((p) => File(p.path)).toList(),
+        bizType: 'RETURN',
+      );
       final result = await ref.read(createReturnProvider(CreateReturnArgs(
         customerCode: _customerCodeCtrl.text.trim(),
         customerName: _customerCtrl.text.trim(),
@@ -250,7 +254,13 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
         photos: photoUrlList,
       )).future);
       final applyNo = result['applyNo']?.toString() ?? '';
-      _toast('退货创建成功：$applyNo，物流状态=司机已回收');
+      // 离线入队时后端还没生成退货单号，也还没置成「司机已回收」，
+      // 照常提示会显示空单号并谎报物流状态。
+      if (result['_offline'] == true) {
+        _toast('当前无网络，退货已暂存本地，联网后自动上传');
+      } else {
+        _toast('退货创建成功：$applyNo，物流状态=司机已回收');
+      }
       ref.invalidate(returnTaskListProvider);
       ref.invalidate(todayTasksProvider);
       if (mounted) Navigator.pop(context, true);

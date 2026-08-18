@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/store_location.dart';
 import '../../providers/store_location_provider.dart';
@@ -109,7 +110,12 @@ class _StoreLocationPageState extends ConsumerState<StoreLocationPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) setState(() => _photo = photo);
   }
 
@@ -131,9 +137,10 @@ class _StoreLocationPageState extends ConsumerState<StoreLocationPage> {
 
     setState(() => _submitting = true);
     try {
-      // 先上传门头照获得 URL
+      // 先上传门头照获得 URL；离线时返回本地路径占位，
+      // 随主单一起入队，由 SyncService 在重放前补传。
       final uploadResult = await ApiService.instance
-          .uploadImage(File(_photo!.path), bizType: 'STORE');
+          .uploadImageOrDefer(File(_photo!.path), bizType: 'STORE');
       final photoUrl = uploadResult['url'] as String;
 
       final result = await ref.read(storeLocationSubmitProvider(
@@ -150,7 +157,13 @@ class _StoreLocationPageState extends ConsumerState<StoreLocationPage> {
       ).future);
 
       final name = result['customerName']?.toString() ?? '';
-      _toast('定位修正申请已提交：$name，待ERP审核');
+      // 离线入队时后端还没受理，不能说「待ERP审核」——
+      // 司机会以为已经报上去了，之后发现定位没改还以为是审核卡住。
+      if (result['_offline'] == true) {
+        _toast('当前无网络，定位修正已暂存本地，联网后自动上传');
+      } else {
+        _toast('定位修正申请已提交：$name，待ERP审核');
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       _toast('提交失败：${e.toString().replaceFirst("Exception: ", "")}');

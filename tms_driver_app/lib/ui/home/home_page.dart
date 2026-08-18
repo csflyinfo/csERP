@@ -4,9 +4,15 @@ import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../services/connectivity_service.dart';
+import '../../services/launch_service.dart';
+import '../../services/sync_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
+import '../delivery/arrive_page.dart';
 import '../delivery/delivery_sign_page.dart';
+import '../delivery/exception_list_page.dart';
+import '../delivery/exception_report_page.dart';
 import '../delivery/loading_confirm_page.dart';
 import '../return/customer_reject_page.dart';
 import '../return/driver_return_create_page.dart';
@@ -187,7 +193,7 @@ class _TodayContent extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Alert.info('📋 ${_todayStr()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""} · 网络正常'),
+            Alert.info('📋 ${_todayStr()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""}${_netText(ref)}'),
             const SizedBox(height: 8),
             // 退货回收任务（V1.2 重点）
             if (returns.isNotEmpty) ...[
@@ -236,6 +242,35 @@ class _TodayContent extends ConsumerWidget {
                   navigator.push(MaterialPageRoute(
                     builder: (_) => const WarehouseReturnPage(),
                   )).then((changed) => _maybeRefresh(ref, changed));
+                },
+              )),
+            ]),
+            const SizedBox(height: 8),
+            // 异常上报入口放在快捷操作区而非只挂在任务卡上：
+            // 出车前检查发现车辆故障、途中被交警拦下时还没有任何门店任务上下文，
+            // 若只能从任务卡进入，最需要上报的场景反而进不去。
+            Row(children: [
+              Expanded(child: _QuickAction(
+                icon: '⚠️',
+                label: '异常上报',
+                color: TmsTheme.bad,
+                onTap: () {
+                  final navigator = Navigator.of(context);
+                  navigator.push(MaterialPageRoute(
+                    builder: (_) => const ExceptionReportPage(),
+                  ));
+                },
+              )),
+              const SizedBox(width: 8),
+              Expanded(child: _QuickAction(
+                icon: '📋',
+                label: '我的上报',
+                color: TmsTheme.muted,
+                onTap: () {
+                  final navigator = Navigator.of(context);
+                  navigator.push(MaterialPageRoute(
+                    builder: (_) => const ExceptionListPage(),
+                  ));
                 },
               )),
             ]),
@@ -310,14 +345,107 @@ class _TodayContent extends ConsumerWidget {
                     Text('${d.sourceBillNo} · ${d.customerAddress}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
                     const SizedBox(height: 2),
                     Text('${d.qty} 件 · ${d.billTypeText} · ${d.dispatchNo}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+                    // 结算方式 + 应收金额：司机在门店当场就要判断该不该收钱、收多少。
+                    // 只有货到付款才高亮成「需收款」，预付/账期用灰色标签，避免司机重复收款。
+                    // 门店未维护结算方式时整行隐藏，不显示「未知」误导判断。
+                    if (d.settlementText.isNotEmpty || d.receivableAmount > 0) ...[
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        if (d.settlementText.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: d.needCollect ? const Color(0xFFFFF1E6) : TmsTheme.bg,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: d.needCollect ? TmsTheme.accent2 : TmsTheme.rule),
+                            ),
+                            child: Text(
+                              d.needCollect ? '💰 ${d.settlementText}' : d.settlementText,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: d.needCollect ? TmsTheme.accent2 : TmsTheme.muted,
+                              ),
+                            ),
+                          ),
+                        if (d.receivableAmount > 0) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '应收 ¥ ${d.receivableAmount.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: d.needCollect ? TmsTheme.accent2 : TmsTheme.muted,
+                            ),
+                          ),
+                        ],
+                      ]),
+                    ],
+                    // 已打卡则回显到达时间与定位偏差，异常用红色提示
+                    if (d.hasArrived) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '🕐 ${_arriveTimeText(d.arriveTime)} 到店'
+                        '${d.arriveDistance == null ? '' : ' · 偏差 ${d.arriveDistance!.toStringAsFixed(0)} 米'}'
+                        '${d.gpsAbnormal ? ' · GPS异常' : ''}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: d.gpsAbnormal ? TmsTheme.bad : TmsTheme.ok,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     if (canTap) ...[
                       const SizedBox(height: 4),
                       Text(canLoad ? '👉 点击进入装车确认' : '👉 点击进入签收',
                           style: const TextStyle(fontSize: 10, color: TmsTheme.accent, fontWeight: FontWeight.w600)),
                     ],
+                    // 未完成的任务都给出导航与拨号入口（装车前司机也常提前看路线）
+                    if (d.status == 'PENDING') ...[
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Expanded(child: _MiniAction(
+                          label: '导航前往',
+                          icon: Icons.navigation,
+                          color: TmsTheme.accent,
+                          onTap: () => _navigateTo(context, d),
+                        )),
+                        const SizedBox(width: 8),
+                        Expanded(child: _MiniAction(
+                          label: d.hasPhone ? '联系客户' : '无电话',
+                          icon: Icons.phone,
+                          color: d.hasPhone ? TmsTheme.ok : TmsTheme.muted,
+                          onTap: d.hasPhone ? () => _callCustomer(context, d) : null,
+                        )),
+                      ]),
+                    ],
                     // 已到达客户处时可触发改派返仓 / 客户拒收（异常分支）
                     if (canSign) ...[
                       const SizedBox(height: 8),
+                      Row(children: [
+                        // 打卡不是签收前置门禁：未打卡也能签收，是否强制由系统参数控制
+                        Expanded(child: _MiniAction(
+                          label: d.hasArrived ? '已打卡' : '到店打卡',
+                          icon: d.hasArrived ? Icons.check_circle : Icons.location_on,
+                          color: d.hasArrived ? TmsTheme.ok : TmsTheme.accent,
+                          onTap: d.hasArrived
+                              ? null
+                              : () {
+                                  final navigator = Navigator.of(context);
+                                  navigator.push(MaterialPageRoute(
+                                    builder: (_) => ArrivePage(
+                                      dispatchId: d.dispatchId,
+                                      detailId: d.detailId,
+                                      customerName: d.customerName,
+                                      customerAddress: d.customerAddress,
+                                      storeLongitude: d.longitude,
+                                      storeLatitude: d.latitude,
+                                    ),
+                                  )).then((changed) => _maybeRefresh(ref, changed));
+                                },
+                        )),
+                      ]),
+                      const SizedBox(height: 6),
                       Row(children: [
                         Expanded(child: _MiniAction(
                           label: '改派返仓',
@@ -357,6 +485,26 @@ class _TodayContent extends ConsumerWidget {
                           },
                         )),
                       ]),
+                      const SizedBox(height: 6),
+                      Row(children: [
+                        // 现场突发异常（车辆故障/门店关门/货损等）没有单据流程可走，单独给入口
+                        Expanded(child: _MiniAction(
+                          label: '异常上报',
+                          icon: Icons.warning_amber_rounded,
+                          color: TmsTheme.returnPurple,
+                          onTap: () {
+                            final navigator = Navigator.of(context);
+                            navigator.push(MaterialPageRoute(
+                              builder: (_) => ExceptionReportPage(
+                                dispatchId: d.dispatchId,
+                                detailId: d.detailId,
+                                receiptNo: d.sourceBillNo,
+                                customerName: d.customerName,
+                              ),
+                            ));
+                          },
+                        )),
+                      ]),
                     ],
                   ]),
                 );
@@ -386,11 +534,57 @@ class _TodayContent extends ConsumerWidget {
     return '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} ${week[d.weekday - 1]}';
   }
 
+  /// 网络与待同步状态文案（替代原先硬编码的"网络正常"）。
+  String _netText(WidgetRef ref) {
+    final online = ref.watch(isOnlineProvider).valueOrNull ?? true;
+    final pending = ref.watch(pendingCountProvider).valueOrNull ?? 0;
+    if (!online) {
+      return pending > 0 ? ' · 离线中 · $pending 条待同步' : ' · 离线中';
+    }
+    return pending > 0 ? ' · 网络正常 · $pending 条待同步' : ' · 网络正常';
+  }
+
   /// 子页面返回 true 时刷新今日任务。
   void _maybeRefresh(WidgetRef ref, dynamic changed) {
     if (changed == true) {
       ref.invalidate(todayTasksProvider);
     }
+  }
+
+  /// 到达时间只展示「时:分」，任务卡空间有限，日期与当日一致无需重复。
+  String _arriveTimeText(String v) {
+    final s = v.replaceFirst('T', ' ');
+    final idx = s.indexOf(' ');
+    final time = idx >= 0 ? s.substring(idx + 1) : s;
+    return time.length >= 5 ? time.substring(0, 5) : time;
+  }
+
+  /// 唤起手机地图导航；门店未维护坐标时降级为按地址搜索。
+  Future<void> _navigateTo(BuildContext context, DispatchDetail d) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (!d.hasGeo && d.customerAddress.trim().isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标与地址，无法导航')));
+      return;
+    }
+    final ok = await LaunchService.instance.navigate(
+      longitude: d.longitude,
+      latitude: d.latitude,
+      address: d.customerAddress,
+      name: d.customerName,
+    );
+    if (!ok) {
+      messenger.showSnackBar(const SnackBar(content: Text('未找到可用地图应用')));
+    } else if (!d.hasGeo) {
+      // 坐标缺失时只能按地址模糊定位，需提醒司机核对，避免导错门店
+      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标，已按地址搜索，请核对位置')));
+    }
+  }
+
+  /// 拨打门店联系人电话（只跳拨号盘，由司机确认后再呼出）。
+  Future<void> _callCustomer(BuildContext context, DispatchDetail d) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await LaunchService.instance.dial(d.contactMobile);
+    if (!ok) messenger.showSnackBar(SnackBar(content: Text('拨号失败，请手动联系 ${d.contactMobile}')));
   }
 }
 
@@ -428,19 +622,22 @@ class _MiniAction extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final VoidCallback onTap;
-  const _MiniAction({required this.label, required this.icon, required this.color, required this.onTap});
+
+  /// 传 null 表示按钮已完成使命（如已打卡），保留展示但不可再点。
+  final VoidCallback? onTap;
+  const _MiniAction({required this.label, required this.icon, required this.color, this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final disabled = onTap == null;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
+          color: color.withValues(alpha: disabled ? 0.05 : 0.08),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withValues(alpha: 0.3), width: 1.2),
+          border: Border.all(color: color.withValues(alpha: disabled ? 0.18 : 0.3), width: 1.2),
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(icon, size: 14, color: color),

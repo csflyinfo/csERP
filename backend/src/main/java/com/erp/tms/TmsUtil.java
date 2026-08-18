@@ -76,6 +76,29 @@ public final class TmsUtil {
 
     public static LocalDateTime now() { return LocalDateTime.now(); }
 
+    /**
+     * 客户结算方式短文案（司机 APP 用）。
+     *
+     * 口径与 base_customer.settlement_type 一致（PREPAY 预付 / COD 货到付款 / TERM 账期）。
+     * 与 ERP 端 BaseController.settlementSummary 的区别：司机只需要知道「这单该不该当场收钱」，
+     * 账期的天数/截账日等细节对司机无意义，故账期统一压成「账期」两字，避免任务卡被长文案挤爆。
+     * 未维护结算方式时返回空串，由前端隐藏该标签而不是显示「未知」。
+     */
+    public static String settlementText(Object settlementType) {
+        String t = str(settlementType);
+        return switch (t) {
+            case "PREPAY" -> "预付";
+            case "COD" -> "货到付款";
+            case "TERM" -> "账期";
+            default -> t;
+        };
+    }
+
+    /** 是否需要司机当场收款：只有货到付款要收，预付已付、账期挂账。 */
+    public static boolean needCollect(Object settlementType) {
+        return "COD".equals(str(settlementType));
+    }
+
     public static String uuid(String prefix) {
         return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
     }

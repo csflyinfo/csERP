@@ -80,10 +80,23 @@ class LoadingScanArgs {
       };
 }
 
-/// 装车扫码（写 tms_loading_check）。
+/// 装车扫码（写 tms_loading_check，离线感知，优先级 1）。
+///
+/// 优先级跟装车/发车同为 1：扫码结果是发车的前置依赖，
+/// 若排在签收（2）后面同步，会出现「签收已回传但装车记录还在队列里」的时序倒置。
+///
+/// actionKey 用 detailId + goodsCode 组合，而不是只用 detailId：
+/// 装车是「一个门店下多个商品」逐个扫，只用 detailId 会让同一门店的多条扫码记录
+/// 在队列里无法区分，同步失败时排查不出是哪个商品卡住了。
 final loadingScanProvider =
     FutureProvider.family<Map<String, dynamic>, LoadingScanArgs>((ref, args) async {
-  final data = await ApiService.instance.post('/tms/app/loading/scan', body: args.toJson());
+  final data = await ApiService.instance.enqueueOrPost(
+    actionType: 'LOADING_SCAN',
+    actionKey: '${args.detailId}_${args.goodsCode}',
+    path: '/tms/app/loading/scan',
+    body: args.toJson(),
+    priority: 1,
+  );
   return data as Map<String, dynamic>;
 });
 
@@ -122,13 +135,22 @@ class SignSubmitArgs {
         'customerSigner': customerSigner,
         'remark': remark,
         if (signatureUrl != null && signatureUrl!.isNotEmpty) 'signatureUrl': signatureUrl,
+        if (photoUrls.isNotEmpty)
+          'photos': photoUrls
+              .map((url) =>
+                  {'url': url, 'photoType': 'GOODS', 'bizType': 'SIGN'})
+              .toList(),
       };
 }
 
-/// 发货单签收提交（离线时自动入队，在线时直接提交+上传照片）。
+/// 发货单签收提交（离线感知，优先级 2）。
+///
+/// 照片随主单一起提交，不再拆成第二个 upload-photo 请求：
+/// 离线排队时 signId 尚未生成，拆开会让照片请求缺 signId 被后端 400 拒绝，
+/// 且 SyncService 只原样重放 body_json、不会回填 ID，该请求会永久卡在队列里反复重试。
+/// 后端 /tms/app/sign 已支持可选 photos 字段，/sign/upload-photo 仅保留给在线补拍场景。
 final signSubmitProvider =
     FutureProvider.family<Map<String, dynamic>, SignSubmitArgs>((ref, args) async {
-  // 签收提交（离线感知，优先级 2）
   final data = await ApiService.instance.enqueueOrPost(
     actionType: 'SIGN',
     actionKey: args.detailId,
@@ -136,50 +158,114 @@ final signSubmitProvider =
     body: args.toJson(),
     priority: 2,
   );
-  final result = data as Map<String, dynamic>;
-
-  // 离线入队时不会有 signId，照片上传也会被入队
-  final signId = result['signId']?.toString() ?? '';
-  final isOffline = result['_offline'] == true;
-
-  if (!isOffline && signId.isNotEmpty && args.photoUrls.isNotEmpty) {
-    // 在线成功：立即上传照片
-    await ApiService.instance.post('/tms/app/sign/upload-photo', body: {
-      'signId': signId,
-      'photos': args.photoUrls
-          .map((url) => {'url': url, 'photoType': 'GOODS'})
-          .toList(),
-    });
-  } else if (isOffline && args.photoUrls.isNotEmpty) {
-    // 离线：照片上传也入队（优先级 3）
-    // 注意：离线时 signId 未知，同步时会先执行签收入队，再执行照片入队
-    // 照片入队的 body 需要在签收成功后才能确定 signId
-    // 这里简化处理：照片 URL 在离线时已在本地（uploadImage 也入队了），
-    // 同步服务会按优先级先执行签收，再执行照片上传
-    await ApiService.instance.enqueueOrPost(
-      actionType: 'SIGN_PHOTO',
-      actionKey: args.detailId,
-      path: '/tms/app/sign/upload-photo',
-      body: {
-        'photos': args.photoUrls
-            .map((url) => {'url': url, 'photoType': 'GOODS'})
-            .toList(),
-      },
-      priority: 3,
-    );
-  }
-  return result;
-});
-
-/// 到达门店。
-final arriveProvider =
-    FutureProvider.family<Map<String, dynamic>, String>((ref, args) async {
-  // args 格式：dispatchId|detailId
-  final parts = args.split('|');
-  if (parts.length < 2) throw Exception('args 格式错误：dispatchId|detailId');
-  final data = await ApiService.instance.post('/tms/app/arrive', body: {
-    'dispatchId': parts[0],
-    'detailId': parts[1],
-  });
   return data as Map<String, dynamic>;
 });
+
+/// 到达打卡参数（GPS 围栏）。
+///
+/// 必须实现 == / hashCode：FutureProvider.family 以参数为缓存键，
+/// 否则每次点击生成新实例都会命中新缓存，重复提交。
+class ArriveArgs {
+  final String dispatchId;
+  final String detailId;
+  final double? longitude;
+  final double? latitude;
+  final double? accuracy;
+  final String abnormalReason;
+  final String photoUrl;
+
+  const ArriveArgs({
+    required this.dispatchId,
+    required this.detailId,
+    this.longitude,
+    this.latitude,
+    this.accuracy,
+    this.abnormalReason = '',
+    this.photoUrl = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'dispatchId': dispatchId,
+        'detailId': detailId,
+        if (longitude != null) 'longitude': longitude,
+        if (latitude != null) 'latitude': latitude,
+        if (accuracy != null) 'accuracy': accuracy,
+        if (abnormalReason.isNotEmpty) 'abnormalReason': abnormalReason,
+        if (photoUrl.isNotEmpty) 'photoUrl': photoUrl,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ArriveArgs &&
+      other.dispatchId == dispatchId &&
+      other.detailId == detailId &&
+      other.longitude == longitude &&
+      other.latitude == latitude &&
+      other.accuracy == accuracy &&
+      other.abnormalReason == abnormalReason &&
+      other.photoUrl == photoUrl;
+
+  @override
+  int get hashCode => Object.hash(
+      dispatchId, detailId, longitude, latitude, accuracy, abnormalReason, photoUrl);
+}
+
+/// 到达门店打卡（离线自动入队，与签收同优先级）。
+///
+/// 距离与异常由服务端复算，此处只负责把原始定位数据交上去。
+final arriveProvider =
+    FutureProvider.family<Map<String, dynamic>, ArriveArgs>((ref, args) async {
+  if (args.dispatchId.isEmpty || args.detailId.isEmpty) {
+    throw Exception('dispatchId、detailId 不能为空');
+  }
+  final data = await ApiService.instance.enqueueOrPost(
+    actionType: 'ARRIVE',
+    actionKey: args.detailId,
+    path: '/tms/app/arrive',
+    body: args.toJson(),
+    priority: 2, // 与签收同级：打卡时间是签收链路的前置凭证
+  );
+  return data as Map<String, dynamic>;
+});
+
+/// 到达打卡参数配置（围栏阈值 / 是否强制打卡 / 异常是否必拍照）。
+///
+/// 由 ERP「系统参数」维护，APP 每次进入打卡页拉取；
+/// 取不到时返回内置默认值，绝不因配置读取失败阻断打卡。
+final arriveConfigProvider = FutureProvider<ArriveConfig>((ref) async {
+  try {
+    final data = await ApiService.instance.post('/tms/app/arrive/config');
+    return ArriveConfig.fromJson(data as Map<String, dynamic>);
+  } catch (_) {
+    return const ArriveConfig();
+  }
+});
+
+/// 到达打卡配置项。
+class ArriveConfig {
+  /// 正常范围（米）：小于此值视为正常到店。
+  final double normalRadius;
+
+  /// 告警范围（米）：超过此值判定 GPS 异常，需填原因。
+  final double warnRadius;
+
+  /// 是否要求签收前必须先打卡（默认 false，由用户在系统参数中自行开启）。
+  final bool arriveRequired;
+
+  /// GPS 异常时是否必须上传现场照片。
+  final bool photoRequired;
+
+  const ArriveConfig({
+    this.normalRadius = 200,
+    this.warnRadius = 1000,
+    this.arriveRequired = false,
+    this.photoRequired = true,
+  });
+
+  factory ArriveConfig.fromJson(Map<String, dynamic> j) => ArriveConfig(
+        normalRadius: (j['normalRadius'] as num?)?.toDouble() ?? 200,
+        warnRadius: (j['warnRadius'] as num?)?.toDouble() ?? 1000,
+        arriveRequired: j['arriveRequired'] == true,
+        photoRequired: j['photoRequired'] != false,
+      );
+}

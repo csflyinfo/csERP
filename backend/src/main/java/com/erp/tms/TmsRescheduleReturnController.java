@@ -161,6 +161,24 @@ public class TmsRescheduleReturnController {
                 """, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(),
                 "改派返仓：" + reason + "（第" + rescheduleCount + "次）", detailId);
 
+        // 随主单一并落照片（可选）。
+        // 之所以在建单接口里也支持 photos，而不是一律走 upload-photo：
+        // APP 离线时先把建单请求排入本地队列，此刻 returnId 还不存在，
+        // 照片若拆成第二个请求，重放时必然缺 returnId 被 400 拒绝并永久卡在队列里。
+        // 建单时 returnId 已生成，这里顺带写入即可让离线链路一次成功。
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> photos = body.get("photos") instanceof List<?> pl
+                ? (List<Map<String, Object>>) pl : new ArrayList<>();
+        for (Map<String, Object> p : photos) {
+            String url = TmsUtil.str(p.get("url"));
+            if (url.isEmpty()) continue;
+            String photoId = "SP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+            jdbcTemplate.update("""
+                    INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
+                    VALUES (?, ?, 'RESCHEDULE', ?, ?)
+                    """, photoId, returnId, url, "reschedule-return/" + returnId + "/" + photoId);
+        }
+
         TmsUtil.log(jdbcTemplate, "tms.app.reschedule-return", "CREATE", returnNo,
                 "改派返仓单生成：" + receiptNo + "，原因：" + reason + "，第" + rescheduleCount + "次改派");
         return ApiResponse.ok(Map.of(

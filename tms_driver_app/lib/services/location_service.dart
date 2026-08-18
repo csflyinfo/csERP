@@ -56,6 +56,8 @@ class LocationService {
   /// 采集一次位置并缓存到本地。
   Future<void> _collect() async {
     if (!_running || _driverId == null) return;
+    // Web 端不初始化 sqflite，跳过采集避免每轮抛异常
+    if (!LocalDbService.instance.isInitialized) return;
 
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();

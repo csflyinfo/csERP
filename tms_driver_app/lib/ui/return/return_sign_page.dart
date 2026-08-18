@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/return_order.dart';
 import '../../providers/task_provider.dart';
@@ -92,12 +93,14 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
         MCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('📦 退货商品 · 录入实收数量', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-            const Text('（实收可小于退货数，差异自动标记待处理）', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            const Text('（实收不可超过应退数，少收的差异自动标记待处理）', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
             const SizedBox(height: 8),
             ...order.details.asMap().entries.map((e) {
               final i = e.key;
               final it = e.value;
               return _ReturnItemRow(
+                // 明细行持有输入框状态，必须给稳定 key，否则列表顺序变化时 State 会错配到别的商品
+                key: ValueKey(it.detailId),
                 item: it,
                 signedQty: _signedQties[i],
                 onChanged: (v) => setState(() => _signedQties[i] = v),
@@ -184,7 +187,12 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) {
       setState(() => _photos.add(photo));
     }
@@ -212,19 +220,21 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
         final sigBytes = base64Decode(signatureB64);
         final sigFile = File('${Directory.systemTemp.path}/sig_${DateTime.now().millisecondsSinceEpoch}.png');
         await sigFile.writeAsBytes(sigBytes);
-        try {
-          final sigUpResult = await ApiService.instance.uploadImage(sigFile, bizType: 'SIGNATURE');
-          signatureUrl = sigUpResult['url'] as String?;
-        } finally {
-          if (await sigFile.exists()) await sigFile.delete();
+        final sigUpResult = await ApiService.instance
+            .uploadImageOrDefer(sigFile, bizType: 'SIGNATURE');
+        signatureUrl = sigUpResult['url'] as String?;
+        // 仅在已成功上到服务器后才删除临时文件。
+        // 离线时返回的是这个文件的本地路径，要等 SyncService 重放时才真正上传，
+        // 此刻删掉会让签名永久丢失（重放时 File.exists 为假，直接跳过）。
+        if (sigUpResult['_deferred'] != true && await sigFile.exists()) {
+          await sigFile.delete();
         }
       }
-      // 照片上传获得 URL
-      final photoUrlList = <String>[];
-      for (final p in _photos) {
-        final upResult = await ApiService.instance.uploadImage(File(p.path), bizType: 'RETURN');
-        photoUrlList.add(upResult['url'] as String);
-      }
+      // 照片上传获得 URL（有限并发 + 离线延后，避免弱网串行阻塞）
+      final photoUrlList = await ApiService.instance.uploadImagesOrDefer(
+        _photos.map((p) => File(p.path)).toList(),
+        bizType: 'RETURN',
+      );
 
       final items = <Map<String, dynamic>>[];
       for (var i = 0; i < order.details.length; i++) {
@@ -234,7 +244,7 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
           'signedQty': _signedQties[i],
         });
       }
-      await ref.read(returnSignProvider(ReturnSignArgs(
+      final result = await ref.read(returnSignProvider(ReturnSignArgs(
         applyNo: order.applyNo,
         items: items,
         customerSigner: _signerCtrl.text.trim(),
@@ -245,7 +255,11 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
       // 刷新今日任务
       ref.invalidate(todayTasksProvider);
       if (mounted) {
-        _toast('回收成功，物流状态 → 司机已回收');
+        // 离线只是入队，服务端还没改状态，不能谎报「物流状态 → 司机已回收」，
+        // 否则司机以为已回传、收工后不再关心同步队列。
+        _toast(result['_offline'] == true
+            ? '当前无网络，回收已暂存本地，联网后自动上传'
+            : '回收成功，物流状态 → 司机已回收');
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -260,60 +274,153 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
   }
 }
 
-/// 退货明细行：商品信息 + 实收数量录入。
-class _ReturnItemRow extends StatelessWidget {
+/// 退货明细行：商品信息 + 实收数量录入（步进器 + 手工输入）。
+///
+/// 实收数量恒被夹取到 [0, 应退数量]：司机不可能从客户处收回比申请单更多的货，
+/// 放开上限会让 sales_return_apply.signed_qty 超过 return_qty，污染入库与财务口径。
+class _ReturnItemRow extends StatefulWidget {
   final ReturnItem item;
   final num signedQty;
   final ValueChanged<num> onChanged;
-  const _ReturnItemRow({required this.item, required this.signedQty, required this.onChanged});
+  const _ReturnItemRow({super.key, required this.item, required this.signedQty, required this.onChanged});
+
+  @override
+  State<_ReturnItemRow> createState() => _ReturnItemRowState();
+}
+
+class _ReturnItemRowState extends State<_ReturnItemRow> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: _fmt(widget.signedQty));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ReturnItemRow old) {
+    super.didUpdateWidget(old);
+    // 控件常驻，只在「输入框内容与外部值语义不一致」时回写，避免每帧重建 controller 导致光标跳到行首。
+    // 输入框被清空且外部值为 0 时不回写，否则用户删不掉最后一位。
+    if (_ctrl.text.trim().isEmpty && widget.signedQty == 0) return;
+    if (num.tryParse(_ctrl.text) != widget.signedQty) {
+      _ctrl.text = _fmt(widget.signedQty);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  /// 整数不显示小数尾巴：10 → "10"，10.5 → "10.5"。
+  static String _fmt(num n) => n == n.truncateToDouble() ? n.toInt().toString() : n.toString();
+
+  num get _max => widget.item.returnQty;
+
+  num _clamp(num n) => n < 0 ? 0 : (n > _max ? _max : n);
+
+  void _step(num delta) {
+    final next = _clamp(widget.signedQty + delta);
+    if (next == widget.signedQty) return;
+    _ctrl.text = _fmt(next);
+    widget.onChanged(next);
+  }
+
+  void _onTyped(String v) {
+    final raw = num.tryParse(v);
+    if (raw == null) {
+      widget.onChanged(0);
+      return;
+    }
+    final n = _clamp(raw);
+    if (n != raw) {
+      // 超上限时就地纠正文本，并把光标保持在末尾，让司机看到「最多只能这么多」
+      final t = _fmt(n);
+      _ctrl.value = TextEditingValue(text: t, selection: TextSelection.collapsed(offset: t.length));
+    }
+    widget.onChanged(n);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final diff = signedQty - item.returnQty;
+    final diff = widget.signedQty - _max;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1F4)))),
       child: Row(children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(item.goodsName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: TmsTheme.ink)),
-            if (item.spec.isNotEmpty)
-              Text('${item.spec} · ${item.unitName}', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            Text(widget.item.goodsName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: TmsTheme.ink)),
+            if (widget.item.spec.isNotEmpty)
+              Text('${widget.item.spec} · ${widget.item.unitName}', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
             const SizedBox(height: 2),
-            Text('应退 ${item.returnQty} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            Text('应退 ${_fmt(_max)} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
           ]),
         ),
-        SizedBox(
-          width: 90,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            const Text('实收', style: TextStyle(fontSize: 10, color: TmsTheme.muted)),
-            TextField(
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              textAlign: TextAlign.center,
-              controller: TextEditingController(text: signedQty.toString()),
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
+        const SizedBox(width: 6),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          const Text('实收', style: TextStyle(fontSize: 10, color: TmsTheme.muted)),
+          const SizedBox(height: 2),
+          Row(children: [
+            _StepBtn(icon: Icons.remove, enabled: widget.signedQty > 0, onTap: () => _step(-1)),
+            SizedBox(
+              width: 52,
+              child: TextField(
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.center,
+                controller: _ctrl,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: TmsTheme.rule, width: 1.5)),
+                ),
+                onChanged: _onTyped,
               ),
-              onChanged: (v) {
-                final n = num.tryParse(v) ?? 0;
-                onChanged(n < 0 ? 0 : n);
-              },
             ),
+            _StepBtn(icon: Icons.add, enabled: widget.signedQty < _max, onTap: () => _step(1)),
           ]),
-        ),
-        const SizedBox(width: 8),
+        ]),
+        const SizedBox(width: 6),
         SizedBox(
-          width: 44,
+          width: 40,
           child: Text(
-            diff == 0 ? '一致' : '${diff > 0 ? "+" : ""}$diff',
+            diff == 0 ? '一致' : '$diff',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: diff == 0 ? TmsTheme.ok : (diff < 0 ? TmsTheme.bad : TmsTheme.accent2)),
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: diff == 0 ? TmsTheme.ok : TmsTheme.bad),
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// 数量步进按钮（禁用态置灰，避免司机反复点无效按钮）。
+class _StepBtn extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _StepBtn({required this.icon, required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 30,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: enabled ? TmsTheme.bg : const Color(0xFFFAFAFB),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: TmsTheme.rule, width: 1.5),
+        ),
+        child: Icon(icon, size: 16, color: enabled ? TmsTheme.ink : TmsTheme.textMuted),
+      ),
     );
   }
 }

@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/settlement.dart';
 import '../../providers/settlement_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/location_service.dart';
 import '../../widgets/common.dart';
+import '../../widgets/offline_banner.dart';
 
 /// 交账结算页面（P3-3）。
 ///
@@ -49,15 +52,22 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
     return Scaffold(
       backgroundColor: TmsTheme.bg,
       appBar: AppBar(title: const Text('交账结算')),
-      body: async.when(
-        data: (summary) => summary.alreadySettled ? _buildAlreadySettled(summary) : _buildForm(summary),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: async.when(
+              data: (summary) => summary.alreadySettled ? _buildAlreadySettled(summary) : _buildForm(summary),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -326,7 +336,12 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) setState(() => _photos.add(photo));
   }
 
@@ -377,6 +392,8 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
       String msg = '交账提交成功：$no';
       if (diff != 0) msg += '（差异 ¥ ${diff.toStringAsFixed(2)}）';
       _toast(msg);
+      // 交账成功 = 当日收工，兜底停止 GPS 采集
+      LocationService.instance.stop();
       ref.invalidate(todayTasksProvider);
       ref.invalidate(settlementSummaryProvider);
       if (mounted) Navigator.pop(context, true);

@@ -25,6 +25,9 @@ class CustomerRejectReason {
   static const goodsDamaged = 'GOODS_DAMAGED';        // 货物破损
   static const specMismatch = 'SPEC_MISMATCH';        // 规格不符
   static const qtyMismatch = 'QTY_MISMATCH';          // 数量不符
+  // 生鲜/食品业务里「临期过期」是高频独立原因，混进「货物破损」会让后续
+  // 质量追溯和供应商索赔分不清是运输损坏还是效期管理问题，故单列。
+  static const nearExpiry = 'NEAR_EXPIRY';            // 商品临期/过期
   static const other = 'OTHER';
 
   static const labels = {
@@ -32,6 +35,7 @@ class CustomerRejectReason {
     goodsDamaged: '货物破损',
     specMismatch: '规格不符',
     qtyMismatch: '数量不符',
+    nearExpiry: '商品临期/过期',
     other: '其他',
   };
 

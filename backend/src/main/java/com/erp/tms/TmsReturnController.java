@@ -155,30 +155,32 @@ public class TmsReturnController {
         jdbcTemplate.update("""
                 INSERT INTO sales_return_apply(apply_id, apply_no,
                     customer_code, customer_name, warehouse, bill_date,
-                    qty, return_qty, amount, return_reason, status,
+                    qty, return_qty, amount, return_amount, return_reason, status,
                     return_type, logistics_status, signed_qty, driver_id, driver_name,
                     dispatch_id, trip_id, creator_name, remark)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING',
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING',
                     'DRIVER', '司机已回收', ?, ?, ?, ?, ?, ?, ?)
                 """, applyId, applyNo,
                 customerCode, customerName, warehouse, LocalDate.now(),
-                totalQty, totalQty, totalAmount, returnReason,
+                totalQty, totalQty, totalAmount, totalAmount, returnReason,
                 totalQty, driverId, driverName,
                 dispatchId.isEmpty() ? null : dispatchId,
                 tripId.isEmpty() ? null : tripId,
                 driverName, remark);
 
-        // 写退货申请明细
+        // 写退货申请明细。司机现场开单即当场收货，signed_qty 直接等于 qty ——
+        // 返仓交接按 signed_qty 口径生成入库单，这里不写就会被当成 0 回收而开不出单
         for (Map<String, Object> it : items) {
             String detailId = "SRAD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             jdbcTemplate.update("""
                     INSERT INTO sales_return_apply_detail(detail_id, apply_id, return_mode,
-                        goods_code, goods_name, spec, unit_name, qty, price, amount, batch_no, remark)
-                    VALUES (?, ?, 'BY_GOODS', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        goods_code, goods_name, spec, unit_name, qty, signed_qty, price, amount, batch_no, remark)
+                    VALUES (?, ?, 'BY_GOODS', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, detailId, applyId,
                     TmsUtil.str(it.get("goodsCode")), TmsUtil.str(it.get("goodsName")),
                     TmsUtil.str(it.get("spec")), TmsUtil.str(it.get("unitName")),
-                    TmsUtil.toBd(it.get("qty")), TmsUtil.toBd(it.get("price")),
+                    TmsUtil.toBd(it.get("qty")), TmsUtil.toBd(it.get("qty")),
+                    TmsUtil.toBd(it.get("price")),
                     it.get("_amount"), TmsUtil.str(it.get("batchNo")), TmsUtil.str(it.get("remark")));
         }
 
@@ -207,6 +209,27 @@ public class TmsReturnController {
                     TmsUtil.str(it.get("goodsCode")), TmsUtil.str(it.get("goodsName")),
                     TmsUtil.str(it.get("spec")), TmsUtil.str(it.get("unitName")),
                     TmsUtil.toBd(it.get("qty")), TmsUtil.str(it.get("batchNo")), TmsUtil.str(it.get("remark")));
+        }
+
+        // 2.1 随主单一并落照片（可选）。
+        // 之所以在建单接口里也支持 photos，而不是一律走 upload-photo：
+        // APP 离线时把建单请求排入本地队列，此刻 driverReturnId 尚未生成，
+        // 照片若拆成第二个请求，重放时必然缺 driverReturnId 被 400 拒绝并永久卡在队列里。
+        // 建单时 ID 已生成，这里顺带写入即可让离线链路一次成功。
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
+                ? (List<Map<String, Object>>) pl : new ArrayList<>();
+        for (Map<String, Object> p : headPhotos) {
+            String url = TmsUtil.str(p.get("url"));
+            if (url.isEmpty()) continue;
+            String photoType = TmsUtil.str(p.getOrDefault("photoType", "GOODS"));
+            if (photoType.isEmpty()) photoType = "GOODS";
+            String photoId = "SP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+            jdbcTemplate.update("""
+                    INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, photoId, driverReturnId, photoType, url,
+                    "driver-return/" + driverReturnId + "/" + photoId);
         }
 
         // 3. 回写调度明细状态（如有）
@@ -382,8 +405,13 @@ public class TmsReturnController {
                 continue;
             }
             String applyId = TmsUtil.str(applyRows.get(0).get("apply_id"));
-            // 调用现有入库单生成逻辑
-            String inboundNo = salesReturnController.generateInboundFromApply(applyId);
+            // 司机返仓交接的是车上实收的货，按回收数量口径生成；
+            // 若司机签收环节已生成过，generateInboundFromApply 幂等返回原单号，不会重复开单
+            String inboundNo = salesReturnController.generateInboundFromApply(applyId, true);
+            if (inboundNo.isEmpty()) {
+                failed.add(drId + ":司机回收数量为 0，无货可入库");
+                continue;
+            }
             inboundNos.add(inboundNo);
             // 更新司机退货单状态
             jdbcTemplate.update("UPDATE tms_driver_return SET status='WAREHOUSED' WHERE driver_return_id=?", drId);

@@ -62,23 +62,34 @@ class CreateReturnArgs {
         if (dispatchId != null) 'dispatchId': dispatchId,
         if (tripId != null) 'tripId': tripId,
         'items': items.map((e) => e.toJson()).toList(),
+        if (photos.isNotEmpty)
+          'photos': photos
+              .map((url) =>
+                  {'url': url, 'photoType': 'GOODS', 'bizType': 'RETURN'})
+              .toList(),
       };
 }
 
-/// 创建司机现场退货（一次性调用）。
+/// 创建司机现场退货（离线感知，优先级 2）。
+///
+/// 必须离线可提交：现场退货是司机在客户门口清点后当场登记的，
+/// 货已经装回车上了，若因信号差提交失败就得靠人脑记着回公司补录，极易漏单错单。
+///
+/// 照片随主单一起提交，理由同改派返仓/客户拒收：
+/// 离线排队时 driverReturnId 尚未生成，拆成独立请求会缺 ID 被后端 400 拒绝并永久卡在队列。
+///
+/// actionKey 用客户编码：司机现场退货没有前置单号可用（无预开单场景），
+/// 客户编码是队列里唯一能辨认「这条是给哪家店退的」的标识。
 final createReturnProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, CreateReturnArgs>((ref, args) async {
-  final data = await ApiService.instance.post('/tms/app/return/create', body: args.toJson());
-  final result = data as Map<String, dynamic>;
-  // 创建成功后上传照片
-  final driverReturnId = result['driverReturnId']?.toString() ?? '';
-  if (driverReturnId.isNotEmpty && args.photos.isNotEmpty) {
-    await ApiService.instance.post('/tms/app/return/upload-photo', body: {
-      'driverReturnId': driverReturnId,
-      'photos': args.photos.map((p) => {'url': p, 'photoType': 'GOODS'}).toList(),
-    });
-  }
-  return result;
+  final data = await ApiService.instance.enqueueOrPost(
+    actionType: 'DRIVER_RETURN',
+    actionKey: args.customerCode,
+    path: '/tms/app/return/create',
+    body: args.toJson(),
+    priority: 2,
+  );
+  return data as Map<String, dynamic>;
 });
 
 /// 返仓交接清单。
@@ -95,7 +106,10 @@ final warehouseReturnListProvider =
   };
 });
 
-/// 返仓交接确认。
+/// 返仓交接确认（刻意保持在线提交）。
+///
+/// 交接确认是「货已交给仓管」的责任转移点，发生在仓库交接台前（有网），
+/// 必须当场拿到服务端确认，不能给假成功后让货物短少时无从追溯。
 final warehouseReturnConfirmProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, List<String>>((ref, ids) async {
   final data = await ApiService.instance.post('/tms/app/warehouse-return/confirm', body: {

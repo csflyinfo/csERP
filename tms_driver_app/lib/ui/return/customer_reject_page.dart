@@ -1,10 +1,11 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/reschedule_reject.dart';
+import '../../providers/delivery_provider.dart';
 import '../../providers/reschedule_reject_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
@@ -136,6 +137,11 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
                   style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
             ),
           const SizedBox(height: 8),
+          // 拒收明细清单：全拒收时后端会按发货单全部 SKU 生成拒收行，
+          // 司机提交前必须能看到「到底拒了哪些货」——否则是在盲签一张影响库存和应收的单据。
+          // 数据源复用签收详情接口（同一个 detailId 拉的就是这张发货单的 SKU 明细），不额外加接口。
+          _RejectItemsCard(detailId: widget.detailId, allReject: _allReject),
+          const SizedBox(height: 8),
           // 现场照片
           MCard(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -190,7 +196,12 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) setState(() => _photos.add(photo));
   }
 
@@ -205,11 +216,10 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
     }
     setState(() => _submitting = true);
     try {
-      final photoUrlList = <String>[];
-      for (final p in _photos) {
-        final upResult = await ApiService.instance.uploadImage(File(p.path), bizType: 'REJECT');
-        photoUrlList.add(upResult['url'] as String);
-      }
+      final photoUrlList = await ApiService.instance.uploadImagesOrDefer(
+        _photos.map((p) => File(p.path)).toList(),
+        bizType: 'REJECT',
+      );
       final result = await ref.read(createCustomerRejectProvider(CreateCustomerRejectArgs(
         dispatchId: widget.dispatchId,
         detailId: widget.detailId,
@@ -222,7 +232,13 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
       )).future);
       final rejectNo = result['rejectNo']?.toString() ?? '';
       final totalQty = result['totalQty'] ?? 0;
-      _toast('客户拒收单生成成功：$rejectNo（共 $totalQty 件）');
+      // 离线入队时后端还没生成单号与件数，照常提示会显示「生成成功：（共 0 件）」，
+      // 空单号加成功语会让司机以为单据已进系统。
+      if (result['_offline'] == true) {
+        _toast('当前无网络，客户拒收已暂存本地，联网后自动上传');
+      } else {
+        _toast('客户拒收单生成成功：$rejectNo（共 $totalQty 件）');
+      }
       ref.invalidate(todayTasksProvider);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -234,6 +250,69 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
 
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+  }
+}
+
+/// 拒收明细清单（只读展示）。
+///
+/// 全拒收时后端按发货单全部 SKU 生成拒收行，这里把这些行摊开给司机核对，
+/// 避免「提交一张改库存改应收的单据却看不到内容」。部分拒收场景本页不受理，
+/// 故只在 allReject 时展示合计，非全拒收时给出跳转提示。
+class _RejectItemsCard extends ConsumerWidget {
+  final String detailId;
+  final bool allReject;
+  const _RejectItemsCard({required this.detailId, required this.allReject});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(signItemsProvider(detailId));
+    return MCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Text('拒收明细', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+          const SizedBox(width: 6),
+          Text(allReject ? '（全部拒收，请逐行核对）' : '（部分拒收请走签收页）',
+              style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+        ]),
+        const SizedBox(height: 8),
+        async.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+          ),
+          // 明细拉取失败不阻塞拒收提交（后端仍会按发货单生成全部行），但必须明确告知司机看不到内容
+          error: (e, _) => Text('明细加载失败：${e.toString().replaceFirst("Exception: ", "")}',
+              style: const TextStyle(fontSize: 12, color: TmsTheme.bad)),
+          data: (d) {
+            if (d.items.isEmpty) {
+              return const Text('该发货单无商品明细', style: TextStyle(fontSize: 12, color: TmsTheme.muted));
+            }
+            final total = d.items.fold<num>(0, (s, it) => s + it.requiredQty);
+            return Column(children: [
+              ...d.items.map((it) => Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1F4)))),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(it.goodsName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: TmsTheme.ink)),
+                          Text(it.goodsCode, style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+                        ]),
+                      ),
+                      Text('${it.requiredQty} ${it.unitName}',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.bad)),
+                    ]),
+                  )),
+              const SizedBox(height: 6),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                Text('合计拒收 $total 件 · ${d.items.length} 个品',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: TmsTheme.bad)),
+              ]),
+            ]);
+          },
+        ),
+      ]),
+    );
   }
 }
 

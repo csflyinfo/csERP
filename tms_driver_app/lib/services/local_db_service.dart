@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -34,6 +35,19 @@ class LocalDbService {
 
   /// Web 模式下 sqflite 不可用，所有操作返回安全默认值。
   bool get isInitialized => _db != null;
+
+  /// 队列变更广播。
+  ///
+  /// 为什么需要它：待同步/失败计数原先用普通 FutureProvider 暴露，只在首次读取时算一次。
+  /// 结果是司机离线签收入队后顶部横幅数字不变、同步成功后也不会归零，
+  /// 看起来像「单据没进队列」或「传完了还挂着」，反而误导人。
+  /// 所有增删改队列的方法都要发一次通知，让 UI 的 StreamProvider 重算。
+  final _queueChangedController = StreamController<void>.broadcast();
+  Stream<void> get onQueueChanged => _queueChangedController.stream;
+
+  void _notifyQueueChanged() {
+    if (!_queueChangedController.isClosed) _queueChangedController.add(null);
+  }
 
   Database get db {
     if (_db == null) throw StateError('LocalDbService 未初始化，请先调用 init()');
@@ -129,7 +143,7 @@ class LocalDbService {
     int maxRetry = 5,
   }) async {
     final now = DateTime.now().toIso8601String();
-    return await db.insert('pending_actions', {
+    final id = await db.insert('pending_actions', {
       'action_type': actionType,
       'action_key': actionKey,
       'method': method,
@@ -144,6 +158,8 @@ class LocalDbService {
       'created_at': now,
       'updated_at': now,
     });
+    _notifyQueueChanged();
+    return id;
   }
 
   /// 取出待处理操作（按优先级升序 + FIFO）。
@@ -159,6 +175,7 @@ class LocalDbService {
   /// 标记成功并删除。
   Future<void> markActionSuccess(int id) async {
     await db.delete('pending_actions', where: 'id = ?', whereArgs: [id]);
+    _notifyQueueChanged();
   }
 
   /// 标记失败，增加重试计数；超过最大重试次数标记为 FAILED。
@@ -182,6 +199,7 @@ class LocalDbService {
       where: 'id = ?',
       whereArgs: [id],
     );
+    _notifyQueueChanged();
   }
 
   /// 统计待处理数量（UI 提示用）。
@@ -196,6 +214,50 @@ class LocalDbService {
     final result = await db.rawQuery(
         "SELECT COUNT(*) as cnt FROM pending_actions WHERE status = 'FAILED'");
     return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// 查询队列明细（待同步 + 已失败），供同步中心展示。
+  ///
+  /// 同时返回两种状态而不是只查 FAILED：司机需要看到「还有几条在排队」，
+  /// 只列失败项会让他以为剩下的都传完了。
+  Future<List<Map<String, dynamic>>> getQueuedActions({int limit = 100}) async {
+    return await db.query(
+      'pending_actions',
+      where: "status IN ('PENDING', 'FAILED')",
+      orderBy: "CASE status WHEN 'FAILED' THEN 0 ELSE 1 END, priority ASC, id ASC",
+      limit: limit,
+    );
+  }
+
+  /// 把 FAILED 记录重置回 PENDING，让下一轮同步重新捞取。
+  ///
+  /// 之所以必须有这个入口：markActionFailed 在重试超限后置为 FAILED，
+  /// 而 getPendingActions 只查 PENDING，FAILED 记录再也不会被自动重试。
+  /// 若不提供重置手段，一次网络抖动耗尽重试次数后，
+  /// 这张单据就永久沉在本地库里，司机和后台都拿不到——必须让司机能手动救回。
+  ///
+  /// retry_count 一并归零：否则重置后第一次失败就又立刻超限，等于没重试。
+  /// 传 id 为空则重置全部失败项。
+  Future<int> resetFailedActions({int? id}) async {
+    final n = await db.update(
+      'pending_actions',
+      {
+        'status': 'PENDING',
+        'retry_count': 0,
+        'error_msg': null,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: id == null ? "status = 'FAILED'" : "id = ? AND status = 'FAILED'",
+      whereArgs: id == null ? null : [id],
+    );
+    _notifyQueueChanged();
+    return n;
+  }
+
+  /// 彻底删除一条队列记录（司机确认放弃该单据时使用）。
+  Future<void> deleteAction(int id) async {
+    await db.delete('pending_actions', where: 'id = ?', whereArgs: [id]);
+    _notifyQueueChanged();
   }
 
   // ==================== cached_tasks 操作 ====================

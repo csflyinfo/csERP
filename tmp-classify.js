@@ -1,5 +1,5 @@
 const fs = require('fs')
-const path = 'e:/我的工作项目/erp-wms-tms/backend/src/main/resources/db/migration/V1__schema.sql'
+const path = 'e:/work/erp-wms-tms/backend/src/main/resources/db/migration/V1__schema.sql'
 const text = fs.readFileSync(path, 'utf8')
 
 // 抽取每个 CREATE TABLE 块（不能贪婪匹配 —— 直到匹配的 `);`）

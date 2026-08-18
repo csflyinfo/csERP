@@ -4,7 +4,10 @@ import '../../config/theme.dart';
 import '../../models/delivery.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../services/location_service.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/common.dart';
+import '../../widgets/offline_banner.dart';
 
 /// 实装数量变更回调（detailId|goodsCode → 新值）。
 typedef OnLoadedChanged = void Function(String key, num value);
@@ -36,15 +39,22 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     return Scaffold(
       backgroundColor: TmsTheme.bg,
       appBar: AppBar(title: const Text('装车确认')),
-      body: async.when(
-        data: (d) => _buildBody(d),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: async.when(
+              data: (d) => _buildBody(d),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -185,13 +195,32 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
       };
       _toast(msg);
       if (action == 'depart' && mounted) {
+        await _startTracking(d.dispatchId);
         ref.invalidate(todayTasksProvider);
-        Navigator.pop(context, true);
+        if (mounted) Navigator.pop(context, true);
       }
     } catch (e) {
       _toast('操作失败：${e.toString().replaceFirst("Exception: ", "")}');
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 发车成功后启动 GPS 轨迹采集（15s 一次，落本地库后由 SyncService 批量上报）。
+  ///
+  /// 幂等：LocationService.start 内部已判重，重复点击发车不会启动多个 Timer。
+  /// 定位权限被拒时静默降级，不阻断发车主流程。
+  Future<void> _startTracking(String dispatchId) async {
+    try {
+      final driver = ref.read(authProvider);
+      if (driver == null) return;
+      if (LocationService.instance.isRunning) return;
+      await LocationService.instance.start(
+        driverId: driver.driverId,
+        dispatchId: dispatchId,
+      );
+    } catch (_) {
+      // 定位失败不影响发车结果
     }
   }
 

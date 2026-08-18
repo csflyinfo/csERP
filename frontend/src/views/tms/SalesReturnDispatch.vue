@@ -3,6 +3,10 @@
  * 销售退货单调度管理（V1.2 退货调度闭环 · ERP 端）
  *
  * 物流状态机：未安排 ──[安排调度]──> 已安排调度 ──[指派司机]──> 已调度 ──[APP退货签收]──> 司机已回收
+ *              ──[退货入库单审核]──> 已入库
+ *
+ * 只管 return_type=DRIVER（司机回收）的退货单；自提到仓走退货单页的「推送仓库」，不进调度。
+ * 进入本页的前提是退货单已确认（CONFIRMED），审核是货回库后的财务动作，排在司机回收之后。
  *
  * 接口：
  *   POST /tms/return-dispatch/page          列表（司机回收型退货单）
@@ -95,7 +99,9 @@ async function loadRows() {
     tableRows.value = (data.records || []).map(r => {
       const ls = r.logisticsStatus || ''
       let ops = '查看'
-      if (ls === '未安排' && (r.billStatus === 'APPROVED' || r.billStatusText === '已审核')) ops = '安排调度 查看'
+      // V60：可安排调度的前提是「已确认」而不是「已审核」——
+      // 审核已退化为货回库后的纯财务动作，排在司机回收之后，要求先审核就永远排不上调度
+      if (ls === '未安排' && (r.billStatus === 'CONFIRMED' || r.billStatusText === '已确认')) ops = '安排调度 查看'
       else if (ls === '已安排调度') ops = '取消安排 指派司机 查看'
       return {
         c0: r.applyNo || '',

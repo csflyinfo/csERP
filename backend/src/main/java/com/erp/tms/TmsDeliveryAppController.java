@@ -26,7 +26,8 @@ import java.util.*;
  *   POST /tms/app/loading/scan         装车扫码核对（写 tms_loading_check）
  *   POST /tms/app/loading/confirm      确认装车完成
  *   POST /tms/app/depart               确认发车（LOADED → DEPARTED）
- *   POST /tms/app/arrive               到达门店
+ *   POST /tms/app/arrive               到达门店打卡（GPS 围栏校验）
+ *   POST /tms/app/arrive/config        到达打卡参数配置（围栏阈值 / 是否强制 / 是否必拍照）
  *   POST /tms/app/sign/items           签收 SKU 明细（按调度明细）
  *   POST /tms/app/sign                 门店签收（发货单：全部/部分/拒收）
  *   POST /tms/app/sign/upload-photo    上传签收照片（base64，MinIO 接入后改 URL）
@@ -244,7 +245,18 @@ public class TmsDeliveryAppController {
 
     // ==================== 到店 ====================
 
-    /** 到达门店：记录到达时间，写入调度明细 remark。 */
+    /**
+     * 到达门店打卡（GPS 围栏校验）。
+     *
+     * 入参：dispatchId、detailId（必填）；longitude、latitude、accuracy（可选，无定位权限时缺省）；
+     *       abnormalReason（GPS 异常时必填）、photoUrl（异常且参数要求拍照时必填）
+     *
+     * 距离与异常判定一律在服务端复算，不信任前端提交的 distance/gpsAbnormal，
+     * 防止司机改包绕过围栏。门店无坐标或未取到定位时降级为「无围栏模式」，
+     * 只记时间不判异常，避免因基础数据缺失阻断配送。
+     *
+     * 幂等：仅当 arrive_time IS NULL 时写入，重复打卡返回首次打卡结果。
+     */
     @PostMapping("/arrive")
     @Transactional
     public ApiResponse<Map<String, Object>> arrive(@RequestBody Map<String, Object> body) {
@@ -254,19 +266,162 @@ public class TmsDeliveryAppController {
         String driverId = TmsUtil.currentDriverId();
         loadDispatch(dispatchId, driverId); // 校验权限
 
+        List<Map<String, Object>> detailRows = jdbcTemplate.queryForList(
+                "SELECT customer_code, customer_name, arrive_time FROM tms_dispatch_detail WHERE detail_id=? AND dispatch_id=?",
+                detailId, dispatchId);
+        if (detailRows.isEmpty()) return ApiResponse.fail("404", "调度明细不存在");
+        Map<String, Object> detail = detailRows.get(0);
+
+        // 已打卡：直接回放首次结果，前端据此提示「已打卡」而非报错
+        if (detail.get("arrive_time") != null) {
+            Map<String, Object> old = TmsUtil.camelize(jdbcTemplate.queryForList(
+                    "SELECT arrive_time, arrive_distance, gps_abnormal, gps_abnormal_reason FROM tms_dispatch_detail WHERE detail_id=?",
+                    detailId).get(0));
+            old.put("dispatchId", dispatchId);
+            old.put("detailId", detailId);
+            old.put("repeated", true);
+            old.put("message", "该门店已打卡，本次不重复记录");
+            return ApiResponse.ok(old);
+        }
+
+        BigDecimal lng = body.get("longitude") == null ? null : TmsUtil.toBd(body.get("longitude"));
+        BigDecimal lat = body.get("latitude") == null ? null : TmsUtil.toBd(body.get("latitude"));
+        BigDecimal accuracy = body.get("accuracy") == null ? null : TmsUtil.toBd(body.get("accuracy"));
+
+        ArriveConfig cfg = loadArriveConfig();
+
+        // 门店档案坐标：缺失则无法围栏，降级放行
+        BigDecimal storeLng = null, storeLat = null;
+        String customerCode = TmsUtil.str(detail.get("customer_code"));
+        if (!customerCode.isEmpty()) {
+            List<Map<String, Object>> cs = jdbcTemplate.queryForList(
+                    "SELECT longitude, latitude FROM base_customer WHERE customer_code=?", customerCode);
+            if (!cs.isEmpty()) {
+                storeLng = cs.get(0).get("longitude") == null ? null : TmsUtil.toBd(cs.get(0).get("longitude"));
+                storeLat = cs.get(0).get("latitude") == null ? null : TmsUtil.toBd(cs.get(0).get("latitude"));
+            }
+        }
+
+        BigDecimal distance = null;
+        boolean abnormal = false;
+        boolean geoEnabled = lng != null && lat != null && storeLng != null && storeLat != null;
+        if (geoEnabled) {
+            distance = BigDecimal.valueOf(haversineMeters(
+                    lat.doubleValue(), lng.doubleValue(), storeLat.doubleValue(), storeLng.doubleValue()))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            abnormal = distance.doubleValue() > cfg.warnRadius;
+        }
+
+        String reason = TmsUtil.str(body.get("abnormalReason"));
+        String photoUrl = TmsUtil.str(body.get("photoUrl"));
+        // 仅在服务端判定为异常时才强校验，避免正常打卡被误拦
+        if (abnormal) {
+            if (reason.isEmpty()) {
+                return ApiResponse.fail("400", String.format(
+                        "定位偏差 %.0f 米，超过 %.0f 米，请填写异常原因", distance.doubleValue(), cfg.warnRadius));
+            }
+            if (cfg.photoRequired && photoUrl.isEmpty()) {
+                return ApiResponse.fail("400", "定位异常打卡必须上传现场照片");
+            }
+        }
+
         Timestamp now = Timestamp.valueOf(TmsUtil.now());
-        jdbcTemplate.update("UPDATE tms_dispatch_detail SET remark=COALESCE(remark,'') || ? WHERE detail_id=? AND dispatch_id=?",
-                " | 到达:" + now.toString().substring(0, 19), detailId, dispatchId);
+        jdbcTemplate.update("""
+                UPDATE tms_dispatch_detail
+                   SET arrive_time=?, arrive_longitude=?, arrive_latitude=?, arrive_accuracy=?,
+                       arrive_distance=?, gps_abnormal=?, gps_abnormal_reason=?, arrive_photo_url=?
+                 WHERE detail_id=? AND dispatch_id=? AND arrive_time IS NULL
+                """, now, lng, lat, accuracy, distance, abnormal ? "Y" : "N",
+                reason.isEmpty() ? null : reason, photoUrl.isEmpty() ? null : photoUrl, detailId, dispatchId);
 
         // 首店到达时推进调度单状态 DEPARTED → DELIVERING
-        Integer pendingCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM tms_dispatch_detail WHERE dispatch_id=? AND bill_type='RECEIPT' AND status='PENDING'",
-                Integer.class, dispatchId);
         jdbcTemplate.update("UPDATE tms_dispatch SET status='DELIVERING' WHERE dispatch_id=? AND status='DEPARTED'", dispatchId);
         jdbcTemplate.update("UPDATE tms_delivery_trip SET status='DELIVERING' WHERE dispatch_id=? AND status='DEPARTED'", dispatchId);
         jdbcTemplate.update("UPDATE sales_receipt SET dispatch_status='DELIVERING' WHERE dispatch_id=? AND dispatch_status='DEPARTED'", dispatchId);
 
-        return ApiResponse.ok(Map.of("dispatchId", dispatchId, "detailId", detailId, "arriveTime", now.toString()));
+        TmsUtil.log(jdbcTemplate, "tms.app.arrive", "ARRIVE", detailId,
+                "到达打卡：" + TmsUtil.str(detail.get("customer_name"))
+                        + (distance == null ? "（未启用围栏）" : String.format("，偏差 %.0f 米", distance.doubleValue()))
+                        + (abnormal ? "，GPS异常：" + reason : ""));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dispatchId", dispatchId);
+        result.put("detailId", detailId);
+        result.put("arriveTime", now.toString().substring(0, 19));
+        result.put("distance", distance);
+        result.put("gpsAbnormal", abnormal ? "Y" : "N");
+        result.put("geoEnabled", geoEnabled);
+        result.put("repeated", false);
+        result.put("message", abnormal ? "打卡成功，已记录 GPS 异常"
+                : geoEnabled ? "打卡成功" : "打卡成功（门店未维护坐标，本次未做围栏校验）");
+        return ApiResponse.ok(result);
+    }
+
+    /**
+     * 到达打卡参数配置。
+     *
+     * APP 启动/进入打卡页时拉取，据此决定围栏提示强度与是否强制打卡。
+     * 参数在 ERP「系统参数」页维护，无需改代码即可调整策略。
+     */
+    @PostMapping("/arrive/config")
+    public ApiResponse<Map<String, Object>> arriveConfig() {
+        ArriveConfig cfg = loadArriveConfig();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("normalRadius", cfg.normalRadius);
+        result.put("warnRadius", cfg.warnRadius);
+        result.put("arriveRequired", cfg.arriveRequired);
+        result.put("photoRequired", cfg.photoRequired);
+        return ApiResponse.ok(result);
+    }
+
+    /** 到达打卡配置项（来自 sys_param_runtime，读取失败时用内置默认值兜底）。 */
+    private record ArriveConfig(double normalRadius, double warnRadius, boolean arriveRequired, boolean photoRequired) {}
+
+    /**
+     * 读取到达打卡配置。
+     *
+     * 参数表异常或值非法一律回退默认值：配置读取绝不能成为打卡失败的原因。
+     * 同时保证 warnRadius >= normalRadius，避免误配置导致所有打卡都判异常。
+     */
+    private ArriveConfig loadArriveConfig() {
+        Map<String, String> kv = new HashMap<>();
+        try {
+            jdbcTemplate.queryForList("""
+                    SELECT param_key, COALESCE(param_value, default_value) AS v
+                      FROM sys_param_runtime
+                     WHERE param_key IN ('TMS_ARRIVE_NORMAL_RADIUS','TMS_ARRIVE_WARN_RADIUS',
+                                         'TMS_ARRIVE_REQUIRED','TMS_ARRIVE_PHOTO_REQUIRED')
+                    """).forEach(r -> kv.put(TmsUtil.str(r.get("param_key")), TmsUtil.str(r.get("v"))));
+        } catch (Exception ignore) {
+            // 参数表不可用时走默认值
+        }
+        double normal = parseDouble(kv.get("TMS_ARRIVE_NORMAL_RADIUS"), 200);
+        double warn = parseDouble(kv.get("TMS_ARRIVE_WARN_RADIUS"), 1000);
+        if (warn < normal) warn = normal;
+        return new ArriveConfig(normal, warn,
+                "true".equalsIgnoreCase(TmsUtil.str(kv.get("TMS_ARRIVE_REQUIRED"))),
+                !"false".equalsIgnoreCase(TmsUtil.str(kv.getOrDefault("TMS_ARRIVE_PHOTO_REQUIRED", "true"))));
+    }
+
+    private double parseDouble(String v, double def) {
+        if (v == null || v.isBlank()) return def;
+        try {
+            double d = Double.parseDouble(v.trim());
+            return d > 0 ? d : def;
+        } catch (NumberFormatException e) {
+            return def;
+        }
+    }
+
+    /** Haversine 球面距离（米）。短距离场景精度足够，无需引入 GIS 依赖。 */
+    private double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6371000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     // ==================== 签收 ====================
@@ -336,6 +491,30 @@ public class TmsDeliveryAppController {
         result.put("requiredQty", dRequired);
         result.put("signedQty", detailSigned);
         result.put("amount", billAmount);
+        // 透传打卡状态与配置，供签收页做软提示（是否阻断由 arriveRequired 决定，判定在 /sign 复算）
+        ArriveConfig cfg = loadArriveConfig();
+        result.put("arriveTime", d.get("arriveTime"));
+        result.put("arriveDistance", d.get("arriveDistance"));
+        result.put("gpsAbnormal", d.get("gpsAbnormal"));
+        result.put("arriveRequired", cfg.arriveRequired());
+        // 透传门店档案坐标与联系人：坐标供打卡围栏（否则会退化成无围栏模式），电话供「联系客户」
+        // 同时透传结算方式：司机要在门店当场决定「这单该不该收钱」，只有货到付款才需要收，
+        // 预付已付、账期挂账，缺了这个字段司机只能凭记忆判断，容易多收或漏收。
+        String custCode = TmsUtil.str(d.get("customerCode"));
+        if (!custCode.isEmpty()) {
+            List<Map<String, Object>> cs = jdbcTemplate.queryForList(
+                    "SELECT longitude, latitude, contact_name, mobile, settlement_type FROM base_customer WHERE customer_code=?", custCode);
+            if (!cs.isEmpty()) {
+                result.put("longitude", cs.get(0).get("longitude"));
+                result.put("latitude", cs.get(0).get("latitude"));
+                result.put("contactName", cs.get(0).get("contact_name"));
+                result.put("contactMobile", cs.get(0).get("mobile"));
+                Object st = cs.get(0).get("settlement_type");
+                result.put("settlementType", TmsUtil.str(st));
+                result.put("settlementText", TmsUtil.settlementText(st));
+                result.put("needCollect", TmsUtil.needCollect(st));
+            }
+        }
         result.put("items", items);
         return ApiResponse.ok(result);
     }
@@ -365,6 +544,12 @@ public class TmsDeliveryAppController {
         Map<String, Object> detail = TmsUtil.camelize(details.get(0));
         String detailStatus = TmsUtil.str(detail.get("status"));
         if ("DELIVERED".equals(detailStatus)) return ApiResponse.fail("400", "该发货单已签收");
+
+        // 打卡门禁：默认不强制，仅当参数 TMS_ARRIVE_REQUIRED=true 时才阻断签收。
+        // 服务端复算而不信任前端，避免绕过；关闭时完全不干预签收流程。
+        if (loadArriveConfig().arriveRequired() && detail.get("arriveTime") == null) {
+            return ApiResponse.fail("400", "当前配置要求先完成到店打卡才能签收");
+        }
 
         BigDecimal requiredQty = TmsUtil.toBd(detail.get("qty"));
         String customerCode = TmsUtil.str(detail.get("customerCode"));
@@ -414,6 +599,25 @@ public class TmsDeliveryAppController {
                 customerCode, customerName, signType, totalSigned, totalReject,
                 collectAmount, payMethod.isEmpty() ? null : payMethod, now, driverId, customerSigner,
                 signatureUrl.isEmpty() ? null : signatureUrl, remark);
+
+        // 1.1 随主单一并落照片（可选）。
+        // 之所以在签收接口里也支持 photos，而不是一律走 /sign/upload-photo：
+        // APP 离线时先把签收请求排入本地队列，此刻 signId 还不存在，
+        // 照片若拆成第二个请求，重放时必然缺 signId 被 400 拒绝并永久卡在队列里。
+        // 签收时 signId 已生成，这里顺带写入即可让离线链路一次成功。
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
+                ? (List<Map<String, Object>>) pl : List.<Map<String, Object>>of();
+        for (Map<String, Object> p : headPhotos) {
+            String url = TmsUtil.str(p.get("url"));
+            if (url.isEmpty()) continue;
+            String photoType = TmsUtil.str(p.get("photoType"));
+            if (photoType.isEmpty()) photoType = "GOODS";
+            jdbcTemplate.update("""
+                    INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, TmsUtil.uuid("PH"), signId, photoType, url, TmsUtil.extractObjectKey(url));
+        }
 
         // 2. 更新调度明细状态
         jdbcTemplate.update("UPDATE tms_dispatch_detail SET status=?, sign_time=?, sign_user=? WHERE detail_id=?",

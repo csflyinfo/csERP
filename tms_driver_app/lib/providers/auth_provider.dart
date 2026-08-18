@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import '../models/driver.dart';
 
 /// 鉴权状态：未登录时为 null。
@@ -21,6 +22,8 @@ class AuthNotifier extends StateNotifier<Driver?> {
   }
 
   Future<void> logout() async {
+    // 退出登录必须停止 GPS 采集，否则后台 Timer 继续耗电且上报无归属
+    LocationService.instance.stop();
     await AuthService.instance.logout();
     state = null;
   }

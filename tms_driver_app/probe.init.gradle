@@ -1,0 +1,11 @@
+gradle.projectsEvaluated {
+    gradle.rootProject.subprojects.each { p ->
+        def ext = p.extensions.findByName('android')
+        if (ext == null) return
+        try {
+            println "PROBE|" + p.path + "|staging=" + ext.externalNativeBuild.cmake.buildStagingDirectory + "|cmake=" + ext.externalNativeBuild.cmake.path
+        } catch (Throwable t) {
+            println "PROBE-ERR|" + p.path + "|" + t
+        }
+    }
+}

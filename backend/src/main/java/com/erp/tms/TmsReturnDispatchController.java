@@ -75,7 +75,12 @@ public class TmsReturnDispatchController {
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
-    /** 安排调度：logistics_status 未安排 → 已安排调度。前提：return_type=DRIVER 且单据已审核。 */
+    /**
+     * 安排调度：logistics_status 未安排 → 已安排调度。前提：return_type=DRIVER 且单据已确认。
+     * <p>
+     * V60 起前提是「已确认」而不是「已审核」：审核已退化为货回库后的纯财务动作，
+     * 排在司机回收之后，要求先审核会让司机回收链路永远排不上调度。
+     */
     @PostMapping("/arrange")
     @Transactional
     public ApiResponse<Map<String, Object>> arrange(@RequestBody Map<String, Object> body) {
@@ -90,7 +95,7 @@ public class TmsReturnDispatchController {
         String status = TmsUtil.str(r.get("status"));
         String logisticsStatus = TmsUtil.str(r.get("logistics_status"));
         if (!"DRIVER".equals(returnType)) return ApiResponse.fail("400", "非司机回收型退货单无需安排调度");
-        if (!"APPROVED".equals(status)) return ApiResponse.fail("400", "退货单尚未审核，无法安排调度");
+        if (!"CONFIRMED".equals(status)) return ApiResponse.fail("400", "退货单尚未确认，无法安排调度");
         if (!"未安排".equals(logisticsStatus)) return ApiResponse.fail("400", "当前物流状态为「" + logisticsStatus + "」，不可重复安排调度");
 
         jdbcTemplate.update("""

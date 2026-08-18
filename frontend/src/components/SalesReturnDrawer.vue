@@ -77,6 +77,8 @@ function emptyHeader() {
     customerCode: '',
     customer: '',
     warehouse: '',
+    // 退货方式默认自提到仓：多数退货是客户自己送回，选错成司机回收会凭空占用配送运力
+    returnType: 'WAREHOUSE',
     returnReason: '',
     remark: '',
   }
@@ -132,6 +134,7 @@ async function loadExistingApply(applyId) {
       customerCode: data.customerCode || '',
       customer: data.customerName || '',
       warehouse: data.warehouse || '',
+      returnType: data.returnType === 'DRIVER' ? 'DRIVER' : 'WAREHOUSE',
       returnReason: data.returnReason || '',
       remark: data.remark || '',
     }
@@ -428,6 +431,10 @@ function validate() {
     errors.value.header = '请选择仓库'
     return false
   }
+  if (headerForm.value.returnType !== 'DRIVER' && headerForm.value.returnType !== 'WAREHOUSE') {
+    errors.value.header = '请选择退货方式'
+    return false
+  }
   if (detailList.value.length === 0) {
     errors.value.details = '请通过【按单添加商品】或【添加商品】添加退货明细'
     return false
@@ -462,6 +469,7 @@ async function saveApply(status) {
     customerCode: headerForm.value.customerCode,
     customer: headerForm.value.customer,
     warehouse: headerForm.value.warehouse,
+    returnType: headerForm.value.returnType,
     returnReason: headerForm.value.returnReason,
     remark: headerForm.value.remark,
     status,
@@ -537,6 +545,14 @@ function closeDrawer() { emit('close') }
                 <option v-for="w in warehouseOptions" :key="w" :value="w">{{ w }}</option>
               </select>
               <input v-else readonly :value="headerForm.warehouse" />
+            </div>
+            <div class="field">
+              <label>退货方式 <span v-if="canEdit" class="req">*</span></label>
+              <select v-if="canEdit" v-model="headerForm.returnType">
+                <option value="WAREHOUSE">自提到仓（客户送回仓库）</option>
+                <option value="DRIVER">司机回收（司机上门取货）</option>
+              </select>
+              <input v-else readonly :value="headerForm.returnType === 'DRIVER' ? '司机回收' : '自提到仓'" />
             </div>
             <div class="field">
               <label>退货原因</label>

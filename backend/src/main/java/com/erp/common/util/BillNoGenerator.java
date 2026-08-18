@@ -57,6 +57,7 @@ public class BillNoGenerator {
         public static final String TMS_RESCHEDULE_RETURN = "GPRC"; // TMS 改派返仓单
         public static final String TMS_CUSTOMER_REJECT = "KHJS";   // TMS 客户拒收单
         public static final String TMS_SETTLEMENT = "JZ";          // TMS 交账单
+        public static final String TMS_EXCEPTION_REPORT = "YCSB";  // TMS 异常上报单
         private BillType() {}
     }
 

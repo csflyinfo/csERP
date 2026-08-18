@@ -3,13 +3,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/delivery.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/launch_service.dart';
+import '../../services/location_service.dart';
 import '../../widgets/common.dart';
+import '../../widgets/offline_banner.dart';
 import '../store/store_location_page.dart';
+import 'arrive_page.dart';
 
 /// 配送签收页面（对齐原型 Screen G）。
 ///
@@ -52,34 +57,41 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
     return Scaffold(
       backgroundColor: TmsTheme.bg,
       appBar: AppBar(title: const Text('配送签收')),
-      body: async.when(
-        data: (d) {
-          if (_items.length != d.items.length) {
-            _items.clear();
-            for (final it in d.items) {
-              _items.add(SignItem(
-                goodsCode: it.goodsCode,
-                goodsName: it.goodsName,
-                unitName: it.unitName,
-                requiredQty: it.requiredQty,
-                signedQty: it.requiredQty, // 默认全收
-                rejectQty: 0,
-              ));
-            }
-            // 默认收款金额=应收金额
-            if (_collectCtrl.text.isEmpty && d.amount > 0) {
-              _collectCtrl.text = d.amount.toString();
-            }
-          }
-          return _buildBody(d);
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(
+            child: async.when(
+              data: (d) {
+                if (_items.length != d.items.length) {
+                  _items.clear();
+                  for (final it in d.items) {
+                    _items.add(SignItem(
+                      goodsCode: it.goodsCode,
+                      goodsName: it.goodsName,
+                      unitName: it.unitName,
+                      requiredQty: it.requiredQty,
+                      signedQty: it.requiredQty, // 默认全收
+                      rejectQty: 0,
+                    ));
+                  }
+                  // 默认收款金额=应收金额
+                  if (_collectCtrl.text.isEmpty && d.amount > 0) {
+                    _collectCtrl.text = d.amount.toString();
+                  }
+                }
+                return _buildBody(d);
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)),
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -95,6 +107,7 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
       children: [
         Alert.info('📦 配送签收 · 发货单 ${d.sourceBillNo}'),
         const SizedBox(height: 8),
+        _buildArriveHint(d),
         // 发货单信息卡
         MCard(
           leftBar: TmsTheme.accent,
@@ -106,22 +119,47 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
             const SizedBox(height: 4),
             MLine('客户', d.customerName),
             MLine('地址', d.customerAddress),
-            MLine('应收金额', '¥ ${d.amount.toStringAsFixed(2)}', valueColor: TmsTheme.accent2),
+            if (d.hasPhone) MLine('联系人', '${d.contactName}  ${d.contactMobile}'.trim()),
+            // 结算方式决定这单要不要当场收钱：预付已付、账期挂账，只有货到付款才需要收。
+            // 缺这个字段司机只能凭记忆判断，容易对预付客户重复收款。
+            if (d.settlementText.isNotEmpty) MLine('结算方式', d.settlementText),
+            MLine(
+              d.needCollect ? '应收金额（需当场收款）' : '应收金额',
+              '¥ ${d.amount.toStringAsFixed(2)}',
+              valueColor: d.needCollect ? TmsTheme.accent2 : TmsTheme.muted,
+            ),
             const SizedBox(height: 6),
+            // 导航 / 拨号 / 改定位三个轻操作，用 Wrap 防窄屏溢出
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => StoreLocationPage(
-                      customerCode: d.customerCode,
-                      customerName: d.customerName,
-                      dispatchId: d.dispatchId,
-                    ),
-                  ));
-                },
-                icon: const Icon(Icons.location_on, size: 14),
-                label: const Text('修改定位', style: TextStyle(fontSize: 12)),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _navigateTo(d),
+                    icon: const Icon(Icons.navigation, size: 14),
+                    label: const Text('导航前往', style: TextStyle(fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: d.hasPhone ? () => _callCustomer(d) : null,
+                    icon: const Icon(Icons.phone, size: 14),
+                    label: const Text('联系客户', style: TextStyle(fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => StoreLocationPage(
+                          customerCode: d.customerCode,
+                          customerName: d.customerName,
+                          dispatchId: d.dispatchId,
+                        ),
+                      ));
+                    },
+                    icon: const Icon(Icons.location_on, size: 14),
+                    label: const Text('修改定位', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
               ),
             ),
           ]),
@@ -255,7 +293,12 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) {
       setState(() => _photos.add(photo));
     }
@@ -268,6 +311,52 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
     final totalSigned = _items.fold<num>(0, (s, it) => s + it.signedQty);
     final collectAmount = d.amount * totalSigned / totalRequired;
     _collectCtrl.text = collectAmount.toStringAsFixed(2);
+  }
+
+  /// 到店打卡提示条。
+  ///
+  /// 遵循「不强制」原则：
+  ///   · 已打卡 → 绿色回执，显示到店时间与偏差（GPS 异常时转红）；
+  ///   · 未打卡且参数未开启强制 → 灰色软提示 + 「去打卡」入口，不阻断签收；
+  ///   · 未打卡且参数已开启强制 → 橙色警示，服务端 /sign 会拒绝，此处提前告知。
+  Widget _buildArriveHint(SignDetail d) {
+    if (d.hasArrived) {
+      final abn = d.gpsAbnormal;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: abn
+            ? Alert.warn('⚠️ 已于 ${d.arriveTime} 到店打卡'
+                '${d.arriveDistance == null ? '' : '，偏差 ${d.arriveDistance!.toStringAsFixed(0)} 米'}'
+                '，已标记 GPS 异常')
+            : Alert.ok('✅ 已于 ${d.arriveTime} 到店打卡'
+                '${d.arriveDistance == null ? '' : '，偏差 ${d.arriveDistance!.toStringAsFixed(0)} 米'}'),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(children: [
+        Expanded(
+          child: d.arriveRequired
+              ? const Alert.warn('⚠️ 当前配置要求先到店打卡才能签收')
+              : const Alert.info('ℹ️ 尚未到店打卡（不影响签收）'),
+        ),
+        const SizedBox(width: 8),
+        TmsButton.outline('去打卡', onPressed: () {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => ArrivePage(
+              dispatchId: d.dispatchId,
+              detailId: d.detailId,
+              customerName: d.customerName,
+              customerAddress: d.customerAddress,
+              storeLongitude: d.longitude,
+              storeLatitude: d.latitude,
+            ),
+          )).then((ok) {
+            if (ok == true) ref.invalidate(signItemsProvider(widget.detailId));
+          });
+        }),
+      ]),
+    );
   }
 
   Future<void> _submit(SignDetail d) async {
@@ -285,16 +374,20 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
         final tempDir = await Directory.systemTemp.createTemp('sig');
         final sigFile = File('${tempDir.path}/signature.png');
         await sigFile.writeAsBytes(sigBytes);
-        final sigResult = await ApiService.instance.uploadImage(sigFile, bizType: 'SIGNATURE');
+        final sigResult = await ApiService.instance
+            .uploadImageOrDefer(sigFile, bizType: 'SIGNATURE');
         signatureUrl = sigResult['url'] as String;
       }
 
       // 上传所有现场照片（XFile → File → 上传获得 URL）
-      final photoUrls = <String>[];
-      for (final p in _photos) {
-        final upResult = await ApiService.instance.uploadImage(File(p.path), bizType: 'SIGN');
-        photoUrls.add(upResult['url'] as String);
-      }
+      // 离线时 uploadImagesOrDefer 返回本地路径占位，随主单一起入队，
+      // 由 SyncService 在重放前补传，避免「照片传不上去导致整单提交失败」。
+      // 有限并发上传：串行时总耗时是各张之和，签收页常拍 3~5 张，
+      // 弱网下会让司机干等几十秒并误以为卡死。
+      final photoUrls = await ApiService.instance.uploadImagesOrDefer(
+        _photos.map((p) => File(p.path)).toList(),
+        bizType: 'SIGN',
+      );
 
       final items = <Map<String, dynamic>>[];
       for (final it in _items) {
@@ -320,8 +413,18 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
 
       final signType = result['signType']?.toString() ?? '';
       final allCompleted = result['allCompleted'] == true;
-      String msg = '签收成功：${_signTypeText(signType)}';
-      if (allCompleted) msg += '，本调度单已全部签收完成';
+      // 离线入队与服务端已确认必须给出不同提示：
+      // 都说「签收成功」会让司机以为数据已回传，收工后不再关心同步状态，
+      // 队列里卡住的单子就没人管了。
+      String msg;
+      if (result['_offline'] == true) {
+        msg = '当前无网络，签收已暂存本地，联网后自动上传';
+      } else {
+        msg = '签收成功：${_signTypeText(signType)}';
+        if (allCompleted) msg += '，本调度单已全部签收完成';
+      }
+      // 全部签收完成 → 停止 GPS 采集，避免收工后继续耗电
+      if (allCompleted) LocationService.instance.stop();
       ref.invalidate(todayTasksProvider);
       ref.invalidate(signItemsProvider(widget.detailId));
       if (mounted) {
@@ -350,6 +453,34 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
 
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
+  }
+
+  /// 唤起手机地图导航；门店未维护坐标时降级为按地址搜索。
+  Future<void> _navigateTo(SignDetail d) async {
+    if (!d.hasGeo && d.customerAddress.trim().isEmpty) {
+      _toast('门店未维护坐标与地址，无法导航');
+      return;
+    }
+    final ok = await LaunchService.instance.navigate(
+      longitude: d.longitude,
+      latitude: d.latitude,
+      address: d.customerAddress,
+      name: d.customerName,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      _toast('未找到可用地图应用');
+    } else if (!d.hasGeo) {
+      // 坐标缺失时只能按地址模糊定位，需提醒司机核对，避免导错门店
+      _toast('门店未维护坐标，已按地址搜索，请核对位置');
+    }
+  }
+
+  /// 拨打门店联系人电话（只跳拨号盘，由司机确认后再呼出）。
+  Future<void> _callCustomer(SignDetail d) async {
+    final ok = await LaunchService.instance.dial(d.contactMobile);
+    if (!mounted) return;
+    if (!ok) _toast('拨号失败，请手动联系 ${d.contactMobile}');
   }
 }
 

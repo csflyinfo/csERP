@@ -163,6 +163,24 @@ public class TmsCustomerRejectController {
             jdbcTemplate.update("UPDATE sales_receipt SET dispatch_status='REJECTED' WHERE receipt_no=?", receiptNo);
         }
 
+        // 随主单一并落照片（可选）。
+        // 拒收留证照片是后续跟客户扯皮时唯一的凭据，必须保证离线也不丢：
+        // APP 离线时建单请求排入本地队列，此刻 rejectId 尚未生成，
+        // 照片若拆成第二个请求，重放时缺 rejectId 会被 400 拒绝并永久卡在队列。
+        // 建单时 rejectId 已生成，这里顺带写入，让离线链路一次成功。
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
+                ? (List<Map<String, Object>>) pl : new ArrayList<>();
+        for (Map<String, Object> p : headPhotos) {
+            String url = TmsUtil.str(p.get("url"));
+            if (url.isEmpty()) continue;
+            String photoId = TmsUtil.uuid("SP");
+            jdbcTemplate.update("""
+                    INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
+                    VALUES (?, ?, 'CUSTOMER_REJECT', ?, ?)
+                    """, photoId, rejectId, url, "customer-reject/" + rejectId + "/" + photoId);
+        }
+
         TmsUtil.log(jdbcTemplate, "tms.app.customer-reject", "CREATE", rejectNo,
                 "客户拒收单生成：" + receiptNo + "，原因：" + rejectReason + "，数量：" + totalQty);
         return ApiResponse.ok(Map.of(

@@ -127,6 +127,7 @@ const routes = [
       { path: 'tms-driver-return', name: 'TmsDriverReturn', component: () => import('@/views/tms/DriverReturnList.vue'), meta: { title: '司机退货单', module: 'tms-driver-return' } },
       { path: 'tms-reschedule-return', name: 'TmsRescheduleReturn', component: () => import('@/views/tms/RescheduleReturnList.vue'), meta: { title: '改派返仓单', module: 'tms-reschedule-return' } },
       { path: 'tms-customer-reject', name: 'TmsCustomerReject', component: () => import('@/views/tms/CustomerRejectList.vue'), meta: { title: '客户拒收单', module: 'tms-customer-reject' } },
+      { path: 'tms-exception-report', name: 'TmsExceptionReport', component: () => import('@/views/tms/ExceptionReportList.vue'), meta: { title: '异常上报处理', module: 'tms-exception-report' } },
       { path: 'tms-settlement', name: 'TmsSettlement', component: () => import('@/views/tms/SettlementList.vue'), meta: { title: '交账单管理', module: 'tms-settlement' } },
       { path: 'tms-store-location', name: 'TmsStoreLocation', component: () => import('@/views/tms/StoreLocationList.vue'), meta: { title: '门店定位审核', module: 'tms-store-location' } },
       { path: 'tms-dashboard', name: 'TmsDashboard', component: () => import('@/views/tms/DispatchDashboard.vue'), meta: { title: '调度看板', module: 'tms-dashboard' } },

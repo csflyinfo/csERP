@@ -107,6 +107,7 @@ export const fallbackMenus = {
     { code: 'tms-driver-return', name: '司机退货单' },
     { code: 'tms-reschedule-return', name: '改派返仓单' },
     { code: 'tms-customer-reject', name: '客户拒收单' },
+    { code: 'tms-exception-report', name: '异常上报处理' },
     { code: 'tms-settlement', name: '交账单管理' },
     { code: 'tms-store-location', name: '门店定位审核' },
     { code: 'tms-dashboard', name: '调度看板' },

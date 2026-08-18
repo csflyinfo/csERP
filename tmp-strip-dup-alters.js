@@ -1,5 +1,5 @@
 const fs = require('fs')
-const path = 'e:/我的工作项目/erp-wms-tms/backend/src/main/resources/db/migration/V1__schema.sql'
+const path = 'e:/work/erp-wms-tms/backend/src/main/resources/db/migration/V1__schema.sql'
 let text = fs.readFileSync(path, 'utf8')
 
 const reCreate = /CREATE TABLE (\w+)\s*\(([\s\S]*?)\);/g

@@ -5,6 +5,7 @@
  * 数据来源：
  *   发货单：sales_receipt status=APPROVED 且 dispatch_status=UNDISPATCHED
  *   退货单：sales_return_apply return_type=DRIVER 且 logistics_status=已安排调度
+ *          （即「已确认 + 已安排调度」；自提到仓 return_type=WAREHOUSE 永不进池，走退货单页的「推送仓库」）
  *
  * 接口：
  *   POST /tms/dispatch/pool          任务池（发货单 + 退货单 + 统计）

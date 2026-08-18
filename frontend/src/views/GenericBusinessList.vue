@@ -770,6 +770,22 @@ const YESNO_OPTS = [
   { value: 'false', label: '否' },
 ]
 
+// 销售退货单筛选：退货方式 / 流转状态。
+// 后端 PageResult 是「整行文本模糊包含」过滤，所以 value 必须用行里真实出现的中文，
+// 不能用 DRIVER / WAREHOUSE 这种枚举码（仓库名等字段可能误命中）。
+const RETURN_TYPE_OPTS = [
+  { value: '司机回收', label: '司机回收' },
+  { value: '自提到仓', label: '自提到仓' },
+]
+const RETURN_LOGISTICS_OPTS = [
+  { value: '未安排', label: '未安排（待安排调度/待推送仓库）' },
+  { value: '已安排调度', label: '已安排调度' },
+  { value: '已调度', label: '已调度' },
+  { value: '司机已回收', label: '司机已回收' },
+  { value: '已推送仓库', label: '已推送仓库' },
+  { value: '已入库', label: '已入库' },
+]
+
 // 动态构造 filters：为 counterparty / employee 等模块的下拉注入实际选项
 const priceGroupItemViewMode = ref('tree') // 'tree' | 'flat'
 // 树是否可见：默认跟随 config.tree；priceGroupItem 在 flat 模式下隐藏
@@ -828,6 +844,14 @@ const dynamicFilters = computed(() => {
       if (f === '客户') return { label: '客户', options: flyCustomerOptions.value }
       if (f === '供应商') return { label: '供应商', options: flySupplierOptions.value }
       if (f === '状态') return { label: '状态', options: flyStatusOptions }
+      return f
+    })
+  }
+  if (moduleCode.value === 'salesReturn') {
+    // 退货方式 / 流转状态用下拉，避免手输错字匹配不到（后端是整行文本模糊匹配）
+    return base.map(f => {
+      if (f === '退货方式') return { label: '退货方式', options: RETURN_TYPE_OPTS }
+      if (f === '流转状态') return { label: '流转状态', options: RETURN_LOGISTICS_OPTS }
       return f
     })
   }
@@ -1445,6 +1469,9 @@ async function confirmAction() {
 
 function resolveEndpoint(api, action) {
   if (/确认退货/.test(action)) return api?.confirm
+  // 撤销推送要排在推送前面判断，否则「撤销推送」会先命中 /推送/
+  if (/撤销推送/.test(action)) return api?.cancelPush
+  if (/推送仓库/.test(action)) return api?.pushWarehouse
   if (/驳回/.test(action)) return api?.reject
   if (/反审核/.test(action)) return api?.reverseAudit
   if (/关闭|终止/.test(action)) return api?.close
@@ -2034,8 +2061,41 @@ async function handleAction(action, row = null) {
       if (!applyId) { show('退货单号缺失'); return }
       app.openSalesReturnDrawer(null, { applyId, applyNo: raw.applyNo }, actionStr === '查看'); return
     }
-    if (actionStr === '确认退货' || actionStr === '驳回' || actionStr === '审核' || actionStr === '反审核' || actionStr === '删除') {
+    if (actionStr === '确认退货' || actionStr === '驳回' || actionStr === '审核' || actionStr === '反审核'
+        || actionStr === '删除' || actionStr === '推送仓库' || actionStr === '撤销推送') {
       // 这些操作走通用 action 流程（需要调用后端 API）
+    }
+    // 安排调度 / 取消调度落在 TMS 侧接口，入参是 applyNo 而不是通用的 bizId，单独处理
+    if (actionStr === '安排调度' || actionStr === '取消调度') {
+      const raw = row?._raw || {}
+      const applyNo = raw.applyNo
+      if (!applyNo) { show('退货单号缺失'); return }
+      const url = actionStr === '安排调度' ? '/tms/return-dispatch/arrange' : '/tms/return-dispatch/cancel-arrange'
+      try {
+        await post(url, { applyNo })
+        show(`${applyNo} ${actionStr}成功`)
+        await loadRows()
+      } catch (error) {
+        show(`${actionStr}失败：${error.message}`)
+      }
+      return
+    }
+    // 改退货方式：确认后才发现方式选错的场景，只在「未安排」时可切，直接切到另一种，不弹通用确认框
+    if (actionStr === '改为司机回收' || actionStr === '改为自提到仓') {
+      const raw = row?._raw || {}
+      const applyId = raw.applyId || raw.applyNo
+      if (!applyId) { show('退货单号缺失'); return }
+      try {
+        const result = await post(moduleApis.salesReturn.changeReturnType, {
+          bizId: applyId,
+          returnType: actionStr === '改为司机回收' ? 'DRIVER' : 'WAREHOUSE',
+        })
+        show(result?.effect || `${actionStr}成功`)
+        await loadRows()
+      } catch (error) {
+        show(`${actionStr}失败：${error.message}`)
+      }
+      return
     }
   }
 
@@ -2164,7 +2224,7 @@ async function handleAction(action, row = null) {
     await openDetail(action, row)
   } else if (/新建|编辑|复制|引入/.test(action)) {
     openDialog('form', action, `${config.value.title}：按PRD打开${config.value.mode === 'modal' ? '小弹窗' : config.value.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
-  } else if (/审核|确认签收|确认退货|驳回|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
+  } else if (/审核|确认签收|确认退货|推送仓库|撤销推送|驳回|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
     openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
   } else if (/导入/.test(action)) {
     openDialog('import', action, `${config.value.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
@@ -2903,7 +2963,15 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
                 <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
               </template>
             </template>
-            <!-- 销售退货单：DRAFT可编辑删除；PENDING可编辑/确认/驳回；CONFIRMED可审核；APPROVED可反审核；REJECTED只读 -->
+            <!--
+              销售退货单行操作：
+                DRAFT     可编辑/删除
+                PENDING   可编辑/确认/驳回
+                CONFIRMED 按退货方式 + 流转状态分叉（司机回收走安排调度，自提到仓走推送仓库；
+                          审核按钮只在货已到位时出现，具体前置由后端按入账时点参数兜底校验）
+                APPROVED  可反审核
+                REJECTED  只读
+            -->
             <template v-else-if="moduleCode === 'salesReturn'">
               <template v-if="row._raw?.status === 'DRAFT'">
                 <button class="link link-btn" @click="handleAction('编辑', row)">查看/编辑</button>
@@ -2916,7 +2984,20 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
               </template>
               <template v-else-if="row._raw?.status === 'CONFIRMED'">
                 <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
-                <button class="link link-btn primary-link" @click="handleAction('审核', row)">审核</button>
+                <!-- 司机回收链路 -->
+                <template v-if="row._raw?.returnType === 'DRIVER'">
+                  <button v-if="row._raw?.logisticsStatus === '未安排'" class="link link-btn primary-link" @click="handleAction('安排调度', row)">安排调度</button>
+                  <button v-if="row._raw?.logisticsStatus === '未安排'" class="link link-btn" @click="handleAction('改为自提到仓', row)">改为自提到仓</button>
+                  <button v-if="row._raw?.logisticsStatus === '已安排调度'" class="link link-btn" @click="handleAction('取消调度', row)">取消调度</button>
+                  <button v-if="row._raw?.logisticsStatus === '司机已回收' || row._raw?.logisticsStatus === '已入库'" class="link link-btn primary-link" @click="handleAction('审核', row)">审核</button>
+                </template>
+                <!-- 自提到仓链路 -->
+                <template v-else>
+                  <button v-if="row._raw?.logisticsStatus === '未安排'" class="link link-btn primary-link" @click="handleAction('推送仓库', row)">推送仓库</button>
+                  <button v-if="row._raw?.logisticsStatus === '未安排'" class="link link-btn" @click="handleAction('改为司机回收', row)">改为司机回收</button>
+                  <button v-if="row._raw?.logisticsStatus === '已推送仓库'" class="link link-btn" @click="handleAction('撤销推送', row)">撤销推送</button>
+                  <button v-if="row._raw?.logisticsStatus === '已入库'" class="link link-btn primary-link" @click="handleAction('审核', row)">审核</button>
+                </template>
               </template>
               <template v-else-if="row._raw?.status === 'APPROVED'">
                 <button class="link link-btn" @click="handleAction('查看', row)">查看</button>

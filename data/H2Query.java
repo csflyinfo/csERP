@@ -2,7 +2,7 @@ import java.sql.*;
 
 public class H2Query {
     public static void main(String[] args) throws Exception {
-        String url = "jdbc:h2:file:e:/我的工作项目/erp-wms-tms/backend/data/erp-v1;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
+        String url = "jdbc:h2:file:e:/work/erp-wms-tms/backend/data/erp-v1;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
         try (Connection conn = DriverManager.getConnection(url, "sa", "")) {
             // 基础数据统计
             String[][] queries = {

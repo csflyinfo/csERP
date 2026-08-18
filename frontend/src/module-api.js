@@ -55,7 +55,7 @@ export const moduleApis = {
   salesReceipt: { page: '/sales/receipt/page', detail: '/sales/receipt/detail', audit: '/sales/receipt/audit', reverseAudit: '/sales/receipt/reverse-audit', sign: '/sales/receipt/sign', unsign: '/sales/receipt/unsign' },
   // 拒收入库单：故意不配 save/create —— 只能由发货单签收拒收自动生成
   rejectInbound: { page: '/sales/reject-inbound/page', detail: '/sales/reject-inbound/detail', update: '/sales/reject-inbound/update', audit: '/sales/reject-inbound/audit', reverseAudit: '/sales/reject-inbound/reverse-audit', batchOptions: '/sales/reject-inbound/batch-options' },
-  salesReturn: { page: '/sales/return-order/page', save: '/sales/return-order/create', update: '/sales/return-order/update', detail: '/sales/return-order/detail', audit: '/sales/return-order/audit', reverseAudit: '/sales/return-order/reverse-audit', confirm: '/sales/return-order/confirm', reject: '/sales/return-order/reject', delete: '/sales/return-order/delete' },
+  salesReturn: { page: '/sales/return-order/page', save: '/sales/return-order/create', update: '/sales/return-order/update', detail: '/sales/return-order/detail', audit: '/sales/return-order/audit', reverseAudit: '/sales/return-order/reverse-audit', confirm: '/sales/return-order/confirm', reject: '/sales/return-order/reject', delete: '/sales/return-order/delete', pushWarehouse: '/sales/return-order/push-warehouse', cancelPush: '/sales/return-order/cancel-push', changeReturnType: '/sales/return-order/change-return-type' },
   salesReturnInbound: { page: '/sales/return-inbound/page', detail: '/sales/return-inbound/detail', update: '/sales/return-inbound/update', audit: '/sales/return-inbound/audit' },
   salesInvoice: { page: '/sales/invoice/page' },
   flyOrder: { page: '/sales/fly-order/page', create: '/sales/fly-order/create', update: '/sales/fly-order/update', detail: '/sales/fly-order/detail', audit: '/sales/fly-order/audit', reverseAudit: '/sales/fly-order/unaudit', cancel: '/sales/fly-order/cancel', delete: '/sales/fly-order/delete', batchAudit: '/sales/fly-order/batch-audit', batchUnaudit: '/sales/fly-order/batch-unaudit', batchDelete: '/sales/fly-order/batch-delete', exportAll: '/sales/fly-order/export', exportDetail: '/sales/fly-order/export-detail' },
@@ -398,7 +398,11 @@ const EXACT_TITLE_MAP = {
   '报损单号': ['damageNo'],
   '申请单号': ['applyNo'],
   '来源收货单': ['sourceReceiptNo'],
-  '退货方式': ['returnModeText', 'returnMode'],
+  // 表头「退货方式」= 司机回收/自提到仓（return_type），明细「退货方式」= 按单/按品退货（return_mode）。
+  // 两者同名，表头字段优先：列表渲染的是表头行，明细表用的是硬编码 th + 显式字段绑定，不走这张表。
+  '退货方式': ['returnTypeText', 'returnType', 'returnModeText', 'returnMode'],
+  '流转状态': ['logisticsStatusText', 'logisticsStatus'],
+  '回收数量': ['signedQty'],
   '源单号': ['sourceInboundNo'],
   '源行号': ['sourceDetailId'],
   '可退数量': ['returnableQty'],
@@ -470,7 +474,9 @@ const EXACT_TITLE_MAP = {
   '签收金额': ['signAmount', 'signedAmount', 'amount'],
   '入库金额': ['inboundAmount', 'amount'],
   '费用金额': ['expenseAmount', 'amount'],
-  '退货金额': ['amount'],
+  // returnAmount 是销售退货单的实际退货金额（签收/入库后确定），入库单等其他单据没这个字段，回退 amount
+  '退货金额': ['returnAmount', 'amount'],
+  '申请金额': ['amount'],
   '金额': ['amount'],
   '销售总额': ['salesAmount', 'amount'],
   '已收金额': ['receivedAmount', 'paidAmount'],

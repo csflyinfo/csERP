@@ -133,6 +133,7 @@ public class SystemController {
                         menu("tms-driver-return", "司机退货单", "/tms/driver-return"),
                         menu("tms-reschedule-return", "改派返仓单", "/tms/reschedule-return"),
                         menu("tms-customer-reject", "客户拒收单", "/tms/customer-reject"),
+                        menu("tms-exception-report", "异常上报处理", "/tms/exception-report"),
                         menu("tms-settlement", "交账单管理", "/tms/settlement"),
                         menu("tms-store-location", "门店定位审核", "/tms/store-location"),
                         menu("tms-dashboard", "调度看板", "/tms/dashboard")

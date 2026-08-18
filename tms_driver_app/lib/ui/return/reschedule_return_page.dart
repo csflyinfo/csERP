@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/reschedule_reject.dart';
 import '../../providers/reschedule_reject_provider.dart';
@@ -198,7 +198,12 @@ class _RescheduleReturnPageState extends ConsumerState<RescheduleReturnPage> {
 
   Future<void> _pickPhoto() async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(source: ImageSource.camera, imageQuality: 70);
+    final photo = await picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: AppConfig.photoMaxEdge.toDouble(),
+      maxHeight: AppConfig.photoMaxEdge.toDouble(),
+      imageQuality: AppConfig.photoQuality,
+    );
     if (photo != null) setState(() => _photos.add(photo));
   }
 
@@ -209,11 +214,10 @@ class _RescheduleReturnPageState extends ConsumerState<RescheduleReturnPage> {
     }
     setState(() => _submitting = true);
     try {
-      final photoUrlList = <String>[];
-      for (final p in _photos) {
-        final upResult = await ApiService.instance.uploadImage(File(p.path), bizType: 'RESCHEDULE');
-        photoUrlList.add(upResult['url'] as String);
-      }
+      final photoUrlList = await ApiService.instance.uploadImagesOrDefer(
+        _photos.map((p) => File(p.path)).toList(),
+        bizType: 'RESCHEDULE',
+      );
       final result = await ref.read(createRescheduleReturnProvider(CreateRescheduleReturnArgs(
         dispatchId: widget.dispatchId,
         detailId: widget.detailId,
@@ -227,7 +231,13 @@ class _RescheduleReturnPageState extends ConsumerState<RescheduleReturnPage> {
       )).future);
       final returnNo = result['returnNo']?.toString() ?? '';
       final count = result['rescheduleCount'] ?? 1;
-      _toast('改派返仓单生成成功：$returnNo（第 $count 次改派）');
+      // 离线入队时后端还没生成单号，若照常提示会显示「生成成功：（第 1 次改派）」，
+      // 空单号加成功语会让司机以为单据已在系统里，回公司找不到又要重录一遍。
+      if (result['_offline'] == true) {
+        _toast('当前无网络，改派返仓已暂存本地，联网后自动上传');
+      } else {
+        _toast('改派返仓单生成成功：$returnNo（第 $count 次改派）');
+      }
       ref.invalidate(todayTasksProvider);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {

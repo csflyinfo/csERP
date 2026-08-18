@@ -42,21 +42,29 @@ class CreateRescheduleReturnArgs {
       };
 }
 
-/// 生成改派返仓单（一次性调用）。
+/// 生成改派返仓单（一次性调用，离线感知，优先级 2）。
+///
+/// 与签收同级：改派返仓意味着这批货没送到、要拉回仓库，
+/// 调度需据此重新排线，晚回传一轮就可能重复派车。
+///
+/// 照片随主单一起提交，不再拆成第二个 upload-photo 请求：
+/// 离线排队时 returnId 尚未生成，拆开会让照片请求缺 returnId 被后端 400 拒绝，
+/// 永久卡在队列里反复重试。后端建单接口已支持可选 photos 字段。
 final createRescheduleReturnProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, CreateRescheduleReturnArgs>((ref, args) async {
-  final data = await ApiService.instance
-      .post('/tms/app/reschedule-return/create', body: args.toJson());
-  final result = data as Map<String, dynamic>;
-  // 上传照片
-  final returnId = result['returnId']?.toString() ?? '';
-  if (returnId.isNotEmpty && args.photos.isNotEmpty) {
-    await ApiService.instance.post('/tms/app/reschedule-return/upload-photo', body: {
-      'returnId': returnId,
-      'photos': args.photos.map((p) => {'url': p}).toList(),
-    });
+  final body = args.toJson();
+  if (args.photos.isNotEmpty) {
+    body['photos'] =
+        args.photos.map((p) => {'url': p, 'bizType': 'RESCHEDULE'}).toList();
   }
-  return result;
+  final data = await ApiService.instance.enqueueOrPost(
+    actionType: 'RESCHEDULE_RETURN',
+    actionKey: args.detailId,
+    path: '/tms/app/reschedule-return/create',
+    body: body,
+    priority: 2,
+  );
+  return data as Map<String, dynamic>;
 });
 
 /// 改派返仓待返仓列表（本司机）。
@@ -73,7 +81,12 @@ final rescheduleReturnListProvider =
   };
 });
 
-/// 改派返仓司机返仓确认。
+/// 改派返仓司机返仓确认（刻意保持在线提交）。
+///
+/// 与建单不同，确认动作发生在仓库交接台前、双方当面点数，
+/// 仓库不是信号盲区；且这是「货已交给仓管」的责任转移点，
+/// 必须当场看到服务端确认结果，否则司机走了、仓管系统里没这批货，
+/// 货物短少时无从追溯。宁可让他重试一次，也不能给个假成功。
 final rescheduleReturnConfirmProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, List<String>>((ref, ids) async {
   final data = await ApiService.instance.post('/tms/app/reschedule-return/confirm', body: {
@@ -119,21 +132,28 @@ class CreateCustomerRejectArgs {
       };
 }
 
-/// 生成客户拒收单（一次性调用）。
+/// 生成客户拒收单（一次性调用，离线感知，优先级 2）。
+///
+/// 拒收必须离线可提交：客户当面拒收时司机就得登记完走人，
+/// 不能因为门店信号差就让人在原地干等，或者录完一屏数据被一句「提交失败」清空。
+///
+/// 照片随主单一起提交，理由同改派返仓：离线排队时 rejectId 还不存在，
+/// 拆成独立请求会缺 rejectId 被后端 400 拒绝并永久卡在队列。
 final createCustomerRejectProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, CreateCustomerRejectArgs>((ref, args) async {
-  final data = await ApiService.instance
-      .post('/tms/app/customer-reject/create', body: args.toJson());
-  final result = data as Map<String, dynamic>;
-  // 上传照片
-  final rejectId = result['rejectId']?.toString() ?? '';
-  if (rejectId.isNotEmpty && args.photos.isNotEmpty) {
-    await ApiService.instance.post('/tms/app/customer-reject/upload-photo', body: {
-      'rejectId': rejectId,
-      'photos': args.photos.map((p) => {'url': p}).toList(),
-    });
+  final body = args.toJson();
+  if (args.photos.isNotEmpty) {
+    body['photos'] =
+        args.photos.map((p) => {'url': p, 'bizType': 'REJECT'}).toList();
   }
-  return result;
+  final data = await ApiService.instance.enqueueOrPost(
+    actionType: 'CUSTOMER_REJECT',
+    actionKey: args.detailId,
+    path: '/tms/app/customer-reject/create',
+    body: body,
+    priority: 2,
+  );
+  return data as Map<String, dynamic>;
 });
 
 /// 客户拒收单待返仓列表（本司机）。
@@ -151,7 +171,7 @@ final customerRejectListProvider =
   };
 });
 
-/// 客户拒收单司机返仓确认。
+/// 客户拒收单司机返仓确认（刻意保持在线提交，理由同 rescheduleReturnConfirmProvider）。
 final customerRejectConfirmProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, List<String>>((ref, ids) async {
   final data = await ApiService.instance.post('/tms/app/customer-reject/confirm', body: {

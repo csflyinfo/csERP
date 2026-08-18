@@ -164,6 +164,77 @@ class ApiService {
         e.type == DioExceptionType.unknown;
   }
 
+  /// 判断字符串是否已是可直接入库的远端 URL。
+  ///
+  /// 离线延后上传的媒体在 body 里暂存的是本地绝对路径（Android 形如
+  /// /data/user/0/.../cache/xxx.jpg），与 http(s) URL 天然可区分，
+  /// SyncService 靠这个判据决定「这条要不要先补传」。
+  static bool isRemoteUrl(String s) =>
+      s.startsWith('http://') || s.startsWith('https://');
+
+  /// 上传图片，离线时不抛异常而是返回本地路径占位。
+  ///
+  /// 为什么不能直接用 uploadImage：单据页的流程是「先传照片拿 URL、再提交主单」，
+  /// uploadImage 在离线时会直接抛异常，被页面 catch 成「提交失败」，
+  /// 结果主单的 enqueueOrPost 根本执行不到——离线入队形同虚设。
+  ///
+  /// 为什么不用 enqueueOrUpload：它把上传单独入队，同步成功后返回的 URL 无处可去，
+  /// 主单里照片字段仍是空的，照片等于丢了。
+  ///
+  /// 这里改成返回本地路径，由主单 body 一起带入队列，
+  /// SyncService 重放前会先把本地路径补传成真 URL 再提交，照片与主单不会脱钩。
+  /// 返回值统一含 url 字段：在线是远端 URL，离线是本地绝对路径。
+  Future<Map<String, dynamic>> uploadImageOrDefer(
+    File imageFile, {
+    String bizType = 'SIGN',
+  }) async {
+    if (ConnectivityService.instance.isOnline) {
+      try {
+        return await uploadImage(imageFile, bizType: bizType);
+      } catch (e) {
+        if (e is DioException && _isNetworkError(e)) {
+          debugPrint('[Offline] 图片延后上传: ${imageFile.path}');
+          return {'url': imageFile.path, '_deferred': true, 'bizType': bizType};
+        }
+        rethrow;
+      }
+    }
+    debugPrint('[Offline] 图片延后上传: ${imageFile.path}');
+    return {'url': imageFile.path, '_deferred': true, 'bizType': bizType};
+  }
+
+  /// 批量上传留证照片，有限并发 + 保序返回 URL 列表。
+  ///
+  /// 替代各单据页原先的 `for (p in _photos) await upload(p)` 串行写法：
+  /// 串行时总耗时是各张之和，弱网下 4 张就能让「提交」按钮转好几十秒，
+  /// 司机会误以为卡死而反复点击或强杀 APP。
+  ///
+  /// 并发数受 AppConfig.photoUploadConcurrency 限制而非全量并发：
+  /// 现场多是弱网，连接开太多只会互相抢带宽、拉高单张超时概率。
+  ///
+  /// 返回列表严格与入参同序：照片顺序就是司机的拍摄顺序（先整体后细节），
+  /// 用 Future.wait 的完成顺序会打乱它，所以按下标写回固定长度的数组。
+  ///
+  /// 任一张彻底失败（非网络原因）都会抛出，由页面提示重试；
+  /// 网络原因失败则由 uploadImageOrDefer 降级为本地路径占位，不会中断提交。
+  Future<List<String>> uploadImagesOrDefer(
+    List<File> files, {
+    String bizType = 'SIGN',
+  }) async {
+    if (files.isEmpty) return const [];
+    final urls = List<String?>.filled(files.length, null);
+    const concurrency = AppConfig.photoUploadConcurrency;
+    for (var start = 0; start < files.length; start += concurrency) {
+      final end = (start + concurrency).clamp(0, files.length);
+      await Future.wait([
+        for (var i = start; i < end; i++)
+          uploadImageOrDefer(files[i], bizType: bizType)
+              .then((res) => urls[i] = res['url'] as String),
+      ]);
+    }
+    return urls.cast<String>();
+  }
+
   /// 入队操作。
   Future<void> _enqueue(
     String actionType,
