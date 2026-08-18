@@ -267,7 +267,7 @@ java -jar target/xxx.jar
 2. **禁止** 大规模重构目录结构，现有单包分层架构保持稳定
 3. **禁止** 引入新的外部依赖，当前阶段保持轻量底座
 4. **禁止** 提交 `backend/data/` H2 数据库文件到 Git
-   > ⚠️ 现存不一致：仓库根目录的 `data/erp-v1.mv.db`、`data/erp-v1.trace.db` 及 `data/backup-*/` 下的 H2 文件**目前仍被 git 跟踪**（各 1 次提交，约 272K）。是否改为不跟踪待定，见 `docs/分支管理规范.md` 第八节。在此之前不要再向这些文件追加提交。
+   > 📌 已决定（2026-08-18）：仓库根目录的 `data/erp-v1.mv.db`、`data/erp-v1.trace.db` 及 `data/backup-*/` 下的 H2 文件**保持被 git 跟踪**，作为受控种子库，不再评估取消跟踪。本条禁止的是 `backend/data/` 下的运行时库（已在 `.gitignore` 拦截），两者不要混淆。
 5. **禁止** 直接 `rm -rf backend/data` 或删除 `erp-v1.mv.db` —— 里面是**用户手工建的业务数据**（商品/客户/供应商/仓库/订单）。遇到 Flyway 校验失败等情况：优先 `mvn flyway:repair`，或先 `cp erp-v1.mv.db erp-v1.mv.db.bak` 备份再操作。清库请走 `reset-db.bat`（脚本已内置自动备份到 `backend/data/backups/`）。
 
 ---
