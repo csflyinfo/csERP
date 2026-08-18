@@ -1,12 +1,14 @@
 package com.erp.tms.service;
 
 import com.erp.tms.TmsUtil;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,9 +24,9 @@ import java.util.Map;
  *       让调度员点不了「确认派单」。所有方法内部兜底捕获，失败只记日志。
  *       这也是为什么本类不加 {@code @Transactional}——若与调用方共享事务，
  *       消息写入失败仍会连带业务回滚，与「旁路」定位矛盾。</li>
- *   <li><b>真推送按「先做底座、预留接口」实现</b>：{@link #pushToDevice} 是留好的空实现，
- *       接极光/FCM 时只需填充该方法，无需改动任何埋点。
- *       参数 TMS_PUSH_ENABLED 为 false 时消息标记 SKIPPED，由 APP 轮询拉取。</li>
+ *   <li><b>真推送已接入个推</b>：{@link #pushToDevice} 通过 {@link GetuiPushClient}
+ *       下发透传消息。参数 TMS_PUSH_ENABLED 为 false、或个推凭据未配齐时标记 SKIPPED，
+ *       由 APP 轮询拉取；推送失败标记 FAILED，两者可区分排查。</li>
  *   <li>本类不做权限校验：调用方都是已鉴权的 Controller。</li>
  * </ul>
  *
@@ -43,10 +45,17 @@ public class TmsNotifyService {
 
     private static final Logger log = LoggerFactory.getLogger(TmsNotifyService.class);
 
-    private final JdbcTemplate jdbcTemplate;
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public TmsNotifyService(JdbcTemplate jdbcTemplate) {
+    /** 推送渠道：与 APP 上报的 channel、参数 TMS_PUSH_CHANNEL 三处必须一致。 */
+    public static final String CHANNEL_GETUI = "GETUI";
+
+    private final JdbcTemplate jdbcTemplate;
+    private final GetuiPushClient getuiPushClient;
+
+    public TmsNotifyService(JdbcTemplate jdbcTemplate, GetuiPushClient getuiPushClient) {
         this.jdbcTemplate = jdbcTemplate;
+        this.getuiPushClient = getuiPushClient;
     }
 
     // ========================================================================
@@ -194,7 +203,7 @@ public class TmsNotifyService {
                     TmsUtil.currentUser());
 
             // 站内消息已落库，APP 轮询即可拿到；真推送是额外增强，失败不回滚消息
-            tryPush(notifyId, receiverType, receiverId, title, content);
+            tryPush(notifyId, receiverType, receiverId, type, level, title, content, linkType, linkId);
             return notifyId;
         } catch (Exception e) {
             // 关键：吞掉异常。派单不能因为发消息失败而失败
@@ -208,13 +217,21 @@ public class TmsNotifyService {
      * 这样运维能一眼区分「没配推送」和「推送真失败」。
      */
     private void tryPush(String notifyId, String receiverType, String receiverId,
-                         String title, String content) {
+                         String type, String level, String title, String content,
+                         String linkType, String linkId) {
         try {
             PushConfig cfg = loadPushConfig();
 
             // ERP 用户走 Web 端角标，不需要移动推送
             if (!RECEIVER_DRIVER.equals(receiverType) || !cfg.enabled()) {
                 markPush(notifyId, "SKIPPED", "INAPP", null);
+                return;
+            }
+
+            // 凭据没配齐就不要发起调用：否则每条消息都会留一条 FAILED，
+            // 把「没配推送」和「推送真失败」混在一起，运维无法排查
+            if (!cfg.credential().complete()) {
+                markPush(notifyId, "SKIPPED", "INAPP", "推送凭据未配置");
                 return;
             }
 
@@ -228,31 +245,79 @@ public class TmsNotifyService {
                 return;
             }
 
-            pushToDevice(cfg.channel(), tokens, title, content);
-            markPush(notifyId, "SENT", cfg.channel(), null);
+            int ok = pushToDevice(cfg, tokens,
+                    notifyId, type, level, title, content, linkType, linkId);
+
+            if (ok <= 0) {
+                markPush(notifyId, "FAILED", cfg.channel(), "全部设备推送失败");
+            } else if (ok < tokens.size()) {
+                // 一台成功即算送达：司机通常只用一台在手机上，
+                // 另一台可能是已卸载的旧设备，不该因此判定推送失败
+                markPush(notifyId, "SENT", cfg.channel(),
+                        "部分设备失败 " + ok + "/" + tokens.size());
+            } else {
+                markPush(notifyId, "SENT", cfg.channel(), null);
+            }
         } catch (Exception e) {
             markPush(notifyId, "FAILED", null, TmsUtil.str(e.getMessage()));
         }
     }
 
     /**
-     * 第三方推送发送点——<b>当前为预留空实现</b>。
+     * 第三方推送发送点。
      *
-     * <p>按「先做底座，同时预留真推送接口」的决定：站内消息 + APP 轮询已可完整跑通，
-     * 接入极光/FCM 时只需在此处实现，所有埋点与表结构均无需改动。
+     * <p>发的是<b>透传消息</b>（push_message.transmission）而非个推通知消息：
+     * APP 侧 PushService 接的是 onReceivePayload / onTransmitUserMessageReceive，
+     * 通知栏由 APP 用 flutter_local_notifications 自行渲染，
+     * 才能做到紧急消息弹横幅、普通消息安静入栏，并在未登录时丢弃他人消息。
      *
-     * <p>接入时需要：
-     * <ol>
-     *   <li>pom.xml 引入 jiguang-sdk（或 firebase-admin）</li>
-     *   <li>application.yml 配置 AppKey / MasterSecret</li>
-     *   <li>把 TMS_PUSH_ENABLED 参数改为 true</li>
-     * </ol>
-     * 未实现前抛异常会让每条消息都留 FAILED 记录，因此这里直接返回，
-     * 由调用方按 SKIPPED 处理。
+     * <p>载荷 JSON 必须与 APP 侧 PushPayload.fromJson 的字段名严格一致，
+     * 字段名改了 APP 会静默退化成「把原文当正文」，不会报错，所以两边不能各自改。
+     *
+     * @return 推送成功的设备数
      */
-    private void pushToDevice(String channel, List<String> deviceTokens, String title, String content) {
-        // TODO(P4-2): 接入极光/FCM。当前 TMS_PUSH_ENABLED 默认 false，不会走到这里。
-        log.info("第三方推送未接入，跳过。channel={} tokens={}", channel, deviceTokens.size());
+    private int pushToDevice(PushConfig cfg, List<String> deviceTokens,
+                             String notifyId, String type, String level,
+                             String title, String content,
+                             String linkType, String linkId) {
+        if (!CHANNEL_GETUI.equalsIgnoreCase(cfg.channel())) {
+            // 参数被改成 JPUSH/FCM 等未实现渠道时，明确留痕而不是假装成功
+            log.warn("推送渠道 {} 尚未实现，跳过。notifyId={}", cfg.channel(), notifyId);
+            return 0;
+        }
+
+        String payload = buildPushPayload(notifyId, type, level, title, content, linkType, linkId);
+        if (payload.isEmpty()) return 0;
+
+        return getuiPushClient.pushTransmissionBatch(cfg.credential(), deviceTokens, payload);
+    }
+
+    /** 构造透传 JSON。字段名与 APP 侧 PushPayload 一一对应。 */
+    private String buildPushPayload(String notifyId, String type, String level,
+                                    String title, String content,
+                                    String linkType, String linkId) {
+        // 透传上限 3072 字，正文可能很长（如异常回执备注），
+        // 这里先截断：APP 打开消息中心时会走接口取完整内容，不影响信息完整性
+        String shortContent = TmsUtil.str(content);
+        if (shortContent.length() > 300) {
+            shortContent = shortContent.substring(0, 300) + "...";
+        }
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("notifyId", TmsUtil.str(notifyId));
+        m.put("notifyType", TmsUtil.str(type).isEmpty() ? TYPE_SYSTEM : type);
+        m.put("level", TmsUtil.str(level).isEmpty() ? LEVEL_NORMAL : level);
+        m.put("title", TmsUtil.str(title));
+        m.put("content", shortContent);
+        m.put("linkType", TmsUtil.str(linkType));
+        m.put("linkId", TmsUtil.str(linkId));
+
+        try {
+            return MAPPER.writeValueAsString(m);
+        } catch (Exception e) {
+            log.warn("构造推送载荷失败 notifyId={} err={}", notifyId, e.getMessage());
+            return "";
+        }
     }
 
     /** 更新推送状态。此处失败仅记日志——消息本体已落库，状态字段不准不影响司机收信。 */
@@ -269,7 +334,7 @@ public class TmsNotifyService {
     }
 
     /** 推送配置。 */
-    private record PushConfig(boolean enabled, String channel) {}
+    private record PushConfig(boolean enabled, String channel, GetuiPushClient.Credential credential) {}
 
     private PushConfig loadPushConfig() {
         Map<String, String> kv = new HashMap<>();
@@ -278,14 +343,23 @@ public class TmsNotifyService {
             TmsUtil.queryCamel(jdbcTemplate, """
                     SELECT param_key, COALESCE(param_value, default_value) AS param_value
                       FROM sys_param_runtime
-                     WHERE param_key IN ('TMS_PUSH_ENABLED','TMS_PUSH_CHANNEL')
+                     WHERE param_key IN ('TMS_PUSH_ENABLED','TMS_PUSH_CHANNEL',
+                                         'TMS_PUSH_GETUI_APP_ID','TMS_PUSH_GETUI_APP_KEY',
+                                         'TMS_PUSH_GETUI_MASTER_SECRET')
                     """).forEach(r -> kv.put(TmsUtil.str(r.get("paramKey")), TmsUtil.str(r.get("paramValue"))));
         } catch (Exception ignore) {
             // 参数表缺失时用内置默认值，不阻断发消息
         }
         boolean enabled = "true".equalsIgnoreCase(kv.getOrDefault("TMS_PUSH_ENABLED", "false"));
-        String channel = kv.getOrDefault("TMS_PUSH_CHANNEL", "JPUSH");
-        return new PushConfig(enabled, TmsUtil.str(channel).isEmpty() ? "JPUSH" : channel);
+        // 默认 GETUI：APP 侧上报的 channel 固定为 GETUI，而 tryPush 按 channel 精确匹配查令牌，
+        // 默认值若仍是 JPUSH 会查不到任何令牌，推送链路静默走不通
+        String channel = kv.getOrDefault("TMS_PUSH_CHANNEL", CHANNEL_GETUI);
+        GetuiPushClient.Credential cred = new GetuiPushClient.Credential(
+                kv.getOrDefault("TMS_PUSH_GETUI_APP_ID", ""),
+                kv.getOrDefault("TMS_PUSH_GETUI_APP_KEY", ""),
+                kv.getOrDefault("TMS_PUSH_GETUI_MASTER_SECRET", ""));
+        return new PushConfig(enabled,
+                TmsUtil.str(channel).isEmpty() ? CHANNEL_GETUI : channel, cred);
     }
 
     /** 生成消息编号 XXTZ + yyyyMMdd + 4 位流水。 */

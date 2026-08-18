@@ -153,8 +153,10 @@ public class TmsNotificationController {
         String deviceToken = TmsUtil.str(body.get("deviceToken"));
         if (deviceToken.isEmpty()) return ApiResponse.fail("400", "缺少设备令牌");
 
-        String channel = TmsUtil.str(body.getOrDefault("channel", "JPUSH"));
-        if (channel.isEmpty()) channel = "JPUSH";
+        // 默认 GETUI 而非历史值 JPUSH：TmsNotifyService 查令牌时按 channel 精确匹配，
+        // 此处写入的值与推送侧的 TMS_PUSH_CHANNEL 不一致会导致查不到令牌、推送静默失效
+        String channel = TmsUtil.str(body.getOrDefault("channel", TmsNotifyService.CHANNEL_GETUI));
+        if (channel.isEmpty()) channel = TmsNotifyService.CHANNEL_GETUI;
         boolean enabled = body.get("enabled") == null || Boolean.parseBoolean(TmsUtil.str(body.get("enabled")));
 
         List<String> exists = jdbcTemplate.queryForList(
