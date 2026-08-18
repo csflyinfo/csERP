@@ -341,14 +341,14 @@ class _TodayContent extends ConsumerWidget {
                   builder: (_) => const SettlementPage(),
                 )).then((changed) => _maybeRefresh(ref, changed));
               },
-              child: Row(children: [
-                const Icon(Icons.account_balance_wallet, size: 20, color: TmsTheme.accent),
-                const SizedBox(width: 10),
-                const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: const Row(children: [
+                Icon(Icons.account_balance_wallet, size: 20, color: TmsTheme.accent),
+                SizedBox(width: 10),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('交账结算', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
                   Text('汇总应收/实收 · 拍照签名 · 提交审核', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
                 ])),
-                const Icon(Icons.chevron_right, size: 18, color: TmsTheme.muted),
+                Icon(Icons.chevron_right, size: 18, color: TmsTheme.muted),
               ]),
             ),
             // 发货配送任务

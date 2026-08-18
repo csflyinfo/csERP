@@ -19,6 +19,10 @@ dependencies:
   # P6 离线能力
   sqflite: ^2.3.2
   path_provider: ^2.1.2
+  # local_db_service 直接 import 'package:path/path.dart' 拼库文件路径，
+  # 虽由 sqflite 传递引入，但直接使用就必须显式声明，
+  # 否则 sqflite 后续换实现移除该依赖时本项目会编译失败。
+  path: ^1.9.0
   connectivity_plus: ^5.0.2
   url_launcher: ^6.3.2
   # 消息推送：个推离线通道 + 本地通知栏展示

@@ -67,7 +67,7 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          Alert.danger('⚠️ 客户拒收 → 货物返仓 → 仓库收货后生成拒收入库单，审核后库存增加、撤销对应应收'),
+          const Alert.danger('⚠️ 客户拒收 → 货物返仓 → 仓库收货后生成拒收入库单，审核后库存增加、撤销对应应收'),
           const SizedBox(height: 8),
           // 发货单信息
           MCard(

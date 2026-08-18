@@ -68,7 +68,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         children: [
                           Container(
                             width: 64, height: 64,
-                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(20)),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
                             child: const Center(child: Text('🚚', style: TextStyle(fontSize: 32))),
                           ),
                           const SizedBox(height: 10),

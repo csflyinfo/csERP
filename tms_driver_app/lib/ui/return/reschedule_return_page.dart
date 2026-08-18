@@ -67,7 +67,7 @@ class _RescheduleReturnPageState extends ConsumerState<RescheduleReturnPage> {
       body: ListView(
         padding: const EdgeInsets.all(14),
         children: [
-          Alert.warn('🔄 货物随车返仓，仓库验收后回调度池重新派送。不反审核出库单、不动库存。'),
+          const Alert.warn('🔄 货物随车返仓，仓库验收后回调度池重新派送。不反审核出库单、不动库存。'),
           const SizedBox(height: 8),
           // 发货单信息
           MCard(
