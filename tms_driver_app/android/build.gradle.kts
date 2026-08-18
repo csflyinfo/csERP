@@ -2,6 +2,9 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // 个推 SDK 未发布到 mavenCentral，必须显式声明其私有仓库，
+        // 否则 com.getui:gtsdk / gtc 无法解析。
+        maven { url = uri("https://mvn.getui.com/nexus/content/repositories/releases/") }
     }
 }
 

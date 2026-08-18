@@ -7,10 +7,16 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+    <!-- Android 13+ 起通知需运行时授权，未授予时通知栏静默丢弃消息 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 个推 SDK 心跳保活与厂商通道注册所需 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="tms_driver_app"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -62,6 +68,11 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
+        </intent>
+        <!-- 个推要求：Android 11+ 不声明此项时，SDK 无法发现同厂商其他集成个推的应用，
+             合并链路失效会显著降低离线消息到达率。 -->
+        <intent>
+            <action android:name="com.getui.sdk.action"/>
         </intent>
     </queries>
 </manifest>

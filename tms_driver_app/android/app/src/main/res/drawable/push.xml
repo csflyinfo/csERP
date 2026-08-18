@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  个推按硬编码资源名 push / push_small 查找通知栏图标，缺失则消息不展示。
+  当前无设计稿，先用 alias 指向应用图标兜底，保证链路可跑通。
+  TODO 换正式图标：把各尺寸 push.png 放入 drawable-{l,m,h,xh,xxh}dpi
+  （48/64/96/128/192 px）后删除本文件，否则同名资源会冲突。
+-->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@mipmap/ic_launcher" />

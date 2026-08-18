@@ -21,6 +21,11 @@ dependencies:
   path_provider: ^2.1.2
   connectivity_plus: ^5.0.2
   url_launcher: ^6.3.2
+  # 消息推送：个推离线通道 + 本地通知栏展示
+  # getuiflut 由个推官方发布，负责厂商通道与 CID 下发；
+  # 个推透传消息不会自动弹通知栏，需由本地通知插件承接展示。
+  getuiflut: ^0.2.41
+  flutter_local_notifications: ^17.2.3
 
 dev_dependencies:
   flutter_lints: ^3.0.0
