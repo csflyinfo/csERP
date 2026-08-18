@@ -23,3 +23,10 @@ frontend/.vite/
 logs/
 temp/
 backend/data/
+backend-run.log
+
+# 一次性脚本与备份（详见 docs/分支管理规范.md）
+tmp-*.js
+*.bak
+*.orig
+*.rej

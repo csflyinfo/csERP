@@ -1,0 +1,51 @@
+name: CI
+
+# 合入 main 前的自动护栏。规则详见 docs/分支管理规范.md
+# 注意：不在此处运行 smoke test —— 它会按单号前缀删除全部采购/销售单据，
+#      只能在本地备份 H2 后手动执行。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  guard:
+    name: 护栏检查与后端编译
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 护栏 1：残留冲突标记。历史上曾有带 >>>>>>> 标记的 .vue 被提交进远端。
+      - name: 检查残留冲突标记
+        run: |
+          if git grep -nE '^(<<<<<<< |>>>>>>> )' -- \
+               'backend/src/**' 'frontend/src/**' 'tms_driver_app/lib/**'; then
+            echo "::error::发现未解决的冲突标记，禁止合入"
+            exit 1
+          fi
+          echo "冲突标记检查通过"
+
+      # 护栏 2：Flyway 迁移号是全局串行资源，并行分支各自取号会撞车。
+      - name: 检查 Flyway 迁移号重复
+        run: |
+          dup=$(ls backend/src/main/resources/db/migration/ \
+                | sed -nE 's/^(V[0-9]+)__.*\.sql$/\1/p' | sort | uniq -d)
+          if [ -n "$dup" ]; then
+            echo "::error::Flyway 迁移号重复：$dup（见 docs/分支管理规范.md 第四节）"
+            exit 1
+          fi
+          echo "Flyway 迁移号无重复"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # 护栏 3：后端必须能编译。
+      # working-directory 必须是 backend —— pom.xml 只在该目录，
+      # 且 H2 走相对路径，在仓库根目录执行会连到空库。
+      - name: 后端编译
+        working-directory: backend
+        run: ./mvnw -B -ntp -q compile
