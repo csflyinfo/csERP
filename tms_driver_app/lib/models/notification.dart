@@ -1,3 +1,69 @@
+import 'dart:convert';
+
+/// 推送透传载荷。
+///
+/// 与站内消息 [AppNotification] 分开建模：推送 payload 受厂商通道长度限制
+/// （个推透传上限约 2KB，部分厂商更短），只携带展示与跳转所必需的字段，
+/// 完整内容仍由 APP 打开消息中心时走接口取。
+///
+/// 后端下发时的 JSON 约定（TmsNotifyService.pushToDevice 接入时须对齐）：
+/// ```json
+/// {"notifyId":"NT...","notifyType":"NEW_TASK","level":"URGENT",
+///  "title":"新派车单","content":"...","linkType":"DISPATCH","linkId":"DP..."}
+/// ```
+/// 解析刻意全部容错：厂商通道透传时可能把 JSON 包一层或转成纯文本，
+/// 解析失败也要能弹出通知（退化为把原文当正文），不能因为格式不符就静默丢消息。
+class PushPayload {
+  final String notifyId;
+  final String notifyType;
+  final String level;
+  final String title;
+  final String content;
+  final String linkType;
+  final String linkId;
+
+  const PushPayload({
+    this.notifyId = '',
+    this.notifyType = 'SYSTEM',
+    this.level = 'NORMAL',
+    this.title = '',
+    this.content = '',
+    this.linkType = '',
+    this.linkId = '',
+  });
+
+  factory PushPayload.fromJson(Map<String, dynamic> j) => PushPayload(
+        notifyId: j['notifyId']?.toString() ?? '',
+        notifyType: j['notifyType']?.toString() ?? 'SYSTEM',
+        level: j['level']?.toString() ?? 'NORMAL',
+        title: j['title']?.toString() ?? '',
+        content: j['content']?.toString() ?? '',
+        linkType: j['linkType']?.toString() ?? '',
+        linkId: j['linkId']?.toString() ?? '',
+      );
+
+  /// 从原始透传字符串解析，非 JSON 时退化为纯文本正文。
+  factory PushPayload.parse(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return const PushPayload();
+    if (s.startsWith('{')) {
+      try {
+        final m = jsonDecode(s);
+        if (m is Map<String, dynamic>) return PushPayload.fromJson(m);
+      } catch (_) {
+        // 落到纯文本分支
+      }
+    }
+    return PushPayload(content: s);
+  }
+
+  bool get isUrgent => level == 'URGENT';
+
+  /// 是否可跳业务详情，判断口径与 [AppNotification.canOpen] 保持一致。
+  bool get canOpen =>
+      linkId.isNotEmpty && linkType.isNotEmpty && linkType != 'NONE';
+}
+
 /// 消息通知模型。
 ///
 /// 字段与后端 tms_notification 表、TmsNotificationController 的 LIST_COLUMNS 一一对应。
