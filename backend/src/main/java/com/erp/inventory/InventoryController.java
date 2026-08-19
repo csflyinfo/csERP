@@ -476,13 +476,20 @@ public class InventoryController {
      * 取的是 {@code inv_stock_balance.available_qty}（= 实物 - 锁定 - 冻结），
      * 与 {@code InventoryCostService.salesOutbound} 的扣减判断口径一致。
      *
-     * <p>请求：{@code { "warehouse": "总仓", "goodsCodes": ["SP001", "SP002"] }}
-     * <p>返回：{@code [{ goodsCode, physicalQty, lockedQty, frozenQty, availableQty }]}
+     * <p>请求：{@code { "warehouse": "总仓", "goodsCodes": ["SP001", "SP002"], "orderId": "SO..." }}
+     * <p>返回：{@code [{ goodsCode, physicalQty, lockedQty, frozenQty, availableQty, ownLockedQty }]}
      * <p>查不到库存记录的商品<b>不在返回列表里</b>，调用方按可用 0 处理。
+     *
+     * <p>{@code orderId}（订单号或订单 ID，可选）用于<b>编辑已存在的销售订单</b>：
+     * 订单从创建那一刻就把数量锁进了 {@code locked_qty}，可用库存里已经扣掉了自己，
+     * 编辑时若直接拿 {@code availableQty} 判断，一张刚建好的单会立刻显示「库存不足」。
+     * 传了 {@code orderId} 时额外返回 {@code ownLockedQty = min(本单该商品数量, 该商品当前锁定量)}，
+     * 前端展示与校验用 {@code availableQty + ownLockedQty}。不传时该值恒为 0，其它调用方行为不变。
      */
     @PostMapping("/available-stock")
     public ApiResponse<List<Map<String, Object>>> availableStock(@RequestBody Map<String, Object> req) {
         String warehouse = req.get("warehouse") == null ? "" : String.valueOf(req.get("warehouse")).trim();
+        String orderId = req.get("orderId") == null ? "" : String.valueOf(req.get("orderId")).trim();
         List<String> codes = new ArrayList<>();
         if (req.get("goodsCodes") instanceof List<?> list) {
             for (Object o : list) {
@@ -510,7 +517,31 @@ public class InventoryController {
                 WHERE warehouse = ? AND goods_code IN (%s)
                 GROUP BY goods_code
                 """.formatted(inClause), args);
-        return ApiResponse.ok(rows.stream().map(InventoryController::camelize).toList());
+
+        // 本单已占用量：同商品多行（正常品 + 赠品）按商品汇总
+        Map<String, BigDecimal> ownQty = new LinkedHashMap<>();
+        if (!orderId.isBlank()) {
+            for (Map<String, Object> r : jdbcTemplate.queryForList("""
+                    SELECT d.goods_code AS goods_code, COALESCE(SUM(d.qty), 0) AS qty
+                    FROM sales_order_detail d
+                    JOIN sales_order o ON o.order_id = d.order_id
+                    WHERE o.order_id = ? OR o.order_no = ?
+                    GROUP BY d.goods_code
+                    """, orderId, orderId)) {
+                Map<String, Object> c = camelize(r);
+                ownQty.put(String.valueOf(c.get("goodsCode")), toBd(c.get("qty")));
+            }
+        }
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> row = camelize(r);
+            BigDecimal own = ownQty.getOrDefault(String.valueOf(row.get("goodsCode")), BigDecimal.ZERO);
+            // 夹取：历史订单可能根本没锁（无回填），加回去的量不能超过实际锁定量
+            row.put("ownLockedQty", own.min(toBd(row.get("lockedQty"))));
+            out.add(row);
+        }
+        return ApiResponse.ok(out);
     }
 
     // ============ 批次库存 · 锁定 / 取消锁定 ============

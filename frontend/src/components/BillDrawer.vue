@@ -30,6 +30,9 @@ const headerForm = ref({})
 const detailList = ref([])
 const formErrors = ref({})
 
+/** 编辑模式打开时单据原本的仓库 —— 判断"本单已占用"能不能加回可用库存（换仓库就不能） */
+const originalWarehouse = ref('')
+
 // 商品添加窗口（与表格内联录入共存，习惯弹窗的用户不受影响）
 const goodsAddOpen = ref(false)
 
@@ -66,6 +69,7 @@ function makeEmptyRow() {
     salesAttribute: '正常', remark: '',
     // 仅前端使用，不提交后端
     availableStock: null,   // 当前仓库可用库存（销售订单专用，null=未知/未取到）
+    ownLockedStock: 0,      // 其中属于本单已占用的量（编辑模式才有，纯前端展示）
     isWeighted: false,      // 称重品 → 数量允许 3 位小数
     unitConfig: null,       // 原始多单位配置，派生单位下拉与取价
     goodsSearch: '',        // 该行商品搜索框关键字
@@ -81,17 +85,30 @@ const filledRows = computed(() => detailList.value.filter(r => r.goodsCode))
  * 批量取「当前仓库」的可用库存并回填到对应明细行。
  * 口径与后端一致：可用 = 实物 − 锁定 − 冻结；查不到库存行按 0 处理。
  * 采购订单不需要（入库是加库存），仓库未选时也无从查询。
+ *
+ * 销售订单生成即占用库存，所以编辑自己这张单时，本单已占用的量已经从可用里扣掉了。
+ * 若不加回来，一张刚存的单打开就会报"库存不足"。故编辑模式（且仓库没换）传 orderId，
+ * 后端回一个 ownLockedQty，可分配上限 = 可用 + 本单已占用 —— 与后端保存时的校验口径一致。
+ * 换了仓库则不加回：新仓库上本单一件都没占，后端同样不加回。
  */
 async function loadAvailableStock(codes) {
   if (isPurchase.value) return
   const warehouse = headerForm.value.warehouseId
   const list = [...new Set((codes || []).filter(Boolean))]
   if (!warehouse || list.length === 0) return
+  const orderId = (props.mode === 'edit' && warehouse === originalWarehouse.value)
+    ? (headerForm.value.orderId || '') : ''
   try {
-    const rows = await post('/inventory/available-stock', { warehouse, goodsCodes: list })
-    const byCode = new Map((Array.isArray(rows) ? rows : []).map(r => [r.goodsCode, Number(r.availableQty) || 0]))
+    const rows = await post('/inventory/available-stock', { warehouse, goodsCodes: list, orderId })
+    const byCode = new Map((Array.isArray(rows) ? rows : []).map(r => [r.goodsCode, {
+      avail: Number(r.availableQty) || 0,
+      own: Number(r.ownLockedQty) || 0,
+    }]))
     detailList.value.forEach(r => {
-      if (list.includes(r.goodsCode)) r.availableStock = byCode.get(r.goodsCode) ?? 0
+      if (!list.includes(r.goodsCode)) return
+      const s = byCode.get(r.goodsCode)
+      r.availableStock = s ? s.avail + s.own : 0
+      r.ownLockedStock = s ? s.own : 0
     })
   } catch (_) { /* 取库存失败不阻断录单，保存时后端仍会拦 */ }
 }
@@ -101,7 +118,7 @@ async function onWarehouseChange(warehouseName) {
   headerForm.value.warehouseId = warehouseName
   if (isPurchase.value) return
   if (!warehouseName) {
-    detailList.value.forEach(r => { r.availableStock = null })
+    detailList.value.forEach(r => { r.availableStock = null; r.ownLockedStock = 0 })
     return
   }
   await loadAvailableStock(filledRows.value.map(r => r.goodsCode))
@@ -111,6 +128,14 @@ async function onWarehouseChange(warehouseName) {
 function isOverStock(row) {
   if (isPurchase.value || !row.goodsCode || row.availableStock == null) return false
   return stockNeedOf(row.goodsCode) > Number(row.availableStock)
+}
+
+/** 可用库存单元格的悬浮说明 —— 把"本单已占用"讲清楚，免得用户以为数字算错了 */
+function stockTitleOf(row) {
+  if (!row.goodsCode || row.availableStock == null) return ''
+  const own = Number(row.ownLockedStock) || 0
+  const base = own > 0 ? `可分配 ${row.availableStock}（含本单已占用 ${own}）` : `可分配 ${row.availableStock}`
+  return isOverStock(row) ? `${base}；本单该商品合计数量已超出，保存会被拦截` : base
 }
 
 /** 同一商品可能录在多行（不同销售属性），需求量按商品汇总 —— 赠品/样品等一律计入 */
@@ -168,6 +193,7 @@ function resetForm() {
   detailList.value = [makeEmptyRow()]
   formErrors.value = {}
   rankedGoods.value = []
+  originalWarehouse.value = ''
 }
 
 const totalAmount = computed(() => {
@@ -196,6 +222,7 @@ async function loadEditData(row) {
     const path = isPurchase.value ? '/purchase/order/detail' : '/sales/order/detail'
     const detail = await get(`${path}?orderId=${encodeURIComponent(key)}`)
     if (!detail) return
+    originalWarehouse.value = detail.warehouse || ''
     // 头部回显（后端 camelize 已经小驼峰）
     if (isPurchase.value) {
       headerForm.value = {
@@ -619,6 +646,7 @@ function validate() {
  * 返回第一条库存不足的提示，全部够则返回空。
  * 只在已取到可用库存（availableStock 非 null）时判断；取不到时交由后端拦截，
  * 避免网络抖动导致明明有货却存不了单。
+ * availableStock 已含"本单已占用"（编辑模式），口径与后端保存校验一致。
  */
 function firstShortage() {
   if (isPurchase.value) return ''
@@ -629,8 +657,10 @@ function firstShortage() {
     const need = stockNeedOf(r.goodsCode)
     const available = Number(r.availableStock)
     if (need > available) {
+      const own = Number(r.ownLockedStock) || 0
       return `商品【${r.goodsCode} ${r.goodsName}】库存不足：本单需 ${need}，`
         + `${headerForm.value.warehouseId || '当前仓库'} 可用 ${available}`
+        + (own > 0 ? `（含本单已占用 ${own}）` : '')
     }
   }
   return ''
@@ -783,7 +813,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
           </div>
           <div v-if="formErrors.details" style="color:var(--danger);font-size:12px;margin-bottom:6px">{{ formErrors.details }}</div>
           <div class="detail-tip">
-            <template v-if="!isPurchase">商品下拉优先展示最近一年有交易的商品，按销量高→低取前 {{ RANK_LIMIT }} 条 · 「可用库存」按所选仓库带出（实物−锁定−冻结），数量超出不允许保存 · </template>
+            <template v-if="!isPurchase">商品下拉优先展示最近一年有交易的商品，按销量高→低取前 {{ RANK_LIMIT }} 条 · 「可用库存」按所选仓库带出（实物−锁定−冻结，编辑时含本单已占用），数量超出不允许保存 · 保存即占用库存，直到出库审核才释放并扣减 · </template>
             在「商品编号」列输入 编号/名称/简拼/条码 检索 · ↑↓ 同列换行 · Enter 同行换字段 · 行末 Enter 自动加行
           </div>
           <div class="detail-scroll">
@@ -854,10 +884,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 
                   <td style="text-align:right">{{ row.smallQty }}</td>
 
-                  <!-- 可用库存：选商品时按当前仓库带出；超卖标红但不阻断输入，保存时才拦 -->
+                  <!-- 可用库存：选商品时按当前仓库带出；编辑本单时含本单已占用。超卖标红但不阻断输入，保存时才拦 -->
                   <td v-if="!isPurchase" style="text-align:right"
                       :class="{ 'stock-short': isOverStock(row) }"
-                      :title="isOverStock(row) ? '本单该商品合计数量已超过可用库存，保存会被拦截' : ''">
+                      :title="stockTitleOf(row)">
                     {{ row.goodsCode ? (row.availableStock == null ? '-' : row.availableStock) : '' }}
                   </td>
 

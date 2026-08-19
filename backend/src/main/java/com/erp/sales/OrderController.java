@@ -59,11 +59,12 @@ public class OrderController {
         if (shortage != null) return ApiResponse.fail("400", shortage);
         jdbcTemplate.update("""
                 INSERT INTO sales_order (order_id, order_no, customer, customer_code, salesman, warehouse,
-                    bill_date, expected_delivery_date, price_group_code, amount, unpaid_amount, status, creator_name, remark)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+                    bill_date, expected_delivery_date, price_group_code, amount, unpaid_amount, status, creator_name, remark, stock_check)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
                 """,
                 orderId, orderNo, customerName, customerCode, salesman, warehouse,
-                billDate, expectedDelivery, priceGroup, totalAmount, totalAmount, "系统管理员", remark);
+                billDate, expectedDelivery, priceGroup, totalAmount, totalAmount, "系统管理员", remark,
+                warehouse.isBlank() ? null : "通过");
         for (Map<String, Object> d : details) {
             String detailId = "SOD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             jdbcTemplate.update("""
@@ -81,10 +82,18 @@ public class OrderController {
                     str(d.get("salesAttribute"), "正常"),
                     str(d.get("remark")));
         }
+        // 生成即占用：逐商品把订单数量锁进 inv_stock_balance.locked_qty
+        // （审核不再重复锁定，出库审核时释放并扣实物，关闭/删除时释放）
+        Map<String, BigDecimal> locked = lockOrderNeed(warehouse, needOfPayload(details));
+        if (!locked.isEmpty()) {
+            log("SALES_ORDER", "创建", orderNo,
+                    "库存校验通过并锁定 " + locked.size() + " 个商品，仓库：" + warehouse);
+        }
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", orderId);
         out.put("orderNo", orderNo);
         out.put("amount", totalAmount);
+        out.put("effect", warehouse.isBlank() ? "已保存（未指定仓库，未占用库存）" : "已保存并占用库存");
         out.put("success", true);
         return ApiResponse.ok(out);
     }
@@ -92,14 +101,20 @@ public class OrderController {
     @PostMapping("/sales/order/page")
     public ApiResponse<PageResult<Map<String, Object>>> salesPage(@RequestBody PageRequest request) {
         // 走 snake_case AS snake_case，让 camelize 正确转成驼峰
+        // outbound_count / outbound_audited_count：供前端收敛行内按钮
+        //   已生成出库单 → 不显示【生成出库单】；已有已审核出库单（已出库）→ 不显示【反审核】
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT order_id, order_no, customer, customer_code,
-                       salesman, warehouse, bill_date, expected_delivery_date,
-                       price_group_code, amount, paid_amount, unpaid_amount,
-                       outbound_status, outbound_amount,
-                       credit_check, stock_check,
-                       status, creator_name, create_time, audit_time, audit_user, remark
-                FROM sales_order ORDER BY create_time DESC, order_no DESC
+                SELECT so.order_id, so.order_no, so.customer, so.customer_code,
+                       so.salesman, so.warehouse, so.bill_date, so.expected_delivery_date,
+                       so.price_group_code, so.amount, so.paid_amount, so.unpaid_amount,
+                       so.outbound_status, so.outbound_amount,
+                       so.credit_check, so.stock_check,
+                       so.status, so.creator_name, so.create_time, so.audit_time, so.audit_user, so.remark,
+                       (SELECT COUNT(*) FROM sales_outbound o WHERE o.source_order = so.order_no)
+                           AS outbound_count,
+                       (SELECT COUNT(*) FROM sales_outbound o WHERE o.source_order = so.order_no AND o.status = 'APPROVED')
+                           AS outbound_audited_count
+                FROM sales_order so ORDER BY so.create_time DESC, so.order_no DESC
                 """);
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
@@ -150,10 +165,11 @@ public class OrderController {
         String orderId = str(req.get("orderId"));
         if (orderId.isBlank()) return ApiResponse.fail("400", "缺少 orderId");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT status FROM sales_order WHERE order_id = ?", orderId);
+                "SELECT status, warehouse FROM sales_order WHERE order_id = ?", orderId);
         if (rows.isEmpty()) return ApiResponse.fail("404", "订单不存在");
         String status = str(pickCS(rows.get(0), "status"));
         if (!"PENDING".equals(status)) return ApiResponse.fail("400", "仅待审核销售订单允许编辑");
+        String oldWarehouse = str(pickCS(rows.get(0), "warehouse"));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> details = req.get("details") instanceof List<?> l
@@ -161,20 +177,32 @@ public class OrderController {
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Map<String, Object> d : details) totalAmount = totalAmount.add(toBd(d.get("amount")));
 
-        // 库存校验：在改主表 / 删明细之前做（PENDING 订单未锁库存，无需先释放再校验）
-        String shortage = checkStockOfPayload(str(req.get("warehouseId")), details);
+        // 库存校验：订单在创建时已占用库存，可用库存里已经扣掉了自己，
+        // 所以判断口径是「新数量 ≤ 可用 + 本单已占用」，而不是「新数量 ≤ 可用」。
+        // 换仓库时旧仓库的占用与新仓库无关，本单已占用按 0 算（旧仓库的锁在下面整体释放）。
+        String newWarehouse = str(req.get("warehouseId"));
+        Map<String, BigDecimal> oldNeed = needOfOrder(orderId);
+        Map<String, BigDecimal> newNeed = needOfPayload(details);
+        String shortage = checkStockAllowingOwnLock(newWarehouse, newNeed,
+                newWarehouse.equals(oldWarehouse) ? oldNeed : Map.of(), goodsNamesOfPayload(details));
         if (shortage != null) return ApiResponse.fail("400", shortage);
+
+        // 先整体释放旧占用，再整体锁定新数量。
+        // 校验公式保证释放后一定锁得回来（含历史未锁订单：那时 min(旧量, 已锁) 本来就小）。
+        releaseLocks(oldWarehouse, oldNeed);
+        lockOrderNeed(newWarehouse, newNeed);
 
         jdbcTemplate.update("""
                 UPDATE sales_order SET customer = ?, customer_code = ?, salesman = ?, warehouse = ?,
                     bill_date = ?, expected_delivery_date = ?, price_group_code = ?,
-                    amount = ?, unpaid_amount = ?, remark = ?
+                    amount = ?, unpaid_amount = ?, remark = ?, stock_check = ?
                 WHERE order_id = ?
                 """,
                 str(req.get("customerName")), str(req.get("customerCode")),
                 str(req.get("salesman")), str(req.get("warehouseId")),
                 parseDate(req.get("billDate")), parseDate(req.get("expectedDeliveryDate")),
                 str(req.get("priceGroupCode")), totalAmount, totalAmount, str(req.get("remark")),
+                newWarehouse.isBlank() ? null : "通过",
                 orderId);
 
         jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id = ?", orderId);
@@ -198,14 +226,20 @@ public class OrderController {
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", orderId);
         out.put("amount", totalAmount);
+        out.put("effect", newWarehouse.isBlank() ? "已保存（未指定仓库，未占用库存）" : "已保存并按新数量占用库存");
         out.put("success", true);
         return ApiResponse.ok(out);
     }
 
     /**
      * 销售订单审核：PENDING → APPROVED，写审核时间，outbound_status='待出库'。
-     * <p>审核时重新校验可用库存（存单到审核之间库存可能已被别的单吃掉），
-     * 通过后逐商品把订单数量写入 {@code inv_stock_balance.locked_qty}，真正占住库存。
+     *
+     * <p><b>不再锁定库存</b> —— 库存在订单创建时就已经占用（{@code createSales} → {@code lockStock}），
+     * 审核只是状态流转，重复锁定会把同一批货占用两次。
+     *
+     * <p>同理也不能再拿「可用库存 ≥ 本单数量」校验：本单的量已在 {@code locked_qty} 里，
+     * 可用库存已被自己扣掉，这么比必然自己挡自己。这里改为兜底校验
+     * <b>实物库存 ≥ 本单数量</b>——实物可能被盘亏、其他出库、调拨抽走，那种情况必须拦。
      */
     @PostMapping("/sales/order/audit")
     @Transactional
@@ -223,17 +257,9 @@ public class OrderController {
         String orderNo = str(pickCS(rows.get(0), "order_no"));
         String warehouse = str(pickCS(rows.get(0), "warehouse"));
 
-        // PENDING 订单不可能有出库单（生成出库单要求订单已审核），所以待锁定量 = 订单全量
         Map<String, BigDecimal> need = needOfOrder(realOrderId);
-        Map<String, String> names = goodsNamesOfOrder(realOrderId);
-        String shortage = checkStockByNeed(warehouse, need, names);
+        String shortage = checkPhysicalByNeed(warehouse, need, goodsNamesOfOrder(realOrderId));
         if (shortage != null) return ApiResponse.fail("400", shortage);
-        if (!warehouse.isBlank()) {
-            for (Map.Entry<String, BigDecimal> e : need.entrySet()) {
-                if (e.getValue().signum() <= 0) continue;
-                inventoryCostService.lockStock(e.getKey(), warehouse, e.getValue());
-            }
-        }
 
         jdbcTemplate.update("""
                 UPDATE sales_order
@@ -242,12 +268,14 @@ public class OrderController {
                 WHERE order_id = ?
                 """, "系统管理员", realOrderId);
         log("SALES_ORDER", "审核", orderNo,
-                "库存校验通过并锁定 " + need.size() + " 个商品，仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
+                "库存已于创建时占用，本次审核不重复锁定；仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
         out.put("orderNo", orderNo);
         out.put("status", "APPROVED");
-        out.put("effect", warehouse.isBlank() ? "已审核（未指定仓库，未锁定库存）" : "已锁定库存");
+        out.put("effect", warehouse.isBlank()
+                ? "已审核（未指定仓库，未占用库存）"
+                : "已审核，库存自创建时起持续占用");
         out.put("success", true);
         return ApiResponse.ok(out);
     }
@@ -255,7 +283,11 @@ public class OrderController {
     /**
      * 销售订单反审核：APPROVED → PENDING。
      * <p>已生成的销售出库单若全部还是 PENDING（未审核、未动实物库存、未生成发货单），
-     * 则连带删除后放行；只要有一张已审核，就拒绝反审核。同时释放订单占用的锁定库存。
+     * 则连带删除后放行；只要有一张已审核，就拒绝反审核。
+     *
+     * <p><b>订单占用的库存不释放</b> —— 库存从创建就占用，反审核只是回到待审核，
+     * 单子还在、还要出货，占用必须延续到出库或关闭。
+     * 被删掉的出库单占用的是<b>批次库存</b>，那一层要跟着单子一起释放。
      */
     @PostMapping("/sales/order/reverse-audit")
     @Transactional
@@ -271,7 +303,6 @@ public class OrderController {
         if (!"APPROVED".equals(status)) return ApiResponse.fail("400", "只有已审核订单可反审核");
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
         String orderNo = str(pickCS(rows.get(0), "order_no"));
-        String warehouse = str(pickCS(rows.get(0), "warehouse"));
 
         // ① 已审核的出库单一律拦截：实物库存已扣减、发货单已生成，不能靠删单回退
         List<Map<String, Object>> outbounds = jdbcTemplate.queryForList(
@@ -294,27 +325,26 @@ public class OrderController {
                 return ApiResponse.fail("400", "出库单 " + no + " 已被发货单引用，无法反审核");
             }
         }
-        // ③ 删除未审核出库单（明细 → 主表）
+        // ③ 释放批次锁定 + 删除未审核出库单（明细 → 主表）
         List<String> deleted = new ArrayList<>();
         for (Map<String, Object> o : outbounds) {
             String oid = str(pickCS(o, "outbound_id"));
+            releaseBatchLocksOfOutbound(oid);
             jdbcTemplate.update("DELETE FROM sales_outbound_detail WHERE outbound_id = ?", oid);
             jdbcTemplate.update("DELETE FROM sales_outbound WHERE outbound_id = ?", oid);
             deleted.add(str(pickCS(o, "outbound_no")));
         }
-        // ④ 释放锁定库存（出库单已全部删除，剩余锁定 = 订单全量）
-        releaseLocks(warehouse, needOfOrder(realOrderId));
-        // ⑤ 回退订单状态
+        // ④ 回退订单状态。stock_check 保持「通过」：库存仍被本单占用，不是没校验过
         jdbcTemplate.update("""
                 UPDATE sales_order
                 SET status = 'PENDING', audit_time = NULL, audit_user = NULL,
-                    outbound_status = NULL, stock_check = NULL, outbound_amount = 0
+                    outbound_status = NULL, outbound_amount = 0
                 WHERE order_id = ?
                 """, realOrderId);
-        // ⑥ 写操作日志
+        // ⑤ 写操作日志
         log("SALES_ORDER", "反审核", orderNo, deleted.isEmpty()
-                ? "已释放锁定库存"
-                : "已删除未审核出库单 " + String.join("、", deleted) + " 并释放锁定库存");
+                ? "订单库存占用保持不变"
+                : "已删除未审核出库单 " + String.join("、", deleted) + " 并释放其批次锁定；订单库存占用保持不变");
 
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
@@ -322,13 +352,14 @@ public class OrderController {
         out.put("status", "PENDING");
         out.put("deletedOutbounds", deleted);
         out.put("effect", deleted.isEmpty()
-                ? "已反审核并释放锁定库存"
-                : "已反审核，删除未审核出库单 " + String.join("、", deleted) + " 并释放锁定库存");
+                ? "已反审核，订单仍占用库存"
+                : "已反审核，删除未审核出库单 " + String.join("、", deleted)
+                        + " 并释放其批次锁定；订单仍占用库存");
         out.put("success", true);
         return ApiResponse.ok(out);
     }
 
-    /** 销售订单关闭：APPROVED/PENDING → CLOSED；原状态为 APPROVED 时释放剩余锁定库存。 */
+    /** 销售订单关闭：APPROVED/PENDING → CLOSED，释放尚未出库部分的锁定库存。 */
     @PostMapping("/sales/order/close")
     @Transactional
     public ApiResponse<Map<String, Object>> closeSales(@RequestBody Map<String, Object> req) {
@@ -346,18 +377,16 @@ public class OrderController {
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
         String orderNo = str(pickCS(rows.get(0), "order_no"));
         String warehouse = str(pickCS(rows.get(0), "warehouse"));
-        // PENDING 订单没有锁定库存，只有 APPROVED 才需要释放尚未出库的部分
-        if ("APPROVED".equals(status)) {
-            releaseLocks(warehouse, remainingLockOf(realOrderId, orderNo));
-        }
-        jdbcTemplate.update("UPDATE sales_order SET status = 'CLOSED' WHERE order_id = ?", realOrderId);
-        log("SALES_ORDER", "关闭", orderNo, "原状态 " + status
-                + ("APPROVED".equals(status) ? "，已释放未出库部分的锁定库存" : ""));
+        // PENDING 与 APPROVED 都占着库存（创建即占用），关闭时释放尚未出库的部分
+        releaseLocks(warehouse, remainingLockOf(realOrderId, orderNo));
+        jdbcTemplate.update(
+                "UPDATE sales_order SET status = 'CLOSED', stock_check = NULL WHERE order_id = ?", realOrderId);
+        log("SALES_ORDER", "关闭", orderNo, "原状态 " + status + "，已释放未出库部分的锁定库存");
         return ApiResponse.ok(Map.of("orderId", realOrderId, "orderNo", orderNo,
-                "status", "CLOSED", "effect", "订单已关闭", "success", true));
+                "status", "CLOSED", "effect", "订单已关闭，未出库部分的库存占用已释放", "success", true));
     }
 
-    /** 销售订单删除：仅 PENDING 可删。 */
+    /** 销售订单删除：仅 PENDING 可删；删除前释放本单占用的库存。 */
     @PostMapping("/sales/order/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> deleteSales(@RequestBody Map<String, Object> req) {
@@ -365,18 +394,24 @@ public class OrderController {
         if (orderId.isBlank()) orderId = str(req.get("bizId"));
         if (orderId.isBlank()) return ApiResponse.fail("400", "缺少 orderId");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT status FROM sales_order WHERE order_id = ?", orderId);
+                "SELECT order_no, warehouse, status FROM sales_order WHERE order_id = ?", orderId);
         if (rows.isEmpty()) return ApiResponse.fail("404", "订单不存在");
         String status = str(pickCS(rows.get(0), "status"));
         if (!"PENDING".equals(status)) return ApiResponse.fail("400", "只有待审核订单可删除");
+        String orderNo = str(pickCS(rows.get(0), "order_no"));
+        String warehouse = str(pickCS(rows.get(0), "warehouse"));
+        // 创建即占用，删除必须把占用还回去
+        releaseLocks(warehouse, remainingLockOf(orderId, orderNo));
         jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id = ?", orderId);
         jdbcTemplate.update("DELETE FROM sales_order WHERE order_id = ?", orderId);
-        return ApiResponse.ok(Map.of("orderId", orderId, "success", true));
+        log("SALES_ORDER", "删除", orderNo, "已释放本单占用的库存");
+        return ApiResponse.ok(Map.of("orderId", orderId, "effect", "订单已删除，库存占用已释放", "success", true));
     }
 
     /**
      * 销售快速开单 = 创建订单 + 立即审核。
      * 走 JdbcTemplate 复用 createSales / auditSales 逻辑，避免依赖已删除的老 SalesController helper。
+     * <p>库存已由 {@code createSales} 占用，这里<b>不再重复锁定</b>。
      */
     @PostMapping("/sales/quick-order/create-and-audit")
     @Transactional
@@ -387,14 +422,6 @@ public class OrderController {
         Map<String, Object> data = createResult.data();
         String orderId = String.valueOf(data.get("orderId"));
         String warehouse = str(req.get("warehouseId"));
-        // 锁定库存（与 auditSales 同口径：快速开单等于建单即审核）
-        Map<String, BigDecimal> need = needOfOrder(orderId);
-        if (!warehouse.isBlank()) {
-            for (Map.Entry<String, BigDecimal> e : need.entrySet()) {
-                if (e.getValue().signum() <= 0) continue;
-                inventoryCostService.lockStock(e.getKey(), warehouse, e.getValue());
-            }
-        }
         // 内联审核，避免 Spring 代理自调用绕过事务
         jdbcTemplate.update("""
                 UPDATE sales_order
@@ -403,13 +430,13 @@ public class OrderController {
                 WHERE order_id = ?
                 """, "系统管理员（快速开单）", orderId);
         log("SALES_ORDER", "快速开单审核", String.valueOf(data.get("orderNo")),
-                "库存校验通过并锁定 " + need.size() + " 个商品，仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
+                "库存已于创建时占用，本次审核不重复锁定；仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
         Map<String, Object> out = new HashMap<>();
         out.put("orderNo", data.get("orderNo"));
         out.put("orderId", orderId);
         out.put("status", "APPROVED");
         out.put("amount", data.get("amount"));
-        out.put("effect", warehouse.isBlank() ? "快速开单已审核（未指定仓库，未锁定库存）" : "快速开单已审核并锁库存");
+        out.put("effect", warehouse.isBlank() ? "快速开单已审核（未指定仓库，未占用库存）" : "快速开单已审核并占用库存");
         return ApiResponse.ok(out);
     }
 
@@ -421,15 +448,29 @@ public class OrderController {
      * 销售属性为赠品/样品/兑换/陈列的行同样计入需求量。
      */
     private String checkStockOfPayload(String warehouse, List<Map<String, Object>> details) {
+        return checkStockByNeed(warehouse, needOfPayload(details), goodsNamesOfPayload(details));
+    }
+
+    /** 前端提交的明细按商品汇总数量（同商品多行——正常品 + 赠品——合并）。 */
+    private Map<String, BigDecimal> needOfPayload(List<Map<String, Object>> details) {
         Map<String, BigDecimal> need = new LinkedHashMap<>();
-        Map<String, String> names = new HashMap<>();
         for (Map<String, Object> d : details) {
             String code = str(d.get("goodsCode")).trim();
             if (code.isEmpty()) continue;
             need.merge(code, toBd(d.get("qty")), BigDecimal::add);
+        }
+        return need;
+    }
+
+    /** 前端提交的明细的商品编号 → 名称，仅用于拼提示文案。 */
+    private Map<String, String> goodsNamesOfPayload(List<Map<String, Object>> details) {
+        Map<String, String> names = new HashMap<>();
+        for (Map<String, Object> d : details) {
+            String code = str(d.get("goodsCode")).trim();
+            if (code.isEmpty()) continue;
             names.putIfAbsent(code, str(d.get("goodsName")));
         }
-        return checkStockByNeed(warehouse, need, names);
+        return names;
     }
 
     /**
@@ -461,6 +502,60 @@ public class OrderController {
             need.merge(code, toBd(pickCS(r, "qty")), BigDecimal::add);
         }
         return need;
+    }
+
+    /**
+     * 编辑订单时的库存校验：{@code 新数量 ≤ 可用 + 本单已占用}。
+     *
+     * <p>订单创建时就把数量锁进了 {@code locked_qty}，可用库存已经扣掉了自己，
+     * 直接用「新数量 ≤ 可用」判断，一张原封不动重存的单也会报库存不足。
+     *
+     * <p>本单已占用取 {@code min(旧数量, 当前锁定量)} —— 与
+     * {@code InventoryCostService.releaseLock} 的向下夹取口径一致，
+     * 保证「先整体释放旧占用、再整体锁定新数量」的第二步一定锁得回来
+     * （历史未锁订单的 min 本来就小，不会给出锁不回来的额度）。
+     */
+    private String checkStockAllowingOwnLock(String warehouse, Map<String, BigDecimal> newNeed,
+                                             Map<String, BigDecimal> oldNeed, Map<String, String> names) {
+        if (warehouse == null || warehouse.isBlank() || newNeed.isEmpty()) return null;
+        for (Map.Entry<String, BigDecimal> e : newNeed.entrySet()) {
+            BigDecimal want = e.getValue();
+            if (want == null || want.signum() <= 0) continue;
+            String code = e.getKey();
+            BigDecimal available = inventoryCostService.getAvailableQty(code, warehouse);
+            BigDecimal own = oldNeed.getOrDefault(code, BigDecimal.ZERO)
+                    .min(inventoryCostService.getLockedQty(code, warehouse));
+            BigDecimal allowed = available.add(own);
+            if (allowed.compareTo(want) < 0) {
+                String nm = names == null ? "" : str(names.get(code));
+                return "商品【" + code + (nm.isBlank() ? "" : " " + nm) + "】库存不足：本单需 "
+                        + plain(want) + "，" + warehouse + " 可用 " + plain(allowed)
+                        + "（含本单已占用 " + plain(own) + "）";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 审核时的兜底校验：{@code 实物库存 ≥ 本单数量}。
+     *
+     * <p>本单的量在创建时已锁进 {@code locked_qty}，拿可用库存比对必然自己挡自己。
+     * 实物库存才是有意义的下限：盘亏、其他出库、调拨都可能把实物抽走，
+     * 那种情况下这张单已经出不了货，必须在审核环节就拦住。
+     */
+    private String checkPhysicalByNeed(String warehouse, Map<String, BigDecimal> need, Map<String, String> names) {
+        if (warehouse == null || warehouse.isBlank() || need.isEmpty()) return null;
+        for (Map.Entry<String, BigDecimal> e : need.entrySet()) {
+            BigDecimal want = e.getValue();
+            if (want == null || want.signum() <= 0) continue;
+            BigDecimal physical = inventoryCostService.getPhysicalQty(e.getKey(), warehouse);
+            if (physical.compareTo(want) < 0) {
+                String nm = names == null ? "" : str(names.get(e.getKey()));
+                return "商品【" + e.getKey() + (nm.isBlank() ? "" : " " + nm) + "】实物库存不足：本单需 "
+                        + plain(want) + "，" + warehouse + " 实物 " + plain(physical) + "，无法审核";
+            }
+        }
+        return null;
     }
 
     /** 订单明细的商品编号 → 名称，仅用于拼提示文案。 */
@@ -500,6 +595,38 @@ public class OrderController {
         for (Map.Entry<String, BigDecimal> e : qtyByGoods.entrySet()) {
             if (e.getValue() == null || e.getValue().signum() <= 0) continue;
             inventoryCostService.releaseLock(e.getKey(), warehouse, e.getValue());
+        }
+    }
+
+    /**
+     * 批量锁定库存（生成/编辑订单时占用）；仓库为空时整体跳过。
+     *
+     * @return 实际锁定的商品 → 数量；仓库为空时为空 Map
+     */
+    private Map<String, BigDecimal> lockOrderNeed(String warehouse, Map<String, BigDecimal> qtyByGoods) {
+        Map<String, BigDecimal> locked = new LinkedHashMap<>();
+        if (warehouse == null || warehouse.isBlank()) return locked;
+        for (Map.Entry<String, BigDecimal> e : qtyByGoods.entrySet()) {
+            if (e.getValue() == null || e.getValue().signum() <= 0) continue;
+            inventoryCostService.lockStock(e.getKey(), warehouse, e.getValue());
+            locked.put(e.getKey(), e.getValue());
+        }
+        return locked;
+    }
+
+    /**
+     * 释放一张销售出库单占用的批次库存（订单反审核连带删除出库单时调用）。
+     * <p>批次仓库取出库单明细自己的 warehouse —— 出库单可能与订单不同仓。
+     */
+    private void releaseBatchLocksOfOutbound(String outboundId) {
+        for (Map<String, Object> d : jdbcTemplate.queryForList(
+                "SELECT goods_code, warehouse, batch_no, qty FROM sales_outbound_detail WHERE outbound_id = ?",
+                outboundId)) {
+            inventoryCostService.releaseBatchLock(
+                    str(pickCS(d, "goods_code")),
+                    str(pickCS(d, "warehouse")),
+                    str(pickCS(d, "batch_no")),
+                    toBd(pickCS(d, "qty")));
         }
     }
 

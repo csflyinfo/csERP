@@ -1658,14 +1658,18 @@ async function exportCurrentModuleXlsx() {
 function confirmHintOf(action) {
   if (moduleCode.value === 'salesOrder') {
     if (/^反审核$/.test(action)) {
-      return '反审核会释放本单锁定的库存，并删除由本单生成且仍未审核的销售出库单。'
+      return '反审核只把订单退回待审核，本单占用的库存保持不变（占用从生成起持续到出库）。'
+        + '由本单生成且仍未审核的销售出库单会被删除，其占用的批次库存一并释放。'
         + '若出库单已审核（实物库存已扣减、发货单已生成），本次反审核会被拒绝，需先处理出库单。'
     }
     if (/^审核$/.test(action)) {
-      return '审核会按「可用库存 = 实物 − 锁定 − 冻结」重新校验，通过后按仓库锁定本单数量；库存不足将无法审核。'
+      return '库存已于生成订单时占用，审核不重复锁定，只校验实物库存是否仍够本单数量。'
     }
     if (/^关闭$/.test(action)) {
-      return '关闭后不再允许生成出库单，尚未出库部分的锁定库存会被释放。'
+      return '关闭后不再允许生成出库单，尚未出库部分的占用库存会被释放。'
+    }
+    if (/^删除$/.test(action)) {
+      return '删除会释放本单尚未出库部分占用的库存。'
     }
   }
   return `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`
@@ -3080,8 +3084,12 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
               </template>
               <template v-else-if="row._raw?.status === 'APPROVED'">
                 <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
-                <button class="link link-btn" @click="generateOutboundFromOrder(row)">生成出库单</button>
-                <button class="link link-btn" @click="handleAction('反审核', row)">反审核</button>
+                <!-- 已生成出库单（含未审核的）→ 不再显示【生成出库单】：一张订单只出一次库 -->
+                <button v-if="!(Number(row._raw?.outboundCount) > 0)" class="link link-btn"
+                        @click="generateOutboundFromOrder(row)">生成出库单</button>
+                <!-- 已出库（存在已审核出库单）→ 不显示【反审核】：实物已扣、发货单已生成，退不回来 -->
+                <button v-if="!(Number(row._raw?.outboundAuditedCount) > 0)" class="link link-btn"
+                        @click="handleAction('反审核', row)">反审核</button>
                 <button class="link link-btn danger-link" @click="handleAction('关闭', row)">关闭</button>
               </template>
               <template v-else>

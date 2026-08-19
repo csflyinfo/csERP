@@ -289,7 +289,17 @@ public class InventoryCostService {
         stockLedgerService.save(ledger);
     }
 
-    // ============ 锁定库存（销售订单审核占用，出库审核/反审核/关闭时释放） ============
+    // ============ 锁定库存（销售订单创建即占用，出库审核/关闭时释放） ============
+    //
+    // 两层锁定，互不重复计数：
+    //   · balance 层（inv_stock_balance.locked_qty）—— 销售订单占用。订单不指定批次，只占「商品 + 仓库」。
+    //     创建即锁，审核不重复锁，出库审核时释放并扣实物，关闭/删除时释放剩余。
+    //   · batch 层（inv_batch_stock.locked_qty）—— 销售出库单占用所选批次。
+    //     创建出库单即锁，出库审核时释放并扣批次实物，出库单被删（订单反审核）时释放。
+    //
+    // batch 层刻意<b>不联动</b> inv_stock_balance：该数量已被来源订单锁在 balance 层，
+    // 再联动就是同一批货被占用两次，可用库存会凭空少一半。
+    // （手工的 /inventory/batch/lock 端点是联动的 —— 那是仓管独立的锁定动作，没有订单在 balance 层占位。）
 
     /**
      * 查询「商品 + 仓库」维度的可用库存。
@@ -310,10 +320,10 @@ public class InventoryCostService {
     }
 
     /**
-     * 锁定库存 —— 销售订单审核时占用可用库存，避免多张订单抢占同一批库存。
+     * 锁定库存 —— 销售订单<b>创建</b>时占用可用库存，避免多张订单抢占同一批库存。
      *
      * <p>锁定只做到「商品 + 仓库」维度，不落批次：销售订单本身不指定批次，
-     * 批次是到销售出库单才选的。
+     * 批次是到销售出库单才选的（那一层用 {@link #lockBatch}）。
      *
      * @throws IllegalArgumentException 可用库存不足，或该商品在该仓库无库存记录
      */
@@ -338,11 +348,13 @@ public class InventoryCostService {
     }
 
     /**
-     * 释放锁定库存 —— 销售订单反审核/关闭，或销售出库审核扣实物之前调用。
+     * 释放锁定库存 —— 销售订单关闭/删除，或销售出库审核扣实物之前调用。
+     *
+     * <p>注意：销售订单<b>反审核不释放</b>（订单回到待审核仍然占用库存，直到出库或关闭）。
      *
      * <p><b>刻意向下夹取</b>：实际释放量 = min(请求量, 当前已锁定量)。
-     * 库里存在一批「审核时还没有锁定逻辑」的历史 APPROVED 销售订单，它们没有锁定记录，
-     * 反审核/关闭/出库时释放必须能安全地释放 0，而不是把 locked_qty 打成负数。
+     * 库里存在一批「创建/审核时还没有锁定逻辑」的历史销售订单，它们没有锁定记录，
+     * 关闭/出库时释放必须能安全地释放 0，而不是把 locked_qty 打成负数。
      */
     @Transactional
     public void releaseLock(String goodsCode, String warehouse, BigDecimal qty) {
@@ -366,6 +378,95 @@ public class InventoryCostService {
     /** null 当 0 —— 历史数据里 locked_qty / frozen_qty 可能为 NULL。 */
     private static BigDecimal nz(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    /**
+     * 查询「商品 + 仓库」维度的实物库存。
+     *
+     * <p>销售订单审核时用它兜底：本单数量在创建时已锁进 {@code locked_qty}，
+     * 再拿「可用库存」比对必然自己挡自己，只有实物库存是有意义的下限
+     * （实物可能被盘亏、其他出库、调拨抽走）。
+     */
+    public BigDecimal getPhysicalQty(String goodsCode, String warehouse) {
+        InvStockBalance balance = stockBalanceService.getOne(
+                new QueryWrapper<InvStockBalance>()
+                        .eq("goods_code", goodsCode)
+                        .eq("warehouse", warehouse)
+        );
+        if (balance == null) return BigDecimal.ZERO;
+        return nz(balance.getPhysicalQty());
+    }
+
+    /** 查询「商品 + 仓库」维度的当前锁定量；无记录返回 0。 */
+    public BigDecimal getLockedQty(String goodsCode, String warehouse) {
+        InvStockBalance balance = stockBalanceService.getOne(
+                new QueryWrapper<InvStockBalance>()
+                        .eq("goods_code", goodsCode)
+                        .eq("warehouse", warehouse)
+        );
+        if (balance == null) return BigDecimal.ZERO;
+        return nz(balance.getLockedQty());
+    }
+
+    /**
+     * 锁定批次库存 —— 销售出库单创建/编辑时占用所选批次。
+     *
+     * <p>只写 {@code inv_batch_stock.locked_qty}，<b>不联动</b> {@code inv_stock_balance}：
+     * 这批量已被来源销售订单锁在 balance 层，联动会造成同一批货占用两次。
+     *
+     * @throws IllegalArgumentException 批次不存在，或批次可用量（数量 − 已锁定）不足
+     */
+    @Transactional
+    public void lockBatch(String goodsCode, String warehouse, String batchNo, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        if (batchNo == null || batchNo.isBlank()) return;   // 未指定批次的行不落批次锁
+        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT batch_stock_id, COALESCE(qty, 0) AS qty, COALESCE(locked_qty, 0) AS locked_qty
+                FROM inv_batch_stock
+                WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
+                """, goodsCode, warehouse, batchNo);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "批次不存在，无法锁定：" + goodsCode + " / " + warehouse + " / 批次 " + batchNo);
+        }
+        Map<String, Object> r = rows.get(0);
+        BigDecimal batchQty = toBd(r.get("qty"), r.get("QTY"));
+        BigDecimal locked = toBd(r.get("locked_qty"), r.get("LOCKED_QTY"));
+        BigDecimal available = batchQty.subtract(locked);
+        if (qty.compareTo(available) > 0) {
+            throw new IllegalArgumentException("批次可用量不足，无法锁定：" + goodsCode + " / 批次 " + batchNo
+                    + "，需 " + qty + "，可用 " + available);
+        }
+        Object idV = r.get("batch_stock_id") != null ? r.get("batch_stock_id") : r.get("BATCH_STOCK_ID");
+        jdbcTemplate.update(
+                "UPDATE inv_batch_stock SET locked_qty = COALESCE(locked_qty, 0) + ? WHERE batch_stock_id = ?",
+                qty, idV);
+    }
+
+    /**
+     * 释放批次锁定 —— 销售出库单审核（扣批次实物前）/被删除（订单反审核）时调用。
+     *
+     * <p>与 {@link #releaseLock} 同样<b>向下夹取</b>：历史出库单创建时没有批次锁，
+     * 释放必须安全地释放 0。
+     */
+    @Transactional
+    public void releaseBatchLock(String goodsCode, String warehouse, String batchNo, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        if (batchNo == null || batchNo.isBlank()) return;
+        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT batch_stock_id, COALESCE(locked_qty, 0) AS locked_qty
+                FROM inv_batch_stock
+                WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
+                """, goodsCode, warehouse, batchNo);
+        if (rows.isEmpty()) return;
+        Map<String, Object> r = rows.get(0);
+        BigDecimal locked = toBd(r.get("locked_qty"), r.get("LOCKED_QTY"));
+        BigDecimal release = qty.min(locked);
+        if (release.signum() <= 0) return;
+        Object idV = r.get("batch_stock_id") != null ? r.get("batch_stock_id") : r.get("BATCH_STOCK_ID");
+        jdbcTemplate.update(
+                "UPDATE inv_batch_stock SET locked_qty = COALESCE(locked_qty, 0) - ? WHERE batch_stock_id = ?",
+                release, idV);
     }
 
     /**

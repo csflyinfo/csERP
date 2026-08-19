@@ -172,12 +172,16 @@ public class SalesOutboundController {
     /**
      * 可选批次列表（供前端「拆行指定批次」下拉）。
      * 返回给定 goods_code / warehouse 下所有 qty > 0 的批次。
+     * <p>{@code availableQty = qty − locked_qty}：其他未审核出库单已锁定的批次量不可再选，
+     * 前端下拉与行内校验都应看 availableQty，否则会在保存时才被后端的批次锁校验挡下。
      */
     @GetMapping("/outbound/available-batches")
     public ApiResponse<List<Map<String, Object>>> availableBatches(
             @RequestParam String goodsCode, @RequestParam String warehouse) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT batch_no, qty, cost_price, production_date, expiry_date
+                SELECT batch_no, qty, COALESCE(locked_qty, 0) AS locked_qty,
+                       qty - COALESCE(locked_qty, 0) AS available_qty,
+                       cost_price, production_date, expiry_date
                 FROM inv_batch_stock
                 WHERE goods_code = ? AND warehouse = ? AND qty > 0
                 ORDER BY production_date ASC, batch_no ASC
@@ -222,6 +226,19 @@ public class SalesOutboundController {
         }
         if (order != null && !"APPROVED".equals(str(pick(order, "status")))) {
             throw new IllegalArgumentException("销售订单未审核，无法生成出库单");
+        }
+        // 一张销售订单只允许生成一张出库单（前端【生成出库单】按钮也按此收敛），
+        // 避免同一张订单被重复生成出库单、重复占用批次库存
+        if (order != null) {
+            List<Map<String, Object>> exists = jdbcTemplate.queryForList(
+                    "SELECT outbound_no, status FROM sales_outbound WHERE source_order = ?",
+                    str(pick(order, "order_no")));
+            if (!exists.isEmpty()) {
+                List<String> nos = new ArrayList<>();
+                for (Map<String, Object> e : exists) nos.add(str(pick(e, "outbound_no")));
+                throw new IllegalArgumentException("该销售订单已生成出库单 " + String.join("、", nos)
+                        + "，不能重复生成；如需重做请先反审核订单（会删除未审核的出库单）");
+            }
         }
 
         String orderNo = order != null ? str(pick(order, "order_no")) : sourceOrder;
@@ -398,9 +415,13 @@ public class SalesOutboundController {
                     detailId, id, code, str(line.get("goodsName")),
                     warehouse, str(line.get("unitName")), q, batchNo, p, a, cp, ca,
                     spec, barcode, productionDate, smallUnitName, smallUnitQty, detailRemark);
+
+            // 出库单占用批次库存：锁定所选批次。
+            // 不联动 inv_stock_balance —— 这批量已被来源销售订单锁在 balance 层，联动就是双重占用。
+            inventoryCostService.lockBatch(code, warehouse, batchNo, q);
         }
 
-        log("sales.outbound", "CREATE", no, "创建销售出库单（来源订单：" + orderNo + "）");
+        log("sales.outbound", "CREATE", no, "创建销售出库单（来源订单：" + orderNo + "）并锁定所选批次");
         return ApiResponse.ok(GenericResult.row(
                 "outboundId", id, "outboundNo", no,
                 "sourceOrder", orderNo, "status", "PENDING"));
@@ -516,7 +537,8 @@ public class SalesOutboundController {
                 """, totalQty, totalAmount, totalCostAmount, str(request.get("remark")),
                 emptyToNull(str(request.get("driver"))), outboundId);
 
-        // 删旧明细
+        // 删旧明细（先释放旧明细占用的批次锁，否则改批次/改数量后旧锁会残留）
+        releaseBatchLocksOf(outboundId);
         jdbcTemplate.update("DELETE FROM sales_outbound_detail WHERE outbound_id = ?", outboundId);
 
         // 写新明细
@@ -556,10 +578,26 @@ public class SalesOutboundController {
                     detailId, outboundId, code, str(line.get("goodsName")),
                     warehouse, str(line.get("unitName")), q, batchNo, p, a, cp, ca,
                     spec, barcode, productionDate, smallUnitName, smallUnitQty, detailRemark);
+
+            // 按新明细重新锁定批次
+            inventoryCostService.lockBatch(code, warehouse, batchNo, q);
         }
 
-        log("sales.outbound", "UPDATE", outboundNo, "销售出库单编辑");
+        log("sales.outbound", "UPDATE", outboundNo, "销售出库单编辑，已按新明细重锁批次");
         return ApiResponse.ok(Map.of("outboundId", outboundId, "success", true));
+    }
+
+    /** 释放某张出库单当前明细占用的批次锁定（编辑重锁前 / 审核扣批次实物前调用）。 */
+    private void releaseBatchLocksOf(String outboundId) {
+        for (Map<String, Object> d : jdbcTemplate.queryForList(
+                "SELECT goods_code, warehouse, batch_no, qty FROM sales_outbound_detail WHERE outbound_id = ?",
+                outboundId)) {
+            inventoryCostService.releaseBatchLock(
+                    str(pick(d, "goods_code")),
+                    str(pick(d, "warehouse")),
+                    str(pick(d, "batch_no")),
+                    toBd(pick(d, "qty")));
+        }
     }
 
     /**
@@ -601,9 +639,16 @@ public class SalesOutboundController {
                 "SELECT * FROM sales_outbound_detail WHERE outbound_id = ?", outboundId);
 
         // 扣减库存：按批次或按 goods_code 合计
-        // 订单审核时已把数量锁进 locked_qty，这里必须先释放再扣实物，
-        // 否则 salesOutbound 的「可用库存 = 实物 − 锁定 − 冻结」校验会被自己的锁定挡下。
+        // 出库 = 两层锁定同时兑现：
+        //   · batch 层：本出库单创建时锁定了所选批次，扣批次实物前必须先释放，否则锁会残留在批次上
+        //   · balance 层：来源订单从创建起就锁着这批量，不先释放，salesOutbound 的
+        //     「可用库存 = 实物 − 锁定 − 冻结」校验会被自己的锁定挡下
         for (Map<String, Object> d : details) {
+            inventoryCostService.releaseBatchLock(
+                    str(pick(d, "goods_code")),
+                    str(pick(d, "warehouse")),
+                    str(pick(d, "batch_no")),
+                    toBd(pick(d, "qty")));
             if (!sourceOrderNo.isBlank()) {
                 inventoryCostService.releaseLock(
                         str(pick(d, "goods_code")),

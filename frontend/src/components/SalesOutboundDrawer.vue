@@ -75,13 +75,19 @@ watch(() => props.visible, async (val) => {
   }
 })
 
+/**
+ * 可选来源订单：已审核 + 未出库 + 尚未生成过出库单。
+ * 一张订单只能生成一张出库单（后端 create 也会拦），所以已有出库单（含未审核的）的订单不再出现在下拉里，
+ * 否则用户选了才被后端拒绝。
+ */
 async function loadAvailableOrders() {
   try {
     const data = await post('/sales/order/page', { pageNo: 1, pageSize: 500, filters: {} })
     availableOrders.value = (data.records || []).filter(r => {
       const st = r.status || r.STATUS
       const os = r.outboundStatus || r.outboundstatus || r.OUTBOUNDSTATUS
-      return st === 'APPROVED' && os !== '已出库'
+      const cnt = Number(r.outboundCount || r.outboundcount || r.OUTBOUND_COUNT || 0)
+      return st === 'APPROVED' && os !== '已出库' && !(cnt > 0)
     })
   } catch (e) {
     availableOrders.value = []
@@ -121,6 +127,10 @@ async function loadFromExisting(editData) {
       smallUnitQty: Number(d.smallUnitQty || 0),
       remark: d.remark || '',
       availableBatches: [],
+      // 编辑模式：本行原先占用的批次与数量。批次可用量里已经扣掉了它，
+      // 展示/校验时要加回来，否则打开自己这张单就会显示批次不够（后端 update 是先释放再重锁，本就不冲突）。
+      origBatchNo: d.batchNo || '',
+      origQty: Number(d.qty || 0),
     }))
     detailList.value = lines
     await Promise.all(lines.map(l => loadBatches(l)))
@@ -160,6 +170,8 @@ async function loadFromOrder(orderNo) {
       smallUnitQty: 0,
       remark: '',
       availableBatches: [],
+      origBatchNo: '',   // 新建：本行还没占用过任何批次，无需加回
+      origQty: 0,
     }))
     detailList.value = lines
     // 并行加载每行的可选批次
@@ -172,16 +184,29 @@ async function loadFromOrder(orderNo) {
   }
 }
 
+/**
+ * 取该行商品在当前仓库的可选批次。
+ * 后端返回 availableQty = 批次库存 − 已占用（其他出库单创建时就占住了自己的批次）。
+ * 编辑模式下本行原先占用的量要加回自己那一批，否则会误报批次不足。
+ */
 async function loadBatches(row) {
   if (!row.goodsCode || !headerForm.value.warehouse) return
   try {
     const list = await get(
         `/sales/outbound/available-batches?goodsCode=${encodeURIComponent(row.goodsCode)}&warehouse=${encodeURIComponent(headerForm.value.warehouse)}`)
-    row.availableBatches = list || []
+    row.availableBatches = (list || []).map(b => {
+      const avail = Number(b.availableQty ?? b.qty ?? 0)
+      const addBack = (row.origBatchNo && b.batchNo === row.origBatchNo)
+          ? Math.min(Number(row.origQty || 0), Number(b.lockedQty || 0))   // 历史单可能没锁，加回不能超过实际占用
+          : 0
+      return { ...b, availableQty: avail + addBack }
+    })
     // 默认选第一批（最早生产日期），若未指定；同批次号自动带出生产日期
     if (!row.batchNo && row.availableBatches.length > 0) {
-      row.batchNo = row.availableBatches[0].batchNo
-      row.productionDate = row.availableBatches[0].productionDate || ''
+      // 优先选还有可用量的批次，全被占用时才退回第一批（后端会拦，提示更明确）
+      const first = row.availableBatches.find(b => Number(b.availableQty) > 0) || row.availableBatches[0]
+      row.batchNo = first.batchNo
+      row.productionDate = first.productionDate || ''
     } else if (row.batchNo) {
       // 编辑模式已有 batchNo：从批次列表找对应 productionDate 补齐
       const hit = row.availableBatches.find(b => b.batchNo === row.batchNo)
@@ -282,6 +307,25 @@ async function saveOutbound() {
     const remain = orderRemainByGoods[code] || 0
     if (sum > remain + 1e-4) {
       errors.value.details = `商品 ${code} 本次出库 ${sum} 超过订单剩余 ${remain}`
+      return
+    }
+  }
+  // 预校验：Σ同一批次的本次出库 ≤ 该批次可用量（批次可用 = 批次库存 − 已被其他出库单占用）
+  // 出库单创建即占用批次，后端 lockBatch 不够会直接报错；这里先拦一道，提示更具体。
+  const perBatch = {}
+  const batchAvail = {}
+  for (const row of detailList.value) {
+    const key = `${row.goodsCode}|${row.batchNo}`
+    perBatch[key] = (perBatch[key] || 0) + Number(row.qty || 0)
+    const hit = (row.availableBatches || []).find(b => b.batchNo === row.batchNo)
+    if (hit) batchAvail[key] = Number(hit.availableQty || 0)
+  }
+  for (const [key, sum] of Object.entries(perBatch)) {
+    if (!(key in batchAvail)) continue   // 批次列表没取到就交给后端拦，别误伤
+    const avail = batchAvail[key]
+    if (sum > avail + 1e-4) {
+      const [code, batch] = key.split('|')
+      errors.value.details = `商品 ${code} 批次 ${batch} 可用量不足：本次出库 ${sum}，可用 ${avail}`
       return
     }
   }
@@ -441,8 +485,9 @@ function closeDrawer() { emit('close') }
                   <td>
                     <select v-model="row.batchNo" @change="onBatchChange(row)" style="width:100%;height:24px">
                       <option value="">请选择批次</option>
+                      <!-- 可用 = 批次库存 − 已被其他出库单占用；括号里再给出实物量便于对账 -->
                       <option v-for="b in row.availableBatches" :key="b.batchNo + '_' + b.productionDate" :value="b.batchNo">
-                        {{ b.batchNo }}（可用 {{ b.qty }}）
+                        {{ b.batchNo }}（可用 {{ b.availableQty }} / 实物 {{ b.qty }}）
                       </option>
                     </select>
                   </td>
