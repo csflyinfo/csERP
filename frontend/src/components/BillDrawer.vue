@@ -65,6 +65,7 @@ function makeEmptyRow() {
     supplierLatestPrice: 0, systemLatestPrice: 0,
     salesAttribute: '正常', remark: '',
     // 仅前端使用，不提交后端
+    availableStock: null,   // 当前仓库可用库存（销售订单专用，null=未知/未取到）
     isWeighted: false,      // 称重品 → 数量允许 3 位小数
     unitConfig: null,       // 原始多单位配置，派生单位下拉与取价
     goodsSearch: '',        // 该行商品搜索框关键字
@@ -74,6 +75,50 @@ function makeEmptyRow() {
 
 /** 已填商品的行 —— 校验、保存、合计一律只认这些行，自动空行必须排除 */
 const filledRows = computed(() => detailList.value.filter(r => r.goodsCode))
+
+// ==================== 可用库存（仅销售订单） ====================
+/**
+ * 批量取「当前仓库」的可用库存并回填到对应明细行。
+ * 口径与后端一致：可用 = 实物 − 锁定 − 冻结；查不到库存行按 0 处理。
+ * 采购订单不需要（入库是加库存），仓库未选时也无从查询。
+ */
+async function loadAvailableStock(codes) {
+  if (isPurchase.value) return
+  const warehouse = headerForm.value.warehouseId
+  const list = [...new Set((codes || []).filter(Boolean))]
+  if (!warehouse || list.length === 0) return
+  try {
+    const rows = await post('/inventory/available-stock', { warehouse, goodsCodes: list })
+    const byCode = new Map((Array.isArray(rows) ? rows : []).map(r => [r.goodsCode, Number(r.availableQty) || 0]))
+    detailList.value.forEach(r => {
+      if (list.includes(r.goodsCode)) r.availableStock = byCode.get(r.goodsCode) ?? 0
+    })
+  } catch (_) { /* 取库存失败不阻断录单，保存时后端仍会拦 */ }
+}
+
+/** 仓库变了 → 所有已填行的可用库存都要重取（同一商品不同仓库库存不同） */
+async function onWarehouseChange(warehouseName) {
+  headerForm.value.warehouseId = warehouseName
+  if (isPurchase.value) return
+  if (!warehouseName) {
+    detailList.value.forEach(r => { r.availableStock = null })
+    return
+  }
+  await loadAvailableStock(filledRows.value.map(r => r.goodsCode))
+}
+
+/** 某行是否超卖（用于标红提示，不阻断输入） */
+function isOverStock(row) {
+  if (isPurchase.value || !row.goodsCode || row.availableStock == null) return false
+  return stockNeedOf(row.goodsCode) > Number(row.availableStock)
+}
+
+/** 同一商品可能录在多行（不同销售属性），需求量按商品汇总 —— 赠品/样品等一律计入 */
+function stockNeedOf(goodsCode) {
+  return filledRows.value
+    .filter(r => r.goodsCode === goodsCode)
+    .reduce((sum, r) => sum + (Number(r.qty) || 0), 0)
+}
 
 function bindCell(rowIndex, colKey) {
   return el => {
@@ -204,6 +249,8 @@ async function loadEditData(row) {
     })
     // 末尾补空行，编辑时也能继续加商品
     ensureTrailingBlankRow()
+    // 回显后按单据仓库补齐可用库存
+    await loadAvailableStock(detailList.value.map(r => r.goodsCode))
   } catch (e) {
     alert('加载订单详情失败：' + (e.message || '未知错误'))
   }
@@ -303,6 +350,7 @@ function onGoodsAdded(row) {
   if (blankIdx >= 0) detailList.value.splice(blankIdx, 1, full)
   else detailList.value.push(full)
   ensureTrailingBlankRow()
+  loadAvailableStock([full.goodsCode])
 }
 
 function removeRow(index) {
@@ -414,6 +462,7 @@ async function onRowGoodsSelect(row, index, g) {
 
   await applyRowPrice(row)
   ensureTrailingBlankRow()
+  loadAvailableStock([g.goodsCode])
   // 选完商品把光标推到数量，符合录单习惯
   await nextTick()
   focusCell(index, 'qty')
@@ -555,10 +604,36 @@ function validate() {
     else {
       const badPrice = rows.find(r => Number(r.price) < 0 || r.price == null)
       if (badPrice) errors.details = `商品【${badPrice.goodsCode}】请填写单价`
+      else {
+        // 库存校验（仅销售）：同商品多行合并后与可用库存比对，超出则不允许保存
+        const short = firstShortage()
+        if (short) errors.details = short
+      }
     }
   }
   formErrors.value = errors
   return Object.keys(errors).length === 0
+}
+
+/**
+ * 返回第一条库存不足的提示，全部够则返回空。
+ * 只在已取到可用库存（availableStock 非 null）时判断；取不到时交由后端拦截，
+ * 避免网络抖动导致明明有货却存不了单。
+ */
+function firstShortage() {
+  if (isPurchase.value) return ''
+  const seen = new Set()
+  for (const r of filledRows.value) {
+    if (seen.has(r.goodsCode) || r.availableStock == null) continue
+    seen.add(r.goodsCode)
+    const need = stockNeedOf(r.goodsCode)
+    const available = Number(r.availableStock)
+    if (need > available) {
+      return `商品【${r.goodsCode} ${r.goodsName}】库存不足：本单需 ${need}，`
+        + `${headerForm.value.warehouseId || '当前仓库'} 可用 ${available}`
+    }
+  }
+  return ''
 }
 
 async function saveBill() {
@@ -682,7 +757,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
             </div>
             <div class="field">
               <label>仓库 <span class="req">*</span></label>
-              <select v-model="headerForm.warehouseId">
+              <select :value="headerForm.warehouseId" @change="onWarehouseChange($event.target.value)">
                 <option value="">请选择</option>
                 <option v-for="w in warehouseList" :key="w.warehouseId" :value="w.warehouseName">
                   {{ w.warehouseName }}
@@ -708,7 +783,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
           </div>
           <div v-if="formErrors.details" style="color:var(--danger);font-size:12px;margin-bottom:6px">{{ formErrors.details }}</div>
           <div class="detail-tip">
-            <template v-if="!isPurchase">商品下拉优先展示最近一年有交易的商品，按销量高→低取前 {{ RANK_LIMIT }} 条 · </template>
+            <template v-if="!isPurchase">商品下拉优先展示最近一年有交易的商品，按销量高→低取前 {{ RANK_LIMIT }} 条 · 「可用库存」按所选仓库带出（实物−锁定−冻结），数量超出不允许保存 · </template>
             在「商品编号」列输入 编号/名称/简拼/条码 检索 · ↑↓ 同列换行 · Enter 同行换字段 · 行末 Enter 自动加行
           </div>
           <div class="detail-scroll">
@@ -722,6 +797,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   <th style="width:84px">{{ isPurchase ? '采购单位' : '销售单位' }}</th>
                   <th style="width:82px">{{ isPurchase ? '采购数量' : '销售数量' }}</th>
                   <th style="width:80px">小单位数量</th>
+                  <th v-if="!isPurchase" style="width:80px">可用库存</th>
                   <th style="width:88px">单价</th>
                   <th style="width:92px">金额</th>
                   <th v-if="!isPurchase" style="width:88px">销售属性</th>
@@ -777,6 +853,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   </td>
 
                   <td style="text-align:right">{{ row.smallQty }}</td>
+
+                  <!-- 可用库存：选商品时按当前仓库带出；超卖标红但不阻断输入，保存时才拦 -->
+                  <td v-if="!isPurchase" style="text-align:right"
+                      :class="{ 'stock-short': isOverStock(row) }"
+                      :title="isOverStock(row) ? '本单该商品合计数量已超过可用库存，保存会被拦截' : ''">
+                    {{ row.goodsCode ? (row.availableStock == null ? '-' : row.availableStock) : '' }}
+                  </td>
 
                   <!-- 单价：≤4 位小数 -->
                   <td class="cell-pad">
@@ -852,6 +935,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
     :supplier-name="headerForm.supplierName"
     :customer-code="headerForm.customerCode"
     :customer-name="headerForm.customerName"
+    :warehouse="headerForm.warehouseId"
     @confirm="onGoodsAdded"
     @close="goodsAddOpen = false"
   />
@@ -915,6 +999,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 .cell-input:disabled { background: #f5f7fa; color: #c0c4cc; cursor: not-allowed; }
 .cell-input.num { text-align: right; font-variant-numeric: tabular-nums; }
 .cell-input.strong { font-weight: 700; }
+/* 可用库存不足：整格标红加粗，录单时一眼能看出哪行超卖 */
+.detail-scroll td.stock-short { color: var(--danger, #f56c6c); font-weight: 700; }
 /* 未填商品的空行整体淡化，视觉上区分「待录入」 */
 .detail-scroll tr.row-blank { background: #fcfcfd; }
 .detail-scroll tr.row-blank td { color: #c0c4cc; }

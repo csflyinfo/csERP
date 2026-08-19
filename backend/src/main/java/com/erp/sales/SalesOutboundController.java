@@ -601,7 +601,15 @@ public class SalesOutboundController {
                 "SELECT * FROM sales_outbound_detail WHERE outbound_id = ?", outboundId);
 
         // 扣减库存：按批次或按 goods_code 合计
+        // 订单审核时已把数量锁进 locked_qty，这里必须先释放再扣实物，
+        // 否则 salesOutbound 的「可用库存 = 实物 − 锁定 − 冻结」校验会被自己的锁定挡下。
         for (Map<String, Object> d : details) {
+            if (!sourceOrderNo.isBlank()) {
+                inventoryCostService.releaseLock(
+                        str(pick(d, "goods_code")),
+                        str(pick(d, "warehouse")),
+                        toBd(pick(d, "qty")));
+            }
             inventoryCostService.salesOutbound(
                     str(pick(d, "goods_code")),
                     str(pick(d, "goods_name")),

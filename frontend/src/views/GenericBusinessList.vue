@@ -1651,6 +1651,26 @@ async function exportCurrentModuleXlsx() {
   show(`已导出 ${rows.length} 条到 ${fileName}`)
 }
 
+/**
+ * 确认弹窗的提示文案。默认给通用说明，个别动作有额外副作用的单独写清楚，
+ * 免得用户点完才发现下游单据被动过。
+ */
+function confirmHintOf(action) {
+  if (moduleCode.value === 'salesOrder') {
+    if (/^反审核$/.test(action)) {
+      return '反审核会释放本单锁定的库存，并删除由本单生成且仍未审核的销售出库单。'
+        + '若出库单已审核（实物库存已扣减、发货单已生成），本次反审核会被拒绝，需先处理出库单。'
+    }
+    if (/^审核$/.test(action)) {
+      return '审核会按「可用库存 = 实物 − 锁定 − 冻结」重新校验，通过后按仓库锁定本单数量；库存不足将无法审核。'
+    }
+    if (/^关闭$/.test(action)) {
+      return '关闭后不再允许生成出库单，尚未出库部分的锁定库存会被释放。'
+    }
+  }
+  return `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`
+}
+
 async function handleAction(action, row = null) {
   const actionStr = String(action || '')
 
@@ -2225,7 +2245,7 @@ async function handleAction(action, row = null) {
   } else if (/新建|编辑|复制|引入/.test(action)) {
     openDialog('form', action, `${config.value.title}：按PRD打开${config.value.mode === 'modal' ? '小弹窗' : config.value.mode === 'drawer' ? '右侧抽屉' : '独立页面'}。`, row)
   } else if (/审核|确认签收|确认退货|推送仓库|撤销推送|驳回|停用|作废|终止|核销|反审核|冻结|解冻|关闭|删除/.test(action)) {
-    openDialog('confirm', action, `${action}会按业务规则校验状态、权限和上下游引用，并写入操作日志。`, row)
+    openDialog('confirm', action, confirmHintOf(action), row)
   } else if (/导入/.test(action)) {
     openDialog('import', action, `${config.value.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
   } else if (/下载|失败原因/.test(action)) {

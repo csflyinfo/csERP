@@ -16,6 +16,8 @@ const props = defineProps({
   // 销售透传：影响客户最近成交价 / 销售单位默认
   customerCode: { type: String, default: '' },
   customerName: { type: String, default: '' },
+  // 单据所选仓库名：销售场景下「可用库存」按此仓库取，与明细表格的可用库存列同口径
+  warehouse: { type: String, default: '' },
 })
 const emit = defineEmits(['close', 'confirm'])
 
@@ -212,8 +214,19 @@ async function pickGoods(g) {
 
   // 库存
   try {
-    const s = await get(`/base/goods/stock-summary?goodsCode=${encodeURIComponent(g.goodsCode)}`)
-    form.value.availableStock = Number(s?.availableStock) || 0
+    if (!isPurchase.value && props.warehouse) {
+      // 销售：按单据仓库取，口径与明细表「可用库存」列一致（否则两处数字会对不上）
+      const rows = await post('/inventory/available-stock', {
+        warehouse: props.warehouse,
+        goodsCodes: [g.goodsCode],
+      })
+      const hit = (Array.isArray(rows) ? rows : []).find(r => r.goodsCode === g.goodsCode)
+      form.value.availableStock = Number(hit?.availableQty) || 0
+    } else {
+      // 采购或未选仓库：退回全仓合计
+      const s = await get(`/base/goods/stock-summary?goodsCode=${encodeURIComponent(g.goodsCode)}`)
+      form.value.availableStock = Number(s?.availableStock) || 0
+    }
   } catch (_) { /* 忽略 */ }
 
   // 光标切到数量
@@ -630,7 +643,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
           </div>
           <div class="gad-row">
             <label>可用库存</label>
-            <input :value="form.availableStock || 0" readonly />
+            <input :value="form.availableStock || 0" readonly
+                   :title="!isPurchase && warehouse ? `仓库：${warehouse}（实物−锁定−冻结）` : '全部仓库合计'" />
           </div>
         </div>
 

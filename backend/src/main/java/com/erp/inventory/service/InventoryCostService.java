@@ -289,6 +289,85 @@ public class InventoryCostService {
         stockLedgerService.save(ledger);
     }
 
+    // ============ 锁定库存（销售订单审核占用，出库审核/反审核/关闭时释放） ============
+
+    /**
+     * 查询「商品 + 仓库」维度的可用库存。
+     *
+     * <p>口径与 {@link #salesOutbound} 的判断口径完全一致（都取 inv_stock_balance.available_qty），
+     * 保证「销售订单存单/审核能过」与「销售出库审核能过」不会互相打脸。
+     *
+     * @return 可用库存；该商品在该仓库无库存记录时返回 0（而不是 null）
+     */
+    public BigDecimal getAvailableQty(String goodsCode, String warehouse) {
+        InvStockBalance balance = stockBalanceService.getOne(
+                new QueryWrapper<InvStockBalance>()
+                        .eq("goods_code", goodsCode)
+                        .eq("warehouse", warehouse)
+        );
+        if (balance == null || balance.getAvailableQty() == null) return BigDecimal.ZERO;
+        return balance.getAvailableQty();
+    }
+
+    /**
+     * 锁定库存 —— 销售订单审核时占用可用库存，避免多张订单抢占同一批库存。
+     *
+     * <p>锁定只做到「商品 + 仓库」维度，不落批次：销售订单本身不指定批次，
+     * 批次是到销售出库单才选的。
+     *
+     * @throws IllegalArgumentException 可用库存不足，或该商品在该仓库无库存记录
+     */
+    @Transactional
+    public void lockStock(String goodsCode, String warehouse, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        InvStockBalance balance = stockBalanceService.getOne(
+                new QueryWrapper<InvStockBalance>()
+                        .eq("goods_code", goodsCode)
+                        .eq("warehouse", warehouse)
+        );
+        BigDecimal available = balance == null || balance.getAvailableQty() == null
+                ? BigDecimal.ZERO : balance.getAvailableQty();
+        if (balance == null || available.compareTo(qty) < 0) {
+            throw new IllegalArgumentException(
+                    "可用库存不足，无法锁定：" + goodsCode + " / " + warehouse + "，需 " + qty + "，可用 " + available);
+        }
+        BigDecimal locked = nz(balance.getLockedQty()).add(qty);
+        balance.setLockedQty(locked);
+        balance.setAvailableQty(nz(balance.getPhysicalQty()).subtract(locked).subtract(nz(balance.getFrozenQty())));
+        stockBalanceService.updateById(balance);
+    }
+
+    /**
+     * 释放锁定库存 —— 销售订单反审核/关闭，或销售出库审核扣实物之前调用。
+     *
+     * <p><b>刻意向下夹取</b>：实际释放量 = min(请求量, 当前已锁定量)。
+     * 库里存在一批「审核时还没有锁定逻辑」的历史 APPROVED 销售订单，它们没有锁定记录，
+     * 反审核/关闭/出库时释放必须能安全地释放 0，而不是把 locked_qty 打成负数。
+     */
+    @Transactional
+    public void releaseLock(String goodsCode, String warehouse, BigDecimal qty) {
+        if (qty == null || qty.signum() <= 0) return;
+        InvStockBalance balance = stockBalanceService.getOne(
+                new QueryWrapper<InvStockBalance>()
+                        .eq("goods_code", goodsCode)
+                        .eq("warehouse", warehouse)
+        );
+        if (balance == null) return;
+        BigDecimal locked = nz(balance.getLockedQty());
+        // 夹取：已锁的比要释放的少，就只释放已锁的那部分
+        BigDecimal release = qty.min(locked);
+        if (release.signum() <= 0) return;
+        BigDecimal newLocked = locked.subtract(release);
+        balance.setLockedQty(newLocked);
+        balance.setAvailableQty(nz(balance.getPhysicalQty()).subtract(newLocked).subtract(nz(balance.getFrozenQty())));
+        stockBalanceService.updateById(balance);
+    }
+
+    /** null 当 0 —— 历史数据里 locked_qty / frozen_qty 可能为 NULL。 */
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
+    }
+
     /**
      * 销售出库审核 — 扣减库存（成本不变）
      */

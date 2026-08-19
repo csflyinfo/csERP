@@ -467,8 +467,53 @@ public class InventoryController {
         try { return new BigDecimal(String.valueOf(v)); } catch (Exception e) { return BigDecimal.ZERO; }
     }
 
-    // ============ 批次库存 · 锁定 / 取消锁定 ============
+    // ============ 可用库存查询（销售订单录单/校验用） ============
 
+    /**
+     * 批量查询「指定仓库 + 一批商品」的可用库存。
+     *
+     * <p>供销售订单明细行展示「可用库存」列、以及前端保存前预校验使用。
+     * 取的是 {@code inv_stock_balance.available_qty}（= 实物 - 锁定 - 冻结），
+     * 与 {@code InventoryCostService.salesOutbound} 的扣减判断口径一致。
+     *
+     * <p>请求：{@code { "warehouse": "总仓", "goodsCodes": ["SP001", "SP002"] }}
+     * <p>返回：{@code [{ goodsCode, physicalQty, lockedQty, frozenQty, availableQty }]}
+     * <p>查不到库存记录的商品<b>不在返回列表里</b>，调用方按可用 0 处理。
+     */
+    @PostMapping("/available-stock")
+    public ApiResponse<List<Map<String, Object>>> availableStock(@RequestBody Map<String, Object> req) {
+        String warehouse = req.get("warehouse") == null ? "" : String.valueOf(req.get("warehouse")).trim();
+        List<String> codes = new ArrayList<>();
+        if (req.get("goodsCodes") instanceof List<?> list) {
+            for (Object o : list) {
+                if (o == null) continue;
+                String c = String.valueOf(o).trim();
+                if (!c.isEmpty() && !codes.contains(c)) codes.add(c);
+            }
+        }
+        // 仓库或商品为空都查不出有意义的结果，直接返回空列表（不报错，前端按 0 展示「-」）
+        if (warehouse.isEmpty() || codes.isEmpty()) return ApiResponse.ok(List.of());
+
+        String inClause = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+        Object[] args = new Object[codes.size() + 1];
+        args[0] = warehouse;
+        for (int i = 0; i < codes.size(); i++) args[i + 1] = codes.get(i);
+
+        // 同一 goods_code + warehouse 理论上只有一行，但历史数据可能因批次拆出多行，统一 SUM 兜底
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT goods_code,
+                       COALESCE(SUM(COALESCE(physical_qty, 0)), 0)  AS physical_qty,
+                       COALESCE(SUM(COALESCE(locked_qty, 0)), 0)    AS locked_qty,
+                       COALESCE(SUM(COALESCE(frozen_qty, 0)), 0)    AS frozen_qty,
+                       COALESCE(SUM(COALESCE(available_qty, 0)), 0) AS available_qty
+                FROM inv_stock_balance
+                WHERE warehouse = ? AND goods_code IN (%s)
+                GROUP BY goods_code
+                """.formatted(inClause), args);
+        return ApiResponse.ok(rows.stream().map(InventoryController::camelize).toList());
+    }
+
+    // ============ 批次库存 · 锁定 / 取消锁定 ============
     /**
      * 锁定批次库存的指定数量。
      * 同步更新 inv_stock_balance.locked_qty / available_qty 供「库存查询」显示。
