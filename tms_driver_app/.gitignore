@@ -33,6 +33,12 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# 根 build.gradle.kts 把 buildDir 重定向到了 android/../../build，
+# 实际产物落在 android/build/（含 55MB 的 release APK），
+# 上面的 /build/ 只匹配项目根一级，匹配不到，必须显式忽略。
+/android/build/
+/android/.kotlin-tmp/
+
 # Symbolication related
 app.*.symbols
 

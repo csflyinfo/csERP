@@ -1,3 +1,9 @@
+// 必须用顶层 import 而不是内联写 java.util.Properties：
+// Android 插件在本脚本注册了名为 java 的扩展访问器（JavaPluginExtension），
+// 它会遮蔽 java 这个包名，导致 java.util.Properties 被解析成
+// 「读 java 扩展的 util 属性」并报 Unresolved reference 'util'。
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -9,7 +15,7 @@ plugins {
 // 只是厂商推送通道不可用——避免因缺一个 ID 就整个工程编不过。
 val getuiAppId: String =
     run {
-        val props = java.util.Properties()
+        val props = Properties()
         val f = rootProject.file("local.properties")
         if (f.exists()) f.inputStream().use { props.load(it) }
         props.getProperty("getui.appId") ?: "GETUI_APPID_PLACEHOLDER"
