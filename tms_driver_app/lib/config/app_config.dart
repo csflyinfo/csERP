@@ -2,12 +2,22 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// 全局配置：API 地址、超时、开发期固定验证码。
 class AppConfig {
-  // 开发期指向本机后端；Web 下用 localhost，Android 模拟器用 10.0.2.2
-  // 真机调试时通过编译参数覆盖：--dart-define=API_BASE=http://192.168.1.100:8080
+  /// 开发期后端地址（不含 /api 前缀部分由下方拼接）。
+  ///
+  /// 这里用宿主机局域网 IP 而不是 10.0.2.2：
+  /// 10.0.2.2 是 Android Studio 官方 AVD（QEMU 用户态网络）才有的宿主机别名，
+  /// 雷电、MuMu 等基于 VirtualBox 的模拟器网段是 172.16.x.x，不存在该地址，
+  /// 连接会一直挂到 connectTimeout 然后抛 DioException [connection timeout]。
+  /// 局域网 IP 对两类模拟器和真机都通用，代价是换网络环境后需要改这里。
+  ///
+  /// 换 WiFi / 换机器后若连不上，改这个常量或用编译参数覆盖：
+  ///   flutter build apk --release --dart-define=API_BASE=http://x.x.x.x:8080/api
+  static const String devHost = '192.168.3.16';
+
   static String get apiBase {
     const env = String.fromEnvironment('API_BASE', defaultValue: '');
     if (env.isNotEmpty) return env;
-    return kIsWeb ? 'http://localhost:8080/api' : 'http://10.0.2.2:8080/api';
+    return kIsWeb ? 'http://localhost:8080/api' : 'http://$devHost:8080/api';
   }
 
   static const Duration connectTimeout = Duration(seconds: 10);
