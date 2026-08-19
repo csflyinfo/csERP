@@ -25,7 +25,11 @@ import 'history_page.dart';
 import 'notification_page.dart';
 import 'profile_page.dart';
 
-/// 今日工作台 + 底部 Tab（对齐原型 Screen B）。
+/// 当前任务工作台 + 底部 Tab（对齐原型 Screen B）。
+///
+/// 「当前任务」= 所有未办结的调度单（含往日积压），不再限定当天：
+/// 未完成任务必须始终有作业入口，否则跨天后就永久卡死。
+/// 已办结的行程去「历史」Tab 查看。
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
   @override
@@ -126,7 +130,7 @@ class _NotifyBell extends ConsumerWidget {
   }
 }
 
-/// 底部 Tab 栏（今日 / 历史 / 退货回收 / 我的）。
+/// 底部 Tab 栏（当前 / 历史 / 退货回收 / 我的）。
 class _TmsBottomBar extends StatelessWidget {
   final int current;
   final ValueChanged<int> onChanged;
@@ -136,7 +140,7 @@ class _TmsBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      _TabItem('今日', '📋', false),
+      _TabItem('当前', '📋', false),
       _TabItem('历史', '📜', false),
       _TabItem('退货回收', '♻️', returnBadge > 0),
       _TabItem('我的', '👤', false),
@@ -197,7 +201,7 @@ class _TodayTab extends ConsumerWidget {
       data: (tasks) => _TodayContent(driverName: driverName, tasks: tasks),
       loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: const Text('今日工作台')),
+        appBar: AppBar(title: const Text('当前任务')),
         body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('加载失败：$e', style: const TextStyle(color: TmsTheme.muted)))),
       ),
     );
@@ -217,7 +221,7 @@ class _TodayContent extends ConsumerWidget {
     return Scaffold(
       backgroundColor: TmsTheme.bg,
       appBar: AppBar(
-        title: const Text('今日工作台'),
+        title: const Text('当前任务'),
         actions: [
           const _NotifyBell(),
           const SizedBox(width: 4),
@@ -250,7 +254,7 @@ class _TodayContent extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Alert.info('📋 ${_todayStr()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""}${_netText(ref)}'),
+            Alert.info('📋 ${_dateLabel()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""}${_netText(ref)}'),
             const SizedBox(height: 8),
             // 退货回收任务（V1.2 重点）
             if (returns.isNotEmpty) ...[
@@ -355,7 +359,7 @@ class _TodayContent extends ConsumerWidget {
             if (receipts.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text('📦 今日配送任务', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+                child: Text('📦 待配送任务', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
               ),
               ...receipts.map((d) {
                 final dispatch = tasks.dispatches.firstWhere(
@@ -568,7 +572,7 @@ class _TodayContent extends ConsumerWidget {
               }),
             ],
             if (details.isEmpty)
-              const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('今日暂无任务', style: TextStyle(color: TmsTheme.muted)))),
+              const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('暂无待办任务', style: TextStyle(color: TmsTheme.muted)))),
           ],
         ),
       ),
@@ -585,8 +589,24 @@ class _TodayContent extends ConsumerWidget {
       ]));
   Widget _divider() => Container(width: 1, height: 28, color: TmsTheme.rule);
 
-  String _todayStr() {
-    final d = DateTime.now();
+  /// 概览条的日期文案。
+  ///
+  /// 不再固定显示「今天」：当前任务页会带出往日没跑完的积压调度单，
+  /// 此时写今天的日期会与卡片里单据的实际日期互相矛盾。
+  /// 后端按 dispatch_date 升序返回，取首单日期即最早的待办日期；
+  /// 早于今天就显式标出「积压」，提示司机先清旧账。
+  String _dateLabel() {
+    final today = DateTime.now();
+    final raw = tasks.dispatches.isNotEmpty ? tasks.dispatches.first.dispatchDate : '';
+    // 后端可能返回 yyyy-MM-dd 或带时分秒，统一截前 10 位再解析
+    final d = raw.length >= 10 ? DateTime.tryParse(raw.substring(0, 10)) : null;
+    if (d == null) return _fmtDate(today);
+    final overdue = DateTime(d.year, d.month, d.day)
+        .isBefore(DateTime(today.year, today.month, today.day));
+    return overdue ? '${_fmtDate(d)} 积压' : _fmtDate(d);
+  }
+
+  String _fmtDate(DateTime d) {
     const week = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     return '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')} ${week[d.weekday - 1]}';
   }

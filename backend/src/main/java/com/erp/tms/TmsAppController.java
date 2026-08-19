@@ -78,18 +78,37 @@ public class TmsAppController {
     }
 
     /**
-     * 今日任务：当前司机的调度单（dispatch_date=今日，状态在 ASSIGNED~DELIVERING），
+     * 当前任务：当前司机所有未完成的调度单（状态在 ASSIGNED~DELIVERING），
      * 含明细（发货单 + 退货单取货任务）。
+     *
+     * 为什么不再限定 dispatch_date = CURRENT_DATE：
+     *   原实现只查当天，导致昨天及更早未跑完的调度单（如已发车但未签完）
+     *   在今日页彻底消失；而历史页只有列表展示、没有作业入口，
+     *   司机无法继续完成这些任务，形成业务死角。
+     *   现改为「按状态而非按日期」筛选——只要没到终态就属于当前待办，
+     *   与历史页「只看已完成/已取消」形成互补且无重叠。
+     *
+     * 排序：按调度日期升序，越早的积压任务排在越前面，促使司机先清旧账。
+     *
+     * 入参（可选）：includeOverdue=false 时退化为仅当天，供后续「只看今天」开关使用。
      */
     @PostMapping("/today-tasks")
-    public ApiResponse<Map<String, Object>> todayTasks() {
+    public ApiResponse<Map<String, Object>> todayTasks(@RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
+        // 默认包含历史积压；显式传 false 才只看当天
+        boolean includeOverdue = params.get("includeOverdue") == null
+                || !"false".equalsIgnoreCase(TmsUtil.str(params.get("includeOverdue")));
+        // 末尾必须带换行：文本块的内容以换行结尾，但这段拼接串在它之后、
+        // 紧接下一个文本块的 ORDER BY，少了换行会拼出 CURRENT_DATEORDER BY
+        String dateFilter = includeOverdue ? "" : " AND dispatch_date = CURRENT_DATE\n";
         List<Map<String, Object>> dispatches = TmsUtil.queryCamel(jdbcTemplate, """
                 SELECT dispatch_id, dispatch_no, dispatch_date, route_line, vehicle_plate, status,
                        loaded_qty, return_qty, store_count
                 FROM tms_dispatch
-                WHERE driver_id = ? AND dispatch_date = CURRENT_DATE AND status IN ('ASSIGNED','LOADED','DEPARTED','DELIVERING')
-                ORDER BY dispatch_no
+                WHERE driver_id = ? AND status IN ('ASSIGNED','LOADED','DEPARTED','DELIVERING')
+                """ + dateFilter + """
+                ORDER BY dispatch_date, dispatch_no
                 """, driverId);
         int totalStore = 0;
         BigDecimal totalQty = BigDecimal.ZERO;
@@ -387,7 +406,13 @@ public class TmsAppController {
      * 司机无法通过构造入参查看他人任务；且不复用 PageResult.of，
      * 因为它会把 filters 里的日期值当作全文关键字二次过滤，导致结果为空。
      *
-     * 入参（均可选）：status(ALL/COMPLETED/...)、dateFrom、dateTo、days(默认 30)、pageNo、pageSize
+     * 只返回终态（COMPLETED/CANCELLED）：
+     *   历史的语义是「已经办完的事」。未完成行程若同时出现在历史页，
+     *   会让司机误以为可以在此继续作业，但历史页只有展示没有作业入口，
+     *   实际形成死角。未完成任务统一归「当前任务」页（/today-tasks）。
+     *   因此即使调用方显式传入 PLANNED 等进行中状态，也会被下方白名单拦掉。
+     *
+     * 入参（均可选）：status(ALL/COMPLETED/CANCELLED)、dateFrom、dateTo、days(默认 30)、pageNo、pageSize
      * 出参：{records, pageNo, pageSize, total, summary:{tripCount, storeSum, qtySum, amountSum}}
      */
     @PostMapping("/trip/history")
@@ -402,13 +427,15 @@ public class TmsAppController {
                        d.dispatch_no, d.territory
                 FROM tms_delivery_trip t
                 LEFT JOIN tms_dispatch d ON d.dispatch_id = t.dispatch_id
-                WHERE t.driver_id = ?
+                WHERE t.driver_id = ? AND t.status IN ('COMPLETED','CANCELLED')
                 """);
         List<Object> args = new ArrayList<>();
         args.add(driverId);
 
+        // 状态过滤只在终态集合内生效：传 ALL 或进行中状态都视为「不额外过滤」，
+        // 避免拼出 status='DELIVERING' 这类与上方白名单互斥、恒为空的条件
         String status = TmsUtil.str(params.get("status"));
-        if (!status.isEmpty() && !"ALL".equals(status)) {
+        if (("COMPLETED".equals(status) || "CANCELLED".equals(status))) {
             sql.append(" AND t.status = ?");
             args.add(status);
         }

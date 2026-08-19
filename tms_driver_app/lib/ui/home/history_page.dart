@@ -6,7 +6,11 @@ import '../../providers/task_provider.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
 
-/// 配送历史页：查询本人历史行程（默认近 30 天）。
+/// 配送历史页：查询本人**已办结**的历史行程（默认近 30 天）。
+///
+/// 只展示已完成 / 已取消的终态行程：进行中的任务归「当前任务」页，
+/// 在那里才有装车、到店、签收等作业入口。历史页若混入未完成行程，
+/// 司机会误以为能在此继续作业，但这里只有展示没有入口，形成死角。
 ///
 /// 作为工作台底部 Tab 之一常驻，因此每次切回时不主动刷新，
 /// 由用户下拉或切换筛选条件触发（避免频繁请求）。
@@ -21,11 +25,13 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   /// 时间范围选项：近 N 天
   static const _dayOptions = <int, String>{7: '近7天', 30: '近30天', 90: '近90天'};
 
-  /// 状态筛选选项
+  /// 状态筛选选项。
+  ///
+  /// 只保留终态：后端已把历史接口限定为 COMPLETED / CANCELLED，
+  /// 这里若再留「配送中」，选中后永远查不到数据，属于无效选项。
   static const _statusOptions = <String, String>{
     'ALL': '全部',
     'COMPLETED': '已完成',
-    'DELIVERING': '配送中',
     'CANCELLED': '已取消',
   };
 
