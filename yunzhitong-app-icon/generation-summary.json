@@ -1,0 +1,25 @@
+{
+  "skill": "solo-graphic-generation",
+  "version": "2026.08.06.21.24.57",
+  "requestedSize": "1024×1024",
+  "actualToolSize": "custom (System.Drawing rasterizer)",
+  "userConfirmedSize": true,
+  "generationMethod": "code-based vector/raster render, no platform watermark",
+  "assetCount": 2,
+  "assets": [
+    {
+      "filename": "zhishuda-icon.png",
+      "title": "智速达 APP 图标（PNG）",
+      "intendedSize": "1024×1024",
+      "status": "success",
+      "imageNodeId": "image-001"
+    },
+    {
+      "filename": "zhishuda-icon.svg",
+      "title": "智速达 APP 图标（SVG 矢量源）",
+      "intendedSize": "1024×1024",
+      "status": "success",
+      "imageNodeId": "image-002"
+    }
+  ]
+}

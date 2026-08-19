@@ -1,0 +1,46 @@
+{
+  "data": [
+    {
+      "id": "image-001",
+      "title": "智速达 APP 图标（PNG）",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1787060991578,
+      "canvasData": {
+        "x": 0,
+        "y": 0,
+        "naturalSize": {
+          "width": 1024,
+          "height": 1024
+        },
+        "overrideWidth": 432
+      },
+      "devMetadata": {
+        "imageSrc": "assets/zhishuda-icon.png"
+      }
+    },
+    {
+      "id": "image-002",
+      "title": "智速达 APP 图标（SVG 矢量源）",
+      "type": "image",
+      "version": 1,
+      "createdAt": 1787060991578,
+      "canvasData": {
+        "x": 480,
+        "y": 0,
+        "naturalSize": {
+          "width": 1024,
+          "height": 1024
+        }
+      },
+      "devMetadata": {
+        "imageSrc": "assets/zhishuda-icon.svg"
+      }
+    }
+  ],
+  "config": {
+    "autoLayout": false,
+    "deviceType": "freeSize",
+    "projectName": "智速达 APP 图标"
+  }
+}

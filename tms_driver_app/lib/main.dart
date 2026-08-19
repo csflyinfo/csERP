@@ -111,7 +111,7 @@ class _TmsDriverAppState extends ConsumerState<TmsDriverApp> {
     });
 
     return MaterialApp(
-      title: 'TMS 司机配送',
+      title: '智速达',
       debugShowCheckedModeBanner: false,
       theme: TmsTheme.light,
       navigatorKey: _navigatorKey,
