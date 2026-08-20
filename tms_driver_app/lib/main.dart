@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'config/app_config.dart';
 import 'config/theme.dart';
 import 'models/notification.dart';
 import 'providers/auth_provider.dart';
@@ -40,6 +41,11 @@ class _TmsDriverAppState extends ConsumerState<TmsDriverApp> {
   }
 
   Future<void> _bootstrap() async {
+    // 先载入运行时配置的服务端地址，再做任何网络动作。
+    // 顺序不能颠倒：dio 是懒初始化单例，一旦被首个请求触发构造，
+    // baseUrl 就固化成默认地址了，之后再载入配置也追不回这一次请求。
+    await AppConfig.loadApiBaseOverride();
+
     // 401 时跳登录
     ApiService.instance.setUnauthorizedHandler(() {
       if (!_loggedIn) return;

@@ -10,6 +10,7 @@
  * 接口：
  *   POST /tms/dispatch/pool          任务池（发货单 + 退货单 + 统计）
  *   POST /tms/dispatch/create        创建调度单（勾选发货单+退货单 → 生成 dispatch/detail/trip）
+ *   POST /tms/dispatch/driver-active 选完司机后查他手上未完成的调度单，决定新建还是追加
  *   POST /tms/return-dispatch/auto-match  指派发货单时按客户自动匹配退货单
  *   POST /base/master/employee/page  司机档案
  *   POST /base/master/route-line/page 线路档案
@@ -47,6 +48,17 @@ const createForm = ref({
   remark: '',
 })
 const autoMatchedReturns = ref([]) // 创建抽屉中自动匹配到的退货单
+
+// 新建 / 追加二选一。
+// 选完司机才知道他手上有没有在跑的车，所以这几个状态是在 onCreateDriverChange 里填的，
+// 不是 openCreate 里填的。
+const driverActive = ref([])        // 该司机所有未完成调度单（含追加单，仅用于提示文案）
+const appendableList = ref([])      // 可作为追加目标的主单（parent_dispatch_id 为空）
+const driverDelivering = ref(false) // 是否有已发车在途的单
+const staleCount = ref(0)           // 非本次配送日的遗留未完成单数量（不可追加）
+const checkingDriver = ref(false)
+const dispatchMode = ref('new')     // new=新建独立调度单 / append=追加到在途单
+const parentDispatchId = ref('')
 
 const receiptColumns = [
   { key: 'r0', title: '发货单号' },
@@ -159,6 +171,7 @@ function openCreate() {
     remark: '',
   }
   autoMatchedReturns.value = []
+  resetDispatchMode()
   createOpen.value = true
   // 自动匹配：所选发货单客户下已安排调度的退货单（未勾选的）
   const customers = new Set(selectedReceiptList.value.map(r => r.customerCode).filter(Boolean))
@@ -171,12 +184,69 @@ function openCreate() {
       })
   }
 }
-function onCreateDriverChange() {
+function resetDispatchMode() {
+  driverActive.value = []
+  appendableList.value = []
+  driverDelivering.value = false
+  staleCount.value = 0
+  dispatchMode.value = 'new'
+  parentDispatchId.value = ''
+}
+
+async function onCreateDriverChange() {
   const d = drivers.value.find(x => x.employeeId === createForm.value.driverId)
   createForm.value.driverName = d ? d.employeeName : ''
+  resetDispatchMode()
+  if (!createForm.value.driverId) return
+  // 换司机就要重新问一次「他手上有没有在跑的车」，
+  // 否则会把上一个司机的在途单当成追加目标，货挂错车。
+  checkingDriver.value = true
+  try {
+    const data = await post('/tms/dispatch/driver-active', {
+      driverId: createForm.value.driverId,
+      dispatchDate: createForm.value.dispatchDate,
+    })
+    driverActive.value = data.dispatches || []
+    appendableList.value = data.appendable || []
+    driverDelivering.value = data.delivering === true
+    staleCount.value = data.staleCount || 0
+    // 默认仍停在「新建」：追加会强制继承父单的车辆与司机，
+    // 属于有副作用的选择，必须由调度员显式点选。
+  } catch (e) {
+    resetDispatchMode()
+  } finally { checkingDriver.value = false }
 }
+
+function onDispatchModeChange() {
+  if (dispatchMode.value === 'append') {
+    // 只有一张可追加的单时直接选中，省掉一次无意义的点击
+    if (!parentDispatchId.value && appendableList.value.length) {
+      parentDispatchId.value = appendableList.value[0].dispatchId
+    }
+    applyParentVehicle()
+  } else {
+    parentDispatchId.value = ''
+  }
+}
+
+function onParentChange() { applyParentVehicle() }
+
+// 追加的语义是「加到这趟车上」，车牌/车型/线路跟着父单走。
+// 后端 create 也会强制继承一遍，这里同步只是让调度员在提交前就看到最终结果。
+function applyParentVehicle() {
+  const p = appendableList.value.find(x => x.dispatchId === parentDispatchId.value)
+  if (!p) return
+  createForm.value.vehiclePlate = p.vehiclePlate || createForm.value.vehiclePlate
+  if (p.routeLine) createForm.value.routeLine = p.routeLine
+}
+
+const parentDispatch = computed(() => appendableList.value.find(x => x.dispatchId === parentDispatchId.value) || null)
+
 async function submitCreate() {
   if (!createForm.value.driverId) { show('请选择司机'); return }
+  if (dispatchMode.value === 'append' && !parentDispatchId.value) {
+    show('请选择要追加到哪张未完成调度单'); return
+  }
   creating.value = true
   try {
     await post('/tms/dispatch/create', {
@@ -190,8 +260,13 @@ async function submitCreate() {
       remark: createForm.value.remark,
       receiptNos: [...checkedReceipts.value],
       returnNos: [...checkedReturns.value],
+      parentDispatchId: dispatchMode.value === 'append' ? parentDispatchId.value : '',
     })
-    show('调度单创建成功，已分配司机「' + createForm.value.driverName + '」')
+    if (dispatchMode.value === 'append') {
+      show('追加任务成功，已关联「' + (parentDispatch.value?.dispatchNo || '') + '」，司机需接单并装车发车后才会并入配送中')
+    } else {
+      show('调度单创建成功，已分配司机「' + createForm.value.driverName + '」')
+    }
     createOpen.value = false
     loadPool()
   } catch (e) {
@@ -305,7 +380,7 @@ onMounted(() => { loadDrivers(); loadRouteLines(); loadPool() })
           <div class="modal-lite-head"><b>创建调度单</b><button class="link link-btn" @click="createOpen = false">关闭</button></div>
           <div class="modal-lite-body">
             <div class="grid4">
-              <div class="field"><label>调度日期</label><input type="date" v-model="createForm.dispatchDate" /></div>
+              <div class="field"><label>调度日期</label><input type="date" v-model="createForm.dispatchDate" @change="onCreateDriverChange" /></div>
               <div class="field"><label>线路</label>
                 <select v-model="createForm.routeLine">
                   <option value="">不指定</option>
@@ -327,7 +402,43 @@ onMounted(() => { loadDrivers(); loadRouteLines(); loadPool() })
               <div class="field"><label>载重(kg)</label><input type="number" v-model="createForm.loadCapacity" /></div>
             </div>
 
-            <!-- 选中汇总 -->
+            <!-- 司机在途提示：新建 or 追加 -->
+            <div v-if="checkingDriver" class="tips-inline"><span>正在检查该司机是否有未完成调度单…</span></div>
+            <div v-else-if="driverActive.length" class="tms-append-box">
+              <div class="tms-append-head">
+                ⚠ 当前司机「{{ createForm.driverName }}」存在
+                <b>{{ driverActive.length }}</b> 张未完成调度单{{ driverDelivering ? '，其中有已发车在配送中的任务' : '' }}，
+                是新创建任务还是追加任务？
+                <span v-if="staleCount" class="tms-append-stale">
+                  （其中 {{ staleCount }} 张不是本次配送日的遗留单，不能作为追加目标，请另行处理）
+                </span>
+              </div>
+              <div class="tms-append-modes">
+                <label><input type="radio" value="new" v-model="dispatchMode" @change="onDispatchModeChange" /> 新创建任务（独立调度单）</label>
+                <label :class="{ dis: !appendableList.length }">
+                  <input type="radio" value="append" v-model="dispatchMode" :disabled="!appendableList.length" @change="onDispatchModeChange" />
+                  追加任务（并入未完成调度单）
+                  <span v-if="!appendableList.length" style="font-size:12px">· 无可追加的本日调度单</span>
+                </label>
+              </div>
+              <div v-if="dispatchMode === 'append'" class="field" style="margin-top:8px">
+                <label>追加到</label>
+                <select v-model="parentDispatchId" @change="onParentChange">
+                  <option value="">请选择未完成调度单</option>
+                  <option v-for="p in appendableList" :key="p.dispatchId" :value="p.dispatchId">
+                    {{ p.dispatchNo }} · {{ p.statusText }} · {{ p.vehiclePlate || '未派车' }} · 剩 {{ p.pendingStore }} 个配送点
+                  </option>
+                </select>
+              </div>
+              <div v-if="dispatchMode === 'append'" class="tms-append-note">
+                追加会新建一张关联调度单并继承该趟车的司机与车辆，司机端首页显示为待接单，
+                需依次完成<b>接单 → 装车 → 发车</b>后配送点才会并入「配送中」。装车前可调整未完成配送点顺序。
+              </div>
+              <div v-else class="tms-append-note">
+                新建的调度单与在途任务互不影响，司机端会同时出现两条待接单任务。
+              </div>
+            </div>
+
             <div class="tms-summary-card">
               <div class="tms-summary-row">
                 <span>发货单：<b>{{ selectedReceiptList.length }}</b> 张</span>
@@ -382,4 +493,13 @@ tbody tr.sel { background:#eef6ff; }
 .tms-bill-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .tms-bill-tag { background:#eef6ff; color:#1677ff; border:1px solid #cfe0f5; border-radius:4px; padding:2px 8px; font-size:12px; }
 .tms-bill-tag.ret { background:#fff7ed; color:#c2410c; border-color:#fed7aa; }
+.tms-append-box { margin-top:14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:12px 16px; }
+.tms-append-head { font-size:14px; color:#9a3412; line-height:22px; }
+.tms-append-head b { color:#c2410c; }
+.tms-append-modes { display:flex; gap:24px; margin-top:10px; font-size:14px; color:#5d7896; }
+.tms-append-modes label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+.tms-append-modes label.dis { color:#98a2b3; cursor:not-allowed; }
+.tms-append-note { margin-top:8px; font-size:12px; color:#98a2b3; line-height:20px; }
+.tms-append-note b { color:#c2410c; }
+.tms-append-stale { color:#98a2b3; font-size:12px; }
 </style>

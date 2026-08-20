@@ -858,10 +858,14 @@ public class FinanceController {
     public ApiResponse<Boolean> deleteReceipt(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status FROM fin_receipt_bill WHERE receipt_id = ?", id);
+                "SELECT status, business_source FROM fin_receipt_bill WHERE receipt_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可删除");
+        // 司机现场收款单代表司机手里真实拿着的钱，删掉就再也对不上交账差异，
+        // 只能通过司机交账单审核/驳回来推进，后台不允许直接删除。
+        if ("DRIVER_SETTLE".equals(str(exist.get(0).get("businessSource"))))
+            return ApiResponse.fail("400", "司机现场收款单不允许删除，请通过司机交账单审核处理");
         jdbcTemplate.update("DELETE FROM fin_receipt_detail WHERE receipt_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_receipt_bill WHERE receipt_id = ?", id);
         return ApiResponse.ok(true);
@@ -985,6 +989,119 @@ public class FinanceController {
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_receipt_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE receipt_id = ?", id);
         return ApiResponse.ok(GenericResult.row("receiptNo", receiptNo, "status", "PENDING"));
+    }
+
+    /**
+     * 供 TMS 司机交账审核联动调用：审核一张 DRIVER_SETTLE 收款单，
+     * 完成「定向核销应收 + 资金入账 + 往来流水 + 单据转 APPROVED」。
+     *
+     * 为什么不直接复用 /receipt/audit：
+     *   1. /receipt/audit 走 FIFO 按 due_date 找该客户所有未核销 AR，
+     *      而 doReconcileAr 对 unreceived <= 0 的行会 continue —— 司机结算里
+     *      退货生成的负向 AR 正好是负数，FIFO 会跳过它，把钱核到别的发货单上，
+     *      导致本次结算的单据仍显示未收款；
+     *   2. 门店结算明细 tms_store_settlement_detail.ar_no 已经精确记录了
+     *      本次结算对应哪几张发货单的应收，可以定向核销，账目一一对应。
+     *
+     * 定向核销后若仍有余额（如 ar_no 缺失、AR 被别处核过），
+     * 回落到原 FIFO 逻辑兜底，保证收进来的钱不会凭空消失。
+     *
+     * @param receiptId 收款单主键
+     * @param arNos     本次结算对应的应收单号（可空/可含空串，内部去重过滤）
+     * @return 收款单号 / 状态 / 已核销金额 / 未匹配余额
+     */
+    @Transactional
+    public Map<String, Object> auditReceiptForSettle(String receiptId, List<String> arNos) {
+        List<Map<String, Object>> heads = queryCamel(
+                "SELECT * FROM fin_receipt_bill WHERE receipt_id = ?", receiptId);
+        if (heads.isEmpty()) throw new IllegalStateException("收款单不存在：" + receiptId);
+        Map<String, Object> r = heads.get(0);
+        String receiptNo = str(r.get("receiptNo"));
+        if (!"PENDING".equals(str(r.get("status")))) {
+            // 幂等：交账单重复审核、或财务已手工审核过该收款单时直接跳过，不重复入账
+            return GenericResult.row("receiptNo", receiptNo, "status", str(r.get("status")),
+                    "skipped", Boolean.TRUE);
+        }
+
+        String auditor = currentUser();
+        java.sql.Date receiptDate = r.get("receiptDate") instanceof java.sql.Date d
+                ? d : java.sql.Date.valueOf(LocalDate.now());
+        String cpCode = str(r.get("counterpartyCode"));
+        String cpName = str(r.get("counterpartyName"));
+        BigDecimal total = toBd(r.get("totalAmount"));
+        String summary = str(r.get("summary"));
+
+        // 历史数据里 TMS 曾把 counterparty_type 写成中文「客户」，
+        // 会让 getCounterpartyBalance 查不到同一客户的历史余额（往来余额分叉）。
+        // 这里统一纠正到标准值域，并回写单据，保证后续取消审核对称。
+        String cpType = str(r.get("counterpartyType"));
+        if (!"CUSTOMER".equals(cpType) && !"SUPPLIER".equals(cpType) && !"COUNTERPARTY".equals(cpType)) {
+            cpType = "CUSTOMER";
+            jdbcTemplate.update("UPDATE fin_receipt_bill SET counterparty_type = ? WHERE receipt_id = ?",
+                    cpType, receiptId);
+        }
+
+        // 1. 定向核销：按结算明细给出的 ar_no 逐张核
+        BigDecimal remaining = total;
+        if (arNos != null) {
+            java.util.LinkedHashSet<String> targets = new java.util.LinkedHashSet<>();
+            for (String no : arNos) {
+                if (no != null && !no.isBlank()) targets.add(no.trim());
+            }
+            for (String arNo : targets) {
+                if (remaining.signum() <= 0) break;
+                List<Map<String, Object>> rows = queryCamel(
+                        "SELECT * FROM fin_ar WHERE ar_no = ?", arNo);
+                if (rows.isEmpty()) continue;
+                Map<String, Object> ar = rows.get(0);
+                BigDecimal unreceived = toBd(ar.get("unreceivedAmount"));
+                if (unreceived.signum() <= 0) continue;
+                BigDecimal actual = remaining.min(unreceived);
+                BigDecimal newReceived = toBd(ar.get("receivedAmount")).add(actual);
+                BigDecimal newUnreceived = toBd(ar.get("arAmount")).subtract(newReceived);
+                String newStatus = newUnreceived.signum() <= 0 ? "VERIFIED" : "UNVERIFIED";
+                jdbcTemplate.update(
+                        "UPDATE fin_ar SET received_amount = ?, unreceived_amount = ?, status = ? WHERE ar_no = ?",
+                        newReceived, newUnreceived, newStatus, arNo);
+                writeReconcileRecordV2(receiptNo, receiptDate, arNo, str(ar.get("sourceBill")),
+                        "SALES_RECEIPT", str(ar.get("dueDate")), cpType, cpCode, cpName,
+                        actual, summary, "司机交账审核自动核销");
+                remaining = remaining.subtract(actual);
+            }
+        }
+
+        // 2. 兜底：定向核销没吃完的余额按原 FIFO 匹配该客户其他未核销应收
+        if (remaining.signum() > 0) {
+            remaining = reconcileAndRecord(receiptNo, receiptDate, cpType, cpCode, cpName,
+                    remaining, summary, "司机交账审核自动核销");
+        }
+
+        // 3. 资金入账：按收款明细逐个账户写流水并推余额
+        List<Map<String, Object>> details = queryCamel(
+                "SELECT * FROM fin_receipt_detail WHERE receipt_id = ? ORDER BY sort_order", receiptId);
+        for (Map<String, Object> d : details) {
+            BigDecimal amt = toBd(d.get("amount"));
+            if (amt.signum() <= 0) continue;
+            String fundAcct = str(d.get("fundAccount"));
+            BigDecimal bal = getFundBalance(fundAcct).add(amt);
+            insertFundLedgerV2(fundAcct, "IN", amt, receiptNo, bal, auditor);
+            updateFundBalance(fundAcct, bal);
+        }
+
+        // 4. 往来流水
+        BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
+        writeCounterpartyLedger(cpType, cpCode, cpName, "IN", total, receiptNo, "RECEIPT", cpBal, summary);
+
+        // 5. 单据转已审核，并按实际核销额回写 verified_amount
+        BigDecimal verified = total.subtract(remaining);
+        jdbcTemplate.update("""
+                UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?,
+                    verified_amount = ?
+                WHERE receipt_id = ?
+                """, auditor, java.sql.Timestamp.valueOf(LocalDateTime.now()), verified, receiptId);
+
+        return GenericResult.row("receiptNo", receiptNo, "status", "APPROVED",
+                "verifiedAmount", verified, "unmatchedAmount", remaining);
     }
 
     // ============================================================
@@ -1752,7 +1869,12 @@ public class FinanceController {
             // CUSTOMER / COUNTERPARTY → 查 AR
             List<Map<String, Object>> rows = queryCamel(
                     "SELECT * FROM fin_ar WHERE customer = ? AND status <> 'VERIFIED' ORDER BY due_date", cpCode);
-            if (rows.isEmpty() && "COUNTERPARTY".equals(cpType)) {
+            // fin_ar.customer 是历史遗留的「弱引用」列：销售出库/退货写入时存的是客户名称，
+            // 而收款单 counterparty_code 存的是客户编码（K0001），两者对不上时按编码一行都查不到，
+            // 收进来的钱就会全部落到未匹配余额里。后台手工制单的老单据恰好把名称填在 code 位上，
+            // 掩盖了这个问题；司机交账收款单老实填了编码，才把它暴露出来。
+            // 因此编码查不到时统一回落到名称匹配（原先只有 COUNTERPARTY 才回落）。
+            if (rows.isEmpty() && !cpName.isBlank() && !cpName.equals(cpCode)) {
                 rows = queryCamel(
                         "SELECT * FROM fin_ar WHERE customer = ? AND status <> 'VERIFIED' ORDER BY due_date", cpName);
             }
@@ -1775,9 +1897,12 @@ public class FinanceController {
             jdbcTemplate.update(
                     "UPDATE fin_ar SET received_amount = ?, unreceived_amount = ?, status = ? WHERE ar_no = ?",
                     newReceived, newUnreceived, newStatus, arNo);
-            // 写核销记录
-            writeReconcileRecord(receiptNo, receiptDate, arNo, "SALES_RECEIPT",
-                    str(ar.get("dueDate")), cpType, cpCode, cpName, actual, receiptRemark, "");
+            // 写核销记录。走 V2 补齐 ar_no / source_bill：
+            // 旧版只写 business_no，核销明细查不到对应的应收单和来源发货单，
+            // 财务对账时无法从一笔核销反查是哪张发货单销的账。
+            writeReconcileRecordV2(receiptNo, receiptDate, arNo, str(ar.get("sourceBill")),
+                    "SALES_RECEIPT", str(ar.get("dueDate")), cpType, cpCode, cpName,
+                    actual, receiptRemark, "");
             remain = remain.subtract(actual);
         }
         return remain;

@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
 import '../../models/delivery.dart';
+import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/location_service.dart';
@@ -17,9 +18,14 @@ typedef OnLoadedChanged = void Function(String key, num value);
 /// 流程：
 ///   1. 进入页面拉取装车 SKU 明细（按发货单分组，逆配送顺序展示）
 ///   2. 状态=ASSIGNED 时显示「开始装车」按钮 → 调用 /loading/start → LOADED
-///   3. 状态=LOADED 时，逐商品录入实装数量 → /loading/scan 写装车核对
-///   4. 全部核对一致后，「确认装车完毕」→ /loading/confirm
-///   5. 装车完毕后，「确认发车」→ /depart → DEPARTED，返回首页
+///   3. 状态=LOADED 时，按**配送点**点【装车】，或勾选多个/全选后批量【装车】
+///   4. 「确认发车」→ /depart，只发已装车的配送点（部分发车）
+///
+/// 为什么把「核对」改成「装车」：
+///   原设计是逐 SKU 录数量再点「核对」，全部核对齐才允许发车。实际场中
+///   司机是整点整点搬货的，一个点十几个 SKU 全录一遍不现实，结果是要么
+///   乱填、要么卡在发车按钮上。现在核对降级为可选（数量仍可改，用于差异
+///   留痕），装车确认上升到配送点粒度：装完一个点点一下，或勾一批一起点。
 class LoadingConfirmPage extends ConsumerStatefulWidget {
   final String dispatchId;
   const LoadingConfirmPage({super.key, required this.dispatchId});
@@ -31,6 +37,9 @@ class LoadingConfirmPage extends ConsumerStatefulWidget {
 class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
   /// 本地编辑的实装数量，按 detailId|goodsCode 索引。
   final Map<String, num> _loadedQties = {};
+
+  /// 已勾选待批量装车的配送点（detailId）。
+  final Set<String> _selected = {};
   bool _busy = false;
 
   @override
@@ -68,18 +77,22 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
       }
     }
     final totalLoaded = _loadedQties.values.fold<num>(0, (s, v) => s + v);
-    final allChecked = d.receipts.isNotEmpty &&
-        d.receipts.every((r) =>
-            r.items.every((it) => (_loadedQties['${r.detailId}|${it.goodsCode}'] ?? 0) >= it.requiredQty));
 
     // 状态机
     final isAssigned = d.status == 'ASSIGNED';
-    final isLoaded = d.status == 'LOADED';
-    final isDeparted = d.status == 'DEPARTED';
+    // 部分发车后调度单会停在 LOADED，DEPARTED/DELIVERING 说明整单已发完；
+    // 只要还有未发车的配送点，页面就得保持可操作，否则补装的点无法再发车。
+    final isLoaded = d.receipts.isNotEmpty && d.status != 'ASSIGNED';
+    final isDeparted = d.receipts.isEmpty && d.status != 'ASSIGNED';
 
     // 按逆配送顺序展示（后送的先装，seqNo 倒序）
     final sortedReceipts = List<LoadingReceipt>.from(d.receipts)
       ..sort((a, b) => b.seqNo.compareTo(a.seqNo));
+
+    // 勾选集合可能残留已装车/已发车的明细（装车成功后列表会刷新），
+    // 每次 build 收敛一次，避免批量装车时把不存在的 detailId 传给后端。
+    final pendingIds = sortedReceipts.where((r) => !r.loaded).map((e) => e.detailId).toSet();
+    _selected.removeWhere((id) => !pendingIds.contains(id));
 
     return Column(
       children: [
@@ -96,9 +109,11 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
             Text('${d.routeLine} · ${d.vehiclePlate} · ${d.storeCount} 个配送点', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
         ),
-        // 逆序装车提示
-        if (isLoaded)
+        // 逆序装车提示 + 全选栏
+        if (isLoaded) ...[
           const Alert.warn('📥 请按逆配送顺序装车——后送的货装里侧，先送的货装门口'),
+          _selectBar(pendingIds),
+        ],
         // 装车清单
         Expanded(
           child: RefreshIndicator(
@@ -109,9 +124,21 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
                 ...sortedReceipts.map((r) => _ReceiptCard(
                       receipt: r,
                       loadedQties: _loadedQties,
-                      editable: isLoaded,
+                      editable: isLoaded && !r.loaded,
+                      selectable: isLoaded && !r.loaded,
+                      selected: _selected.contains(r.detailId),
+                      onSelect: (v) => setState(() {
+                        if (v) {
+                          _selected.add(r.detailId);
+                        } else {
+                          _selected.remove(r.detailId);
+                        }
+                      }),
+                      onLoad: (isLoaded && !r.loaded && !_busy)
+                          ? () => _confirmLoad(d, [r.detailId], r.customerName)
+                          : null,
                       onChanged: (key, v) => setState(() => _loadedQties[key] = v),
-                      onScan: isLoaded ? (it) => _scan(d, r, it) : null,
+                      onScan: (isLoaded && !r.loaded) ? (it) => _scan(d, r, it) : null,
                     )),
                 if (sortedReceipts.isEmpty)
                   const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('无装车清单', style: TextStyle(color: TmsTheme.muted)))),
@@ -131,8 +158,42 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
           ),
         ),
         // 底部操作区
-        _bottomBar(d, isAssigned, isLoaded, isDeparted, allChecked),
+        _bottomBar(d, isAssigned, isLoaded, isDeparted),
       ],
+    );
+  }
+
+  /// 全选栏：显示装车进度 + 全选/取消全选。
+  ///
+  /// 只对「未装车」的配送点做全选，已装车的点不再参与勾选，
+  /// 避免司机以为要重新勾一遍。
+  Widget _selectBar(Set<String> pendingIds) {
+    if (pendingIds.isEmpty) return const SizedBox.shrink();
+    final allSelected = _selected.length == pendingIds.length;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.only(left: 6, right: 14),
+      child: Row(children: [
+        Checkbox(
+          value: allSelected,
+          visualDensity: VisualDensity.compact,
+          onChanged: _busy
+              ? null
+              : (v) => setState(() {
+                    _selected.clear();
+                    if (v == true) _selected.addAll(pendingIds);
+                  }),
+        ),
+        Expanded(
+          child: Text(
+            allSelected ? '取消全选' : '全选（待装 ${pendingIds.length} 个配送点）',
+            style: const TextStyle(fontSize: 12, color: TmsTheme.ink),
+          ),
+        ),
+        if (_selected.isNotEmpty)
+          Text('已选 ${_selected.length} 个',
+              style: const TextStyle(fontSize: 12, color: TmsTheme.accent, fontWeight: FontWeight.w700)),
+      ]),
     );
   }
 
@@ -149,7 +210,7 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     }
   }
 
-  Widget _bottomBar(LoadingDispatch d, bool isAssigned, bool isLoaded, bool isDeparted, bool allChecked) {
+  Widget _bottomBar(LoadingDispatch d, bool isAssigned, bool isLoaded, bool isDeparted) {
     return Container(
       decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: TmsTheme.rule))),
       padding: const EdgeInsets.all(14),
@@ -159,18 +220,34 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
           if (isAssigned)
             TmsButton.primary(_busy ? '处理中...' : '开始装车', onPressed: _busy ? null : () => _action(d, 'start')),
           if (isLoaded) ...[
-            if (!allChecked)
-              const Alert.warn('⚠️ 尚有商品未核对完成，无法确认装车完毕'),
+            // 发车门槛从「全部装完」降为「至少装了一个点」：
+            // 支持部分发车后，卡在个别缺货门店上不该拖住整车出发。
+            if (d.pendingStoreCount > 0)
+              Alert.warn('⚠️ 还有 ${d.pendingStoreCount} 个配送点未装车，发车只会带走已装的 ${d.loadedStoreCount} 个'),
             Row(children: [
               Expanded(child: TmsButton.outline('刷新清单', onPressed: () => ref.invalidate(loadingItemsProvider(widget.dispatchId)))),
               const SizedBox(width: 8),
-              Expanded(child: TmsButton.primary(_busy ? '处理中...' : '确认装车完毕', onPressed: (_busy || !allChecked) ? null : () => _action(d, 'confirm'))),
+              Expanded(
+                child: TmsButton.primary(
+                  _busy
+                      ? '处理中...'
+                      : _selected.isEmpty
+                          ? '全部装车'
+                          : '装车（${_selected.length}）',
+                  onPressed: (_busy || d.pendingStoreCount == 0)
+                      ? null
+                      : () => _confirmLoad(d, _selected.toList(), null),
+                ),
+              ),
             ]),
             const SizedBox(height: 8),
-            TmsButton.warn(_busy ? '处理中...' : '确认发车，开始配送', onPressed: (_busy || !allChecked) ? null : () => _action(d, 'depart')),
+            TmsButton.warn(
+              _busy ? '处理中...' : '确认发车，开始配送',
+              onPressed: (_busy || !d.anyLoaded) ? null : () => _action(d, 'depart'),
+            ),
           ],
           if (isDeparted) ...[
-            const Alert.ok('✅ 已发车，可返回首页查看配送任务'),
+            const Alert.ok('✅ 已全部发车，可返回首页查看配送任务'),
             const SizedBox(height: 8),
             TmsButton.outline('返回首页', color: TmsTheme.muted, onPressed: () {
               ref.invalidate(todayTasksProvider);
@@ -182,28 +259,125 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     );
   }
 
-  Future<void> _action(LoadingDispatch d, String action) async {
+  /// 确认装车（配送点粒度）。
+  ///
+  /// [detailIds] 为空表示全部装车——与后端约定一致，省略该字段即全选。
+  /// [storeName] 非空时说明是单点装车，toast 里带上门店名让司机确认点对了。
+  Future<void> _confirmLoad(LoadingDispatch d, List<String> detailIds, String? storeName) async {
     setState(() => _busy = true);
     try {
-      await ref.read(loadingActionProvider(LoadingActionArgs(dispatchId: d.dispatchId, action: action)).future);
+      final res = await ref.read(loadingActionProvider(LoadingActionArgs(
+        dispatchId: d.dispatchId,
+        action: 'confirm',
+        detailIds: detailIds,
+      )).future);
+      _selected.clear();
+      ref.invalidate(loadingItemsProvider(d.dispatchId));
+      final pending = (res['pendingStoreCount'] as num?)?.toInt() ?? 0;
+      final tail = pending > 0 ? '，还剩 $pending 个配送点待装' : '，全部装车完成，可以发车了';
+      _toast(storeName != null ? '✅ $storeName 已装车$tail' : '✅ 已确认装车$tail');
+    } catch (e) {
+      _toast('装车失败：${e.toString().replaceFirst("Exception: ", "")}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _action(LoadingDispatch d, String action, {bool force = false}) async {
+    setState(() => _busy = true);
+    try {
+      final res = await ref.read(loadingActionProvider(
+              LoadingActionArgs(dispatchId: d.dispatchId, action: action, force: force))
+          .future);
+
+      // 发车完整性校验：后端发现有未装车配送点时返回 needConfirm 而非报错，
+      // 此时并未落库。少装可能是合理的（临时缺货、客户改约），所以交给司机决定，
+      // 但必须把漏的是哪几个点摆出来——只说「有未装车点」司机没法判断。
+      if (action == 'depart' && res['needConfirm'] == true) {
+        if (!mounted) return;
+        setState(() => _busy = false);
+        final ok = await _confirmDepart(res);
+        if (ok == true && mounted) {
+          await _action(d, 'depart', force: true);
+        }
+        return;
+      }
+
       ref.invalidate(loadingItemsProvider(d.dispatchId));
       String msg = switch (action) {
-        'start' => '已开始装车，请逐商品核对实装数量',
-        'confirm' => '装车确认完成',
+        'start' => '已开始装车，装完一个点点一下【装车】',
         'depart' => '已发车，配送开始',
         _ => '操作成功',
       };
+      final missed = (res['unloadedCount'] as num?)?.toInt() ?? 0;
+      final departed = (res['departCount'] as num?)?.toInt() ?? 0;
+      if (action == 'depart' && missed > 0) {
+        msg = '已发车 $departed 个配送点，剩 $missed 个未装车，装好后可再次发车';
+      }
       _toast(msg);
       if (action == 'depart' && mounted) {
         await _startTracking(d.dispatchId);
         ref.invalidate(todayTasksProvider);
-        if (mounted) Navigator.pop(context, true);
+        ref.invalidate(homeOverviewProvider);
+        // 发车是门店进入「配送中」的起点，列表必须重取，
+        // 否则司机发车后切到【配送中】仍是空的。
+        ref.invalidate(deliveringStoresProvider);
+        // 部分发车时留在本页继续补装剩余配送点，只有整单发完才退回上一页；
+        // 一律 pop 会让司机为了发剩下的点再点进来一次。
+        if (mounted && missed == 0) Navigator.pop(context, true);
       }
     } catch (e) {
       _toast('操作失败：${e.toString().replaceFirst("Exception: ", "")}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 未装车配送点确认弹窗。
+  ///
+  /// 列出具体单号 + 客户 + 数量，让司机能对着车厢核一遍再决定，
+  /// 而不是凭一句「有 3 个点没装」猜。
+  Future<bool?> _confirmDepart(Map<String, dynamic> res) {
+    final list = (res['unloaded'] as List? ?? []).cast<Map<String, dynamic>>();
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('还有配送点未装车', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(res['message']?.toString() ?? '确认仍要发车？',
+              style: const TextStyle(fontSize: 13, color: TmsTheme.ink)),
+          const SizedBox(height: 10),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: list
+                    .map((u) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text(
+                            '· ${u['sourceBillNo'] ?? ''}  ${u['customerName'] ?? ''}'
+                            '${u['qty'] == null ? '' : '（${u['qty']} 件）'}',
+                            style: const TextStyle(fontSize: 12, color: TmsTheme.muted),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text('未装车的配送点会留在本页，装好后可再次确认发车。',
+              style: TextStyle(fontSize: 11, color: TmsTheme.warning)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('返回装车')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('仍要发车', style: TextStyle(color: TmsTheme.danger)),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 发车成功后启动 GPS 轨迹采集（15s 一次，落本地库后由 SyncService 批量上报）。
@@ -251,25 +425,53 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
   }
 }
 
-/// 装车清单中的发货单卡片（含 SKU 行）。
+/// 装车清单中的配送点卡片（含 SKU 行 + 勾选框 + 单点【装车】按钮）。
 class _ReceiptCard extends StatelessWidget {
   final LoadingReceipt receipt;
   final Map<String, num> loadedQties;
   final bool editable;
+  final bool selectable;
+  final bool selected;
+  final ValueChanged<bool> onSelect;
+  final VoidCallback? onLoad;
   final OnLoadedChanged onChanged;
   final void Function(LoadingItem)? onScan;
-  const _ReceiptCard({required this.receipt, required this.loadedQties, required this.editable, required this.onChanged, this.onScan});
+  const _ReceiptCard({
+    required this.receipt,
+    required this.loadedQties,
+    required this.editable,
+    required this.selectable,
+    required this.selected,
+    required this.onSelect,
+    required this.onChanged,
+    this.onLoad,
+    this.onScan,
+  });
 
   @override
   Widget build(BuildContext context) {
     final loaded = receipt.items.fold<num>(0, (s, it) => s + (loadedQties['${receipt.detailId}|${it.goodsCode}'] ?? 0));
-    final checked = loaded >= receipt.requiredQty;
     return MCard(
-      leftBar: checked ? TmsTheme.ok : TmsTheme.accent,
+      leftBar: receipt.loaded ? TmsTheme.ok : TmsTheme.accent,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Expanded(child: Text('① ${receipt.customerName}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink))),
-          if (checked) const MTag.green('已核对') else MTag.blue('${receipt.requiredQty} 件'),
+        Row(children: [
+          // 勾选框放在标题行首：司机是「一个点一个点」搬完再勾，
+          // 勾选热区跟门店名连在一起最好点。
+          if (selectable)
+            SizedBox(
+              width: 30,
+              child: Checkbox(
+                value: selected,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: (v) => onSelect(v == true),
+              ),
+            ),
+          Expanded(
+            child: Text('${receipt.seqNo > 0 ? "第${receipt.seqNo}站 " : ""}${receipt.customerName}',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+          ),
+          if (receipt.loaded) const MTag.green('已装车') else MTag.blue('${fmtQty(receipt.requiredQty)} 件'),
         ]),
         const SizedBox(height: 2),
         Text('${receipt.sourceBillNo} · ${receipt.customerAddress}', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
@@ -281,9 +483,17 @@ class _ReceiptCard extends StatelessWidget {
               onChanged: (v) => onChanged('${receipt.detailId}|${it.goodsCode}', v),
               onScan: onScan == null ? null : () => onScan!(it),
             )),
-        const SizedBox(height: 4),
-        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          Text('应装 ${receipt.requiredQty} 件 · 实装 $loaded 件', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(
+            child: Text('应装 ${fmtQty(receipt.requiredQty)} 件 · 实装 ${fmtQty(loaded)} 件',
+                style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+          ),
+          if (receipt.loaded)
+            Text(receipt.loadTime.isEmpty ? '已装车' : '装车 ${receipt.loadTime}',
+                style: const TextStyle(fontSize: 11, color: TmsTheme.ok, fontWeight: FontWeight.w700))
+          else if (onLoad != null)
+            SizedBox(width: 90, child: TmsButton.primary('装车', onPressed: onLoad)),
         ]),
       ]),
     );

@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../config/app_config.dart';
+import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/reschedule_reject.dart';
+import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/reschedule_reject_provider.dart';
 import '../../providers/task_provider.dart';
@@ -78,7 +79,7 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
               MLine('发货单号', widget.receiptNo),
               MLine('客户名称', widget.customerName.isEmpty ? '-' : widget.customerName),
               MLine('客户地址', widget.customerAddress.isEmpty ? '-' : widget.customerAddress),
-              MLine('配送数量', '${widget.totalQty} 件'),
+              MLine('配送数量', '${fmtQty(widget.totalQty)} 件'),
             ]),
           ),
           const SizedBox(height: 8),
@@ -194,15 +195,18 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
     );
   }
 
+  /// 拍摄拒收现场照片。失败时给出可执行提示，避免静默无反应。
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: AppConfig.photoMaxEdge.toDouble(),
-      maxHeight: AppConfig.photoMaxEdge.toDouble(),
-      imageQuality: AppConfig.photoQuality,
-    );
-    if (photo != null) setState(() => _photos.add(photo));
+    final result = await PhotoService.instance.capture();
+    if (!mounted) return;
+    if (result.isFailed) {
+      _toast(result.error!);
+      return;
+    }
+    if (result.isSuccess) {
+      setState(() => _photos.add(result.file!));
+      if (result.notice != null) _toast(result.notice!);
+    }
   }
 
   Future<void> _submit() async {
@@ -231,13 +235,13 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
         photos: photoUrlList,
       )).future);
       final rejectNo = result['rejectNo']?.toString() ?? '';
-      final totalQty = result['totalQty'] ?? 0;
+      final totalQty = result['totalQty'] as num? ?? 0;
       // 离线入队时后端还没生成单号与件数，照常提示会显示「生成成功：（共 0 件）」，
       // 空单号加成功语会让司机以为单据已进系统。
       if (result['_offline'] == true) {
         _toast('当前无网络，客户拒收已暂存本地，联网后自动上传');
       } else {
-        _toast('客户拒收单生成成功：$rejectNo（共 $totalQty 件）');
+        _toast('客户拒收单生成成功：$rejectNo（共 ${fmtQty(totalQty)} 件）');
       }
       ref.invalidate(todayTasksProvider);
       if (mounted) Navigator.pop(context, true);

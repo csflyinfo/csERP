@@ -11,6 +11,7 @@ import 'package:sqflite/sqflite.dart';
 /// - pending_actions:    离线操作队列（签收/装车/发车/退货等）
 /// - gps_tracks:         GPS 轨迹本地缓存（待批量补传）
 /// - sync_log:           同步日志（成功/失败记录，用于排查）
+/// - sign_drafts:        签收草稿（v2 新增，签收当场不回传，等结算时统一提交）
 ///
 /// 队列优先级（pending_actions.priority 字段）：
 ///   1=装车/发车  2=签收  3=照片上传  4=定位上报  5=其他
@@ -27,8 +28,9 @@ class LocalDbService {
     final dbPath = p.join(docDir.path, 'tms_driver.db');
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
     return _db!;
   }
@@ -124,6 +126,111 @@ class LocalDbService {
         created_at  TEXT NOT NULL
       )
     ''');
+
+    // 5. 签收草稿
+    await _createSignDrafts(db);
+  }
+
+  /// 版本升级：只做增量建表/加列，不能重建已有表（会丢掉未上传的离线队列）。
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) await _createSignDrafts(db);
+  }
+
+  /// 签收草稿表（v2）。
+  ///
+  /// 为什么要落本地：业务要求「单个签收不回传后台，结算后统一更新后台单据数据」。
+  /// 司机可能签了 3 张单就退出页面去接电话，回来还得看到之前录的数量，
+  /// 所以草稿不能只放内存，必须落库。
+  ///
+  /// 主键取 detail_id：一张调度明细对应一张单据，重复签收就是覆盖草稿。
+  /// draft_json 存整包录入结果（items/拒收/签名/照片/备注），
+  /// 结构与 /tms/app/sign 的入参保持一致，结算时可原样打包上传，
+  /// 避免在两处维护两套字段映射。
+  Future<void> _createSignDrafts(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS sign_drafts (
+        detail_id       TEXT PRIMARY KEY,
+        dispatch_id     TEXT,
+        customer_code   TEXT,
+        source_bill_no  TEXT,
+        bill_type       TEXT,
+        sign_type       TEXT,
+        signed_qty      REAL NOT NULL DEFAULT 0,
+        reject_qty      REAL NOT NULL DEFAULT 0,
+        sign_amount     REAL NOT NULL DEFAULT 0,
+        draft_json      TEXT NOT NULL,
+        settled         INTEGER NOT NULL DEFAULT 0,
+        created_at      TEXT NOT NULL,
+        updated_at      TEXT NOT NULL
+      )
+    ''');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_sign_draft_customer ON sign_drafts(customer_code, settled)');
+  }
+
+  // ==================== sign_drafts 签收草稿 ====================
+
+  /// 保存/覆盖一条签收草稿。
+  Future<void> saveSignDraft({
+    required String detailId,
+    required String dispatchId,
+    required String customerCode,
+    required String sourceBillNo,
+    required String billType,
+    required String signType,
+    required double signedQty,
+    required double rejectQty,
+    required double signAmount,
+    required Map<String, dynamic> draft,
+  }) async {
+    if (!isInitialized) return;
+    final now = DateTime.now().toIso8601String();
+    await db.insert(
+      'sign_drafts',
+      {
+        'detail_id': detailId,
+        'dispatch_id': dispatchId,
+        'customer_code': customerCode,
+        'source_bill_no': sourceBillNo,
+        'bill_type': billType,
+        'sign_type': signType,
+        'signed_qty': signedQty,
+        'reject_qty': rejectQty,
+        'sign_amount': signAmount,
+        'draft_json': jsonEncode(draft),
+        'settled': 0,
+        'created_at': now,
+        'updated_at': now,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// 读某配送点下全部未结算草稿（结算页取数用）。
+  Future<List<Map<String, dynamic>>> getSignDrafts(String customerCode) async {
+    if (!isInitialized) return const [];
+    return db.query('sign_drafts',
+        where: 'customer_code = ? AND settled = 0',
+        whereArgs: [customerCode],
+        orderBy: 'created_at');
+  }
+
+  /// 读单条草稿（签收页二次进入时回填用）。
+  Future<Map<String, dynamic>?> getSignDraft(String detailId) async {
+    if (!isInitialized) return null;
+    final rows =
+        await db.query('sign_drafts', where: 'detail_id = ?', whereArgs: [detailId], limit: 1);
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  /// 结算成功后清理已提交的草稿。
+  ///
+  /// 直接删而不是置 settled=1：草稿的唯一用途是「等结算」，
+  /// 结算完成后后台已有正式签收流水，本地留着只会让下次进店误判成未签收。
+  Future<void> deleteSignDrafts(List<String> detailIds) async {
+    if (!isInitialized || detailIds.isEmpty) return;
+    final marks = List.filled(detailIds.length, '?').join(',');
+    await db.delete('sign_drafts', where: 'detail_id IN ($marks)', whereArgs: detailIds);
   }
 
   // ==================== pending_actions 队列操作 ====================

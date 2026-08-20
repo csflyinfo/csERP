@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../config/app_config.dart';
+import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/delivery.dart';
+import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
-import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/launch_service.dart';
-import '../../services/location_service.dart';
+import '../../services/local_db_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
 import '../store/store_location_page.dart';
@@ -19,12 +19,21 @@ import 'arrive_page.dart';
 /// 配送签收页面（对齐原型 Screen G）。
 ///
 /// 流程：
-///   1. 进入页面拉取签收 SKU 明细（按 detailId）
+///   1. 进入页面拉取签收 SKU 明细（按 detailId），并回填本地草稿
 ///   2. 逐商品录入实收数量（默认全收，可改小）
-///   3. 录入收款金额（COD 货到付款场景）
-///   4. 拍现场照片（至少 1 张）
-///   5. 客户签名
-///   6. 「确认签收」提交 → /tms/app/sign + /tms/app/sign/upload-photo
+///   3. 拍现场照片（至少 1 张）
+///   4. 客户签名
+///   5. 「确认签收」→ **只存本地草稿，不回传后台**
+///
+/// 为什么签收不再回传后台：
+///   同一配送点常有多张单据（含退货单），钱要按「整个配送点」一次算清
+///   （退货冲减应收、多账户混合收款、挂账）。若每张单签收时就各自
+///   更新后台单据与收款状态，退货冲减就没法做了，且会产生多张零散收款单。
+///   因此签收只负责「录数量/拍照/签名」，落本地 sign_drafts；
+///   真正的后台写入统一由结算页 /tms/app/settle/confirm 一次完成。
+///
+/// 草稿必须落库而非放内存：司机签完两张单可能退出页面接电话，
+/// 回来还得看到之前录的数量。
 class DeliverySignPage extends ConsumerStatefulWidget {
   final String detailId;
   const DeliverySignPage({super.key, required this.detailId});
@@ -36,18 +45,78 @@ class DeliverySignPage extends ConsumerStatefulWidget {
 class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
   final _signerCtrl = TextEditingController();
   final _remarkCtrl = TextEditingController();
-  final _collectCtrl = TextEditingController();
   final _sigKey = GlobalKey<SignaturePadState>();
   final List<SignItem> _items = [];
   final List<XFile> _photos = [];
-  String _payMethod = '现金';
   bool _submitting = false;
+
+  /// 已回填过草稿的标记：草稿读取是异步的，而 build 会跑多次，
+  /// 没有这个标记会在每帧覆盖司机正在输入的数量。
+  bool _draftLoaded = false;
+
+  /// 草稿里已上传过的照片 URL（含离线占位本地路径）。
+  /// 二次进入时不再让司机重拍，直接沿用。
+  final List<String> _draftPhotoUrls = [];
+  String? _draftSignatureUrl;
+
+  /// 草稿里的数量：goodsCode → [实收, 拒收]。
+  final Map<String, List<num>> _draftQty = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDraft();
+  }
+
+  /// 回填本地草稿（返回上页再进来要保存前面的签收数据）。
+  Future<void> _loadDraft() async {
+    final row = await LocalDbService.instance.getSignDraft(widget.detailId);
+    if (!mounted) return;
+    if (row == null) {
+      setState(() => _draftLoaded = true);
+      return;
+    }
+    final draft = jsonDecode(row['draft_json'] as String) as Map<String, dynamic>;
+    setState(() {
+      _signerCtrl.text = draft['customerSigner']?.toString() ?? '';
+      _remarkCtrl.text = draft['remark']?.toString() ?? '';
+      _draftSignatureUrl = draft['signatureUrl']?.toString();
+      _draftPhotoUrls
+        ..clear()
+        ..addAll((draft['photos'] as List? ?? [])
+            .map((e) => (e as Map)['url']?.toString() ?? '')
+            .where((s) => s.isNotEmpty));
+      _draftQty.clear();
+      for (final e in (draft['items'] as List? ?? [])) {
+        final m = e as Map;
+        _draftQty[m['goodsCode']?.toString() ?? ''] = [
+          (m['signedQty'] as num?) ?? 0,
+          (m['rejectQty'] as num?) ?? 0,
+        ];
+      }
+      _applyDraftQty();
+      _draftLoaded = true;
+    });
+  }
+
+  /// 把草稿数量套用到已加载的 SKU 行。
+  ///
+  /// 草稿读取与明细接口是两条独立的异步链，谁先到都有可能，
+  /// 所以两边完成时都调一次，由 _draftQty 是否为空来决定是否生效。
+  void _applyDraftQty() {
+    if (_draftQty.isEmpty) return;
+    for (final it in _items) {
+      final q = _draftQty[it.goodsCode];
+      if (q == null) continue;
+      it.signedQty = q[0];
+      it.rejectQty = q[1];
+    }
+  }
 
   @override
   void dispose() {
     _signerCtrl.dispose();
     _remarkCtrl.dispose();
-    _collectCtrl.dispose();
     super.dispose();
   }
 
@@ -63,6 +132,11 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
           Expanded(
             child: async.when(
               data: (d) {
+                // 草稿未读完就先转圈：否则 _items 会用「默认全收」先渲染一帧，
+                // 草稿数量随后跳变，司机会看到数字闪一下。
+                if (!_draftLoaded) {
+                  return const Center(child: CircularProgressIndicator());
+                }
                 if (_items.length != d.items.length) {
                   _items.clear();
                   for (final it in d.items) {
@@ -75,10 +149,7 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
                       rejectQty: 0,
                     ));
                   }
-                  // 默认收款金额=应收金额
-                  if (_collectCtrl.text.isEmpty && d.amount > 0) {
-                    _collectCtrl.text = d.amount.toString();
-                  }
+                  _applyDraftQty();
                 }
                 return _buildBody(d);
               },
@@ -179,7 +250,6 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
                 onChanged: (signed, reject) => setState(() {
                   _items[i].signedQty = signed;
                   _items[i].rejectQty = reject;
-                  _updateCollectAmount(d);
                 }),
               );
             }),
@@ -203,30 +273,19 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
           ]),
         ),
         const SizedBox(height: 8),
-        // 收款信息（COD）
+        // 金额只读展示：钱在结算页统一收。
+        // 这里保留一行是为了让司机在核数量时就知道这单值多少，
+        // 但不给任何收款输入，避免又在签收页收一遍、结算页再收一遍。
         MCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('💰 货到付款（COD）', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-            const SizedBox(height: 8),
-            _Field('收款金额（¥）', _collectCtrl, placeholder: '0 表示无收款'),
-            const SizedBox(height: 8),
-            const Text('收款方式', style: TextStyle(fontSize: 12, color: TmsTheme.muted, fontWeight: FontWeight.w600)),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('💰 本单金额', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+              Text('¥ ${_signAmount(d).toStringAsFixed(2)}',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: TmsTheme.accent2)),
+            ]),
             const SizedBox(height: 4),
-            Wrap(spacing: 6, children: ['现金', '微信', '支付宝', '赊账'].map((m) {
-              final on = _payMethod == m;
-              return GestureDetector(
-                onTap: () => setState(() => _payMethod = m),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: on ? TmsTheme.accent : Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: on ? TmsTheme.accent : TmsTheme.rule, width: 1.5),
-                  ),
-                  child: Text(m, style: TextStyle(fontSize: 12, color: on ? Colors.white : TmsTheme.muted, fontWeight: FontWeight.w600)),
-                ),
-              );
-            }).toList()),
+            const Text('按实收数量折算。收款不在本页操作，返回配送点后统一结算。',
+                style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
           ]),
         ),
         const SizedBox(height: 8),
@@ -291,26 +350,33 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
     );
   }
 
+  /// 拍摄签收凭证照片。
+  ///
+  /// 失败必须提示：无相机应用或权限被拒时插件会抛异常，
+  /// 若不接住就表现为「点了没反应」，司机会反复空点。
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: AppConfig.photoMaxEdge.toDouble(),
-      maxHeight: AppConfig.photoMaxEdge.toDouble(),
-      imageQuality: AppConfig.photoQuality,
-    );
-    if (photo != null) {
-      setState(() => _photos.add(photo));
+    final result = await PhotoService.instance.capture();
+    if (!mounted) return;
+    if (result.isFailed) {
+      _toast(result.error!);
+      return;
+    }
+    if (result.isSuccess) {
+      setState(() => _photos.add(result.file!));
+      // 相册降级必须让司机知道：这类照片不是现场直拍，取证强度不同。
+      if (result.notice != null) _toast(result.notice!);
     }
   }
 
-  /// 根据实收数量按比例更新收款金额。
-  void _updateCollectAmount(SignDetail d) {
+  /// 本单签收金额：按实收数量占应发数量的比例折算应收。
+  ///
+  /// 服务端最终也用同一口径，前端算一遍只是给司机看，
+  /// 避免签收时对金额毫无感知、到结算页才发现数字不对。
+  num _signAmount(SignDetail d) {
     final totalRequired = _items.fold<num>(0, (s, it) => s + it.requiredQty);
-    if (totalRequired <= 0 || d.amount <= 0) return;
+    if (totalRequired <= 0 || d.amount <= 0) return 0;
     final totalSigned = _items.fold<num>(0, (s, it) => s + it.signedQty);
-    final collectAmount = d.amount * totalSigned / totalRequired;
-    _collectCtrl.text = collectAmount.toStringAsFixed(2);
+    return d.amount * totalSigned / totalRequired;
   }
 
   /// 到店打卡提示条。
@@ -359,16 +425,23 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
     );
   }
 
+  /// 确认签收 → 只写本地草稿，不调用后台接口。
+  ///
+  /// 照片仍在此刻上传（而不是拖到结算时才传）：
+  ///   · 照片是现场证据，越早落到服务端越不容易因换机/清缓存丢失；
+  ///   · 离线时 uploadImagesOrDefer 返回本地路径占位，
+  ///     结算提交时由 SyncService 统一补传，草稿里存的是同一份结构，
+  ///     所以离线链路不会因为「先存草稿」而断掉。
   Future<void> _submit(SignDetail d) async {
-    if (_photos.isEmpty) {
+    if (_photos.isEmpty && _draftPhotoUrls.isEmpty) {
       _toast('请至少拍摄 1 张现场照片');
       return;
     }
     setState(() => _submitting = true);
     try {
-      // 上传签名图（可选，有签名才上传）
+      // 上传签名图（可选，有签名才上传；无新签名则沿用草稿里的）
       final signatureB64 = await _sigKey.currentState?.exportAsBase64Png();
-      String? signatureUrl;
+      String? signatureUrl = _draftSignatureUrl;
       if (signatureB64 != null && signatureB64.isNotEmpty) {
         final sigBytes = base64Decode(signatureB64);
         final tempDir = await Directory.systemTemp.createTemp('sig');
@@ -380,14 +453,15 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
       }
 
       // 上传所有现场照片（XFile → File → 上传获得 URL）
-      // 离线时 uploadImagesOrDefer 返回本地路径占位，随主单一起入队，
-      // 由 SyncService 在重放前补传，避免「照片传不上去导致整单提交失败」。
       // 有限并发上传：串行时总耗时是各张之和，签收页常拍 3~5 张，
       // 弱网下会让司机干等几十秒并误以为卡死。
-      final photoUrls = await ApiService.instance.uploadImagesOrDefer(
-        _photos.map((p) => File(p.path)).toList(),
-        bizType: 'SIGN',
-      );
+      final newUrls = _photos.isEmpty
+          ? const <String>[]
+          : await ApiService.instance.uploadImagesOrDefer(
+              _photos.map((p) => File(p.path)).toList(),
+              bizType: 'SIGN',
+            );
+      final photoUrls = [..._draftPhotoUrls, ...newUrls];
 
       final items = <Map<String, dynamic>>[];
       for (final it in _items) {
@@ -398,41 +472,45 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
         });
       }
 
-      final result = await ref.read(signSubmitProvider(SignSubmitArgs(
-        dispatchId: d.dispatchId,
-        detailId: d.detailId,
-        sourceBillNo: d.sourceBillNo,
-        items: items,
-        collectAmount: num.tryParse(_collectCtrl.text.trim()) ?? 0,
-        payMethod: _payMethod,
-        customerSigner: _signerCtrl.text.trim(),
-        remark: _remarkCtrl.text.trim(),
-        photoUrls: photoUrls,
-        signatureUrl: signatureUrl,
-      )).future);
+      final totalSigned = _items.fold<num>(0, (s, it) => s + it.signedQty);
+      final totalReject = _items.fold<num>(0, (s, it) => s + it.rejectQty);
+      final totalRequired = _items.fold<num>(0, (s, it) => s + it.requiredQty);
+      final signType = totalSigned == 0 && totalReject > 0
+          ? 'REJECT'
+          : (totalSigned < totalRequired ? 'PARTIAL' : 'NORMAL');
 
-      final signType = result['signType']?.toString() ?? '';
-      final allCompleted = result['allCompleted'] == true;
-      // 离线入队与服务端已确认必须给出不同提示：
-      // 都说「签收成功」会让司机以为数据已回传，收工后不再关心同步状态，
-      // 队列里卡住的单子就没人管了。
-      String msg;
-      if (result['_offline'] == true) {
-        msg = '当前无网络，签收已暂存本地，联网后自动上传';
-      } else {
-        msg = '签收成功：${_signTypeText(signType)}';
-        if (allCompleted) msg += '，本调度单已全部签收完成';
-      }
-      // 全部签收完成 → 停止 GPS 采集，避免收工后继续耗电
-      if (allCompleted) LocationService.instance.stop();
-      ref.invalidate(todayTasksProvider);
-      ref.invalidate(signItemsProvider(widget.detailId));
+      // 草稿结构与 /tms/app/sign 入参保持一致：
+      // 结算时可原样打包上传，不必在两处维护两套字段映射。
+      await LocalDbService.instance.saveSignDraft(
+        detailId: d.detailId,
+        dispatchId: d.dispatchId,
+        customerCode: d.customerCode,
+        sourceBillNo: d.sourceBillNo,
+        billType: 'RECEIPT',
+        signType: signType,
+        signedQty: totalSigned.toDouble(),
+        rejectQty: totalReject.toDouble(),
+        signAmount: _signAmount(d).toDouble(),
+        draft: {
+          'dispatchId': d.dispatchId,
+          'detailId': d.detailId,
+          'sourceBillNo': d.sourceBillNo,
+          'items': items,
+          'customerSigner': _signerCtrl.text.trim(),
+          'remark': _remarkCtrl.text.trim(),
+          if (signatureUrl != null && signatureUrl.isNotEmpty) 'signatureUrl': signatureUrl,
+          'photos': photoUrls
+              .map((u) => {'url': u, 'photoType': 'GOODS', 'bizType': 'SIGN'})
+              .toList(),
+        },
+      );
+
       if (mounted) {
-        _toast(msg);
+        _toast('已暂存签收：${_signTypeText(signType)}，请返回配送点完成结算');
         Navigator.pop(context, true);
       }
     } catch (e) {
-      _toast('提交失败：${e.toString().replaceFirst("Exception: ", "")}');
+      _toast('暂存失败：${e.toString().replaceFirst("Exception: ", "")}');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -503,7 +581,7 @@ class _SignItemRow extends StatelessWidget {
             if (item.unitName.isNotEmpty)
               Text(item.unitName, style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
             const SizedBox(height: 2),
-            Text('应发 ${item.requiredQty} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            Text('应发 ${fmtQty(item.requiredQty)} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
           ]),
         ),
         SizedBox(

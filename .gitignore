@@ -30,3 +30,14 @@ tmp-*.js
 *.bak
 *.orig
 *.rej
+
+# 接口联调落盘产物：PowerShell 下读取中文响应需先 -OutFile 再转码，
+# 会在仓库根、backend/ 与 tms_driver_app/ 根部散落一批一次性 json/txt/xml，不入库。
+# 根目录的 json 一律视为联调产物（本项目无根级 json 配置；package.json 等均在子目录）。
+/*.json
+/.tmp/
+backend/*.json
+backend/*.txt
+tms_driver_app/*.txt
+tms_driver_app/*.xml
+tms_driver_app/*.png

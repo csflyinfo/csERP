@@ -129,9 +129,10 @@ public class TmsRescheduleReturnController {
         // 写明细（若未传 items，从发货单明细拉取）
         if (items.isEmpty()) {
             List<Map<String, Object>> receiptDetails = TmsUtil.queryCamel(jdbcTemplate, """
-                    SELECT d.goods_code, d.goods_name, d.spec, d.unit_name, d.qty
+                    SELECT d.goods_code, d.goods_name, g.spec, d.unit_name, d.qty
                     FROM sales_receipt_detail d
                     JOIN sales_receipt r ON r.receipt_id = d.receipt_id
+                    LEFT JOIN base_goods g ON g.goods_code = d.goods_code
                     WHERE r.receipt_no = ?
                     ORDER BY d.detail_id
                     """, receiptNo);

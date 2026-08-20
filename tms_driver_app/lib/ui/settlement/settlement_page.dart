@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../config/app_config.dart';
+import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/settlement.dart';
 import '../../providers/settlement_provider.dart';
@@ -116,12 +116,20 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
             _amountRow('应收总金额', s.totalAmount, TmsTheme.ink),
             _amountRow('实收现金', s.cashAmount, TmsTheme.ok),
             _amountRow('线上收款', s.onlineAmount, TmsTheme.accent),
+            if (s.creditAmount > 0) _amountRow('本日挂账', s.creditAmount, TmsTheme.accent2),
             if (s.returnAmount > 0) ...[
-              _amountRow('退货金额', s.returnAmount, TmsTheme.bad),
-              _amountRow('退货件数', s.returnQty, TmsTheme.bad, isQty: true),
+              _amountRow('退货金额', s.returnAmount, TmsTheme.muted),
+              _amountRow('退货件数', s.returnQty, TmsTheme.muted, isQty: true),
             ],
             const Divider(height: 20),
             _amountRow('应交回现金', s.submitAmount, TmsTheme.accent2, bold: true),
+            // 退货已在门店结算时冲减过应收净额，交账只交手上的现金，
+            // 不能再减一次退货，否则等于让司机自掏腰包垫付退货款。
+            if (s.returnAmount > 0) ...[
+              const SizedBox(height: 6),
+              const Text('退货已在门店结算时冲减，交账不再重复扣减',
+                  style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            ],
           ]),
         ),
         const SizedBox(height: 14),
@@ -334,15 +342,18 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
     );
   }
 
+  /// 拍摄交账凭证照片。失败时给出可执行提示，避免静默无反应。
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: AppConfig.photoMaxEdge.toDouble(),
-      maxHeight: AppConfig.photoMaxEdge.toDouble(),
-      imageQuality: AppConfig.photoQuality,
-    );
-    if (photo != null) setState(() => _photos.add(photo));
+    final result = await PhotoService.instance.capture();
+    if (!mounted) return;
+    if (result.isFailed) {
+      _toast(result.error!);
+      return;
+    }
+    if (result.isSuccess) {
+      setState(() => _photos.add(result.file!));
+      if (result.notice != null) _toast(result.notice!);
+    }
   }
 
   Future<void> _submit() async {

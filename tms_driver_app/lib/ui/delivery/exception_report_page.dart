@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../config/app_config.dart';
+import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../providers/exception_provider.dart';
 import '../../services/api_service.dart';
@@ -118,15 +118,18 @@ class _ExceptionReportPageState extends ConsumerState<ExceptionReportPage> {
     }
   }
 
+  /// 拍摄异常现场照片。失败时给出可执行提示，避免静默无反应。
   Future<void> _pickPhoto() async {
-    final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.camera,
-      maxWidth: AppConfig.photoMaxEdge.toDouble(),
-      maxHeight: AppConfig.photoMaxEdge.toDouble(),
-      imageQuality: AppConfig.photoQuality,
-    );
-    if (photo != null) setState(() => _photos.add(photo));
+    final result = await PhotoService.instance.capture();
+    if (!mounted) return;
+    if (result.isFailed) {
+      _toast(result.error!);
+      return;
+    }
+    if (result.isSuccess) {
+      setState(() => _photos.add(result.file!));
+      if (result.notice != null) _toast(result.notice!);
+    }
   }
 
   Future<void> _submit(ExceptionConfig cfg) async {

@@ -245,6 +245,7 @@ public class TmsDeliveryController {
         return switch (s) {
             case "DRAFT" -> "草稿";
             case "ASSIGNED" -> "已分配";
+            case "ACCEPTED" -> "已接单";
             case "LOADED" -> "已装车";
             case "DEPARTED" -> "已发车";
             case "DELIVERING" -> "配送中";

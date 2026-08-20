@@ -10,15 +10,12 @@ import '../../services/launch_service.dart';
 import '../../services/sync_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
-import '../delivery/arrive_page.dart';
-import '../delivery/delivery_sign_page.dart';
+import '../delivery/delivering_page.dart';
+import '../delivery/dispatch_stores_page.dart';
 import '../delivery/exception_list_page.dart';
 import '../delivery/exception_report_page.dart';
 import '../delivery/loading_confirm_page.dart';
-import '../return/customer_reject_page.dart';
 import '../return/driver_return_create_page.dart';
-import '../return/reschedule_return_page.dart';
-import '../return/return_list_page.dart';
 import '../return/warehouse_return_page.dart';
 import '../settlement/settlement_page.dart';
 import 'history_page.dart';
@@ -42,9 +39,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   void initState() {
     super.initState();
-    // 进入首页刷新今日任务
+    // 进入首页刷新今日任务。
+    // 用 refresh() 而不是 build()：直接调 build() 只是执行一遍方法体，
+    // 返回值被丢掉、provider state 不变，等于没刷新。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(todayTasksProvider.notifier).build();
+      ref.read(todayTasksProvider.notifier).refresh();
     });
   }
 
@@ -53,8 +52,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final driver = ref.watch(authProvider);
     final pages = [
       _TodayTab(driverName: driver?.driverName ?? '司机'),
+      const DeliveringPage(),
       const HistoryPage(),
-      const ReturnListPage(),
       const ProfilePage(),
     ];
     return Scaffold(
@@ -62,16 +61,18 @@ class _HomePageState extends ConsumerState<HomePage> {
       bottomNavigationBar: _TmsBottomBar(
         current: _tab,
         onChanged: (i) => setState(() => _tab = i),
-        returnBadge: _returnBadge(),
+        deliveringBadge: _deliveringBadge(),
       ),
     );
   }
 
-  int _returnBadge() {
-    final tasks = ref.read(todayTasksProvider);
-    final val = tasks.value;
-    if (val == null) return 0;
-    return val.details.where((d) => d.isReturn && d.status == 'PENDING').length;
+  /// 配送中角标：未处理完的门店数。
+  ///
+  /// 取门店数而非单据数，与【配送中】页的列表行数保持一致；
+  /// 角标数字和点进去看到的行数不一样会让司机以为漏单。
+  /// 用 watch 而非 read：read 不建立依赖，门店送完后角标不会消。
+  int _deliveringBadge() {
+    return ref.watch(deliveringStoresProvider).value?.pendingStore ?? 0;
   }
 }
 
@@ -130,19 +131,24 @@ class _NotifyBell extends ConsumerWidget {
   }
 }
 
-/// 底部 Tab 栏（当前 / 历史 / 退货回收 / 我的）。
+/// 底部 Tab 栏（当前 / 配送中 / 历史 / 我的）。
+///
+/// 【退货回收】不再占独立 Tab：退货是配送过程中的一个动作而非独立工作流，
+/// 单独立项会让司机在两个 Tab 间来回找同一家门店。
+/// 入口收到「我的」页与配送点详情内，跑店主路径保持单一。
 class _TmsBottomBar extends StatelessWidget {
   final int current;
   final ValueChanged<int> onChanged;
-  final int returnBadge;
-  const _TmsBottomBar({required this.current, required this.onChanged, required this.returnBadge});
+  final int deliveringBadge;
+  const _TmsBottomBar(
+      {required this.current, required this.onChanged, required this.deliveringBadge});
 
   @override
   Widget build(BuildContext context) {
     final items = [
       _TabItem('当前', '📋', false),
+      _TabItem('配送中', '🚚', deliveringBadge > 0),
       _TabItem('历史', '📜', false),
-      _TabItem('退货回收', '♻️', returnBadge > 0),
       _TabItem('我的', '👤', false),
     ];
     return Container(
@@ -171,7 +177,7 @@ class _TmsBottomBar extends StatelessWidget {
                     Positioned(top: 0, right: 18, child: Container(
                       padding: const EdgeInsets.all(3),
                       decoration: const BoxDecoration(color: TmsTheme.accent2, shape: BoxShape.circle),
-                      child: Text('$returnBadge', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w700)),
+                      child: Text('$deliveringBadge', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w700)),
                     )),
                 ],
               ),
@@ -215,7 +221,6 @@ class _TodayContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final details = tasks.details;
-    final receipts = details.where((d) => !d.isReturn).toList();
     final returns = details.where((d) => d.isReturn && d.status == 'PENDING').toList();
     final done = details.where((d) => d.status == 'DELIVERED').length;
     return Scaffold(
@@ -233,54 +238,43 @@ class _TodayContent extends ConsumerWidget {
           const OfflineBanner(),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () => ref.read(todayTasksProvider.notifier).build(),
+              // 两个数据源都要刷：概览与下方列表是同一屏的两半，
+              // 只刷一个会出现「列表已更新、概览还是旧数字」的错位。
+              onRefresh: () async {
+                await Future.wait([
+                  ref.read(todayTasksProvider.notifier).refresh(),
+                  ref.read(homeOverviewProvider.notifier).refresh(),
+                ]);
+              },
         child: ListView(
           padding: const EdgeInsets.all(14),
           children: [
-            // 顶部概览条
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                children: [
-                  _statCell('${details.length}', '配送点'),
-                  _divider(),
-                  _statCell('$done', '已完成', color: TmsTheme.ok),
-                  _divider(),
-                  _statCell('${details.length - done}', '待配送', color: TmsTheme.accent2),
-                  _divider(),
-                  _statCell('${returns.length}', '退货', color: TmsTheme.returnPurple),
-                ],
-              ),
-            ),
+            // 顶部概览条：只给数字，点击才下钻到明细。
+            // 首页的职责是让司机三秒内知道「还剩多少活、钱收了多少、下一站去哪」，
+            // 逐个门店的信息量属于「配送中」列表。
+            _OverviewBar(details: details, done: done, returns: returns),
             const SizedBox(height: 8),
             Alert.info('📋 ${_dateLabel()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""}${_netText(ref)}'),
             const SizedBox(height: 8),
-            // 退货回收任务（V1.2 重点）
-            if (returns.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text('🔄 退货回收任务', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.returnPurple)),
-              ),
-              ...returns.map((d) => MCard(
-                    leftBar: TmsTheme.returnPurple,
-                    onTap: () => Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => ReturnListPage(initialApplyNo: d.sourceBillNo),
-                    )),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                        Expanded(child: Text(d.customerName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink))),
-                        const MTag.purple('待回收'),
-                      ]),
-                      const SizedBox(height: 4),
-                      Text('${d.sourceBillNo} · ${d.customerAddress}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
-                      const SizedBox(height: 2),
-                      Text('退货 ${d.qty} 件 · 调度单 ${d.dispatchNo}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
-                    ]),
-                  )),
-            ],
-            // 快捷操作（现场退货 / 返仓交接）
+            // 待接单 + 当前作业流程 + 下一站 + 待交账
+            const _HomeWorkflow(),
             const SizedBox(height: 4),
+            // 这里原本还有「退货回收任务」和「待配送任务」两段逐单列表，已移除。
+            //
+            // 移除的原因不是嫌页面长，而是这两段与首页的定位冲突：
+            //   1. 首页要回答的是「这趟车该干哪一步」——接单、装车、发车、去下一站，
+            //      是一条流水线；逐单列表回答的是「有哪些单」，属于清单视图。
+            //      两者混在一屏时，司机在几十张单里翻找按钮，反而看不见当前该做什么。
+            //   2. 退货单在这里只是「又一张单」，但司机对退货的真实操作入口是
+            //      门店详情页与现场退货，首页重复挂一份只会让同一件事有两个入口、
+            //      两套状态判断，改一处漏一处。
+            //   3. 单据维度的浏览已由「查看清单」（按配送点分组）和「配送中」
+            //      （按门店合并）承接，两者的合并口径由后端统一，不会再出现
+            //      首页数 8 张单、配送中数 5 个点却对不上的情况。
+            //
+            // 保留下面的快捷操作，是因为它们都不依赖某张具体单据：
+            // 现场退货、返仓交接、异常上报在没有任务上下文时同样要能进。
+            // 快捷操作（现场退货 / 返仓交接）
             Row(children: [
               Expanded(child: _QuickAction(
                 icon: '🔄',
@@ -336,241 +330,6 @@ class _TodayContent extends ConsumerWidget {
               )),
             ]),
             const SizedBox(height: 8),
-            // 交账结算（一天配送结束后操作）
-            MCard(
-              leftBar: TmsTheme.accent,
-              onTap: () {
-                final navigator = Navigator.of(context);
-                navigator.push(MaterialPageRoute(
-                  builder: (_) => const SettlementPage(),
-                )).then((changed) => _maybeRefresh(ref, changed));
-              },
-              child: const Row(children: [
-                Icon(Icons.account_balance_wallet, size: 20, color: TmsTheme.accent),
-                SizedBox(width: 10),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('交账结算', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-                  Text('汇总应收/实收 · 拍照签名 · 提交审核', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
-                ])),
-                Icon(Icons.chevron_right, size: 18, color: TmsTheme.muted),
-              ]),
-            ),
-            // 发货配送任务
-            if (receipts.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text('📦 待配送任务', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-              ),
-              ...receipts.map((d) {
-                final dispatch = tasks.dispatches.firstWhere(
-                  (x) => x.dispatchId == d.dispatchId,
-                  orElse: () => Dispatch(dispatchId: d.dispatchId, dispatchNo: d.dispatchNo, status: ''),
-                );
-                final dStatus = dispatch.status;
-                final canLoad = dStatus == 'ASSIGNED' || dStatus == 'LOADED';
-                final canSign = (dStatus == 'DEPARTED' || dStatus == 'DELIVERING') && d.status == 'PENDING';
-                final canTap = canLoad || canSign;
-                return MCard(
-                  leftBar: d.status == 'DELIVERED' ? TmsTheme.ok : (canSign ? TmsTheme.accent2 : TmsTheme.accent),
-                  onTap: canTap
-                      ? () {
-                          final navigator = Navigator.of(context);
-                          if (canLoad) {
-                            navigator.push(MaterialPageRoute(
-                              builder: (_) => LoadingConfirmPage(dispatchId: d.dispatchId),
-                            )).then((changed) => _maybeRefresh(ref, changed));
-                          } else {
-                            navigator.push(MaterialPageRoute(
-                              builder: (_) => DeliverySignPage(detailId: d.detailId),
-                            )).then((changed) => _maybeRefresh(ref, changed));
-                          }
-                        }
-                      : null,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                      Expanded(child: Text('${d.seqNo}. ${d.customerName}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink))),
-                      if (d.status == 'DELIVERED')
-                        const MTag.green('已签收')
-                      else if (d.status == 'REJECTED')
-                        const MTag.red('已拒收')
-                      else if (d.status == 'RESCHEDULED')
-                        const MTag.orange('改派返仓')
-                      else if (canSign)
-                        const MTag.orange('待签收')
-                      else if (canLoad)
-                        const MTag.blue('待装车')
-                      else
-                        MTag.gray(d.status.isEmpty ? '待配送' : d.status),
-                    ]),
-                    const SizedBox(height: 4),
-                    Text('${d.sourceBillNo} · ${d.customerAddress}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
-                    const SizedBox(height: 2),
-                    Text('${d.qty} 件 · ${d.billTypeText} · ${d.dispatchNo}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
-                    // 结算方式 + 应收金额：司机在门店当场就要判断该不该收钱、收多少。
-                    // 只有货到付款才高亮成「需收款」，预付/账期用灰色标签，避免司机重复收款。
-                    // 门店未维护结算方式时整行隐藏，不显示「未知」误导判断。
-                    if (d.settlementText.isNotEmpty || d.receivableAmount > 0) ...[
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        if (d.settlementText.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: d.needCollect ? const Color(0xFFFFF1E6) : TmsTheme.bg,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: d.needCollect ? TmsTheme.accent2 : TmsTheme.rule),
-                            ),
-                            child: Text(
-                              d.needCollect ? '💰 ${d.settlementText}' : d.settlementText,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: d.needCollect ? TmsTheme.accent2 : TmsTheme.muted,
-                              ),
-                            ),
-                          ),
-                        if (d.receivableAmount > 0) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            '应收 ¥ ${d.receivableAmount.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: d.needCollect ? TmsTheme.accent2 : TmsTheme.muted,
-                            ),
-                          ),
-                        ],
-                      ]),
-                    ],
-                    // 已打卡则回显到达时间与定位偏差，异常用红色提示
-                    if (d.hasArrived) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '🕐 ${_arriveTimeText(d.arriveTime)} 到店'
-                        '${d.arriveDistance == null ? '' : ' · 偏差 ${d.arriveDistance!.toStringAsFixed(0)} 米'}'
-                        '${d.gpsAbnormal ? ' · GPS异常' : ''}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: d.gpsAbnormal ? TmsTheme.bad : TmsTheme.ok,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (canTap) ...[
-                      const SizedBox(height: 4),
-                      Text(canLoad ? '👉 点击进入装车确认' : '👉 点击进入签收',
-                          style: const TextStyle(fontSize: 10, color: TmsTheme.accent, fontWeight: FontWeight.w600)),
-                    ],
-                    // 未完成的任务都给出导航与拨号入口（装车前司机也常提前看路线）
-                    if (d.status == 'PENDING') ...[
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        Expanded(child: _MiniAction(
-                          label: '导航前往',
-                          icon: Icons.navigation,
-                          color: TmsTheme.accent,
-                          onTap: () => _navigateTo(context, d),
-                        )),
-                        const SizedBox(width: 8),
-                        Expanded(child: _MiniAction(
-                          label: d.hasPhone ? '联系客户' : '无电话',
-                          icon: Icons.phone,
-                          color: d.hasPhone ? TmsTheme.ok : TmsTheme.muted,
-                          onTap: d.hasPhone ? () => _callCustomer(context, d) : null,
-                        )),
-                      ]),
-                    ],
-                    // 已到达客户处时可触发改派返仓 / 客户拒收（异常分支）
-                    if (canSign) ...[
-                      const SizedBox(height: 8),
-                      Row(children: [
-                        // 打卡不是签收前置门禁：未打卡也能签收，是否强制由系统参数控制
-                        Expanded(child: _MiniAction(
-                          label: d.hasArrived ? '已打卡' : '到店打卡',
-                          icon: d.hasArrived ? Icons.check_circle : Icons.location_on,
-                          color: d.hasArrived ? TmsTheme.ok : TmsTheme.accent,
-                          onTap: d.hasArrived
-                              ? null
-                              : () {
-                                  final navigator = Navigator.of(context);
-                                  navigator.push(MaterialPageRoute(
-                                    builder: (_) => ArrivePage(
-                                      dispatchId: d.dispatchId,
-                                      detailId: d.detailId,
-                                      customerName: d.customerName,
-                                      customerAddress: d.customerAddress,
-                                      storeLongitude: d.longitude,
-                                      storeLatitude: d.latitude,
-                                    ),
-                                  )).then((changed) => _maybeRefresh(ref, changed));
-                                },
-                        )),
-                      ]),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        Expanded(child: _MiniAction(
-                          label: '改派返仓',
-                          icon: Icons.refresh,
-                          color: TmsTheme.accent2,
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            navigator.push(MaterialPageRoute(
-                              builder: (_) => RescheduleReturnPage(
-                                dispatchId: d.dispatchId,
-                                detailId: d.detailId,
-                                receiptNo: d.sourceBillNo,
-                                customerName: d.customerName,
-                                customerAddress: d.customerAddress,
-                                totalQty: d.qty,
-                              ),
-                            )).then((changed) => _maybeRefresh(ref, changed));
-                          },
-                        )),
-                        const SizedBox(width: 8),
-                        Expanded(child: _MiniAction(
-                          label: '客户拒收',
-                          icon: Icons.block,
-                          color: TmsTheme.bad,
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            navigator.push(MaterialPageRoute(
-                              builder: (_) => CustomerRejectPage(
-                                dispatchId: d.dispatchId,
-                                detailId: d.detailId,
-                                receiptNo: d.sourceBillNo,
-                                customerName: d.customerName,
-                                customerAddress: d.customerAddress,
-                                totalQty: d.qty,
-                              ),
-                            )).then((changed) => _maybeRefresh(ref, changed));
-                          },
-                        )),
-                      ]),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        // 现场突发异常（车辆故障/门店关门/货损等）没有单据流程可走，单独给入口
-                        Expanded(child: _MiniAction(
-                          label: '异常上报',
-                          icon: Icons.warning_amber_rounded,
-                          color: TmsTheme.returnPurple,
-                          onTap: () {
-                            final navigator = Navigator.of(context);
-                            navigator.push(MaterialPageRoute(
-                              builder: (_) => ExceptionReportPage(
-                                dispatchId: d.dispatchId,
-                                detailId: d.detailId,
-                                receiptNo: d.sourceBillNo,
-                                customerName: d.customerName,
-                              ),
-                            ));
-                          },
-                        )),
-                      ]),
-                    ],
-                  ]),
-                );
-              }),
-            ],
             if (details.isEmpty)
               const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('暂无待办任务', style: TextStyle(color: TmsTheme.muted)))),
           ],
@@ -581,13 +340,6 @@ class _TodayContent extends ConsumerWidget {
       ),
     );
   }
-
-  Widget _statCell(String num, String label, {Color? color}) =>
-      Expanded(child: Column(children: [
-        Text(num, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color ?? TmsTheme.ink)),
-        Text(label, style: const TextStyle(fontSize: 10, color: TmsTheme.muted)),
-      ]));
-  Widget _divider() => Container(width: 1, height: 28, color: TmsTheme.rule);
 
   /// 概览条的日期文案。
   ///
@@ -628,41 +380,12 @@ class _TodayContent extends ConsumerWidget {
     }
   }
 
-  /// 到达时间只展示「时:分」，任务卡空间有限，日期与当日一致无需重复。
-  String _arriveTimeText(String v) {
-    final s = v.replaceFirst('T', ' ');
-    final idx = s.indexOf(' ');
-    final time = idx >= 0 ? s.substring(idx + 1) : s;
-    return time.length >= 5 ? time.substring(0, 5) : time;
-  }
-
-  /// 唤起手机地图导航；门店未维护坐标时降级为按地址搜索。
-  Future<void> _navigateTo(BuildContext context, DispatchDetail d) async {
-    final messenger = ScaffoldMessenger.of(context);
-    if (!d.hasGeo && d.customerAddress.trim().isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标与地址，无法导航')));
-      return;
-    }
-    final ok = await LaunchService.instance.navigate(
-      longitude: d.longitude,
-      latitude: d.latitude,
-      address: d.customerAddress,
-      name: d.customerName,
-    );
-    if (!ok) {
-      messenger.showSnackBar(const SnackBar(content: Text('未找到可用地图应用')));
-    } else if (!d.hasGeo) {
-      // 坐标缺失时只能按地址模糊定位，需提醒司机核对，避免导错门店
-      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标，已按地址搜索，请核对位置')));
-    }
-  }
-
-  /// 拨打门店联系人电话（只跳拨号盘，由司机确认后再呼出）。
-  Future<void> _callCustomer(BuildContext context, DispatchDetail d) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await LaunchService.instance.dial(d.contactMobile);
-    if (!ok) messenger.showSnackBar(SnackBar(content: Text('拨号失败，请手动联系 ${d.contactMobile}')));
-  }
+  /// 导航、拨号、到达时间格式化三个辅助方法随待配送列表一并下线。
+  ///
+  /// 导航与拨号都必须先确定「去哪个门店、给谁打电话」，天然依赖单据上下文；
+  /// 首页移除逐单列表后已经没有门店可指向，强行保留只会退化成「拿第一张单凑数」，
+  /// 把司机导到错误的店。它们的正确归属是门店详情页与配送中列表。
+  /// 到达时间只在逐单卡片上展示过，同理不再需要。
 }
 
 /// 快捷操作按钮（现场退货 / 返仓交接）。
@@ -723,5 +446,366 @@ class _MiniAction extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+/// 首页顶部数量概览条。
+///
+/// 数字来源仍是 today-tasks 的明细（前端聚合），而不是 home/overview 的 storeStat：
+/// 两者口径不同——storeStat 数「门店」，这里数「配送点单据行」。
+/// 概览条下方紧跟的就是按单据行展开的列表，数字必须与列表行数对得上，
+/// 否则司机会怀疑有单据没显示出来。门店级口径在「配送中」页呈现。
+class _OverviewBar extends StatelessWidget {
+  final List<DispatchDetail> details;
+  final int done;
+  final List<DispatchDetail> returns;
+  const _OverviewBar({required this.details, required this.done, required this.returns});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        _cell('${details.length}', '配送点'),
+        _divider(),
+        _cell('$done', '已完成', color: TmsTheme.ok),
+        _divider(),
+        _cell('${details.length - done}', '待配送', color: TmsTheme.accent2),
+        _divider(),
+        _cell('${returns.length}', '退货', color: TmsTheme.returnPurple),
+      ]),
+    );
+  }
+
+  Widget _cell(String num, String label, {Color? color}) =>
+      Expanded(child: Column(children: [
+        Text(num, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: color ?? TmsTheme.ink)),
+        Text(label, style: const TextStyle(fontSize: 10, color: TmsTheme.muted)),
+      ]));
+
+  Widget _divider() => Container(width: 1, height: 28, color: TmsTheme.rule);
+}
+
+/// 首页作业流程区：待接单 → 装车 → 发车，外加下一站与待交账。
+///
+/// 独立成 ConsumerWidget 而不是并进 _TodayTab：
+/// 接单成功后只需要重建这一块，_TodayTab 整屏重建会让司机滚动位置跳回顶部。
+class _HomeWorkflow extends ConsumerStatefulWidget {
+  const _HomeWorkflow();
+
+  @override
+  ConsumerState<_HomeWorkflow> createState() => _HomeWorkflowState();
+}
+
+class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(homeOverviewProvider);
+    return async.when(
+      // 加载/异常都不占满屏：概览是首页的增强信息，
+      // 拿不到时下方任务列表仍然可用，不该因为它把整屏堵住。
+      loading: () => const SizedBox(
+        height: 60,
+        child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))),
+      ),
+      error: (e, _) => const Alert.warn('概览加载失败，可下拉重试'),
+      data: (o) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (o.pendingDispatches.isNotEmpty) ..._dispatchCards(o),
+        // 未发车调度单卡片已经把装车/发车入口带上了，此时再出「当前作业」
+        // 会出现同一张单两个入口。所以只在全部单都已发车后才显示它，
+        // 那时它的职责退化成「在途进度概览」，不再承载动作。
+        if (o.currentDispatchId.isNotEmpty && o.pendingDispatches.isEmpty)
+          _currentCard(o),
+        if (o.nextStore != null) _nextStoreCard(o.nextStore!),
+        _settlementCard(o),
+      ]),
+    );
+  }
+
+  /// 未发车调度单卡片：从「待接单」一直陪到「发车」。
+  ///
+  /// 为什么一张卡片承载三个状态而不是分三个区块：司机关心的是「这趟车现在
+  /// 卡在哪一步」，状态是卡片的属性而不是分类维度。分区块的话，接单后卡片
+  /// 从「待接单」区消失、在「已接单」区重新出现，视觉上像换了个任务。
+  ///
+  /// 发车（DEPARTED）后后端不再返回它，卡片自然消失并转入【配送中】页，
+  /// 对应需求「只有发车后才从首页消失进入配送中」。
+  List<Widget> _dispatchCards(HomeOverview o) => [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text('🚚 待发车任务（${o.pendingDispatches.length}）',
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: TmsTheme.accent2)),
+        ),
+        ...o.pendingDispatches.map(_dispatchCard),
+      ];
+
+  Widget _dispatchCard(Dispatch d) {
+    final canAccept = d.canAccept;
+    return MCard(
+      leftBar: canAccept ? TmsTheme.accent2 : TmsTheme.accent,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(d.dispatchNo,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: TmsTheme.ink)),
+          ),
+          if (d.appended) ...[
+            const MTag.purple('追加'),
+            const SizedBox(width: 6),
+          ],
+          if (canAccept)
+            const MTag.orange('待接单')
+          else
+            MTag.blue(d.statusText.isEmpty ? d.status : d.statusText),
+        ]),
+        const SizedBox(height: 4),
+        Text(d.subtitle,
+            style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+        const SizedBox(height: 2),
+        Text(
+          '${d.storeCount} 个配送点 · ${d.receiptCount} 发货'
+          '${d.returnCount > 0 ? ' / ${d.returnCount} 退货' : ''}'
+          ' · ${fmtQty(d.totalQty)} 件',
+          style: const TextStyle(fontSize: 12, color: TmsTheme.muted),
+        ),
+        if (d.collectAmount > 0) ...[
+          const SizedBox(height: 2),
+          Text('代收货款 ¥${d.collectAmount.toStringAsFixed(2)}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: TmsTheme.accent2)),
+        ],
+        const SizedBox(height: 8),
+        Row(children: [
+          // 查看清单在任何状态下都可点：接单前司机要靠它判断这趟活能不能接，
+          // 接单后靠它调配送顺序，发车前靠它核对配送点。
+          Expanded(
+            child: _MiniAction(
+              label: '查看清单',
+              icon: Icons.list_alt,
+              color: TmsTheme.muted,
+              onTap: () => _openStores(d.dispatchId),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: canAccept
+                ? _MiniAction(
+                    label: _busy ? '处理中…' : '接单',
+                    icon: Icons.assignment_turned_in,
+                    color: TmsTheme.accent2,
+                    onTap: _busy ? null : () => _accept(d.dispatchId),
+                  )
+                : _MiniAction(
+                    // 已装车时不在首页直接发车：发车是不可逆动作，
+                    // 必须先进装车页过一遍漏装校验。
+                    label: d.status == 'LOADED' ? '核对并发车' : '开始装车',
+                    icon: d.status == 'LOADED'
+                        ? Icons.local_shipping
+                        : Icons.inventory_2,
+                    color: TmsTheme.accent,
+                    onTap: () => _openLoading(d.dispatchId),
+                  ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Future<void> _openStores(String dispatchId) async {
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DispatchStoresPage(dispatchId: dispatchId),
+    ));
+    if (!mounted) return;
+    // 清单页里可能完成了装车/发车，无条件刷新而不看返回值：
+    // 那一路有多个可返回的层级，靠 result 传递容易漏。
+    _refreshAll();
+  }
+
+  Future<void> _openLoading(String dispatchId) async {
+    final changed = await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LoadingConfirmPage(dispatchId: dispatchId),
+    ));
+    if (!mounted) return;
+    if (changed == true) _refreshAll();
+  }
+
+  void _refreshAll() {
+    ref.invalidate(todayTasksProvider);
+    ref.read(homeOverviewProvider.notifier).refresh();
+  }
+
+  /// 当前作业调度单：按状态给出唯一的下一步动作。
+  ///
+  /// 只给一个主按钮而不是把装车/发车都摆出来：状态机决定了同一时刻
+  /// 只有一个动作是合法的，多摆一个按钮等于引导司机去点必然报错的操作。
+  Widget _currentCard(HomeOverview o) {
+    final loaded = o.currentStatus == 'LOADED';
+    final canAct = o.currentStatus == 'ACCEPTED' || loaded;
+    return MCard(
+      leftBar: TmsTheme.accent,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Expanded(child: Text('当前作业',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink))),
+          MTag.blue(o.currentStatusText.isEmpty ? o.currentStatus : o.currentStatusText),
+        ]),
+        const SizedBox(height: 4),
+        Text('共 ${o.totalStore} 个门店 · 已完成 ${o.doneStore} · 待配送 ${o.pendingStore}',
+            style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+        if (canAct) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _MiniAction(
+              // 已装车时文案说「继续装车/发车」，装车页里才有发车按钮，
+              // 这里不直接发车：发车前应让司机再过一遍装车清单。
+              label: loaded ? '核对并发车' : '开始装车',
+              icon: loaded ? Icons.local_shipping : Icons.inventory_2,
+              color: TmsTheme.accent,
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => LoadingConfirmPage(dispatchId: o.currentDispatchId),
+                )).then((changed) {
+                  if (changed == true) {
+                    ref.invalidate(todayTasksProvider);
+                    ref.read(homeOverviewProvider.notifier).refresh();
+                  }
+                });
+              },
+            )),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  /// 下一站门店：发车后司机最需要的单条信息。
+  Widget _nextStoreCard(HomeNextStore s) => MCard(
+        leftBar: TmsTheme.ok,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Expanded(child: Text('📍 下一站 · ${s.customerName}',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink))),
+            if (s.billCount > 1) MTag.orange('${s.billCount} 单'),
+          ]),
+          const SizedBox(height: 4),
+          if (s.customerAddress.trim().isNotEmpty)
+            Text(s.customerAddress, style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+          if (s.contactName.isNotEmpty || s.hasPhone) ...[
+            const SizedBox(height: 2),
+            Text([s.contactName, s.contactMobile].where((x) => x.isNotEmpty).join(' · '),
+                style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+          ],
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: _MiniAction(
+              label: '导航前往',
+              icon: Icons.navigation,
+              color: TmsTheme.accent,
+              onTap: () => _navigate(s),
+            )),
+            const SizedBox(width: 8),
+            Expanded(child: _MiniAction(
+              label: s.hasPhone ? '呼叫门店' : '无电话',
+              icon: Icons.phone,
+              color: s.hasPhone ? TmsTheme.ok : TmsTheme.muted,
+              onTap: s.hasPhone ? () => _call(s.contactMobile) : null,
+            )),
+          ]),
+        ]),
+      );
+
+  /// 待交账金额。
+  ///
+  /// 文案用「待交账」而不是 COD：司机交的是手上的现金，
+  /// COD 是结算方式的英文缩写，两者不是一回事，混用会让人以为只交货到付款那部分。
+  Widget _settlementCard(HomeOverview o) => MCard(
+        leftBar: o.settledToday ? TmsTheme.ok : TmsTheme.accent2,
+        onTap: () {
+          Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettlementPage()))
+              .then((changed) {
+            if (changed == true) {
+              ref.invalidate(todayTasksProvider);
+              ref.read(homeOverviewProvider.notifier).refresh();
+            }
+          });
+        },
+        child: Row(children: [
+          Icon(Icons.account_balance_wallet, size: 20,
+              color: o.settledToday ? TmsTheme.ok : TmsTheme.accent2),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('待交账金额',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+            const SizedBox(height: 2),
+            Text(
+              o.settledToday
+                  ? '今日已提交交账，等待财务审核'
+                  : '现金实收 ¥${o.cashAmount.toStringAsFixed(2)}'
+                      '${o.returnAmount > 0 ? ' · 已冲减退货 ¥${o.returnAmount.toStringAsFixed(2)}' : ''}',
+              style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+            ),
+          ])),
+          if (!o.settledToday)
+            Text('¥${o.submitAmount.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: TmsTheme.accent2))
+          else
+            const MTag.green('已交账'),
+          const Icon(Icons.chevron_right, size: 18, color: TmsTheme.muted),
+        ]),
+      );
+
+  Future<void> _accept(String dispatchId) async {
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final res = await ref.read(acceptDispatchProvider.notifier).accept(dispatchId);
+      // repeated=true 说明这单早就接过了（弱网重复点击），提示措辞要区分开，
+      // 否则司机会以为自己刚才那次没成功。
+      final repeated = res['repeated'] == true;
+      messenger.showSnackBar(SnackBar(content: Text(repeated ? '该调度单已接单' : '接单成功，可开始装车')));
+      ref.invalidate(todayTasksProvider);
+      await ref.read(homeOverviewProvider.notifier).refresh();
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('接单失败：${e.toString().replaceFirst("Exception: ", "")}')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _navigate(HomeNextStore s) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (!s.hasGeo && s.customerAddress.trim().isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标与地址，无法导航')));
+      return;
+    }
+    final ok = await LaunchService.instance.navigate(
+      longitude: s.longitude,
+      latitude: s.latitude,
+      address: s.customerAddress,
+      name: s.customerName,
+    );
+    if (!ok) {
+      messenger.showSnackBar(const SnackBar(content: Text('未找到可用地图应用')));
+    } else if (!s.hasGeo) {
+      messenger.showSnackBar(const SnackBar(content: Text('门店未维护坐标，已按地址搜索，请核对位置')));
+    }
+  }
+
+  Future<void> _call(String mobile) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await LaunchService.instance.dial(mobile);
+    if (!ok) messenger.showSnackBar(SnackBar(content: Text('拨号失败，请手动联系 $mobile')));
   }
 }

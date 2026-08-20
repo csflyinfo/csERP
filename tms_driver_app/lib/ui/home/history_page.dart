@@ -272,7 +272,8 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   }
 
   /// 数值格式化：整数不显示小数位，避免「12.0 件」这类观感问题。
-  String _num(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
+  /// 与门店/单据列表共用 models/task.dart 的 fmtQty，保证各页面口径一致。
+  String _num(num v) => fmtQty(v);
 
   /// 时间截断到分钟（后端返回 yyyy-MM-dd HH:mm:ss[.SSS]）。
   String _time(String v) {

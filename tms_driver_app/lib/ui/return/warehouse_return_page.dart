@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
 import '../../models/driver_return.dart';
 import '../../models/reschedule_reject.dart';
+import '../../models/task.dart';
 import '../../providers/driver_return_provider.dart';
 import '../../providers/reschedule_reject_provider.dart';
 import '../../providers/task_provider.dart';
@@ -129,7 +130,7 @@ class _DriverReturnTabState extends ConsumerState<_DriverReturnTab>
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('待返仓退货 $count 单', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-            Text('合计 $totalQty 件', style: const TextStyle(fontSize: 13, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
+            Text('合计 ${fmtQty(totalQty)} 件', style: const TextStyle(fontSize: 13, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
             Text('已勾选 ${_checked.length} 单', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
         ),
@@ -260,7 +261,7 @@ class _ReturnCard extends StatelessWidget {
         )),
         const SizedBox(height: 4),
         Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          Text('合计 ${ret.qty} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
+          Text('合计 ${fmtQty(ret.qty)} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
         ]),
       ]),
     );
@@ -325,7 +326,7 @@ class _RescheduleReturnTabState extends ConsumerState<_RescheduleReturnTab>
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('待返仓改派 $count 单', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-            Text('合计 $totalQty 件', style: const TextStyle(fontSize: 13, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
+            Text('合计 ${fmtQty(totalQty)} 件', style: const TextStyle(fontSize: 13, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
             Text('已勾选 ${_checked.length} 单', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
         ),
@@ -444,7 +445,7 @@ class _RescheduleCard extends StatelessWidget {
             style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
         const SizedBox(height: 4),
         Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          Text('合计 ${ret.totalQty} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
+          Text('合计 ${fmtQty(ret.totalQty)} 件', style: const TextStyle(fontSize: 11, color: TmsTheme.accent2, fontWeight: FontWeight.w700)),
         ]),
       ]),
     );
@@ -510,7 +511,7 @@ class _CustomerRejectTabState extends ConsumerState<_CustomerRejectTab>
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text('待返仓拒收 $count 单', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-            Text('合计 $totalQty 件', style: const TextStyle(fontSize: 13, color: TmsTheme.bad, fontWeight: FontWeight.w700)),
+            Text('合计 ${fmtQty(totalQty)} 件', style: const TextStyle(fontSize: 13, color: TmsTheme.bad, fontWeight: FontWeight.w700)),
             Text('¥ $totalAmount', style: const TextStyle(fontSize: 13, color: TmsTheme.bad, fontWeight: FontWeight.w700)),
           ]),
         ),
@@ -628,7 +629,7 @@ class _RejectCard extends StatelessWidget {
         Text('原因：${CustomerRejectReason.label(ret.rejectReason)}', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
         const SizedBox(height: 4),
         Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          Text('合计 ${ret.totalQty} 件 · ¥ ${ret.totalAmount.toStringAsFixed(2)}',
+          Text('合计 ${fmtQty(ret.totalQty)} 件 · ¥ ${ret.totalAmount.toStringAsFixed(2)}',
               style: const TextStyle(fontSize: 11, color: TmsTheme.bad, fontWeight: FontWeight.w700)),
         ]),
       ]),

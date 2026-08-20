@@ -70,6 +70,18 @@ class ApiService {
   void clearToken() => _token = '';
   void setUnauthorizedHandler(void Function() cb) => _onUnauthorized = cb;
 
+  /// 把 AppConfig.apiBase 的当前值同步到已建好的 dio 上。
+  ///
+  /// 必须显式回写：dio 是 `late final` 单例，baseUrl 在首次访问时就固化进
+  /// BaseOptions 了，之后改 AppConfig 不会自动生效。运行时改完地址若忘了
+  /// 调这里，会出现「配置页显示新地址、请求仍打旧地址」的假象。
+  void applyBaseUrl() {
+    dio.options.baseUrl = AppConfig.apiBase;
+  }
+
+  /// 当前实际生效的请求地址（配置页用于显示真实值，而非配置值）。
+  String get baseUrl => dio.options.baseUrl;
+
   /// POST 请求，返回 data 字段。
   Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
     final resp = await dio.post(path, data: body);

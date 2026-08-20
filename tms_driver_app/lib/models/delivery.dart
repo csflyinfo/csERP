@@ -11,6 +11,16 @@ class LoadingDispatch {
   final num totalRequired;
   final num totalLoaded;
   final bool allChecked;
+
+  /// 已确认装车的配送点数（后端 loadedStoreCount）。
+  final int loadedStoreCount;
+
+  /// 尚未确认装车的配送点数（后端 pendingStoreCount）。
+  final int pendingStoreCount;
+
+  /// 只要有一个配送点装好就能发车——发车按钮的启用条件，
+  /// 不能再用 allChecked：那会退回「必须全装完才许发车」的旧逻辑。
+  final bool anyLoaded;
   final List<LoadingReceipt> receipts;
 
   LoadingDispatch({
@@ -23,6 +33,9 @@ class LoadingDispatch {
     this.totalRequired = 0,
     this.totalLoaded = 0,
     this.allChecked = false,
+    this.loadedStoreCount = 0,
+    this.pendingStoreCount = 0,
+    this.anyLoaded = false,
     this.receipts = const [],
   });
 
@@ -36,6 +49,9 @@ class LoadingDispatch {
         totalRequired: j['totalRequired'] as num? ?? 0,
         totalLoaded: j['totalLoaded'] as num? ?? 0,
         allChecked: j['allChecked'] as bool? ?? false,
+        loadedStoreCount: (j['loadedStoreCount'] as num?)?.toInt() ?? 0,
+        pendingStoreCount: (j['pendingStoreCount'] as num?)?.toInt() ?? 0,
+        anyLoaded: j['anyLoaded'] as bool? ?? false,
         receipts: (j['receipts'] as List? ?? [])
             .map((e) => LoadingReceipt.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -52,6 +68,12 @@ class LoadingReceipt {
   final String status;
   final num requiredQty;
   final num loadedQty;
+
+  /// 该配送点的装车状态：PENDING / LOADED（后端 tms_dispatch_detail.load_status）。
+  final String loadStatus;
+
+  /// 确认装车时间，未装车为空。
+  final String loadTime;
   final List<LoadingItem> items;
 
   LoadingReceipt({
@@ -63,6 +85,8 @@ class LoadingReceipt {
     this.status = '',
     this.requiredQty = 0,
     this.loadedQty = 0,
+    this.loadStatus = 'PENDING',
+    this.loadTime = '',
     this.items = const [],
   });
 
@@ -75,10 +99,18 @@ class LoadingReceipt {
         status: j['status']?.toString() ?? '',
         requiredQty: j['requiredQty'] as num? ?? 0,
         loadedQty: j['loadedQty'] as num? ?? 0,
+        loadStatus: j['loadStatus']?.toString() ?? 'PENDING',
+        loadTime: j['loadTime']?.toString() ?? '',
         items: (j['items'] as List? ?? [])
             .map((e) => LoadingItem.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
+
+  /// 已确认装车（配送点粒度）。
+  ///
+  /// 与旧的 checked 语义不同：checked 只表示「数量录够了」，
+  /// loaded 表示司机点过【装车】、后端已落 load_status，可以发车。
+  bool get loaded => loadStatus == 'LOADED';
 
   bool get checked => loadedQty > 0 && loadedQty >= requiredQty;
 }
@@ -112,6 +144,212 @@ class LoadingItem {
         diffQty: j['diffQty'] as num? ?? 0,
         checked: j['checked'] as bool? ?? false,
       );
+}
+
+/// 调度任务配送点清单（对接 /tms/app/loading/stores）。
+///
+/// 与 LoadingDispatch 并存而不合并：LoadingDispatch 是「发货单 + SKU」的装车核对视图，
+/// 只含发货单；本模型是「一行 = 一个配送点」的行程视图，退货单也要出现。
+/// 司机接单后先看行程（跑哪几个点、顺序对不对），装车时才需要 SKU 粒度。
+class LoadingStores {
+  final String dispatchId;
+  final String dispatchNo;
+  final String status;
+  final String vehiclePlate;
+  final String routeLine;
+  final String dispatchDate;
+
+  /// 是否追加单（挂在某趟在途车上的加塞任务）。
+  final bool appended;
+
+  /// 后端是否允许调序：仅未发车且待配送门店多于 1 家时为 true。
+  ///
+  /// 由后端算而不是前端拼状态：调序的合法性还取决于「已完成门店被锁定后
+  /// 还剩几家可动」，这个信息只有后端有。
+  final bool canSort;
+
+  final List<LoadingStore> stores;
+  final int storeCount;
+  final int pendingStore;
+  final int billCount;
+  final num totalQty;
+  final num collectAmount;
+
+  LoadingStores({
+    required this.dispatchId,
+    this.dispatchNo = '',
+    this.status = '',
+    this.vehiclePlate = '',
+    this.routeLine = '',
+    this.dispatchDate = '',
+    this.appended = false,
+    this.canSort = false,
+    this.stores = const [],
+    this.storeCount = 0,
+    this.pendingStore = 0,
+    this.billCount = 0,
+    this.totalQty = 0,
+    this.collectAmount = 0,
+  });
+
+  factory LoadingStores.fromJson(Map<String, dynamic> j) {
+    final s = j['summary'] as Map<String, dynamic>? ?? {};
+    return LoadingStores(
+      dispatchId: j['dispatchId']?.toString() ?? '',
+      dispatchNo: j['dispatchNo']?.toString() ?? '',
+      status: j['status']?.toString() ?? '',
+      vehiclePlate: j['vehiclePlate']?.toString() ?? '',
+      routeLine: j['routeLine']?.toString() ?? '',
+      dispatchDate: (j['dispatchDate']?.toString() ?? '').split('T').first,
+      appended: j['appended'] == true,
+      canSort: j['canSort'] == true,
+      stores: (j['stores'] as List? ?? [])
+          .map((e) => LoadingStore.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      storeCount: s['storeCount'] as int? ?? 0,
+      pendingStore: s['pendingStore'] as int? ?? 0,
+      billCount: s['billCount'] as int? ?? 0,
+      totalQty: s['totalQty'] as num? ?? 0,
+      collectAmount: s['collectAmount'] as num? ?? 0,
+    );
+  }
+
+  /// 当前状态是否还能进装车流程（ASSIGNED 需先接单，ACCEPTED/LOADED 可装车）。
+  bool get beforeDepart =>
+      status == 'ASSIGNED' || status == 'ACCEPTED' || status == 'LOADED';
+}
+
+/// 清单中的一个配送点（同门店的多张单据已合并）。
+class LoadingStore {
+  final String customerCode;
+  final String customerName;
+  final String customerAddress;
+  final String contactName;
+  final String contactMobile;
+  final String settlementText;
+  final double? longitude;
+  final double? latitude;
+
+  /// 门店序号（后端按 seqNo 排序后赋的 1..N，用于界面上的 ①②③）。
+  final int orderNo;
+
+  /// 明细行上的原始 seq_no（同店取最小值），提交调序时不用它，仅供排查。
+  final int seqNo;
+
+  final int receiptCount;
+  final int returnCount;
+
+  /// 未签收单据数；为 0 即整店已完成。
+  final int pendingCount;
+
+  final num totalQty;
+  final num collectAmount;
+  final bool needCollect;
+
+  /// 整店是否已完成（后端按 pendingCount == 0 判定）。
+  final bool done;
+
+  /// 是否可拖拽调序；已完成门店恒为 false（货已卸，挪顺序无意义）。
+  final bool sortable;
+
+  final List<LoadingStoreBill> bills;
+
+  LoadingStore({
+    required this.customerCode,
+    this.customerName = '',
+    this.customerAddress = '',
+    this.contactName = '',
+    this.contactMobile = '',
+    this.settlementText = '',
+    this.longitude,
+    this.latitude,
+    this.orderNo = 0,
+    this.seqNo = 0,
+    this.receiptCount = 0,
+    this.returnCount = 0,
+    this.pendingCount = 0,
+    this.totalQty = 0,
+    this.collectAmount = 0,
+    this.needCollect = false,
+    this.done = false,
+    this.sortable = true,
+    this.bills = const [],
+  });
+
+  factory LoadingStore.fromJson(Map<String, dynamic> j) => LoadingStore(
+        customerCode: j['customerCode']?.toString() ?? '',
+        customerName: j['customerName']?.toString() ?? '',
+        customerAddress: j['customerAddress']?.toString() ?? '',
+        contactName: j['contactName']?.toString() ?? '',
+        contactMobile: j['contactMobile']?.toString() ?? '',
+        settlementText: j['settlementText']?.toString() ?? '',
+        longitude: _num(j['longitude']),
+        latitude: _num(j['latitude']),
+        orderNo: j['orderNo'] as int? ?? 0,
+        seqNo: j['seqNo'] as int? ?? 0,
+        receiptCount: j['receiptCount'] as int? ?? 0,
+        returnCount: j['returnCount'] as int? ?? 0,
+        pendingCount: j['pendingCount'] as int? ?? 0,
+        totalQty: j['totalQty'] as num? ?? 0,
+        collectAmount: j['collectAmount'] as num? ?? 0,
+        needCollect: j['needCollect'] == true,
+        done: j['done'] == true,
+        sortable: j['sortable'] != false,
+        bills: (j['bills'] as List? ?? [])
+            .map((e) => LoadingStoreBill.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+
+  /// 后端 DECIMAL 可能序列化成 num 或字符串，统一容错。
+  static double? _num(Object? v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  bool get hasPhone => contactMobile.trim().isNotEmpty;
+}
+
+/// 配送点下的一张单据（发货单或退货取件单）。
+class LoadingStoreBill {
+  final String detailId;
+  final String billType;
+  final String billTypeText;
+  final String sourceBillNo;
+  final num qty;
+  final int skuCount;
+  final int seqNo;
+  final String status;
+  final bool done;
+  final num receivableAmount;
+
+  LoadingStoreBill({
+    required this.detailId,
+    this.billType = 'RECEIPT',
+    this.billTypeText = '发货',
+    this.sourceBillNo = '',
+    this.qty = 0,
+    this.skuCount = 0,
+    this.seqNo = 0,
+    this.status = '',
+    this.done = false,
+    this.receivableAmount = 0,
+  });
+
+  factory LoadingStoreBill.fromJson(Map<String, dynamic> j) => LoadingStoreBill(
+        detailId: j['detailId']?.toString() ?? '',
+        billType: j['billType']?.toString() ?? 'RECEIPT',
+        billTypeText: j['billTypeText']?.toString() ?? '发货',
+        sourceBillNo: j['sourceBillNo']?.toString() ?? '',
+        qty: j['qty'] as num? ?? 0,
+        skuCount: j['skuCount'] as int? ?? 0,
+        seqNo: j['seqNo'] as int? ?? 0,
+        status: j['status']?.toString() ?? '',
+        done: j['done'] == true,
+        receivableAmount: j['receivableAmount'] as num? ?? 0,
+      );
+
+  bool get isReturn => billType == 'RETURN';
 }
 
 /// 签收明细（按调度明细 detailId 拉取的发货单 SKU 明细）。

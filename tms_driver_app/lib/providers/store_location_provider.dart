@@ -14,7 +14,7 @@ final storeLocationSubmitProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, StoreLocationSubmitArgs>((ref, args) async {
   final data = await ApiService.instance.enqueueOrPost(
     actionType: 'STORE_LOCATION',
-    actionKey: args.customerId,
+    actionKey: args.dedupKey,
     path: '/tms/app/store-location/submit',
     body: args.toJson(),
     priority: 4,

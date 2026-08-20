@@ -52,7 +52,7 @@ public class TmsReturnDispatchController {
                        a.return_type, a.logistics_status, a.driver_id, a.driver_name,
                        a.dispatch_id, a.trip_id, a.arrange_time, a.arrange_remark,
                        a.create_time, a.remark,
-                       c.route_line, c.territory, c.address_detail, c.longitude, c.latitude
+                       c.route_line, c.territory, c.shipping_address AS address_detail, c.longitude, c.latitude
                 FROM sales_return_apply a
                 LEFT JOIN base_customer c ON c.customer_code = a.customer_code
                 WHERE a.return_type = 'DRIVER'
@@ -148,7 +148,8 @@ public class TmsReturnDispatchController {
         if (applyNo.isEmpty() || driverId.isEmpty()) return ApiResponse.fail("400", "退货单号、司机不能为空");
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT apply_id, apply_no, customer_code, customer_name, qty, logistics_status, dispatch_id
+                SELECT apply_id, apply_no, customer_code, customer_name, qty, logistics_status, dispatch_id,
+                       COALESCE(return_amount, amount, 0) AS return_amount
                 FROM sales_return_apply WHERE apply_no = ?
                 """, applyNo);
         if (rows.isEmpty()) return ApiResponse.fail("404", "退货单不存在：" + applyNo);
@@ -180,9 +181,10 @@ public class TmsReturnDispatchController {
                 int seqNo = TmsUtil.toInt(body.get("seqNo"));
                 jdbcTemplate.update("""
                         INSERT INTO tms_dispatch_detail(detail_id, dispatch_id, bill_type, source_bill_no, source_bill_id,
-                            customer_code, customer_name, qty, sku_count, seq_no, status, remark)
-                        VALUES (?, ?, 'RETURN', ?, ?, ?, ?, ?, 0, ?, 'PENDING', '退货单取货任务')
-                        """, detailId, dispatchId, applyNo, applyId, customerCode, customerName, qty, seqNo);
+                            customer_code, customer_name, qty, amount, sku_count, seq_no, status, remark)
+                        VALUES (?, ?, 'RETURN', ?, ?, ?, ?, ?, ?, 0, ?, 'PENDING', '退货单取货任务')
+                        """, detailId, dispatchId, applyNo, applyId, customerCode, customerName, qty,
+                        TmsUtil.toBd(r.get("returnAmount")), seqNo);
             }
         }
 

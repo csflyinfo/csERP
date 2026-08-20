@@ -75,6 +75,143 @@ class TodayTasksNotifier extends AsyncNotifier<TodayTasks> {
   }
 }
 
+/// 首页概览（状态数量 + 待交账 + 下一站 + 待接单）。
+///
+/// 与 todayTasksProvider 并存而非取代：首页用这个轻量接口，
+/// 「配送中」列表和明细作业仍走 today-tasks / delivering 系列接口。
+///
+/// 离线时不抛错而是返回空概览：首页是登录后第一屏，
+/// 若因为没网就整屏报错，司机连「离线待同步几条」都看不到，
+/// 反而以为 APP 坏了。空概览配合顶部 OfflineBanner 才是可理解的状态。
+final homeOverviewProvider = AsyncNotifierProvider<HomeOverviewNotifier, HomeOverview>(
+    HomeOverviewNotifier.new);
+
+class HomeOverviewNotifier extends AsyncNotifier<HomeOverview> {
+  @override
+  Future<HomeOverview> build() async {
+    if (!ConnectivityService.instance.isOnline) return HomeOverview();
+    try {
+      final data = await ApiService.instance.post('/tms/app/home/overview');
+      return HomeOverview.fromJson(data as Map<String, dynamic>);
+    } catch (_) {
+      return HomeOverview();
+    }
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(build);
+  }
+}
+
+/// 确认接单（ASSIGNED → ACCEPTED）。
+///
+/// 用 Notifier 而非 FutureProvider.family：接单是一次性写操作，
+/// family 会按 dispatchId 缓存结果，同一张单第二次点击会直接命中缓存
+/// 而不真正发请求，司机就看不到「重复接单」的真实反馈了。
+final acceptDispatchProvider =
+    AsyncNotifierProvider<AcceptDispatchNotifier, void>(AcceptDispatchNotifier.new);
+
+class AcceptDispatchNotifier extends AsyncNotifier<void> {
+  @override
+  Future<void> build() async {}
+
+  /// 返回后端响应，调用方据 repeated 区分「首次接单」与「重复点击」。
+  Future<Map<String, dynamic>> accept(String dispatchId) async {
+    final data = await ApiService.instance.enqueueOrPost(
+      actionType: 'DISPATCH_ACCEPT',
+      actionKey: dispatchId,
+      path: '/tms/app/accept',
+      body: {'dispatchId': dispatchId},
+      priority: 1, // 接单是后续所有作业的前置，与装车同级
+    );
+    return data as Map<String, dynamic>;
+  }
+}
+
+/// 配送中门店列表（按门店归并，供底部【配送中】Tab）。
+///
+/// 与 todayTasksProvider 并存而不是取代它：那个按「单据」展开，
+/// 这个按「门店」归并，两者是同一批数据的两种视角，
+/// 司机跑店看门店、核对单据看明细，混成一个会两边都不好用。
+final deliveringStoresProvider =
+    AsyncNotifierProvider<DeliveringStoresNotifier, DeliveringStores>(
+        DeliveringStoresNotifier.new);
+
+class DeliveringStoresNotifier extends AsyncNotifier<DeliveringStores> {
+  @override
+  Future<DeliveringStores> build() async {
+    // 离线返回空列表而不抛错：配送中是常驻 Tab，
+    // 整屏报错会让司机以为任务丢了，空列表配文案更可控。
+    if (!ConnectivityService.instance.isOnline) return DeliveringStores();
+    try {
+      final data = await ApiService.instance.post('/tms/app/delivering/stores');
+      return DeliveringStores.fromJson(data as Map<String, dynamic>);
+    } catch (_) {
+      return DeliveringStores();
+    }
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(build);
+  }
+}
+
+/// 配送点详情：门店维度的单据列表（供配送点详情页）。
+///
+/// 用 family 而不是单例：司机可能连续点开多个门店，
+/// 单例会让上一个门店的数据在新页面上闪现一帧。
+///
+/// 这里不做离线兜空：详情页是「点进来看具体单据」的强目的页面，
+/// 拿不到数据就该明确报错让司机重试，返回空列表会被误读成「这个店没单」。
+final storeBillsProvider =
+    AsyncNotifierProvider.family<StoreBillsNotifier, StoreBills, StoreBillsArgs>(
+        StoreBillsNotifier.new);
+
+class StoreBillsNotifier extends FamilyAsyncNotifier<StoreBills, StoreBillsArgs> {
+  @override
+  Future<StoreBills> build(StoreBillsArgs args) async {
+    final data = await ApiService.instance.post(
+      '/tms/app/delivering/store-bills',
+      body: args.toJson(),
+    );
+    return StoreBills.fromJson(data as Map<String, dynamic>);
+  }
+
+  Future<void> refresh() async {
+    state = const AsyncValue.loading();
+    state = await AsyncValue.guard(() => build(arg));
+  }
+}
+
+/// 配送点详情入参。
+///
+/// dispatchId 可空：配送中列表已跨调度单按门店合并，一行门店背后的单据
+/// 可能分属原单与追加单，此时必须不传，让后端列出该店全部在途单据；
+/// 历史页等「按某张单查看」的场景才传具体单号。
+class StoreBillsArgs {
+  final String? dispatchId;
+  final String customerCode;
+
+  const StoreBillsArgs({this.dispatchId, required this.customerCode});
+
+  Map<String, dynamic> toJson() => {
+        if (dispatchId != null && dispatchId!.isNotEmpty) 'dispatchId': dispatchId,
+        'customerCode': customerCode,
+      };
+
+  // family 参数必须可比较，否则每次 build 都被当成新 provider 重复请求
+  @override
+  bool operator ==(Object other) =>
+      other is StoreBillsArgs &&
+      other.dispatchId == dispatchId &&
+      other.customerCode == customerCode;
+
+  @override
+  int get hashCode => Object.hash(dispatchId, customerCode);
+}
+
 /// 退货单详情（按 applyNo 拉取）。
 final returnDetailProvider =
     FutureProvider.family<ReturnOrder, String>((ref, applyNo) async {

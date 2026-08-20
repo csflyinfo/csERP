@@ -12,7 +12,7 @@ class StoreLocationSubmitArgs {
   final String remark;
 
   StoreLocationSubmitArgs({
-    required this.customerId,
+    this.customerId = '',
     this.customerCode = '',
     this.customerName = '',
     required this.newLat,
@@ -22,8 +22,12 @@ class StoreLocationSubmitArgs {
     this.remark = '',
   });
 
+  /// 离线队列去重键：配送场景里手上只有 customerCode，
+  /// 后端也允许仅传 code，用 customerId 兜底会得到空串导致同店多次提交无法去重。
+  String get dedupKey => customerId.isNotEmpty ? customerId : customerCode;
+
   Map<String, dynamic> toJson() => {
-        'customerId': customerId,
+        if (customerId.isNotEmpty) 'customerId': customerId,
         if (customerCode.isNotEmpty) 'customerCode': customerCode,
         if (customerName.isNotEmpty) 'customerName': customerName,
         'newLat': newLat,

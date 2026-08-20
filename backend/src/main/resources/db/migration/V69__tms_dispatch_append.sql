@@ -1,0 +1,43 @@
+-- ============================================================
+-- V69 追加调度单（司机在途时的二次派活）
+--
+-- 背景：原来调度侧创建调度单时完全不看司机当前状态
+--   （TmsDispatchController.create 全程没有一条按 driver_id 的占用性查询），
+--   于是同一个司机可以被并行塞进多张 ASSIGNED 单，
+--   APP 首页也就只能同时冒出多张互不相关的待接单卡片。
+--   业务真实诉求是：司机已经出车在配送了，临时又来了几张单，
+--   要能明确表达「这批是追加给这趟车的」。
+--
+-- 为什么不把明细直接塞进在途的那张单：
+--   在途单的 status 已经是 DEPARTED/DELIVERING，
+--   而装车/发车是**单据级**状态（tms_dispatch.status 一个字段管全车），
+--   往里加明细就等于要求把装车/发车下沉到明细级，
+--   /loading/start、/depart、/delivering/stores、/home/overview
+--   这些口径全部要重写，状态机也要引入「部分已发车」这种中间态。
+--   所以这里选择：追加时**新建一张独立调度单**，
+--   用 parent_dispatch_id 指回被追加的那张在途单。
+--   新单独立走 接单 → 装车 → 发车，发车后它的配送点
+--   在「配送中」列表里按门店与原单归并，司机视角就是同一趟车。
+--
+-- 为什么不建一张 append 关系表：
+--   追加是「一张单最多有一个父」的一对多树形关系，
+--   放在主表一个外键列上最省事，也能被 create/查询直接带出；
+--   独立关系表只有在需要「一张单追加到多张单」时才有意义，业务上不存在。
+--
+-- 关于 status：
+--   tms_dispatch.status 是 VARCHAR(20) 且没有 CHECK 约束（V51 L74），
+--   本迁移不新增状态值，追加单的状态流转与普通单完全一致。
+--
+-- 写法说明：
+--   统一用 ADD COLUMN IF NOT EXISTS（V21 起的全项目惯例，H2 兼容）；
+--   不加 FOREIGN KEY——全项目 tms_* 表之间均未使用外键约束
+--   （见 V51，dispatch_id 在明细表里也只是普通列 + 索引），
+--   贸然引入会让调度单删除/取消路径出现约束冲突。
+--
+-- 字段含义：
+--   parent_dispatch_id  被追加的目标调度单 ID；为空表示这是一张普通新建单
+-- ============================================================
+
+ALTER TABLE tms_dispatch ADD COLUMN IF NOT EXISTS parent_dispatch_id VARCHAR(32);
+
+CREATE INDEX IF NOT EXISTS idx_tms_dispatch_parent ON tms_dispatch(parent_dispatch_id);

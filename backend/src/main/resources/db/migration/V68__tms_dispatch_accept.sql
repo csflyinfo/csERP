@@ -1,0 +1,32 @@
+-- ============================================================
+-- V68 司机确认接单
+--
+-- 背景：原状态机是「调度侧指派即生效」——
+--   ASSIGNED ─[装车]→ LOADED ─[发车]→ DEPARTED
+-- 司机没有表态环节，无法回答「这单司机到底认没认」。
+-- 本迁移在 ASSIGNED 之后插入 ACCEPTED：
+--   ASSIGNED ─[接单]→ ACCEPTED ─[装车]→ LOADED ─[发车]→ DEPARTED
+--
+-- 关于 status 列本身：
+--   tms_dispatch.status 是 VARCHAR(20) 且**没有 CHECK 约束**（见 V51 L74，
+--   枚举仅写在行尾注释里），因此新增 ACCEPTED 无需变更约束，
+--   本文件只补「接单留痕」字段。若不留痕，接单就只是把状态改一下，
+--   事后无法追溯谁在何时接的单，这个动作也就失去了业务意义。
+--
+-- 写法说明：
+--   统一用 ADD COLUMN IF NOT EXISTS（与 V21 起的全项目惯例一致，H2 兼容）；
+--   不使用 COMMENT ON COLUMN——全项目无先例，H2 侧未经验证，
+--   迁移一旦失败会导致后端直接起不来，字段含义写在本注释里即可。
+--
+-- 兼容性：
+--   已存在的 ASSIGNED 单据不做批量回填。它们是历史指派单，
+--   补一个假的接单时间等于伪造记录；由司机在 APP 上正常接单即可。
+--   装车接口同时放通 ASSIGNED 与 ACCEPTED，故存量单不会被卡住。
+--
+-- 字段含义：
+--   accept_time  司机确认接单时间
+--   accept_user  确认接单的司机姓名
+-- ============================================================
+
+ALTER TABLE tms_dispatch ADD COLUMN IF NOT EXISTS accept_time TIMESTAMP;
+ALTER TABLE tms_dispatch ADD COLUMN IF NOT EXISTS accept_user VARCHAR(100);

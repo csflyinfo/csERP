@@ -76,5 +76,11 @@
         <intent>
             <action android:name="com.getui.sdk.action"/>
         </intent>
+        <!-- image_picker 靠 ACTION_IMAGE_CAPTURE 唤起系统相机代拍。Android 11+ 不声明此项时，
+             插件内部 queryIntentActivities 返回空表，相机应用拿不到 EXTRA_OUTPUT 的写入授权，
+             回传的照片会是 0 字节；部分机型更会直接判定无相机而报 no_available_camera。 -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE"/>
+        </intent>
     </queries>
 </manifest>

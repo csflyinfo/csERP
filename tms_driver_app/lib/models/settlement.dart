@@ -13,6 +13,7 @@ class SettlementSummary {
   final num onlineAmount;
   final num returnAmount;
   final num returnQty;
+  final num creditAmount;
   final num submitAmount;
   final List<DispatchBrief> dispatches;
 
@@ -28,6 +29,7 @@ class SettlementSummary {
     this.onlineAmount = 0,
     this.returnAmount = 0,
     this.returnQty = 0,
+    this.creditAmount = 0,
     this.submitAmount = 0,
     this.dispatches = const [],
   });
@@ -44,6 +46,7 @@ class SettlementSummary {
         onlineAmount: j['onlineAmount'] as num? ?? 0,
         returnAmount: j['returnAmount'] as num? ?? 0,
         returnQty: j['returnQty'] as num? ?? 0,
+        creditAmount: j['creditAmount'] as num? ?? 0,
         submitAmount: j['submitAmount'] as num? ?? 0,
         dispatches: (j['dispatches'] as List? ?? [])
             .map((e) => DispatchBrief.fromJson(e as Map<String, dynamic>))

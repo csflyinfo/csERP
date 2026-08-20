@@ -10,6 +10,38 @@ final loadingItemsProvider =
   return LoadingDispatch.fromJson(data as Map<String, dynamic>);
 });
 
+/// 调度任务配送点清单（首页「查看清单」与装车前调序共用）。
+final loadingStoresProvider =
+    FutureProvider.family<LoadingStores, String>((ref, dispatchId) async {
+  final data = await ApiService.instance
+      .post('/tms/app/loading/stores', body: {'dispatchId': dispatchId});
+  return LoadingStores.fromJson(data as Map<String, dynamic>);
+});
+
+/// 配送点调序参数。
+///
+/// 与 LoadingActionArgs 同样不重写 == / hashCode：司机可能连续拖两次再提交，
+/// 若按值缓存，「拖回原顺序再提交」会命中旧结果而不真正落库。
+class LoadingSortArgs {
+  final String dispatchId;
+
+  /// 按新顺序排列的门店编码，必须是「全部待配送门店」且不重不漏。
+  /// 已完成门店由后端自动锁在最前，前端不要提交它们。
+  final List<String> customerCodes;
+
+  LoadingSortArgs({required this.dispatchId, required this.customerCodes});
+}
+
+/// 提交配送点顺序（仅未发车可用）。
+final loadingSortProvider =
+    FutureProvider.family<Map<String, dynamic>, LoadingSortArgs>((ref, args) async {
+  final data = await ApiService.instance.post('/tms/app/loading/sort', body: {
+    'dispatchId': args.dispatchId,
+    'customerCodes': args.customerCodes,
+  });
+  return (data as Map?)?.cast<String, dynamic>() ?? {};
+});
+
 /// 签收明细（按 detailId 拉取 SKU 明细）。
 final signItemsProvider =
     FutureProvider.family<SignDetail, String>((ref, detailId) async {
@@ -19,10 +51,28 @@ final signItemsProvider =
 });
 
 /// 装车动作参数。
+///
+/// 有意不重写 == / hashCode：loadingActionProvider 是 family，
+/// 若按值相等缓存，则「发车被拦下 → 司机确认 → 带 force 重试」这一步
+/// 会命中上一次的结果而不真正重发。保持身份相等语义，每次调用都是新请求。
 class LoadingActionArgs {
   final String dispatchId;
   final String action; // start / confirm / depart
-  LoadingActionArgs({required this.dispatchId, required this.action});
+
+  /// 仅对 depart 生效：确认「带未装车配送单发车」。
+  /// 后端首次返回 needConfirm 时不落库，APP 弹窗让司机确认后带 true 重来。
+  final bool force;
+
+  /// 仅对 confirm 生效：要确认装车的配送点（调度明细 ID）。
+  /// 空表示「全部装车」——后端会把该单所有未发车配送点一次置为已装车。
+  final List<String> detailIds;
+
+  LoadingActionArgs({
+    required this.dispatchId,
+    required this.action,
+    this.force = false,
+    this.detailIds = const [],
+  });
 }
 
 /// 装车 / 发车 动作（一次性调用，离线时自动入队）。
@@ -40,11 +90,22 @@ final loadingActionProvider =
     'depart' => 'DEPART',
     _ => 'LOADING_ACTION',
   };
+  final body = <String, dynamic>{'dispatchId': args.dispatchId};
+  // 只在确认后才带 force：默认不带，让后端有机会做完整性校验。
+  // 图省事一律传 true 等于把这道校验废掉。
+  if (args.force) body['force'] = true;
+  // 只传非空 detailIds：后端把「不传/空数组」解释为全选装车，
+  // 传空数组和不传等价，但显式省略更能表达「这次是全选」的意图。
+  if (args.detailIds.isNotEmpty) body['detailIds'] = args.detailIds;
   final data = await ApiService.instance.enqueueOrPost(
     actionType: actionType,
-    actionKey: args.dispatchId,
+    // 按配送点装车时把明细拼进 actionKey：离线队列按 actionType+actionKey 去重，
+    // 只用 dispatchId 会让「先装 A 点、再装 B 点」的第二次请求被当成重复丢弃。
+    actionKey: args.detailIds.isEmpty
+        ? args.dispatchId
+        : '${args.dispatchId}#${args.detailIds.join(",")}',
     path: path,
-    body: {'dispatchId': args.dispatchId},
+    body: body,
     priority: 1, // 装车/发车优先级最高
   );
   return data as Map<String, dynamic>;

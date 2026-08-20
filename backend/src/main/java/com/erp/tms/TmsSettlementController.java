@@ -38,12 +38,15 @@ public class TmsSettlementController {
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
     private final TmsNotifyService notifyService;
+    private final TmsStoreSettleController storeSettleController;
 
     public TmsSettlementController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
-                                   TmsNotifyService notifyService) {
+                                   TmsNotifyService notifyService,
+                                   TmsStoreSettleController storeSettleController) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.notifyService = notifyService;
+        this.storeSettleController = storeSettleController;
     }
 
     // ========================================================================
@@ -54,7 +57,7 @@ public class TmsSettlementController {
      * 本日交账汇总预览。
      * 入参：dispatchId?（不传则汇总今日所有调度单）
      * 返回：totalStores, signedStores, totalAmount, cashAmount, onlineAmount,
-     *       returnAmount, returnQty, submitAmount（应交回 = 现金 - 退货退款）
+     *       returnAmount, returnQty, creditAmount, submitAmount（应交回 = 实收现金）
      */
     @PostMapping("/tms/app/settlement/summary")
     public ApiResponse<Map<String, Object>> summary(@RequestBody(required = false) Map<String, Object> body) {
@@ -116,30 +119,34 @@ public class TmsSettlementController {
                 "SELECT COUNT(DISTINCT detail_id) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RECEIPT'",
                 Integer.class);
 
-        // 实收现金 = 签收记录中 pay_method='现金' 的 collect_amount 合计
-        BigDecimal cashAmount = jdbcTemplate.queryForObject(
+        // 实收现金 / 线上收款。
+        // 两条来源相加：门店结算（新流程，钱记在 tms_store_settlement_account）
+        // + 旧签收路径（历史数据里 tms_sign_record 直接带了 collect_amount + pay_method）。
+        // 门店结算走 writeSignRecord 时 collect_amount 恒为 0，所以两者不会重复计算。
+        Map<String, BigDecimal> storeTotals = loadStoreSettleTotals(driverId, dispatchIds);
+
+        BigDecimal signCash = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(collect_amount), 0) FROM tms_sign_record WHERE dispatch_id IN ('" + idList + "') AND pay_method='现金'",
                 BigDecimal.class);
-        if (cashAmount == null) cashAmount = BigDecimal.ZERO;
+        if (signCash == null) signCash = BigDecimal.ZERO;
+        BigDecimal cashAmount = storeTotals.get("cashAmount").add(signCash);
 
-        // 线上收款 = pay_method IN ('微信','支付宝')
-        BigDecimal onlineAmount = jdbcTemplate.queryForObject(
+        BigDecimal signOnline = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(collect_amount), 0) FROM tms_sign_record WHERE dispatch_id IN ('" + idList + "') AND pay_method IN ('微信','支付宝')",
                 BigDecimal.class);
-        if (onlineAmount == null) onlineAmount = BigDecimal.ZERO;
+        if (signOnline == null) signOnline = BigDecimal.ZERO;
+        BigDecimal onlineAmount = storeTotals.get("onlineAmount").add(signOnline);
 
-        // 退货金额 + 退货件数
-        BigDecimal returnAmount = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(amount), 0) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RETURN'",
-                BigDecimal.class);
-        if (returnAmount == null) returnAmount = BigDecimal.ZERO;
-        BigDecimal returnQty = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(qty), 0) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RETURN'",
-                BigDecimal.class);
-        if (returnQty == null) returnQty = BigDecimal.ZERO;
+        // 退货金额 + 退货件数，与 submit 共用 loadReturnTotals 保证口径一致。
+        // 只统计已回收（DELIVERED/PARTIAL）的退货单，未到店的退货不该冲减应交回。
+        BigDecimal[] returnTotals = loadReturnTotals(dispatchIds);
+        BigDecimal returnAmount = returnTotals[0];
+        BigDecimal returnQty = returnTotals[1];
 
-        // 应交回金额 = 实收现金 - 退货退款
-        BigDecimal submitAmount = cashAmount.subtract(returnAmount);
+        // 应交回金额 = 实收现金。
+        // 不再减退货：门店结算已经在应结净额里冲减过退货（收的本就是净额），
+        // 这里再减一次等于让司机白交一遍退货款。returnAmount 仅作展示。
+        BigDecimal submitAmount = cashAmount;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("alreadySettled", false);
@@ -151,6 +158,8 @@ public class TmsSettlementController {
         result.put("onlineAmount", onlineAmount);
         result.put("returnAmount", returnAmount);
         result.put("returnQty", returnQty);
+        // 挂账金额来自门店结算，交账页展示用（不计入应交回，司机手上没有这笔钱）
+        result.put("creditAmount", storeTotals.get("creditAmount"));
         result.put("submitAmount", submitAmount);
         return ApiResponse.ok(result);
     }
@@ -181,16 +190,23 @@ public class TmsSettlementController {
             return ApiResponse.fail("400", "今日已提交交账，请勿重复提交");
         }
 
-        // 查找今日调度单
-        StringBuilder dispatchSql = new StringBuilder(
-                "SELECT dispatch_id, dispatch_no, trip_id, driver_name, route_line FROM tms_dispatch WHERE driver_id=? AND dispatch_date=CURRENT_DATE");
+        // 查找今日调度单。
+        // trip_id 不在 tms_dispatch 上：它是 tms_delivery_trip 的主键，一张调度单出车才会生成行程。
+        // 所以只能 LEFT JOIN 带出来，未出车时为 NULL（交账允许没有行程号）。
+        StringBuilder dispatchSql = new StringBuilder("""
+                SELECT d.dispatch_id, d.dispatch_no, t.trip_id, d.driver_name, d.route_line
+                FROM tms_dispatch d
+                LEFT JOIN tms_delivery_trip t ON t.dispatch_id = d.dispatch_id
+                WHERE d.driver_id=? AND d.dispatch_date=CURRENT_DATE""");
         List<Object> dArgs = new ArrayList<>();
         dArgs.add(driverId);
         if (!dispatchId.isEmpty()) {
-            dispatchSql.append(" AND dispatch_id=?");
+            dispatchSql.append(" AND d.dispatch_id=?");
             dArgs.add(dispatchId);
         }
-        List<Map<String, Object>> dispatches = jdbcTemplate.queryForList(dispatchSql.toString(), dArgs.toArray());
+        // 用 queryCamel 而不是 queryForList：H2 返回的列标签是大写的 DISPATCH_ID，
+        // 直接 get("dispatch_id") 会全部取到 null，交账单会写进一串空字段。
+        List<Map<String, Object>> dispatches = TmsUtil.queryCamel(jdbcTemplate, dispatchSql.toString(), dArgs.toArray());
         if (dispatches.isEmpty()) {
             return ApiResponse.fail("404", "今日无配送任务，无需交账");
         }
@@ -202,13 +218,15 @@ public class TmsSettlementController {
         String driverName = "";
         String routeLine = "";
         for (Map<String, Object> d : dispatches) {
-            String did = TmsUtil.str(d.get("dispatch_id"));
+            String did = TmsUtil.str(d.get("dispatchId"));
+            // 一张调度单可能有多条行程，LEFT JOIN 会出重复行，这里去重避免 IN 列表里塞重复 ID
+            if (did.isEmpty() || dispatchIds.contains(did)) continue;
             dispatchIds.add(did);
             if (firstDispatchId.isEmpty()) {
                 firstDispatchId = did;
-                firstTripId = TmsUtil.str(d.get("trip_id"));
-                driverName = TmsUtil.str(d.get("driver_name"));
-                routeLine = TmsUtil.str(d.get("route_line"));
+                firstTripId = TmsUtil.str(d.get("tripId"));
+                driverName = TmsUtil.str(d.get("driverName"));
+                routeLine = TmsUtil.str(d.get("routeLine"));
             }
         }
         String idList = String.join("','", dispatchIds);
@@ -225,26 +243,30 @@ public class TmsSettlementController {
                 "SELECT COUNT(DISTINCT detail_id) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RECEIPT' AND status IN ('DELIVERED','PARTIAL')",
                 Integer.class);
 
-        BigDecimal cashAmount = jdbcTemplate.queryForObject(
+        // 收款口径必须与 summary 完全一致：门店结算 + 旧签收路径。
+        // 这里是真正入账的地方，口径分叉会让司机看到的应交回和落库的不是一个数。
+        Map<String, BigDecimal> storeTotals = loadStoreSettleTotals(driverId, dispatchIds);
+
+        BigDecimal signCash = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(collect_amount), 0) FROM tms_sign_record WHERE dispatch_id IN ('" + idList + "') AND pay_method='现金'",
                 BigDecimal.class);
-        if (cashAmount == null) cashAmount = BigDecimal.ZERO;
+        if (signCash == null) signCash = BigDecimal.ZERO;
+        BigDecimal cashAmount = storeTotals.get("cashAmount").add(signCash);
 
-        BigDecimal onlineAmount = jdbcTemplate.queryForObject(
+        BigDecimal signOnline = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(collect_amount), 0) FROM tms_sign_record WHERE dispatch_id IN ('" + idList + "') AND pay_method IN ('微信','支付宝')",
                 BigDecimal.class);
-        if (onlineAmount == null) onlineAmount = BigDecimal.ZERO;
+        if (signOnline == null) signOnline = BigDecimal.ZERO;
+        BigDecimal onlineAmount = storeTotals.get("onlineAmount").add(signOnline);
 
-        BigDecimal returnAmount = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(amount), 0) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RETURN'",
-                BigDecimal.class);
-        if (returnAmount == null) returnAmount = BigDecimal.ZERO;
-        BigDecimal returnQty = jdbcTemplate.queryForObject(
-                "SELECT COALESCE(SUM(qty), 0) FROM tms_dispatch_detail WHERE dispatch_id IN ('" + idList + "') AND bill_type='RETURN'",
-                BigDecimal.class);
-        if (returnQty == null) returnQty = BigDecimal.ZERO;
+        // 与 summary 共用 loadReturnTotals：这里是真正入账的地方，
+        // 口径分叉会把错的应交回金额固化进交账单，事后只能靠财务手工调账。
+        BigDecimal[] returnTotals = loadReturnTotals(dispatchIds);
+        BigDecimal returnAmount = returnTotals[0];
+        BigDecimal returnQty = returnTotals[1];
 
-        BigDecimal submitAmount = cashAmount.subtract(returnAmount);
+        // 应交回 = 实收现金，退货已在门店结算净额里冲减过，不再重复扣减
+        BigDecimal submitAmount = cashAmount;
         BigDecimal diffAmount = actualSubmit.subtract(submitAmount);
 
         // 生成交账单
@@ -266,6 +288,25 @@ public class TmsSettlementController {
                 returnAmount, returnQty, submitAmount, actualSubmit, diffAmount, diffReason,
                 signatureUrl, Timestamp.valueOf(TmsUtil.now()), remark);
 
+        // 反写门店结算单的 settlement_id（V71 预留列）。
+        // 交账审核时财务要按交账单反查「这次交回的钱对应哪些门店结算单」，
+        // 才能把那批 fin_status=PENDING 的收款单一起过审。不反写这层关联就断了，
+        // 只能靠 driver_id + 日期反猜，跨日补交账时必然错配。
+        // 限定 settlement_id IS NULL：已被前一张交账单认领的结算单不能再被抢走。
+        int linked = 0;
+        if (!dispatchIds.isEmpty()) {
+            String ph = String.join(",", Collections.nCopies(dispatchIds.size(), "?"));
+            List<Object> linkArgs = new ArrayList<>();
+            linkArgs.add(settlementId);
+            linkArgs.addAll(dispatchIds);
+            linkArgs.add(driverId);
+            linked = jdbcTemplate.update("""
+                    UPDATE tms_store_settlement SET settlement_id = ?
+                    WHERE dispatch_id IN (""" + ph + """
+                    ) AND driver_id = ? AND settle_status = 'SETTLED' AND settlement_id IS NULL
+                    """, linkArgs.toArray());
+        }
+
         // 保存结算照片（URL 直接入库，不再用 LONGTEXT 存 base64）
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> photos = body.get("photos") instanceof List<?> l
@@ -285,7 +326,8 @@ public class TmsSettlementController {
         }
 
         TmsUtil.log(jdbcTemplate, "tms.app.settlement", "SUBMIT", settlementNo,
-                "司机交账提交：应交回" + submitAmount + "，实际交回" + actualSubmit + "，差异" + diffAmount + "，照片" + photoSaved + "张");
+                "司机交账提交：应交回" + submitAmount + "，实际交回" + actualSubmit + "，差异" + diffAmount
+                        + "，照片" + photoSaved + "张，关联门店结算单" + linked + "张");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("settlementId", settlementId);
@@ -399,16 +441,19 @@ public class TmsSettlementController {
     /**
      * 审核交账单（→ APPROVED）。
      * 入参：auditRemark?
+     *
+     * 审核即「钱已回到公司」，因此同步触发财务入账：该交账单下所有门店结算的
+     * 待审核收款单在此自动审核（核销应收 + 资金入账 + 往来流水）。
      */
     @PostMapping("/tms/settlement/{id}/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@PathVariable String id, @RequestBody(required = false) Map<String, Object> body) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT settlement_id, settlement_no, status FROM tms_settlement WHERE settlement_id=? OR settlement_no=?", id, id);
+        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate,
+                "SELECT settlement_id, settlement_no, status, driver_id, settle_date FROM tms_settlement WHERE settlement_id=? OR settlement_no=?", id, id);
         if (rows.isEmpty()) return ApiResponse.fail("404", "交账单不存在");
         Map<String, Object> r = rows.get(0);
-        String settlementId = TmsUtil.str(r.get("settlement_id"));
-        String settlementNo = TmsUtil.str(r.get("settlement_no"));
+        String settlementId = TmsUtil.str(r.get("settlementId"));
+        String settlementNo = TmsUtil.str(r.get("settlementNo"));
         if ("APPROVED".equals(TmsUtil.str(r.get("status")))) {
             return ApiResponse.fail("400", "该交账单已审核，不可重复操作");
         }
@@ -419,11 +464,37 @@ public class TmsSettlementController {
                 """, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(), auditRemark, settlementId);
         TmsUtil.log(jdbcTemplate, "tms.settlement", "AUDIT", settlementNo,
                 "交账单审核通过：" + settlementNo + (auditRemark.isEmpty() ? "" : "（" + auditRemark + "）"));
+
+        // 补认领门店结算单。
+        // submit 时已按 dispatch_id 关联过一轮，但司机常在交账提交之后才补做剩下门店的结算
+        // （交账页和配送点页是两条独立入口），那批结算单的 settlement_id 会一直是 NULL，
+        // 审核时按 settlement_id 反查就查不到，收款单永远停在 PENDING。
+        // 这里按「同司机 + 结算日期 = 交账日期 + 尚未被任何交账单认领」再兜一次，
+        // 与 submit 的取数口径（当日该司机的调度单）一致，不会把别的交账单的结算抢过来。
+        int lateLinked = jdbcTemplate.update("""
+                UPDATE tms_store_settlement SET settlement_id = ?
+                WHERE settlement_id IS NULL AND settle_status = 'SETTLED'
+                  AND driver_id = ? AND CAST(settle_time AS DATE) = ?
+                """, settlementId, TmsUtil.str(r.get("driverId")), r.get("settleDate"));
+        if (lateLinked > 0) {
+            TmsUtil.log(jdbcTemplate, "tms.settlement", "LINK", settlementNo,
+                    "审核时补关联门店结算单 " + lateLinked + " 张（交账提交后才完成的结算）");
+        }
+
+        // 财务联动：门店结算收款单自动审核核销
+        Map<String, Object> finance = storeSettleController.approveStoreSettlements(settlementId, settlementNo);
+
         // 回执司机：交账关系到司机自己的钱，审核结果必须主动告知
         notifySettleResult(settlementId, settlementNo, TmsNotifyService.LEVEL_NORMAL,
                 "交账已通过 " + settlementNo,
                 "您的交账单已审核通过。" + (auditRemark.isEmpty() ? "" : "备注：" + auditRemark));
-        return ApiResponse.ok(Map.of("settlementId", settlementId, "settlementNo", settlementNo, "status", "APPROVED"));
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("settlementId", settlementId);
+        data.put("settlementNo", settlementNo);
+        data.put("status", "APPROVED");
+        data.put("finance", finance);
+        return ApiResponse.ok(data);
     }
 
     /**
@@ -455,6 +526,97 @@ public class TmsSettlementController {
                 "交账存在差异 " + settlementNo,
                 "财务标记差异争议，请尽快核实。原因：" + diffReason);
         return ApiResponse.ok(Map.of("settlementId", settlementId, "settlementNo", settlementNo, "status", "DISPUTED"));
+    }
+
+    /**
+     * 汇总这批调度单下的退货金额与退货件数，返回 {金额, 件数}，两者恒为非 null。
+     *
+     * 金额取 sales_return_apply.return_amount：tms_dispatch_detail.amount 在退货行恒为 0
+     * （全库两处 INSERT 都不写该列），用它会让应交回金额虚高。
+     *
+     * 必须先子查询 DISTINCT source_bill_no 再 JOIN：dd 与 ra 是多对一，
+     * 同一张退货申请被拆到多个调度明细行（改派、追加、返仓重排都会产生）时，
+     * 直接 JOIN 后 SUM 会把整单金额按行数翻倍，应交回金额随之虚低。
+     *
+     * 金额与件数放在同一条 SQL 里算，避免两处过滤条件日后被改歪而口径分叉。
+     */
+    private BigDecimal[] loadReturnTotals(List<String> dispatchIds) {
+        if (dispatchIds.isEmpty()) return new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO};
+        String ph = String.join(",", Collections.nCopies(dispatchIds.size(), "?"));
+        Map<String, Object> row = TmsUtil.queryCamel(jdbcTemplate, """
+                SELECT COALESCE(SUM(ra.return_amount), 0) AS return_amount,
+                       COALESCE(SUM(COALESCE(ra.signed_qty, ra.return_qty, ra.qty)), 0) AS return_qty
+                FROM (
+                    SELECT DISTINCT dd.source_bill_no
+                    FROM tms_dispatch_detail dd
+                    WHERE dd.dispatch_id IN (""" + ph + """
+                ) AND dd.bill_type = 'RETURN'
+                  AND dd.status IN ('DELIVERED', 'PARTIAL')
+                ) t
+                JOIN sales_return_apply ra ON ra.apply_no = t.source_bill_no
+                """, dispatchIds.toArray()).get(0);
+        return new BigDecimal[]{
+                TmsUtil.toBd(row.get("returnAmount")),
+                TmsUtil.toBd(row.get("returnQty"))
+        };
+    }
+
+    /**
+     * 汇总门店结算单口径的收款数据（方案 A：交账以门店结算表为准）。
+     *
+     * 为什么不能只看 tms_sign_record：新的门店结算流程把钱记在
+     * tms_store_settlement_account（支持一次结算拆多个资金账户），
+     * 而 writeSignRecord 写签收记录时 collect_amount 恒为 0、pay_method 恒为空，
+     * 只按签收记录聚合会让门店结算收的钱在交账页完全看不到。
+     *
+     * 现金判定用 base_fund_account.parent_code = '01'（'01' = 系统内置一级分类「现金」），
+     * 不能用 account_type：该列在 V2 种子数据里全是空串，从来没有被赋过值。
+     * 账户本身就是一级现金分类（FA_SYS_01）时 parent_code 为空，所以要额外兜一次。
+     *
+     * 按 driver_id + dispatch_id 精确过滤，不对 dispatch_id 为空的历史行做兜底：
+     * 交账允许只结单张调度单，一旦兜底就会把别的调度单的钱算进来，
+     * 而金额虚高会直接固化进 tms_settlement。
+     *
+     * 返回 key：cashAmount / onlineAmount / returnAmount / creditAmount / receivedAmount
+     */
+    private Map<String, BigDecimal> loadStoreSettleTotals(String driverId, List<String> dispatchIds) {
+        Map<String, BigDecimal> r = new LinkedHashMap<>();
+        for (String k : new String[]{"cashAmount", "onlineAmount", "returnAmount", "creditAmount", "receivedAmount"}) {
+            r.put(k, BigDecimal.ZERO);
+        }
+        if (dispatchIds.isEmpty()) return r;
+
+        String ph = String.join(",", Collections.nCopies(dispatchIds.size(), "?"));
+        List<Object> args = new ArrayList<>(dispatchIds);
+        args.add(driverId);
+
+        // 账户明细是一对多，必须与主表金额分两条 SQL 算，否则主表金额会按账户行数翻倍
+        Map<String, Object> acct = TmsUtil.queryCamel(jdbcTemplate, """
+                SELECT COALESCE(SUM(CASE WHEN f.parent_code = '01' OR sa.fund_account_id = 'FA_SYS_01'
+                                         THEN sa.amount ELSE 0 END), 0) AS cash_amount,
+                       COALESCE(SUM(CASE WHEN f.parent_code = '01' OR sa.fund_account_id = 'FA_SYS_01'
+                                         THEN 0 ELSE sa.amount END), 0) AS online_amount
+                FROM tms_store_settlement_account sa
+                JOIN tms_store_settlement s ON s.settle_id = sa.settle_id
+                LEFT JOIN base_fund_account f ON f.fund_account_id = sa.fund_account_id
+                WHERE s.dispatch_id IN (""" + ph + """
+                ) AND s.driver_id = ? AND s.settle_status = 'SETTLED'
+                """, args.toArray()).get(0);
+        r.put("cashAmount", TmsUtil.toBd(acct.get("cashAmount")));
+        r.put("onlineAmount", TmsUtil.toBd(acct.get("onlineAmount")));
+
+        Map<String, Object> main = TmsUtil.queryCamel(jdbcTemplate, """
+                SELECT COALESCE(SUM(return_amount), 0) AS return_amount,
+                       COALESCE(SUM(credit_amount), 0) AS credit_amount,
+                       COALESCE(SUM(received_amount), 0) AS received_amount
+                FROM tms_store_settlement
+                WHERE dispatch_id IN (""" + ph + """
+                ) AND driver_id = ? AND settle_status = 'SETTLED'
+                """, args.toArray()).get(0);
+        r.put("returnAmount", TmsUtil.toBd(main.get("returnAmount")));
+        r.put("creditAmount", TmsUtil.toBd(main.get("creditAmount")));
+        r.put("receivedAmount", TmsUtil.toBd(main.get("receivedAmount")));
+        return r;
     }
 
     /**

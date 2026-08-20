@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
+import '../../models/task.dart';
 import '../../providers/task_provider.dart';
 import '../../widgets/common.dart';
 import 'return_sign_page.dart';
@@ -56,7 +57,7 @@ class _ReturnListPageState extends ConsumerState<ReturnListPage> {
                     const SizedBox(width: 8),
                     _stat('${done.length}', '已回收', TmsTheme.ok, const Color(0xFFDCFCE7)),
                     const SizedBox(width: 8),
-                    _stat('$totalQty', '待回收件数', TmsTheme.returnPurple, const Color(0xFFEDE9FE)),
+                    _stat(fmtQty(totalQty), '待回收件数', TmsTheme.returnPurple, const Color(0xFFEDE9FE)),
                   ]),
                   const SizedBox(height: 12),
                   if (pending.isNotEmpty) ...[
@@ -72,7 +73,7 @@ class _ReturnListPageState extends ConsumerState<ReturnListPage> {
                             const SizedBox(height: 4),
                             Text('${d.sourceBillNo} · ${d.customerAddress}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
                             const SizedBox(height: 2),
-                            Text('退货 ${d.qty} 件 · 调度单 ${d.dispatchNo}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
+                            Text('退货 ${d.qtyText} 件 · 调度单 ${d.dispatchNo}', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
                           ]),
                         )),
                   ],

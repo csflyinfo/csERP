@@ -1,12 +1,16 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../services/api_service.dart';
 import '../../services/launch_service.dart';
 import '../../services/sync_service.dart';
+import '../common/api_base_dialog.dart';
 import '../login/login_page.dart';
+import '../return/return_list_page.dart';
 import 'collect_records_page.dart';
 import 'history_page.dart';
 import 'sync_center_page.dart';
@@ -47,6 +51,13 @@ class ProfilePage extends ConsumerWidget {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryPage()));
               }),
               const Divider(height: 1, indent: 56),
+              // 退货回收从底部 Tab 收到这里：退货是配送中的一个动作，
+              // 主路径已在配送点详情内完成，这里保留的是「跨门店查全部退货单」
+              // 这个低频但必要的场景——否则退货列表页会没有总入口。
+              _row(Icons.recycling, '退货回收', () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ReturnListPage()));
+              }),
+              const Divider(height: 1, indent: 56),
               // 收款记录独立入口：上面统计卡的「累计收款」只是个总数，
               // 跟调度对不上账时司机需要逐笔流水才能定位差额在哪家门店。
               _row(Icons.receipt_long, '收款记录', () {
@@ -60,7 +71,17 @@ class ProfilePage extends ConsumerWidget {
               const Divider(height: 1, indent: 56),
               _row(Icons.support_agent, '联系调度员', () => _callDispatcher(context, ref)),
               const Divider(height: 1, indent: 56),
-              _row(Icons.description, '版本说明', () => _showVersion(context)),
+              _row(Icons.description, '版本说明', () => _showVersion(context),
+                  // 隐藏入口：长按「版本说明」打开服务器地址配置。
+                  // 做成隐藏而非常规菜单项是刻意的——地址填错会让整个 APP 失联，
+                  // 司机误触的代价远大于便利；这条入口只服务于联调/换网络的场景。
+                  // 用长按而非连点 N 次：长按不会被列表滚动误触发。
+                  onLongPress: () => _showApiBaseDialog(context, ref),
+                  // 仅在已手工改过地址时才显示副标题：既是「当前打的是哪台服务器」
+                  // 的自查线索，也避免默认状态下暴露这个入口的存在。
+                  subtitle: AppConfig.hasApiBaseOverride
+                      ? '服务器：${ApiService.instance.baseUrl}'
+                      : null),
             ]),
           ),
           const SizedBox(height: 24),
@@ -86,19 +107,36 @@ class ProfilePage extends ConsumerWidget {
     );
   }
 
-  Widget _row(IconData icon, String label, VoidCallback onTap) => ListTile(
+  Widget _row(IconData icon, String label, VoidCallback onTap,
+          {VoidCallback? onLongPress, String? subtitle}) =>
+      ListTile(
         leading: Icon(icon, color: TmsTheme.accent, size: 22),
         title: Text(label, style: const TextStyle(fontSize: 14, color: TmsTheme.ink)),
+        subtitle: subtitle == null
+            ? null
+            : Text(subtitle, style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
         trailing: const Icon(Icons.chevron_right, color: TmsTheme.muted, size: 20),
         onTap: onTap,
+        onLongPress: onLongPress,
       );
 
   void _showVersion(BuildContext context) {
     showDialog(context: context, builder: (_) => AlertDialog(
       title: const Text('版本说明'),
-      content: const Text('TMS 司机配送 V1.2.0\n退货调度闭环 · 退货回收签收'),
+      content: const Text('智速达司机配送 V1.4.0\n首页工作台 · 配送中门店清单'),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
     ));
+  }
+
+  /// 服务器地址配置（隐藏功能，长按「版本说明」进入）。
+  ///
+  /// 保存成功后强制退出登录：换了服务器地址就等于换了一套数据源，
+  /// 本地 token 在新服务器上无效，继续留在首页只会一路 401 闪回登录页，
+  /// 主动登出比让用户自己撞出错误更清楚。
+  Future<void> _showApiBaseDialog(BuildContext context, WidgetRef ref) async {
+    final changed = await ApiBaseDialog.show(context);
+    if (!changed || !context.mounted) return;
+    await ref.read(authProvider.notifier).logout();
   }
 
   /// 拨打调度中心电话（号码来自 TMS_DISPATCHER_PHONE 参数）。
@@ -120,6 +158,7 @@ class ProfilePage extends ConsumerWidget {
     }
   }
 }
+
 
 /// 同步中心入口行（带待同步/失败角标）。
 ///

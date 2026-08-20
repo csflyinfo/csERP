@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../common/api_base_dialog.dart';
 
 /// 司机登录页（对齐原型 screen-login）。
 class LoginPage extends ConsumerStatefulWidget {
@@ -41,6 +42,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  Future<void> _showApiBase() async {
+    final changed = await ApiBaseDialog.show(context);
+    if (!changed || !mounted) return;
+    // 登录页本身无登录态可清，改完地址给个明确回执即可
+    _toast('服务器地址已更新');
+  }
+
   void _toast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
   }
@@ -72,9 +80,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             child: const Center(child: Text('🚚', style: TextStyle(fontSize: 32))),
                           ),
                           const SizedBox(height: 10),
-                          const Text('TMS 司机配送', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          // 隐藏入口：长按标题打开服务器地址配置。
+                          // 登录页必须有这条入口——换网络后的症状就是登录超时，
+                          // 若只在「我的」页提供，用户恰恰进不去那个页面。
+                          GestureDetector(
+                            onLongPress: _showApiBase,
+                            child: const Text('智速达',
+                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                          ),
                           const SizedBox(height: 4),
-                          const Text('Driver Delivery System', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          const Text('智速达司机配送', style: TextStyle(color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ),
