@@ -354,7 +354,7 @@ public class SalesReturnController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
-        validateDetails(reqDetails, warehouse, null);
+        validateDetails(reqDetails, null);
 
         BigDecimal totalQty = BigDecimal.ZERO;
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -434,7 +434,7 @@ public class SalesReturnController {
         }
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
-        validateDetails(reqDetails, warehouse, applyId);
+        validateDetails(reqDetails, applyId);
 
         BigDecimal totalQty = BigDecimal.ZERO;
         BigDecimal totalAmount = BigDecimal.ZERO;
@@ -1375,7 +1375,7 @@ public class SalesReturnController {
         return rows.get(0);
     }
 
-    private void validateDetails(List<Map<String, Object>> details, String warehouse, String excludeApplyId) {
+    private void validateDetails(List<Map<String, Object>> details, String excludeApplyId) {
         for (Map<String, Object> line : details) {
             String goodsCode = str(line.get("goodsCode"));
             String goodsName = strOrDefault(line.get("goodsName"), goodsCode);
@@ -1410,17 +1410,9 @@ public class SalesReturnController {
                             "商品 " + goodsName + " 退货数量 " + plain(qty)
                                     + " 超过可退数量 " + plain(returnable));
                 }
-            } else {
-                BigDecimal available = toBd(jdbcTemplate.queryForObject("""
-                        SELECT COALESCE(SUM(available_qty), 0) FROM inv_stock_balance
-                        WHERE goods_code = ? AND warehouse = ?
-                        """, BigDecimal.class, goodsCode, warehouse));
-                if (qty.compareTo(available) > 0) {
-                    throw new IllegalArgumentException(
-                            "商品 " + goodsName + " 退货数量 " + plain(qty)
-                                    + " 超过可用库存 " + plain(available));
-                }
             }
+            // 按品退货（BY_GOODS）不校验库存：销售退货是入库类单据，退回的货是客户手里的，
+            // 与本仓当前库存无关。仓库当前可用库存仅作参考展示，不作为数量上限。
 
             // 同商品不允许重复
             boolean dup = false;

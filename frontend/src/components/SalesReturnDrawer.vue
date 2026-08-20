@@ -8,7 +8,7 @@
  *   · BY_BILL  按单退货：【按单添加商品】→ 销售出库单选择窗口带入
  *              只可改「退货数量」「单价」；数量硬约束 ≤ 可退数量
  *   · BY_GOODS 按品退货：【添加商品】→ 商品档案选择窗口带入
- *              数量 / 单位 / 单价 / 金额均可改；数量约束 ≤ 可用库存
+ *              数量 / 单位 / 单价 / 金额均可改；数量不设上限（退货是入库单据，不校验库存）
  *
  * 销售退货单明细不含批次号与生产日期（批次信息在退货入库环节填写）。
  */
@@ -174,7 +174,7 @@ function onCustomerChange(customerName) {
 
 function onWarehouseChange() {
   if (detailList.value.length > 0) {
-    errors.value.details = '仓库已切换，可用库存数据可能已变化'
+    errors.value.details = '仓库已切换，明细中的可用库存仅供参考，请确认入库仓库无误'
   }
 }
 
@@ -394,12 +394,12 @@ function rowAmountRaw(row) {
 }
 
 /**
- * 该行数量上限：按单退货取 min(可退数量, 可用库存)；按品退货取可用库存。
+ * 该行数量上限：按单退货取源单可退数量；按品退货无上限。
+ * 销售退货是入库类单据，退回的货在客户手里，与本仓库存无关，故不受可用库存约束。
  */
 function maxQtyFor(row) {
-  const stock = Number(row.availableStock || 0)
-  if (!isByBill(row)) return stock
-  return Math.min(Number(row.returnableQty || 0), stock)
+  if (!isByBill(row)) return Infinity
+  return Number(row.returnableQty || 0)
 }
 
 /** 行数量是否超限（用于标红提示，保存时硬拦） */
@@ -412,12 +412,7 @@ function isQtyExceeded(row) {
 /** 超限原因提示文案 */
 function qtyExceedTitle(row) {
   if (!isQtyExceeded(row)) return ''
-  const returnable = Number(row.returnableQty || 0)
-  const stock = Number(row.availableStock || 0)
-  if (isByBill(row) && stock < returnable) {
-    return `超过可用库存 ${stock}（源单可退 ${returnable}）`
-  }
-  return isByBill(row) ? `超过可退数量 ${returnable}` : `超过可用库存 ${stock}`
+  return `超过可退数量 ${Number(row.returnableQty || 0)}`
 }
 
 // ============ 校验与保存 ============
@@ -446,13 +441,7 @@ function validate() {
       return false
     }
     if (isQtyExceeded(row)) {
-      const returnable = Number(row.returnableQty || 0)
-      const stock = Number(row.availableStock || 0)
-      if (isByBill(row)) {
-        errors.value.details = `商品 ${label} 退货数量 ${row.qty} 超过可退数量 ${returnable}`
-      } else {
-        errors.value.details = `商品 ${label} 退货数量 ${row.qty} 超过可用库存 ${stock}`
-      }
+      errors.value.details = `商品 ${label} 退货数量 ${row.qty} 超过可退数量 ${Number(row.returnableQty || 0)}`
       return false
     }
   }
@@ -577,7 +566,7 @@ function closeDrawer() { emit('close') }
           </div>
           <div v-if="canEdit" class="mode-legend">
             <span><b class="tag by-bill">按单退货</b>源自销售出库单，只可改数量与单价，数量不超过可退数量</span>
-            <span><b class="tag by-goods">按品退货</b>源自商品档案，数量/单位/单价/金额可改，数量不超过可用库存</span>
+            <span><b class="tag by-goods">按品退货</b>源自商品档案，数量/单位/单价/金额可改，数量不受库存限制</span>
           </div>
           <div v-if="errors.details" class="err-line">{{ errors.details }}</div>
           <div v-if="loading" class="empty-detail">加载中...</div>
@@ -598,7 +587,7 @@ function closeDrawer() { emit('close') }
                   <th style="width:130px">单价</th>
                   <th style="width:130px">金额</th>
                   <th style="width:78px">可退数量</th>
-                  <th style="width:78px">可用库存</th>
+                  <th style="width:78px" title="该仓当前可用库存，仅作参考，不限制退货数量">当前库存</th>
                   <th style="width:96px">成本单价</th>
                   <th style="min-width:130px">源单号</th>
                   <th v-if="canEdit" style="width:56px">操作</th>
