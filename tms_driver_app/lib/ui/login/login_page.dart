@@ -159,7 +159,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                             child: _loading
-                                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                ? const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                                      SizedBox(width: 8),
+                                      Text('登录中…', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                    ],
+                                  )
                                 : const Text('登 录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                           ),
                           const SizedBox(height: 10),
