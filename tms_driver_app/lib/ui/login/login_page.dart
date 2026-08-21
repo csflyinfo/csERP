@@ -1,8 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_config.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
 import '../common/api_base_dialog.dart';
 
 /// 司机登录页（对齐原型 screen-login）。
@@ -36,10 +38,36 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     try {
       await ref.read(authProvider.notifier).login(mobile, _codeCtrl.text.trim());
     } catch (e) {
-      _toast('登录失败：${e.toString().replaceFirst("Exception: ", "")}');
+      // 连接层错误（超时/拒绝/无网）通常是地址或网络问题，直接引导去改服务器地址，
+      // 比把 DioException 原文糊在屏幕上更有用——司机看到 "Connection refused, errno=111"
+      // 既不理解也无从下手，而长按 Logo 这个隐藏入口他们根本不知道。
+      final isConnError = e is DioException &&
+          (e.type == DioExceptionType.connectionError ||
+              e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.error.toString().contains('Connection refused'));
+      if (isConnError && mounted) {
+        _showConnErrorSnack(e);
+      } else {
+        _toast('登录失败：${e.toString().replaceFirst("Exception: ", "")}');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  void _showConnErrorSnack(Object e) {
+    final current = ApiService.instance.baseUrl;
+    final msg = e is DioException && e.error != null ? e.error.toString() : e.toString();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        content: Text('无法连接服务器：$msg\n当前地址：$current\n请长按上方 🚚 图标检查地址',
+            style: const TextStyle(fontSize: 12, height: 1.4)),
+        action: SnackBarAction(label: '去设置', onPressed: _showApiBase),
+      ),
+    );
   }
 
   Future<void> _showApiBase() async {
@@ -74,22 +102,28 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 64, height: 64,
-                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
-                            child: const Center(child: Text('🚚', style: TextStyle(fontSize: 32))),
-                          ),
-                          const SizedBox(height: 10),
-                          // 隐藏入口：长按标题打开服务器地址配置。
-                          // 登录页必须有这条入口——换网络后的症状就是登录超时，
-                          // 若只在「我的」页提供，用户恰恰进不去那个页面。
+                          // 长按整个品牌区（图标+标题）都能打开服务器地址配置。
+                          // 触发区做宽一点：用户的直觉是按 Logo，而不是按标题文字；
+                          // 换网络后唯一能自救的入口不能小到只有一行字才命中。
                           GestureDetector(
                             onLongPress: _showApiBase,
-                            child: const Text('智速达',
-                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                            behavior: HitTestBehavior.opaque,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 64, height: 64,
+                                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(20)),
+                                  child: const Center(child: Text('🚚', style: TextStyle(fontSize: 32))),
+                                ),
+                                const SizedBox(height: 10),
+                                const Text('智速达',
+                                    style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                const Text('智速达司机配送', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                              ],
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          const Text('智速达司机配送', style: TextStyle(color: Colors.white70, fontSize: 12)),
                         ],
                       ),
                     ),
