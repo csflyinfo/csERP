@@ -122,7 +122,7 @@ onMounted(load)
       >{{ g.groupName }}</div>
     </aside>
 
-    <main class="main">
+    <main class="param-main">
       <div class="bar">
         <button class="btn primary" :disabled="loading || !currentItems.length" @click="save">保 存</button>
         <button class="btn" :disabled="loading" @click="load">刷 新</button>
@@ -192,7 +192,7 @@ onMounted(load)
 .group { height: 46px; display: flex; align-items: center; padding: 0 0 0 28px; color: #4b5563; cursor: pointer; }
 .group:hover { background: #f5f6f8; }
 .group.on { background: #eaf2ff; color: #1677ff; font-weight: 700; }
-.main { padding: 20px 30px; overflow: auto; }
+.param-main { padding: 20px 30px; overflow: auto; min-width: 0; }
 .bar { margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
 .btn { height: 34px; border: 1px solid #dbe3ef; background: #fff; border-radius: 4px; padding: 0 20px; cursor: pointer; font-size: 14px; }
 .btn:disabled { color: #9aa4b2; cursor: not-allowed; }
