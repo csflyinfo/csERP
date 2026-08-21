@@ -11,6 +11,7 @@ import '../../providers/delivery_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/launch_service.dart';
 import '../../services/local_db_service.dart';
+import '../../services/param_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
 import '../store/store_location_page.dart';
@@ -21,7 +22,7 @@ import 'arrive_page.dart';
 /// 流程：
 ///   1. 进入页面拉取签收 SKU 明细（按 detailId），并回填本地草稿
 ///   2. 逐商品录入实收数量（默认全收，可改小）
-///   3. 拍现场照片（至少 1 张）
+///   3. 拍现场照片（张数由参数 TMS_SIGN_PHOTO_COUNT 控制）
 ///   4. 客户签名
 ///   5. 「确认签收」→ **只存本地草稿，不回传后台**
 ///
@@ -61,6 +62,23 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
 
   /// 草稿里的数量：goodsCode → [实收, 拒收]。
   final Map<String, List<num>> _draftQty = {};
+
+  /// 签收照片张数下限（PRD-26 TMS_SIGN_PHOTO_COUNT，0 表示不校验）。
+  int get _requirePhoto => ParamService.instance.current.signPhotoCount;
+
+  /// 可拍上限：至少给到 6 张，参数设得更高时以参数为准，
+  /// 否则把下限调到 6 以上会出现「要求 8 张但只能拍 6 张」的死锁。
+  int get _maxPhoto => _requirePhoto > 6 ? _requirePhoto : 6;
+
+  /// 已有照片总数：草稿里已上传的 + 本次新拍的。
+  int get _photoTotal => _photos.length + _draftPhotoUrls.length;
+
+  /// 是否展示并强制电子签名（PRD-26 TMS_SIGN_ESIGN_REQUIRED）。
+  ///
+  /// 需求原文是「是：显示签名相关信息和功能；否：不显示电子签名相关功能」，
+  /// 即显隐与必填由同一个开关控制——不存在「显示但可不签」的中间态。
+  /// 签收人姓名不属于电子签名，始终保留：结算页要用它落 customer_signer。
+  bool get _esignRequired => ParamService.instance.current.signEsignRequired;
 
   @override
   void initState() {
@@ -295,7 +313,12 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
             Row(children: [
               const Text('📸 现场照片', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
               const SizedBox(width: 6),
-              Text('（至少 1 张，已拍 ${_photos.length} 张）', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+              Text(
+                _requirePhoto > 0
+                    ? '（至少 $_requirePhoto 张，已拍 $_photoTotal 张）'
+                    : '（选填，已拍 $_photoTotal 张）',
+                style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+              ),
             ]),
             const SizedBox(height: 8),
             Wrap(
@@ -307,34 +330,38 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
                       index: e.key + 1,
                       onDelete: () => setState(() => _photos.removeAt(e.key)),
                     )),
-                if (_photos.length < 6) _AddPhotoTile(onTap: _pickPhoto),
+                if (_photoTotal < _maxPhoto) _AddPhotoTile(onTap: _pickPhoto),
               ],
             ),
           ]),
         ),
         const SizedBox(height: 8),
-        // 客户签名
+        // 客户签名：签名画板受 TMS_SIGN_ESIGN_REQUIRED 控制，
+        // 签收人姓名与电子签名无关（结算页要落 customer_signer），因此始终展示。
         MCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('✍️ 客户确认签名（可选）', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+            Text(_esignRequired ? '✍️ 客户确认签名' : '✍️ 客户签收信息',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
             const SizedBox(height: 6),
             _Field('签收人姓名（可选）', _signerCtrl, placeholder: '请输入签收人姓名'),
-            const SizedBox(height: 6),
-            SignaturePad(key: _sigKey, height: 120, placeholder: '客户确认签收（可选）'),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _sigKey.currentState?.clear(),
-                icon: const Icon(Icons.clear, size: 14),
-                label: const Text('清除签名', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            if (_esignRequired) ...[
+              const SizedBox(height: 6),
+              SignaturePad(key: _sigKey, height: 120, placeholder: '客户确认签收'),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _sigKey.currentState?.clear(),
+                  icon: const Icon(Icons.clear, size: 14),
+                  label: const Text('清除签名', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               ),
-            ),
+            ],
           ]),
         ),
         const SizedBox(height: 8),
@@ -433,13 +460,25 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
   ///     结算提交时由 SyncService 统一补传，草稿里存的是同一份结构，
   ///     所以离线链路不会因为「先存草稿」而断掉。
   Future<void> _submit(SignDetail d) async {
-    if (_photos.isEmpty && _draftPhotoUrls.isEmpty) {
-      _toast('请至少拍摄 1 张现场照片');
+    // 张数下限读参数（PRD-26 TMS_SIGN_PHOTO_COUNT）。0 表示不校验，
+    // 前端提示与后端校验读同一个值，避免拍完提交才被服务端驳回。
+    if (_requirePhoto > 0 && _photoTotal < _requirePhoto) {
+      _toast('请至少拍摄 $_requirePhoto 张现场照片');
+      return;
+    }
+    // 电子签名（PRD-26 TMS_SIGN_ESIGN_REQUIRED）：开关打开即为必签。
+    // 已有草稿签名时放行，避免二次进入页面被迫重签。
+    // 校验必须在任何上传动作之前，否则会留下无主的签名/照片文件。
+    if (_esignRequired &&
+        (_draftSignatureUrl == null || _draftSignatureUrl!.isEmpty) &&
+        (_sigKey.currentState?.isEmpty ?? true)) {
+      _toast('请完成客户签名');
       return;
     }
     setState(() => _submitting = true);
     try {
-      // 上传签名图（可选，有签名才上传；无新签名则沿用草稿里的）
+      // 上传签名图（关闭电子签名时画板未挂载，currentState 为 null，
+      // 这里自然退化成沿用草稿签名或不带签名）
       final signatureB64 = await _sigKey.currentState?.exportAsBase64Png();
       String? signatureUrl = _draftSignatureUrl;
       if (signatureB64 != null && signatureB64.isNotEmpty) {

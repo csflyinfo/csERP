@@ -80,6 +80,7 @@ export const moduleApis = {
   user: { page: '/system/user/page', save: '/system/user/save', stop: '/base/master/stop' },
   role: { page: '/system/role/page', save: '/system/role/save', stop: '/base/master/stop' },
   param: { page: '/system/param/page', save: '/system/param/update' },
+  paramSetting: { setting: '/system/param/setting', batchUpdate: '/system/param/batch-update' },
   billNo: { page: '/system/bill-no-rule/page', save: '/system/bill-no-rule/update' },
   precision: { page: '/system/precision/page', save: '/system/precision/save' },
   dictionary: { page: '/system/dictionary/page', save: '/system/dictionary/save' },

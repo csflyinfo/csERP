@@ -6,6 +6,7 @@ import '../../models/task.dart';
 import '../../providers/task_provider.dart';
 import '../../services/launch_service.dart';
 import '../../services/local_db_service.dart';
+import '../../services/param_service.dart';
 import '../../widgets/common.dart';
 import '../return/driver_return_create_page.dart';
 import '../return/reschedule_return_page.dart';
@@ -344,18 +345,22 @@ class StoreDetailPage extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: 8),
+            // 现场退货入口受 TMS_ONSITE_RETURN_ENABLED 控制（PRD-26 §3.2）。
+            // 关掉时让「定位修改」独占整行，而不是留半行空白。
             Row(
               children: [
                 Expanded(
                   child: TmsButton.outline('📌 定位修改',
                       onPressed: () => _fixLocation(context, ref, d)),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TmsButton.outline('📦 现场退货',
-                      color: TmsTheme.accent2,
-                      onPressed: () => _createReturn(context, ref, d)),
-                ),
+                if (ParamService.instance.current.onsiteReturnEnabled) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TmsButton.outline('📦 现场退货',
+                        color: TmsTheme.accent2,
+                        onPressed: () => _createReturn(context, ref, d)),
+                  ),
+                ],
               ],
             ),
           ],

@@ -1990,6 +1990,49 @@ public class FinanceController {
                 "FUND" + System.currentTimeMillis(), fundAccount, direction, amount, sourceBill, balanceAfter, operator);
     }
 
+    /**
+     * 写一组账面冲抵流水（一进一出，净额为 0），供 TMS 销退合并结算调用。
+     *
+     * 为什么要写这两条：合并结算时客户只付「发货 - 退货」的净额，
+     * 被退货对冲掉的那部分金额没有真实资金收付，但账上必须体现
+     * 「收到了这笔货款、又原路退了出去」，否则销售收入与退货支出两侧都缺一笔，
+     * 月末查「某笔退货的钱去哪了」时无凭无据。
+     *
+     * 落哪个账户由 TMS_OFFSET_FUND_ACCOUNT 全局参数指定（销退冲抵过渡户），
+     * 绝不能落司机收款账户 —— 那会污染司机手上现金余额，交账对账时对不平。
+     *
+     * ledger_no 用独立的 OFS 号段而非 insertFundLedgerV2 的 "FUND"+毫秒：
+     * ledger_no 有 UNIQUE 约束，一正一负两条在同一毫秒内连续写入必然撞键。
+     *
+     * 余额处理：进账后余额 +amount，出账后回到原值，所以最终 base_fund_account
+     * 只需按出账后的余额更新一次，过渡户长期保持净额 0。
+     *
+     * @param fundAccount 冲抵账户名称（与 fin_receipt_detail.fund_account 同口径）
+     * @param amount      冲抵金额，须为正数；非正数直接跳过不写
+     */
+    @Transactional
+    public void writeOffsetLedger(String fundAccount, BigDecimal amount, String sourceBill, String operator) {
+        if (fundAccount == null || fundAccount.isBlank()) return;
+        if (amount == null || amount.signum() <= 0) return;
+        BigDecimal opening = getFundBalance(fundAccount);
+        BigDecimal afterIn = opening.add(amount);
+        insertOffsetLedger(fundAccount, "IN", amount, sourceBill, afterIn, operator);
+        BigDecimal afterOut = afterIn.subtract(amount);
+        insertOffsetLedger(fundAccount, "OUT", amount, sourceBill, afterOut, operator);
+        updateFundBalance(fundAccount, afterOut);
+    }
+
+    private void insertOffsetLedger(String fundAccount, String direction, BigDecimal amount,
+            String sourceBill, BigDecimal balanceAfter, String operator) {
+        String uniq = UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+        jdbcTemplate.update("""
+                INSERT INTO fin_fund_ledger(ledger_id, ledger_no, fund_account, direction, amount, source_bill, balance_after, occurred_at, operator_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                """, "FL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
+                "OFS" + System.currentTimeMillis() + uniq, fundAccount, direction, amount,
+                sourceBill, balanceAfter, operator);
+    }
+
     /** 查该往来单位的当前往来余额 */
     private BigDecimal getCounterpartyBalance(String cpType, String cpCode) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(

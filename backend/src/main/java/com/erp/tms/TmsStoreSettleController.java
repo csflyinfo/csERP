@@ -5,7 +5,10 @@ import com.erp.common.util.BillNoGenerator;
 import com.erp.finance.FinanceController;
 import com.erp.sales.SalesReturnController;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -45,14 +48,25 @@ public class TmsStoreSettleController {
     private final BillNoGenerator billNoGen;
     private final SalesReturnController salesReturnController;
     private final FinanceController financeController;
+    private final com.erp.system.SysParamService sysParamService;
+    private final TransactionTemplate nestedTx;
 
     public TmsStoreSettleController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                                     SalesReturnController salesReturnController,
-                                    FinanceController financeController) {
+                                    FinanceController financeController,
+                                    com.erp.system.SysParamService sysParamService,
+                                    PlatformTransactionManager txManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.salesReturnController = salesReturnController;
         this.financeController = financeController;
+        this.sysParamService = sysParamService;
+        // 退货回写要「失败不阻断结算」，只 catch 异常是不够的：onDriverCollected 带
+        // @Transactional(REQUIRED) 会加入当前事务，内层抛异常即把共享事务标记
+        // rollback-only，外层吞掉异常照样在提交时爆 UnexpectedRollbackException。
+        // 这里用 NESTED（JDBC savepoint）把它隔离出去，回滚只退到 savepoint。
+        this.nestedTx = new TransactionTemplate(txManager);
+        this.nestedTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
     }
 
     /**
@@ -191,7 +205,7 @@ public class TmsStoreSettleController {
      *              —— 来自 APP 本地签收草稿，结算时一次性转正
      *       accounts[]{fundAccountId, fundAccountCode, fundAccountName, amount} 各账户实收
      *       creditAmount 挂账金额
-     *       photos[]{url, photoType} 结算现场照片（必填，至少一张）
+     *       photos[]{url, photoType} 结算现场照片（是否必填由 TMS_SETTLE_PHOTO_REQUIRED 控制，默认不强制）
      */
     @PostMapping("/submit")
     @Transactional
@@ -204,7 +218,31 @@ public class TmsStoreSettleController {
             return ApiResponse.fail("400", "缺少门店或结算单据");
         }
         List<Map<String, Object>> photos = mapList(body.get("photos"));
-        if (photos.isEmpty()) return ApiResponse.fail("400", "请先拍摄结算现场照片");
+        // 结算现场照片是否必填改由参数控制（PRD-26 §5.5，TMS_SETTLE_PHOTO_REQUIRED）。
+        //
+        // 这是本期唯一的行为变更项：PRD-25 把「至少一张」写死在代码里，实际推行时
+        // 部分门店当场无法拍照（光线、客户拒拍）导致结算卡死，只能靠改代码放开。
+        // 默认值取 N，即默认不强制，需要留痕的企业自行在参数设置里打开。
+        //
+        // 位置仍保持在所有写库动作之前：@Transactional 默认只对 RuntimeException 回滚，
+        // return fail 属正常返回不触发回滚，校验后移会留下「报错但收款单已生成」的脏数据。
+        if (sysParamService.getBool("TMS_SETTLE_PHOTO_REQUIRED", false) && photos.isEmpty()) {
+            return ApiResponse.fail("400", "请先拍摄结算现场照片");
+        }
+
+        // 签收电子签名兜底校验（PRD-26 §P0120，TMS_SIGN_ESIGN_REQUIRED）。
+        //
+        // 配送签收在 APP 端只落本地草稿，真正写库是本方法，所以签名的服务端校验
+        // 只能放在这里——签收页那次「提交」并没有请求后端。
+        // 逐单检查而非只看一张：一个门店可能有多张单据，漏签的那张同样缺凭证。
+        // 开关默认 N 时整段跳过，与 APP 不展示签名区一致。
+        if (sysParamService.getBool("TMS_SIGN_ESIGN_REQUIRED", false)) {
+            for (Map<String, Object> b : draftBills) {
+                if (TmsUtil.str(b.get("signatureUrl")).isEmpty()) {
+                    return ApiResponse.fail("400", "单据 " + TmsUtil.str(b.get("sourceBillNo")) + " 缺少客户电子签名");
+                }
+            }
+        }
 
         // 以服务端金额为准：APP 传来的 signAmount 只作参考，避免端上算错或被篡改
         List<String> detailIds = new ArrayList<>();
@@ -217,6 +255,21 @@ public class TmsStoreSettleController {
         }
         List<Map<String, Object>> bills = loadBills(driverId, customerCode, detailIds);
         if (bills.isEmpty()) return ApiResponse.fail("400", "没有可结算的单据");
+
+        // 合并结算兜底校验（PRD-26 §P0119，TMS_RETURN_MERGE_SETTLE）。
+        //
+        // 关闭时「退货单不可与送货单一起勾选结算」。APP 端已在勾选阶段拦住
+        // （_canCheckWith / _limitCheckedToOneType），这里是服务端兜底：旧版本 APP
+        // 不认这个参数，直接调接口同样能绕过端上限制。
+        // 用 bills 而非入参 draftBills 判类型：billType 取自 tms_dispatch_detail，
+        // 是服务端口径，端上传什么都篡改不了。
+        if (!sysParamService.getBool("TMS_RETURN_MERGE_SETTLE", true)) {
+            boolean hasReturn = bills.stream().anyMatch(b -> "RETURN".equals(TmsUtil.str(b.get("billType"))));
+            boolean hasReceipt = bills.stream().anyMatch(b -> !"RETURN".equals(TmsUtil.str(b.get("billType"))));
+            if (hasReturn && hasReceipt) {
+                return ApiResponse.fail("400", "当前设置不允许退货单与送货单合并结算，请分开提交");
+            }
+        }
 
         // 重复结算拦截。必须有，且必须在写库之前：
         // APP 端提交超时后司机往往会再点一次，而本方法每次都新建收款单并冲抵应收，
@@ -249,6 +302,29 @@ public class TmsStoreSettleController {
             return ApiResponse.fail("400", "收款 + 挂账金额必须等于应结金额 " + settleAmount.toPlainString());
         }
 
+        // 冲抵账户校验（PRD-26 §2.3 / P0118 TMS_OFFSET_FUND_ACCOUNT）
+        // 本次被对冲掉的金额 = MIN(发货, 退货)：发货 100 退货 30 时对冲 30，
+        // 发货 30 退货 100 时只有 30 能被对冲，剩下 70 是净退货，走后台退款流程不属冲抵。
+        // 只有真正发生对冲（两者都 > 0）才要求配账户 —— 纯发货或纯退货没有账面对冲，
+        // 不该因为参数没配就把正常结算拦死。
+        BigDecimal receiptAmount = TmsUtil.toBd(sum.get("receiptAmount"));
+        BigDecimal returnAmount = TmsUtil.toBd(sum.get("returnAmount"));
+        BigDecimal offsetAmount = receiptAmount.min(returnAmount).max(BigDecimal.ZERO);
+        String offsetCode = "";
+        String offsetName = "";
+        if (offsetAmount.signum() > 0) {
+            offsetCode = sysParamService.get("TMS_OFFSET_FUND_ACCOUNT", "").trim();
+            // 明确报错而非静默回落司机账户：冲抵是账面对冲，若落到司机账户会污染
+            // 司机手上的现金余额，对账时查不出差额来源。
+            if (offsetCode.isEmpty()) {
+                return ApiResponse.fail("400", "未配置合并结算冲抵资金账户，请先在【系统管理 > 参数设置】中配置");
+            }
+            offsetName = offsetAccountName(offsetCode);
+            if (offsetName.isEmpty()) {
+                return ApiResponse.fail("400", "合并结算冲抵资金账户 " + offsetCode + " 不存在或已停用，请重新配置");
+            }
+        }
+
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) dispatchId = TmsUtil.str(bills.get(0).get("dispatchId"));
         String customerName = TmsUtil.str(bills.get(0).get("customerName"));
@@ -272,18 +348,22 @@ public class TmsStoreSettleController {
         }
 
         // ② 结算主表
+        // 冲抵账户在此刻固化：参数是可变的全局配置，若等审核时再读，
+        // 运营中途改了账户会让历史单据的流水记到新账户上，两个账户都对不平。
         jdbcTemplate.update("""
                 INSERT INTO tms_store_settlement(settle_id, settle_no, dispatch_id, trip_id,
                     driver_id, driver_name, customer_code, customer_name,
                     bill_count, receipt_amount, return_amount, settle_amount,
                     received_amount, credit_amount, settle_status, fin_status,
-                    signer, settle_time, remark)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', 'PENDING', ?, ?, ?)
+                    signer, settle_time, remark,
+                    offset_account_code, offset_account_name, offset_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', 'PENDING', ?, ?, ?, ?, ?, ?)
                 """, settleId, settleNo, dispatchId, tripId, driverId, driverName,
                 customerCode, customerName, bills.size(),
-                TmsUtil.toBd(sum.get("receiptAmount")), TmsUtil.toBd(sum.get("returnAmount")),
+                receiptAmount, returnAmount,
                 settleAmount, received, credit,
-                TmsUtil.str(body.get("signer")), nowTs, TmsUtil.str(body.get("remark")));
+                TmsUtil.str(body.get("signer")), nowTs, TmsUtil.str(body.get("remark")),
+                offsetCode, offsetName, offsetAmount);
 
         // ③ 账户明细 + 结算照片
         // 账户编码/名称一律从 base_fund_account 回查，不信前端入参（与 driverAccountSave 同策略）。
@@ -396,7 +476,8 @@ public class TmsStoreSettleController {
     @Transactional
     public Map<String, Object> approveStoreSettlements(String settlementId, String settlementNo) {
         List<Map<String, Object>> settles = TmsUtil.queryCamel(jdbcTemplate, """
-                SELECT settle_id, settle_no, receipt_id, receipt_no, received_amount, fin_status
+                SELECT settle_id, settle_no, receipt_id, receipt_no, received_amount, fin_status,
+                       offset_account_name, offset_amount
                 FROM tms_store_settlement
                 WHERE settlement_id = ?
                 ORDER BY create_time, settle_no
@@ -405,6 +486,7 @@ public class TmsStoreSettleController {
         int approved = 0;
         int skipped = 0;
         BigDecimal amount = BigDecimal.ZERO;
+        BigDecimal offsetTotal = BigDecimal.ZERO;
         List<String> failures = new ArrayList<>();
 
         for (Map<String, Object> s : settles) {
@@ -412,12 +494,25 @@ public class TmsStoreSettleController {
             String settleNo = TmsUtil.str(s.get("settleNo"));
             String receiptId = TmsUtil.str(s.get("receiptId"));
             BigDecimal received = TmsUtil.toBd(s.get("receivedAmount"));
+            String offsetAcct = TmsUtil.str(s.get("offsetAccountName"));
+            BigDecimal offsetAmt = TmsUtil.toBd(s.get("offsetAmount"));
 
             // 已入账过的不重复处理（交账单驳回后再审核会走到这里）
             if ("APPROVED".equals(TmsUtil.str(s.get("finStatus")))) { skipped++; continue; }
 
-            // 全额挂账的结算没有收款单，只需把财务状态推到 APPROVED
+            // 全额挂账的结算没有收款单，只需把财务状态推到 APPROVED。
+            // 但纯退货 / 净额<=0 的单子照样可能有冲抵（发货 30 退货 100 时对冲 30），
+            // 冲抵流水与有没有实收无关，所以这个分支也要写。
             if (receiptId.isEmpty() || received.signum() <= 0) {
+                try {
+                    financeController.writeOffsetLedger(offsetAcct, offsetAmt, settleNo, TmsUtil.currentUser());
+                    if (offsetAmt.signum() > 0) offsetTotal = offsetTotal.add(offsetAmt);
+                } catch (RuntimeException e) {
+                    // 冲抵流水失败不该阻断挂账单的状态推进：挂账本身没有资金动作，
+                    // 缺的只是一组账面留痕，写日志交财务补即可。
+                    TmsUtil.log(jdbcTemplate, "tms.storeSettle", "OFFSET_FAIL", settleNo,
+                            "冲抵流水写入失败：" + e.getMessage());
+                }
                 jdbcTemplate.update(
                         "UPDATE tms_store_settlement SET fin_status='APPROVED' WHERE settle_id=?", settleId);
                 approved++;
@@ -426,6 +521,10 @@ public class TmsStoreSettleController {
 
             try {
                 Map<String, Object> res = financeController.auditReceiptForSettle(receiptId, loadSettleArNos(settleId));
+                // 冲抵流水紧跟实收入账之后：两者同属一次交账审核，
+                // 放在同一个 try 里可保证收款入账失败时冲抵也不落单条。
+                financeController.writeOffsetLedger(offsetAcct, offsetAmt, settleNo, TmsUtil.currentUser());
+                if (offsetAmt.signum() > 0) offsetTotal = offsetTotal.add(offsetAmt);
                 jdbcTemplate.update(
                         "UPDATE tms_store_settlement SET fin_status='APPROVED' WHERE settle_id=?", settleId);
                 approved++;
@@ -448,13 +547,16 @@ public class TmsStoreSettleController {
         if (approved > 0 || skipped > 0) {
             TmsUtil.log(jdbcTemplate, "tms.storeSettle", "APPROVE", settlementNo,
                     "交账审核入账：成功 " + approved + " 张，跳过 " + skipped + " 张，入账金额 "
-                            + amount.toPlainString() + (failures.isEmpty() ? "" : "，失败 " + failures.size() + " 张"));
+                            + amount.toPlainString()
+                            + (offsetTotal.signum() > 0 ? "，销退冲抵 " + offsetTotal.toPlainString() : "")
+                            + (failures.isEmpty() ? "" : "，失败 " + failures.size() + " 张"));
         }
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("approvedCount", approved);
         data.put("skippedCount", skipped);
         data.put("approvedAmount", amount);
+        data.put("offsetAmount", offsetTotal);
         data.put("failures", failures);
         return data;
     }
@@ -471,6 +573,22 @@ public class TmsStoreSettleController {
     // ========================================================================
     // 内部实现
     // ========================================================================
+
+    /**
+     * 按账户编码查冲抵账户名称，同时兜住「参数指向的账户已被停用或删除」。
+     *
+     * 为什么返回名称：fin_fund_ledger.fund_account 存的是账户名称或编码
+     * （FinanceController.getFundBalance 用 name/code 双向匹配），
+     * 而收款单明细统一存名称，冲抵流水跟着存名称才能和实收流水在同一口径下对账。
+     *
+     * @return 空串表示账户不可用（不存在 / 非 NORMAL），由调用方报错
+     */
+    private String offsetAccountName(String code) {
+        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate,
+                "SELECT fund_account_name FROM base_fund_account WHERE fund_account_code = ? AND status = 'NORMAL'",
+                code);
+        return rows.isEmpty() ? "" : TmsUtil.str(rows.get(0).get("fundAccountName"));
+    }
 
     /**
      * 取待结算单据金额。
@@ -599,7 +717,8 @@ public class TmsStoreSettleController {
                 // 委托 onDriverCollected，它会按实收数量重算 return_amount 并写 logistics_status='司机已回收'。
                 // 不传 items = 全收，与本页「退货整单回收」的语义一致。
                 try {
-                    salesReturnController.onDriverCollected(billNo, null, TmsUtil.currentUser());
+                    nestedTx.executeWithoutResult(st ->
+                            salesReturnController.onDriverCollected(billNo, null, TmsUtil.currentUser()));
                 } catch (RuntimeException e) {
                     // 退货单状态不满足（如非司机回收方式、未确认）不应阻断整笔结算：
                     // 货款收了才是当务之急，退货异常留给后台对账处理。

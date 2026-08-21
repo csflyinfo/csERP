@@ -112,6 +112,12 @@ class AppConfig {
   static const String driverIdKey = 'tms_driver_id';
   static const String driverNameKey = 'tms_driver_name';
 
+  /// 后端下发的运行参数快照缓存 key（PRD-26 §5.5）。
+  ///
+  /// 与 token 同生命周期但独立存放：退出登录会清 token，参数快照可以保留，
+  /// 这样下次进登录页/弱网首屏也能按上次的配置渲染，不必等接口回来。
+  static const String appParamsKey = 'tms_app_params';
+
   // ==================== 留证照片采集与上传 ====================
 
   /// 拍照后压缩到的最长边像素。

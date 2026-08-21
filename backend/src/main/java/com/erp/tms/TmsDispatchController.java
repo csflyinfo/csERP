@@ -35,12 +35,15 @@ public class TmsDispatchController {
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
     private final TmsNotifyService notifyService;
+    private final com.erp.system.SysParamService sysParamService;
 
     public TmsDispatchController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
-                                 TmsNotifyService notifyService) {
+                                 TmsNotifyService notifyService,
+                                 com.erp.system.SysParamService sysParamService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.notifyService = notifyService;
+        this.sysParamService = sysParamService;
     }
 
     /**
@@ -76,6 +79,9 @@ public class TmsDispatchController {
         // 把今天的货追加到那种单上，货会挂到一趟早就跑完的行程里。
         // dispatch_date 取出来可能是 DATE 也可能是字符串，统一截前 10 位比对。
         String bizDate = TmsUtil.date(body.get("dispatchDate")).toString();
+        // 与 create 里的追加拦截读同一个参数：若只在 create 拦，调度员会先在下拉里
+        // 选中已发车的单、填完明细才被拒，白做一遍。这里提前把它们剔出候选。
+        boolean appendAfterDepart = sysParamService.getBool("TMS_APPEND_AFTER_DEPART", true);
         List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, """
                 SELECT dispatch_id, dispatch_no, dispatch_date, route_line, vehicle_plate, status,
                        loaded_qty, return_qty, store_count, amount, parent_dispatch_id,
@@ -88,11 +94,13 @@ public class TmsDispatchController {
             String status = TmsUtil.str(r.get("status"));
             r.put("statusText", resolveDispatchStatus(status));
             // 已发车的单在司机端已经进入「配送中」，追加提示语要区分这两种
-            r.put("departed", Set.of("DEPARTED", "DELIVERING").contains(status));
+            boolean departed = Set.of("DEPARTED", "DELIVERING").contains(status);
+            r.put("departed", departed);
             // 非本次配送日的历史遗留单不给追加，只在提示里露出数量供调度员去清理
             boolean sameDay = bizDate.equals(TmsUtil.date(r.get("dispatchDate")).toString());
             r.put("stale", !sameDay);
-            r.put("canAppend", TmsUtil.str(r.get("parentDispatchId")).isEmpty() && sameDay);
+            r.put("canAppend", TmsUtil.str(r.get("parentDispatchId")).isEmpty() && sameDay
+                    && (appendAfterDepart || !departed));
             // 未完成配送点数：追加提示里要让调度员看出这趟车还剩多少点
             Integer pending = jdbcTemplate.queryForObject("""
                     SELECT COUNT(DISTINCT customer_code) FROM tms_dispatch_detail
@@ -224,6 +232,16 @@ public class TmsDispatchController {
             // 往 COMPLETED/CANCELLED 上挂新单只会让关联关系变成误导信息。
             if (Set.of("COMPLETED", "CANCELLED").contains(pStatus)) {
                 return ApiResponse.fail("400", "目标调度单已" + resolveDispatchStatus(pStatus) + "，不能追加任务");
+            }
+            // 发车后追加开关（PRD-26 §5.5，TMS_APPEND_AFTER_DEPART）。
+            //
+            // 关闭时只拦「已发车」的单，未发车（ASSIGNED/ACCEPTED/LOADED）的追加照旧放行——
+            // 这个开关管的是「车已经在路上还能不能塞新单」这件事，装车前追加本来就是正常排单。
+            // 默认 Y 保持存量行为不变；管控严格的企业关掉后，司机在途中拿到的任务清单
+            // 就与出车时装的货完全一致，便于对账。
+            if (!sysParamService.getBool("TMS_APPEND_AFTER_DEPART", true)
+                    && TmsAppController.DISPATCH_ON_ROAD.contains(pStatus)) {
+                return ApiResponse.fail("400", "目标调度单已发车，当前参数设置不允许发车后追加任务");
             }
             // 后端兜底两道，不能只靠前端的下拉过滤：
             // 1) 不允许挂到追加单上，否则 parent 链变多层，「同一趟车」没法一次查出来

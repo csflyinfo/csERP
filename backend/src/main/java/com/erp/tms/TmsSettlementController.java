@@ -39,14 +39,17 @@ public class TmsSettlementController {
     private final BillNoGenerator billNoGen;
     private final TmsNotifyService notifyService;
     private final TmsStoreSettleController storeSettleController;
+    private final com.erp.system.SysParamService sysParamService;
 
     public TmsSettlementController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                                    TmsNotifyService notifyService,
-                                   TmsStoreSettleController storeSettleController) {
+                                   TmsStoreSettleController storeSettleController,
+                                   com.erp.system.SysParamService sysParamService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.notifyService = notifyService;
         this.storeSettleController = storeSettleController;
+        this.sysParamService = sysParamService;
     }
 
     // ========================================================================
@@ -181,6 +184,14 @@ public class TmsSettlementController {
         String diffReason = TmsUtil.str(body.get("diffReason"));
         String signatureImg = TmsUtil.str(body.get("signatureImg"));
         String remark = TmsUtil.str(body.get("remark"));
+
+        // 电子签名兜底校验（PRD-26 TMS_HANDOVER_ESIGN_REQUIRED，默认 N）。
+        // APP 端关闭开关时整块签名区不渲染，signatureImg 会是空串；打开时前端已拦一道，
+        // 这里再拦一次是防旧版本 APP 或直接调接口绕过。必须放在写库之前：
+        // @Transactional 默认只对 RuntimeException 回滚，fail(...) 不会回滚已写入的数据。
+        if (sysParamService.getBool("TMS_HANDOVER_ESIGN_REQUIRED", false) && signatureImg.isEmpty()) {
+            return ApiResponse.fail("400", "请完成交账电子签名");
+        }
 
         // 防重复提交
         int existCount = jdbcTemplate.queryForObject(

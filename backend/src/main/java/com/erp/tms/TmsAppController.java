@@ -56,12 +56,15 @@ public class TmsAppController {
     private final JdbcTemplate jdbcTemplate;
     private final TmsAuthService authService;
     private final com.erp.sales.SalesReturnController salesReturnController;
+    private final com.erp.system.SysParamService sysParamService;
 
     public TmsAppController(JdbcTemplate jdbcTemplate, TmsAuthService authService,
-                            com.erp.sales.SalesReturnController salesReturnController) {
+                            com.erp.sales.SalesReturnController salesReturnController,
+                            com.erp.system.SysParamService sysParamService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authService = authService;
         this.salesReturnController = salesReturnController;
+        this.sysParamService = sysParamService;
     }
 
     @PostMapping("/login")
@@ -69,6 +72,21 @@ public class TmsAppController {
         String mobile = TmsUtil.str(body.get("mobile"));
         String verifyCode = TmsUtil.str(body.get("verifyCode"));
         return ApiResponse.ok(authService.login(mobile, verifyCode));
+    }
+
+    /**
+     * APP 参数快照（PRD-26 §5.5）。
+     *
+     * <p>为什么单独开一个接口而不只挂在登录响应上：参数改了之后，已登录的司机
+     * 不会重新走 login，若只在登录时下发，改配置要等司机退出重进才生效。
+     * APP 在冷启动 restore、下拉刷新任务列表时调本接口刷新缓存。
+     *
+     * <p>与 {@code /login} 返回的 params 是同一份数据（都走 appParamSnapshot），
+     * 不存在两套默认值。
+     */
+    @PostMapping("/params")
+    public ApiResponse<Map<String, Object>> params() {
+        return ApiResponse.ok(authService.appParamSnapshot());
     }
 
     @PostMapping("/profile")
@@ -914,6 +932,30 @@ public class TmsAppController {
         if (applyNo.isEmpty()) return ApiResponse.fail("400", "退货单号不能为空");
         String driverId = TmsUtil.currentDriverId();
 
+        // 照片张数校验（PRD-26 §5.5，TMS_RETURN_PHOTO_COUNT）。
+        //
+        // 位置很关键：必须放在 onDriverCollected 等任何写库动作之前。
+        // @Transactional 默认只对 RuntimeException 回滚，而 return ApiResponse.fail 是
+        // 正常返回、不触发回滚——若校验放在写库之后，会出现「接口报错但退货单已回写」
+        // 的半成品数据。参数为 0 表示不校验（PRD §3.2 值域 0~5）。
+        @SuppressWarnings("unchecked")
+        List<String> photoUrls = body.get("photos") instanceof List<?> pl
+                ? (List<String>) pl : List.<String>of();
+        long validPhotoCount = photoUrls.stream().filter(u -> u != null && !u.isEmpty()).count();
+        int requirePhoto = sysParamService.getInt("TMS_RETURN_PHOTO_COUNT", 2, 0, 5);
+        if (requirePhoto > 0 && validPhotoCount < requirePhoto) {
+            return ApiResponse.fail("400", "请至少拍摄 " + requirePhoto + " 张退货现场照片");
+        }
+
+        // 电子签名校验（PRD-26 §P0120，TMS_SIGN_ESIGN_REQUIRED）。
+        //
+        // 与照片校验同理，必须放在写库之前。开关默认 N，此时完全不校验，
+        // 与 APP 侧「不展示签名区」一致；开关为 Y 时 APP 已强制必签，
+        // 这里是兜底——旧版本 APP 或直接调接口的场景不能绕过必签要求。
+        if (sysParamService.getBool("TMS_SIGN_ESIGN_REQUIRED", false) && signatureUrl.isEmpty()) {
+            return ApiResponse.fail("400", "请完成客户电子签名");
+        }
+
         List<Map<String, Object>> heads = jdbcTemplate.queryForList("""
                 SELECT apply_id, apply_no, customer_code, customer_name, qty, logistics_status, driver_id, dispatch_id, trip_id
                 FROM sales_return_apply WHERE apply_no = ?
@@ -964,10 +1006,7 @@ public class TmsAppController {
                 totalSigned, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(), customerSigner,
                 signatureUrl.isEmpty() ? null : signatureUrl, remark);
 
-        // 2.1 保存退货照片（URL 列表）
-        @SuppressWarnings("unchecked")
-        List<String> photoUrls = body.get("photos") instanceof List<?> l
-                ? (List<String>) l : List.of();
+        // 2.1 保存退货照片（URL 列表）。photoUrls 已在方法入口的张数校验处解析，此处直接复用
         for (String url : photoUrls) {
             if (url == null || url.isEmpty()) continue;
             String photoId = TmsUtil.uuid("SP");

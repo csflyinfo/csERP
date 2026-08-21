@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import '../models/driver.dart';
 import 'api_service.dart';
+import 'param_service.dart';
 
 /// 鉴权服务：司机登录、token 持久化、当前司机信息。
 class AuthService {
@@ -26,6 +27,11 @@ class AuthService {
     );
     _current = driver;
     ApiService.instance.setToken(token);
+    // 参数先用本地缓存立即生效，再异步拉最新值。
+    // 不 await refresh：登录态恢复在启动路径上，等参数接口会拖慢首屏；
+    // 拿到新值后各页面下次读 current 自然生效。
+    await ParamService.instance.restore();
+    ParamService.instance.refresh();
     return true;
   }
 
@@ -38,6 +44,8 @@ class AuthService {
     final driver = Driver.fromJson(data);
     _current = driver;
     ApiService.instance.setToken(driver.token);
+    // 登录响应已带参数快照（PRD-26 §5.5），直接落地，无需再请求一次
+    await ParamService.instance.applyFromLogin(data['params']);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConfig.tokenKey, driver.token);
     await prefs.setString(AppConfig.driverIdKey, driver.driverId);

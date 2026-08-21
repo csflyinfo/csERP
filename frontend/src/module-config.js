@@ -437,6 +437,10 @@ Object.assign(moduleConfigs, {
     row: [],
     actions: ['保存配置', '恢复默认', '导出'], sections: ['参数信息', '变更说明'],
   },
+  paramSetting: {
+    type: 'system', mode: 'custom', title: '参数设置', desc: '按业务分组的开关型参数配置，左侧分组导航、右侧表单统一保存',
+    filters: [], columns: [], row: [], actions: ['保存'], sections: [],
+  },
   billNo: {
     type: 'system', mode: 'modal', title: '单据编号规则', desc: '单据前缀、日期格式、流水位数和重置周期维护',
     filters: ['单据类型', '状态'],

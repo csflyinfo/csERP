@@ -7,6 +7,7 @@ import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/connectivity_service.dart';
 import '../../services/launch_service.dart';
+import '../../services/param_service.dart';
 import '../../services/sync_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
@@ -256,6 +257,15 @@ class _TodayContent extends ConsumerWidget {
             const SizedBox(height: 8),
             Alert.info('📋 ${_dateLabel()} · ${tasks.dispatches.isNotEmpty ? tasks.dispatches.first.routeLine : ""}${_netText(ref)}'),
             const SizedBox(height: 8),
+            // 司机流程总开关（TMS_DRIVER_FLOW_ENABLED，PRD-26 §3.2）关闭时的整屏级提示。
+            //
+            // 为什么是提示横幅而不是直接把首页换成空白页：司机看到空白页只会
+            // 反复重装 APP、打电话找调度。明确告诉他「后台关了流程」，
+            // 他才知道该找谁。历史任务与交账入口仍保留可查，只锁写操作。
+            if (!ParamService.instance.current.driverFlowEnabled) ...[
+              const Alert.danger('⛔ 司机派送流程已被管理员关闭，暂不能接单与作业，如有疑问请联系调度'),
+              const SizedBox(height: 8),
+            ],
             // 待接单 + 当前作业流程 + 下一站 + 待交账
             const _HomeWorkflow(),
             const SizedBox(height: 4),
@@ -275,19 +285,25 @@ class _TodayContent extends ConsumerWidget {
             // 保留下面的快捷操作，是因为它们都不依赖某张具体单据：
             // 现场退货、返仓交接、异常上报在没有任务上下文时同样要能进。
             // 快捷操作（现场退货 / 返仓交接）
+            //
+            // 现场退货入口受 TMS_ONSITE_RETURN_ENABLED 控制（PRD-26 §3.2）：
+            // 部分企业要求退货必须走后台开单、司机不得现场创建，关掉后这个入口消失。
+            // 关掉时不留占位按钮——留一个点了报错的按钮，比没有更让司机困惑。
             Row(children: [
-              Expanded(child: _QuickAction(
-                icon: '🔄',
-                label: '现场退货',
-                color: TmsTheme.returnPurple,
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  navigator.push(MaterialPageRoute(
-                    builder: (_) => const DriverReturnCreatePage(),
-                  )).then((changed) => _maybeRefresh(ref, changed));
-                },
-              )),
-              const SizedBox(width: 8),
+              if (ParamService.instance.current.onsiteReturnEnabled) ...[
+                Expanded(child: _QuickAction(
+                  icon: '🔄',
+                  label: '现场退货',
+                  color: TmsTheme.returnPurple,
+                  onTap: () {
+                    final navigator = Navigator.of(context);
+                    navigator.push(MaterialPageRoute(
+                      builder: (_) => const DriverReturnCreatePage(),
+                    )).then((changed) => _maybeRefresh(ref, changed));
+                  },
+                )),
+                const SizedBox(width: 8),
+              ],
               Expanded(child: _QuickAction(
                 icon: '🏭',
                 label: '返仓交接',
@@ -547,6 +563,10 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
 
   Widget _dispatchCard(Dispatch d) {
     final canAccept = d.canAccept;
+    // 流程总开关关闭时只锁「接单」这一个写入动作，查看清单仍可点。
+    // 后端 accept 接口也有同一道守卫，这里是体验层前移：
+    // 让司机在点下去之前就看到原因，而不是点完弹一个错误提示。
+    final flowEnabled = ParamService.instance.current.driverFlowEnabled;
     return MCard(
       leftBar: canAccept ? TmsTheme.accent2 : TmsTheme.accent,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -601,10 +621,10 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
           Expanded(
             child: canAccept
                 ? _MiniAction(
-                    label: _busy ? '处理中…' : '接单',
+                    label: !flowEnabled ? '流程已关闭' : (_busy ? '处理中…' : '接单'),
                     icon: Icons.assignment_turned_in,
-                    color: TmsTheme.accent2,
-                    onTap: _busy ? null : () => _accept(d.dispatchId),
+                    color: !flowEnabled ? TmsTheme.muted : TmsTheme.accent2,
+                    onTap: (_busy || !flowEnabled) ? null : () => _accept(d.dispatchId),
                   )
                 : _MiniAction(
                     // 已装车时不在首页直接发车：发车是不可逆动作，

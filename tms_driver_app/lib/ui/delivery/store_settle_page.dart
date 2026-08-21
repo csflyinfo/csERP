@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../config/theme.dart';
 import '../../services/api_service.dart';
 import '../../services/local_db_service.dart';
+import '../../services/param_service.dart';
 import '../../services/photo_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
@@ -74,6 +75,31 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
   /// 强制挂账：净额 <= 0（退货多于发货）或纯退货单，此时不允许收钱。
   bool get _creditOnly => _preview?.creditOnly ?? true;
 
+  /// 结算现场照片是否必填（PRD-26 TMS_SETTLE_PHOTO_REQUIRED，默认 N 不强制）。
+  bool get _photoRequired => ParamService.instance.current.settlePhotoRequired;
+
+  /// 是否允许送货单与退货单合并结算（PRD-26 TMS_RETURN_MERGE_SETTLE，默认 Y 允许）。
+  ///
+  /// 默认值保持 Y，所以不改参数时勾选行为与 PRD-25 完全一致，没有回归风险。
+  bool get _mergeSettle => ParamService.instance.current.returnMergeSettle;
+
+  /// 合并结算关闭时：新勾的单据类型必须与已勾选的一致。
+  bool _canCheckWith(_SettleBill b) {
+    if (_mergeSettle || _checked.isEmpty) return true;
+    return !_bills.any((x) => _checked.contains(x.detailId) && x.isReturn != b.isReturn);
+  }
+
+  /// 把已勾选收敛到单一单据类型，发货单优先。
+  ///
+  /// 发货优先是因为司机到店的主流程是收发货款，退货冲减是附带动作；
+  /// 保留发货单能让「结钱」这条主链路一次走完，退货单再单独结一次。
+  void _limitCheckedToOneType() {
+    if (_checked.isEmpty) return;
+    final keepReturn = !_bills.any((b) => !b.isReturn && _checked.contains(b.detailId));
+    final returnIds = _bills.where((b) => b.isReturn).map((b) => b.detailId).toSet();
+    _checked.removeWhere((id) => keepReturn ? !returnIds.contains(id) : returnIds.contains(id));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -123,6 +149,9 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
         // 逐个勾反而多操作；要单结再手动取消。
         _checked.add(detailId);
       }
+      // 合并结算关掉时，默认全选不能把发货单和退货单一起勾上，
+      // 否则司机一进页面就处在非法勾选态，还得自己去猜该取消哪些。
+      if (!_mergeSettle) _limitCheckedToOneType();
       await _loadAccounts();
       if (!mounted) return;
       setState(() => _loading = false);
@@ -335,6 +364,7 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
                       _checked
                         ..clear()
                         ..addAll(_bills.map((b) => b.detailId));
+                      if (!_mergeSettle) _limitCheckedToOneType();
                     }
                   });
                   _refreshPreview();
@@ -356,6 +386,14 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
     final checked = _checked.contains(b.detailId);
     return InkWell(
       onTap: () {
+        if (!checked && !_canCheckWith(b)) {
+          // 只提示不静默改勾选：替司机把已勾的单取消掉，他很可能没注意到，
+          // 结果少结了一张单还以为都结完了。
+          _toast(b.isReturn
+              ? '当前参数设置不允许送货单与退货单合并结算，请先取消已勾选的送货单'
+              : '当前参数设置不允许送货单与退货单合并结算，请先取消已勾选的退货单');
+          return;
+        }
         setState(() {
           if (checked) {
             _checked.remove(b.detailId);
@@ -584,7 +622,9 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
                   style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
               const SizedBox(width: 4),
-              const Text('*', style: TextStyle(fontSize: 13, color: TmsTheme.bad)),
+              // 必填星号跟着参数走：参数关掉后还挂个红星，司机会以为是自己漏拍
+              if (_photoRequired)
+                const Text('*', style: TextStyle(fontSize: 13, color: TmsTheme.bad)),
               const Spacer(),
               Text('${_photos.length} 张',
                   style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
@@ -737,7 +777,18 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
       _toast('金额尚未试算完成，请稍候');
       return;
     }
-    if (_photos.isEmpty) {
+    // 兜底：参数可能在司机停留本页期间被刷新，勾选态是先前的合法组合。
+    // 提交是唯一有副作用的入口，这里再判一次，避免绕过前面的交互拦截。
+    if (!_mergeSettle) {
+      final checkedBills = _bills.where((b) => _checked.contains(b.detailId));
+      if (checkedBills.any((b) => b.isReturn) && checkedBills.any((b) => !b.isReturn)) {
+        _toast('当前参数设置不允许送货单与退货单合并结算，请分开结算');
+        return;
+      }
+    }
+    // 是否必须拍照读参数（PRD-26 TMS_SETTLE_PHOTO_REQUIRED，默认不强制）。
+    // PRD-25 把「至少一张」写死在这里，部分门店当场拍不了照会导致结算卡死。
+    if (_photoRequired && _photos.isEmpty) {
       _toast('请先拍摄结算现场照片');
       return;
     }

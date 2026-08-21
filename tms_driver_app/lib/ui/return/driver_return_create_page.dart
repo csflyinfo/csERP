@@ -8,6 +8,7 @@ import '../../models/driver_return.dart';
 import '../../providers/driver_return_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/param_service.dart';
 import '../../widgets/common.dart';
 
 /// 司机现场退货创建页面（对齐原型 Screen I）。
@@ -17,7 +18,7 @@ import '../../widgets/common.dart';
 ///   2. 选择仓库（默认司机所属仓库）
 ///   3. 搜索并添加退货商品，录入数量/价格/批次
 ///   4. 选择退货原因（破损/临期/错发/滞销/其他）
-///   5. 拍现场照片（至少 1 张）
+///   5. 拍现场照片（张数由参数 TMS_RETURN_PHOTO_COUNT 控制）
 ///   6. 「确认提交」→ /tms/app/return/create + upload-photo
 class DriverReturnCreatePage extends ConsumerStatefulWidget {
   final String? customerCode;
@@ -49,6 +50,13 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
   final List<XFile> _photos = [];
   String _returnReason = '破损';
   bool _submitting = false;
+
+  /// 现场退货照片张数下限：与退货回收共用 TMS_RETURN_PHOTO_COUNT
+  /// （PRD-26 §3.2 该参数的消费方就是「退货回收/现场退货页」），0 表示不校验。
+  int get _requirePhoto => ParamService.instance.current.returnPhotoCount;
+
+  /// 可拍上限保底 6 张，参数更高时以参数为准。
+  int get _maxPhoto => _requirePhoto > 6 ? _requirePhoto : 6;
 
   @override
   void initState() {
@@ -152,12 +160,17 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
               Row(children: [
                 const Text('现场照片', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
                 const SizedBox(width: 6),
-                Text('（至少 1 张，已拍 ${_photos.length} 张）', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+                Text(
+                  _requirePhoto > 0
+                      ? '（至少 $_requirePhoto 张，已拍 ${_photos.length} 张）'
+                      : '（选填，已拍 ${_photos.length} 张）',
+                  style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+                ),
               ]),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 ..._photos.asMap().entries.map((e) => _PhotoTile(photo: e.value, index: e.key + 1, onDelete: () => setState(() => _photos.removeAt(e.key)))),
-                if (_photos.length < 6) _AddPhotoTile(onTap: _pickPhoto),
+                if (_photos.length < _maxPhoto) _AddPhotoTile(onTap: _pickPhoto),
               ]),
             ]),
           ),
@@ -235,8 +248,9 @@ class _DriverReturnCreatePageState extends ConsumerState<DriverReturnCreatePage>
       _toast('请添加至少一个退货商品');
       return;
     }
-    if (_photos.isEmpty) {
-      _toast('请至少拍摄 1 张现场照片');
+    // 张数下限读参数（PRD-26 TMS_RETURN_PHOTO_COUNT），与退货回收签收同一口径
+    if (_requirePhoto > 0 && _photos.length < _requirePhoto) {
+      _toast('请至少拍摄 $_requirePhoto 张现场照片');
       return;
     }
     setState(() => _submitting = true);

@@ -8,6 +8,7 @@ import '../../config/theme.dart';
 import '../../models/return_order.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/param_service.dart';
 import '../../widgets/common.dart';
 
 /// 退货回收处理（V1.2 闭环终点，对齐原型 Screen O）。
@@ -29,6 +30,25 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
   final List<num> _signedQties = [];
   final List<XFile> _photos = [];
   bool _submitting = false;
+
+  /// 退货照片张数下限（PRD-26 TMS_RETURN_PHOTO_COUNT，0 表示不校验）。
+  int get _requirePhoto => ParamService.instance.current.returnPhotoCount;
+
+  /// 可拍上限：保底 6 张，参数高于 6 时以参数为准，
+  /// 避免出现「要求张数大于可拍张数」而永远提交不了。
+  int get _maxPhoto => _requirePhoto > 6 ? _requirePhoto : 6;
+
+  /// 是否展示并强制电子签名（PRD-26 TMS_SIGN_ESIGN_REQUIRED）。
+  ///
+  /// 退货签收与配送签收共用这一个开关：需求里的「司机签收页面」是一个整体口径，
+  /// 若两页各用一个参数，运营改一处只生效一半，反而更难解释。
+  bool get _esignRequired => ParamService.instance.current.signEsignRequired;
+
+  /// 是否允许送货单与退货单合并结算（PRD-26 TMS_RETURN_MERGE_SETTLE）。
+  ///
+  /// 为 false 时退货不进结算池、签收即闭环，因此提交前要弹二次确认——
+  /// 这一步之后司机没有任何补救入口，数量填错只能走后台冲销。
+  bool get _mergeSettle => ParamService.instance.current.returnMergeSettle;
 
   @override
   void dispose() {
@@ -125,7 +145,12 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
             Row(children: [
               const Text('📸 退货实物照片', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
               const SizedBox(width: 6),
-              Text('（至少 2 张，已拍 ${_photos.length} 张）', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+              Text(
+                _requirePhoto > 0
+                    ? '（至少 $_requirePhoto 张，已拍 ${_photos.length} 张）'
+                    : '（选填，已拍 ${_photos.length} 张）',
+                style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+              ),
             ]),
             const SizedBox(height: 8),
             Wrap(
@@ -137,39 +162,43 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
                       index: e.key + 1,
                       onDelete: () => setState(() => _photos.removeAt(e.key)),
                     )),
-                if (_photos.length < 6)
+                if (_photos.length < _maxPhoto)
                   _AddPhotoTile(onTap: _pickPhoto),
               ],
             ),
           ]),
         ),
         const SizedBox(height: 8),
-        // 客户确认签名
+        // 客户确认签名：签名画板受 TMS_SIGN_ESIGN_REQUIRED 控制，
+        // 签收人姓名是后端 /return/sign 的必填项，与开关无关，始终展示。
         MCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('✍️ 客户确认签名', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+            Text(_esignRequired ? '✍️ 客户确认签名' : '✍️ 客户签收信息',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
             const SizedBox(height: 6),
             _Field('签收人姓名', _signerCtrl, placeholder: '请输入签收人姓名'),
-            const SizedBox(height: 6),
-            SignaturePad(
-              key: _sigKey,
-              height: 120,
-              placeholder: '客户确认退货退款',
-            ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _sigKey.currentState?.clear(),
-                icon: const Icon(Icons.clear, size: 14),
-                label: const Text('清除签名', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            if (_esignRequired) ...[
+              const SizedBox(height: 6),
+              SignaturePad(
+                key: _sigKey,
+                height: 120,
+                placeholder: '客户确认退货退款',
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _sigKey.currentState?.clear(),
+                  icon: const Icon(Icons.clear, size: 14),
+                  label: const Text('清除签名', style: TextStyle(fontSize: 11)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               ),
-            ),
+            ],
           ]),
         ),
         const SizedBox(height: 8),
@@ -204,13 +233,24 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
       _toast('请输入签收人姓名');
       return;
     }
-    if (_photos.length < 2) {
-      _toast('请至少拍摄 2 张退货实物照片');
+    // 张数下限读参数（PRD-26 TMS_RETURN_PHOTO_COUNT），与后端 /return/sign 同一口径
+    if (_requirePhoto > 0 && _photos.length < _requirePhoto) {
+      _toast('请至少拍摄 $_requirePhoto 张退货实物照片');
       return;
     }
-    if (_sigKey.currentState?.isEmpty ?? true) {
+    // 电子签名（PRD-26 TMS_SIGN_ESIGN_REQUIRED）：开关打开即为必签，
+    // 关闭时画板未挂载，currentState 为 null，不做校验也不带签名提交。
+    if (_esignRequired && (_sigKey.currentState?.isEmpty ?? true)) {
       _toast('请完成客户签名');
       return;
+    }
+    // 合并结算关闭时（PRD-26 TMS_RETURN_MERGE_SETTLE=N）退货不进结算池，
+    // 本次签收就是整个退货回收流程的终点，因此必须让司机再确认一次数量。
+    // 取消则留在签收页继续修改，不做任何提交。
+    if (!_mergeSettle) {
+      final ok = await _confirmFinish();
+      if (!ok) return;
+      if (!mounted) return;
     }
     setState(() => _submitting = true);
     try {
@@ -268,6 +308,36 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// 退货回收终态二次确认（PRD-26 §P0119「否」分支的提示语，按需求原文）。
+  ///
+  /// 用 barrierDismissible: false 是刻意的：这是不可撤销操作的最后一道闸，
+  /// 误触遮罩就当作「取消」比当作「继续」更安全，但更不能让它含糊地关掉
+  /// 而司机不知道到底提交了没有——所以只接受两个按钮的显式选择。
+  Future<bool> _confirmFinish() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认回收数量', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: const Text(
+          '确认签收后即完成退货回收，请确认回收数量是否正确',
+          style: TextStyle(fontSize: 13, color: TmsTheme.ink, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('返回修改', style: TextStyle(fontSize: 13, color: TmsTheme.muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认完成', style: TextStyle(fontSize: 13, color: TmsTheme.returnPurple, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   void _toast(String msg) {

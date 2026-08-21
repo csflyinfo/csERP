@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>参数设置原型</title>
+<link rel="stylesheet" href="../assets/module-style.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,"Microsoft YaHei",sans-serif;color:#1f2937}
+.tabbar{height:44px;background:#fff;border-bottom:1px solid #e5eaf2;display:flex;align-items:flex-end;padding:0 12px;gap:6px}
+.tab{height:34px;display:flex;align-items:center;gap:8px;padding:0 14px;border:1px solid #e5eaf2;border-bottom:none;border-radius:4px 4px 0 0;background:#fafbfc;color:#667085;font-size:13px}
+.tab.on{background:#eef1f5;color:#1f2937;font-weight:600}
+.tab .x{color:#9aa4b2;font-size:12px}
+.page{height:calc(100vh - 44px);background:#fff;display:grid;grid-template-columns:260px 1fr}
+.groups{border-right:2px solid #e5eaf2;padding:14px 0}
+.group{height:46px;display:flex;align-items:center;padding:0 0 0 34px;color:#4b5563;cursor:pointer}
+.group.on{background:#eaf2ff;color:#1677ff;font-weight:700}
+.main{padding:22px 32px;overflow:auto}
+.bar{margin-bottom:26px;display:flex;align-items:center;gap:12px}
+.btn{height:36px;border:1px solid #dbe3ef;background:#fff;border-radius:4px;padding:0 22px;cursor:pointer;font-size:14px}
+.btn.primary{background:#1677ff;color:#fff;border-color:#1677ff;font-weight:600}
+.dirty{display:none;color:#d46b08;font-size:13px}
+.dirty.on{display:inline}
+.item{display:grid;grid-template-columns:230px 1fr;gap:0 18px;margin-bottom:22px}
+.lab{text-align:right;font-weight:700;padding-top:7px;color:#1f2937}
+.lab.off{color:#9aa4b2}
+.ctl{min-height:34px;display:flex;align-items:center;gap:26px}
+.hint{grid-column:2;color:#667085;font-size:13px;margin-top:6px}
+select,input[type=number]{height:34px;border:1px solid #dbe3ef;border-radius:4px;padding:0 10px;font-size:14px;color:#1f2937;background:#fff}
+select{width:430px}
+select:disabled,input:disabled{background:#f5f6f8;color:#9aa4b2}
+input[type=number]{width:110px}
+.rd{display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none}
+.rd input{margin:0;width:15px;height:15px;accent-color:#1677ff}
+.rd.sel span{color:#1677ff;font-weight:600}
+.rd.dis{cursor:not-allowed}
+.rd.dis span{color:#9aa4b2}
+.tag{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:3px;background:#fff7e6;border:1px solid #ffd591;color:#d46b08;font-size:12px;font-weight:400}
+.tag.new{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+.panel{display:none}
+.panel.on{display:block}
+.empty{color:#9aa4b2;padding:40px 0}
+.toast{display:none;position:fixed;right:20px;bottom:20px;background:#101828;color:#fff;border-radius:8px;padding:12px 16px}
+</style>
+</head>
+<body>
+
+<div class="tabbar">
+  <div class="tab">首页 <i class="x">×</i></div>
+  <div class="tab on">参数设置 <i class="x">×</i></div>
+</div>
+
+<div class="page">
+  <aside class="groups">
+    <div class="group" data-g="common">公共参数</div>
+    <div class="group" data-g="order">订单参数</div>
+    <div class="group" data-g="finance">财务参数</div>
+    <div class="group on" data-g="tms">TMS配送</div>
+    <div class="group" data-g="print">APP打印参数</div>
+  </aside>
+
+  <main class="main">
+    <div class="bar">
+      <button class="btn primary" onclick="save()">保 存</button>
+      <span class="dirty" id="dirty">当前分组有未保存的修改</span>
+    </div>
+
+    <!-- ===== TMS配送（PRD-26 本期新增 11 项） ===== -->
+    <section class="panel on" id="p-tms">
+      <div class="item">
+        <div class="lab">是否开启TMS司机派送流程：</div>
+        <div class="ctl">
+          <label class="rd sel"><input type="radio" name="P0117" checked><span>是</span></label>
+          <label class="rd"><input type="radio" name="P0117"><span>否</span></label>
+        </div>
+        <div class="hint">是：启用司机APP进行签收；否：系统后台签收，不走司机派送流程</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">司机合并结算冲抵资金账户：</div>
+        <div class="ctl">
+          <select>
+            <option>请选择末级资金账户</option>
+            <option selected>销退冲抵过渡户</option>
+            <option>库存现金 / 门店备用金</option>
+            <option>银行存款 / 工行基本户</option>
+          </select>
+        </div>
+        <div class="hint">销退合并结算时，冲抵部分按该账户一正一负记账，备注为【业务单号+合并结算冲抵】。仅可选末级且正常启用的资金账户</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">退货单与送货是否可合并结算：</div>
+        <div class="ctl">
+          <label class="rd sel"><input type="radio" name="P0119" checked><span>是</span></label>
+          <label class="rd"><input type="radio" name="P0119"><span>否</span></label>
+          <span class="tag">保留现状：默认允许合并</span>
+        </div>
+        <div class="hint">是：APP可勾选送货单与退货单一起结算（默认，与现有合并结算能力一致）；否：不可一起结算，退货回收单签收确认后自动完成，确认时提示【确认签收后即完成退货回收，请确认回收数量是否正确】（自动完成分支待阶段D上线）</div>
+      </div>
+
+      <div class="item">
+        <div class="lab off">签收是否需要客户电子签名：</div>
+        <div class="ctl">
+          <label class="rd dis"><input type="radio" name="P0120" disabled><span>是</span></label>
+          <label class="rd dis"><input type="radio" name="P0120" checked disabled><span>否</span></label>
+          <span class="tag">阶段D 待电子签名能力上线</span>
+        </div>
+        <div class="hint">是：签收页显示电子签名控件且必须签名；否：不显示电子签名功能</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">司机送货签收需拍照片数：</div>
+        <div class="ctl">
+          <input type="number" value="2" min="0" max="5">
+          <span style="color:#667085">张</span>
+        </div>
+        <div class="hint">默认2张。为0表示可不上传，最多支持5张</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">司机退货回收需拍照片数：</div>
+        <div class="ctl">
+          <input type="number" value="2" min="0" max="5">
+          <span style="color:#667085">张</span>
+        </div>
+        <div class="hint">包括司机现场退货。默认2张，为0表示可不上传，最多支持5张</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">结算是否强制需要上传照片：</div>
+        <div class="ctl">
+          <label class="rd"><input type="radio" name="P0123"><span>是</span></label>
+          <label class="rd sel"><input type="radio" name="P0123" checked><span>否</span></label>
+          <span class="tag">行为变更：原为强制必填</span>
+        </div>
+        <div class="hint">是：门店结算提交前必须上传照片。升级后默认放开，如需保持强制请手工改为「是」</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">上一任务未交款是否可接单：</div>
+        <div class="ctl">
+          <label class="rd"><input type="radio" name="P0124"><span>是</span></label>
+          <label class="rd sel"><input type="radio" name="P0124" checked><span>否</span></label>
+        </div>
+        <div class="hint">否：必须上一个任务交款完成后才可接新任务，避免配送未完成又领任务</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">司机是否可进行现场退货：</div>
+        <div class="ctl">
+          <label class="rd sel"><input type="radio" name="P0125" checked><span>是</span></label>
+          <label class="rd"><input type="radio" name="P0125"><span>否</span></label>
+        </div>
+        <div class="hint">是：司机端显示【现场退货】入口，可现场开退货单；否：不显示该入口</div>
+      </div>
+
+      <div class="item">
+        <div class="lab off">提交交账是否需要电子签名：</div>
+        <div class="ctl">
+          <label class="rd dis"><input type="radio" name="P0126" disabled><span>是</span></label>
+          <label class="rd dis"><input type="radio" name="P0126" checked disabled><span>否</span></label>
+          <span class="tag">阶段D 待电子签名能力上线</span>
+        </div>
+        <div class="hint">是：交账页显示电子签名功能且须签名；否：不展示电子签名，可不签名</div>
+      </div>
+
+      <div class="item">
+        <div class="lab">司机发车后是否可追加任务：</div>
+        <div class="ctl">
+          <label class="rd sel"><input type="radio" name="P0127" checked><span>是</span></label>
+          <label class="rd"><input type="radio" name="P0127"><span>否</span></label>
+        </div>
+        <div class="hint">是：后台可向配送中任务追加，由司机端接单确认后进入配送中列表；否：只能作为新一车次任务</div>
+      </div>
+    </section>
+
+    <!-- ===== 公共参数（存量，仅示意分组结构） ===== -->
+    <section class="panel" id="p-common">
+      <div class="item">
+        <div class="lab">统仓结算默认收款账户：</div>
+        <div class="ctl">
+          <select><option selected>现金账户</option><option>银行存款 / 工行基本户</option></select>
+        </div>
+      </div>
+      <div class="item">
+        <div class="lab off">是否启动生产日期管理：</div>
+        <div class="ctl">
+          <label class="rd dis"><input type="radio" name="c2" disabled><span>是</span></label>
+          <label class="rd dis"><input type="radio" name="c2" checked disabled><span>否</span></label>
+        </div>
+        <div class="hint">禁用，统一WMS管理批次</div>
+      </div>
+      <div class="item">
+        <div class="lab">手机账号只能登录一个手机端：</div>
+        <div class="ctl">
+          <label class="rd sel"><input type="radio" name="c3" checked><span>是</span></label>
+          <label class="rd"><input type="radio" name="c3"><span>否</span></label>
+        </div>
+        <div class="hint">当启用时，同一个登录账号只能在一个手机上登录，如果有另一个手机登录，自动踢出已经登录的其他手机端</div>
+      </div>
+      <div class="item">
+        <div class="lab">业务员进店拜访是否签到：</div>
+        <div class="ctl">
+          <label class="rd"><input type="radio" name="c4"><span>是</span></label>
+          <label class="rd sel"><input type="radio" name="c4" checked><span>否</span></label>
+        </div>
+        <div class="hint">判断业务员拜访门店时，是否必须在手机端签到</div>
+      </div>
+      <div class="item">
+        <div class="lab">APP库存查询的金额计算取值：</div>
+        <div class="ctl">
+          <select><option selected>按产品标价计算金额</option><option>按成本单价计算金额</option></select>
+        </div>
+        <div class="hint">0按产品标价计算金额；1按成本单价计算金额</div>
+      </div>
+    </section>
+
+    <section class="panel" id="p-order"><div class="empty">订单参数：本期未新增参数，展示存量参数（param_group = 订单）</div></section>
+    <section class="panel" id="p-finance"><div class="empty">财务参数：本期未新增参数，展示存量参数（param_group = 财务）</div></section>
+    <section class="panel" id="p-print"><div class="empty">APP打印参数：本期未新增参数，展示存量参数（param_group = APP打印）</div></section>
+  </main>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+var cur = 'tms';
+var dirty = false;
+
+document.querySelectorAll('.group').forEach(function (g) {
+  g.onclick = function () {
+    var next = g.dataset.g;
+    if (next === cur) return;
+    if (dirty && !confirm('当前分组有未保存的修改，切换分组将丢失。确定继续？')) return;
+    document.querySelectorAll('.group').forEach(function (x) { x.classList.remove('on') });
+    g.classList.add('on');
+    document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('on') });
+    document.getElementById('p-' + next).classList.add('on');
+    cur = next;
+    setDirty(false);
+  };
+});
+
+document.querySelectorAll('input[type=radio]').forEach(function (r) {
+  r.onchange = function () {
+    var wrap = r.closest('.ctl');
+    wrap.querySelectorAll('.rd').forEach(function (x) { x.classList.remove('sel') });
+    r.closest('.rd').classList.add('sel');
+    setDirty(true);
+  };
+});
+document.querySelectorAll('select').forEach(function (s) { s.onchange = function () { setDirty(true) } });
+document.querySelectorAll('input[type=number]').forEach(function (n) {
+  n.oninput = function () { setDirty(true) };
+  n.onblur = function () {
+    var v = parseInt(n.value, 10);
+    if (isNaN(v)) v = 2;
+    if (v < 0) v = 0;
+    if (v > 5) { v = 5; toast('照片数最多 5 张，已自动修正'); }
+    n.value = v;
+  };
+});
+
+function setDirty(v) {
+  dirty = v;
+  document.getElementById('dirty').classList.toggle('on', v);
+}
+
+function save() {
+  var sel = document.querySelector('#p-' + cur + ' select');
+  if (cur === 'tms' && sel && sel.selectedIndex === 0) {
+    toast('请先选择合并结算冲抵资金账户');
+    return;
+  }
+  setDirty(false);
+  toast('已保存当前分组参数，缓存已刷新，立即生效');
+}
+
+function toast(m) {
+  var t = document.getElementById('toast');
+  t.textContent = m;
+  t.style.display = 'block';
+  setTimeout(function () { t.style.display = 'none' }, 2200);
+}
+</script>
+</body>
+</html>

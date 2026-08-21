@@ -96,6 +96,7 @@ const routes = [
       { path: 'user', name: 'User', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '用户管理', module: 'user' } },
       { path: 'role', name: 'Role', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '权限组管理', module: 'role' } },
       { path: 'param', name: 'Param', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '系统参数', module: 'param' } },
+      { path: 'param-setting', name: 'ParamSetting', component: () => import('@/views/system/ParamSetting.vue'), meta: { title: '参数设置', module: 'paramSetting' } },
       { path: 'log', name: 'Log', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '操作日志', module: 'log' } },
       { path: 'dictionary', name: 'Dictionary', component: () => import('@/views/DictionaryPage.vue'), meta: { title: '用户数据字典', module: 'dictionary' } },
       { path: 'bill-no', name: 'BillNo', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '单据编号规则', module: 'billNo' } },

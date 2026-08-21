@@ -89,6 +89,7 @@ export const fallbackMenus = {
     { code: 'user', name: '用户管理' },
     { code: 'role', name: '权限组管理' },
     { code: 'param', name: '系统参数' },
+    { code: 'paramSetting', name: '参数设置' },
     { code: 'billNo', name: '单据编号规则' },
     { code: 'precision', name: '显示精度设置' },
     { code: 'dictionary', name: '用户数据字典' },

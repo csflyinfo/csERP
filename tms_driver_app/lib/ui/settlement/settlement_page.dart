@@ -11,6 +11,7 @@ import '../../providers/settlement_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
+import '../../services/param_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
 
@@ -37,6 +38,13 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
   final List<XFile> _photos = [];
   bool _submitting = false;
   num _submitAmount = 0;
+
+  /// 交账是否展示并强制电子签名（PRD-26 TMS_HANDOVER_ESIGN_REQUIRED）。
+  ///
+  /// 需求原文「为否：不展示电子签名且可不签名；为是：显示电子签名功能且须签名」，
+  /// 显隐与必填同一个开关。默认 N 意味着这里从 PRD-25 的硬编码必签放开了，
+  /// 想保留签名留痕的企业需在参数设置页显式打开。
+  bool get _esignRequired => ParamService.instance.current.handoverEsignRequired;
 
   @override
   void dispose() {
@@ -175,29 +183,31 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
         ),
         const SizedBox(height: 14),
 
-        // 电子签名
-        MCard(
-          leftBar: TmsTheme.accent,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Text('电子签名', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-              const Spacer(),
-              TextButton(
-                onPressed: () => _signatureKey.currentState?.clear(),
-                child: const Text('清除', style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+        // 电子签名（TMS_HANDOVER_ESIGN_REQUIRED 关闭时整块不渲染）
+        if (_esignRequired) ...[
+          MCard(
+            leftBar: TmsTheme.accent,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('电子签名', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _signatureKey.currentState?.clear(),
+                  child: const Text('清除', style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              const Text('司机签名确认交账金额无误', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+              const SizedBox(height: 8),
+              SignaturePad(
+                key: _signatureKey,
+                height: 120,
+                penColor: TmsTheme.ink,
               ),
             ]),
-            const SizedBox(height: 4),
-            const Text('司机签名确认交账金额无误', style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
-            const SizedBox(height: 8),
-            SignaturePad(
-              key: _signatureKey,
-              height: 120,
-              penColor: TmsTheme.ink,
-            ),
-          ]),
-        ),
-        const SizedBox(height: 14),
+          ),
+          const SizedBox(height: 14),
+        ],
 
         // 差异原因（有差异时显示）
         if (_calcDiff() != 0) ...[
@@ -368,20 +378,26 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
       return;
     }
     final signatureB64 = await _signatureKey.currentState?.exportAsBase64Png();
-    if (signatureB64 == null || signatureB64.isEmpty) {
+    // 电子签名（PRD-26 TMS_HANDOVER_ESIGN_REQUIRED）：开关打开即必签。
+    // 关闭时画板未挂载，currentState 为 null，signatureB64 自然为空，
+    // 后续上传段会跳过签名图，交账不带 signatureImg 提交。
+    if (_esignRequired && (signatureB64 == null || signatureB64.isEmpty)) {
       _toast('请完成电子签名');
       return;
     }
 
     setState(() => _submitting = true);
     try {
-      // 上传签名图（base64 → 临时文件 → 上传获得 URL）
-      final sigBytes = base64Decode(signatureB64);
-      final tempDir = await Directory.systemTemp.createTemp('sig');
-      final sigFile = File('${tempDir.path}/signature.png');
-      await sigFile.writeAsBytes(sigBytes);
-      final sigResult = await ApiService.instance.uploadImage(sigFile, bizType: 'SIGNATURE');
-      final signatureUrl = sigResult['url'] as String;
+      // 上传签名图（base64 → 临时文件 → 上传获得 URL）；无签名则不传
+      String signatureUrl = '';
+      if (signatureB64 != null && signatureB64.isNotEmpty) {
+        final sigBytes = base64Decode(signatureB64);
+        final tempDir = await Directory.systemTemp.createTemp('sig');
+        final sigFile = File('${tempDir.path}/signature.png');
+        await sigFile.writeAsBytes(sigBytes);
+        final sigResult = await ApiService.instance.uploadImage(sigFile, bizType: 'SIGNATURE');
+        signatureUrl = sigResult['url'] as String;
+      }
 
       // 上传结算照片（XFile → File → 上传获得 URL）
       final photoList = <Map<String, dynamic>>[];

@@ -6,6 +6,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -13,8 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,12 +26,20 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/system")
 public class SystemController {
+    /** 参数设置页左侧分组的展示顺序；未列出的 param_group 追加在后，NULL/空串落「公共参数」兜底。 */
+    private static final List<String> PARAM_GROUP_ORDER = List.of("公共参数", "销售", "销售退货", "库存", "TMS配送");
+
+    /** 照片张数类参数的合法区间（PRD-26 §3.3）。 */
+    private static final Set<String> PHOTO_COUNT_KEYS = Set.of("TMS_SIGN_PHOTO_COUNT", "TMS_RETURN_PHOTO_COUNT");
+
     private final JdbcTemplate jdbcTemplate;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final SysParamService sysParamService;
 
-    public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder) {
+    public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder, SysParamService sysParamService) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.sysParamService = sysParamService;
     }
 
     @GetMapping("/menu/user-tree")
@@ -220,9 +231,166 @@ public class SystemController {
 
     @PostMapping("/param/update")
     public ApiResponse<Map<String, Object>> updateParam(@RequestBody Map<String, Object> request) {
-        jdbcTemplate.update("UPDATE sys_param_runtime SET param_value = ? WHERE param_key = ?", request.get("paramValue"), request.get("paramKey"));
-        log("system.param", "UPDATE", String.valueOf(request.get("paramKey")), "SUCCESS", "修改系统参数");
+        String paramKey = str(request.get("paramKey"));
+        String error = validateParam(paramKey, str(request.get("paramValue")));
+        if (error != null) {
+            return ApiResponse.fail("400", error);
+        }
+        jdbcTemplate.update("UPDATE sys_param_runtime SET param_value = ? WHERE param_key = ?", request.get("paramValue"), paramKey);
+        sysParamService.evict();
+        log("system.param", "UPDATE", paramKey, "SUCCESS", "修改系统参数");
         return ApiResponse.ok(GenericResult.operation("system.param", "UPDATE"));
+    }
+
+    /**
+     * 参数设置页一次性拉取全量参数，按 param_group 分组返回，不分页（PRD-26 §5.3）。
+     * param_group 为 NULL/空串的参数统一落「公共参数」，保证不会因分组值对不上在页面上消失。
+     */
+    @GetMapping("/param/setting")
+    public ApiResponse<Map<String, Object>> paramSetting() {
+        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        for (String group : PARAM_GROUP_ORDER) {
+            grouped.put(group, new ArrayList<>());
+        }
+        jdbcTemplate.queryForList("""
+                SELECT param_id paramId,
+                       param_key paramKey,
+                       param_name paramName,
+                       param_value paramValue,
+                       default_value defaultValue,
+                       param_group paramGroup,
+                       remark
+                FROM sys_param_runtime
+                ORDER BY param_id, param_key
+                """).forEach(row -> {
+            String group = str(row.get("paramGroup"));
+            if (group.isEmpty()) {
+                group = "公共参数";
+                row.put("paramGroup", group);
+            }
+            grouped.computeIfAbsent(group, k -> new ArrayList<>()).add(row);
+        });
+
+        List<Map<String, Object>> groups = new ArrayList<>();
+        grouped.forEach((group, items) -> {
+            if (!items.isEmpty()) {
+                groups.add(GenericResult.row("groupName", group, "items", items));
+            }
+        });
+        return ApiResponse.ok(GenericResult.row("groups", groups, "offsetAccounts", offsetAccountOptions()));
+    }
+
+    /**
+     * 冲抵资金账户可选项：末级、状态正常、且未绑定给任何司机（校验规则见 validateParam）。
+     * 由后端下发而非前端自行过滤，避免前端无法判断「已绑定司机」这一排除条件。
+     */
+    private List<Map<String, Object>> offsetAccountOptions() {
+        try {
+            return jdbcTemplate.queryForList("""
+                    SELECT a.fund_account_code code, a.fund_account_name name
+                    FROM base_fund_account a
+                    WHERE a.status = 'NORMAL'
+                      AND (SELECT COUNT(1) FROM base_fund_account c WHERE c.parent_code = a.fund_account_code) = 0
+                      AND (SELECT COUNT(1) FROM tms_driver_fund_account d WHERE d.fund_account_code = a.fund_account_code) = 0
+                    ORDER BY a.fund_account_code
+                    """);
+        } catch (Exception ignore) {
+            return List.of();
+        }
+    }
+
+    /**
+     * 分组内批量保存：两阶段执行 —— 先把整批全部校验完，再统一写库，最后失效缓存一次。
+     * 不依赖 @Transactional 回滚：ApiResponse.fail 是正常返回而非抛异常，
+     * Spring 默认只对 RuntimeException 回滚，边校验边写会造成「整批被拒但前几项已落库」。
+     * 只能改 param_value，参数集合由 Flyway 管理，界面不支持新增/删除。
+     */
+    @PostMapping("/param/batch-update")
+    @Transactional
+    public ApiResponse<Map<String, Object>> batchUpdateParam(@RequestBody Map<String, Object> request) {
+        Object raw = request.get("items");
+        if (!(raw instanceof List<?> items) || items.isEmpty()) {
+            return ApiResponse.fail("400", "没有需要保存的参数");
+        }
+        List<Object[]> pending = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            String paramKey = str(map.get("paramKey"));
+            String paramValue = str(map.get("paramValue"));
+            if (paramKey.isEmpty()) {
+                return ApiResponse.fail("400", "参数编码不能为空");
+            }
+            String error = validateParam(paramKey, paramValue);
+            if (error != null) {
+                return ApiResponse.fail("400", error);
+            }
+            Integer exists = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(1) FROM sys_param_runtime WHERE param_key = ?", Integer.class, paramKey);
+            if (exists == null || exists == 0) {
+                return ApiResponse.fail("400", "参数不存在：" + paramKey);
+            }
+            pending.add(new Object[]{paramValue, paramKey});
+        }
+        if (pending.isEmpty()) {
+            return ApiResponse.fail("400", "没有需要保存的参数");
+        }
+        int updated = 0;
+        for (Object[] args : pending) {
+            updated += jdbcTemplate.update("UPDATE sys_param_runtime SET param_value = ? WHERE param_key = ?", args);
+        }
+        sysParamService.evict();
+        log("system.param", "BATCH_UPDATE", String.valueOf(updated), "SUCCESS", "批量修改系统参数 " + updated + " 项");
+        return ApiResponse.ok(GenericResult.row("updated", updated, "success", true));
+    }
+
+    /**
+     * 参数值合法性校验（PRD-26 §3.3）。返回 null 表示通过，否则返回错误提示。
+     */
+    private String validateParam(String paramKey, String paramValue) {
+        if (PHOTO_COUNT_KEYS.contains(paramKey)) {
+            int count;
+            try {
+                count = Integer.parseInt(paramValue);
+            } catch (NumberFormatException e) {
+                return "照片张数必须是 0~5 的整数";
+            }
+            if (count < 0 || count > 5) {
+                return "照片张数必须在 0~5 之间";
+            }
+            return null;
+        }
+        if ("TMS_OFFSET_FUND_ACCOUNT".equals(paramKey) && !paramValue.isEmpty()) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                    SELECT a.fund_account_code code,
+                           a.status status,
+                           (SELECT COUNT(1) FROM base_fund_account c WHERE c.parent_code = a.fund_account_code) childCount,
+                           (SELECT COUNT(1) FROM tms_driver_fund_account d WHERE d.fund_account_code = a.fund_account_code) driverBound
+                    FROM base_fund_account a
+                    WHERE a.fund_account_code = ?
+                    """, paramValue);
+            if (rows.isEmpty()) {
+                return "冲抵资金账户不存在：" + paramValue;
+            }
+            Map<String, Object> row = rows.get(0);
+            if (!"NORMAL".equals(str(row.get("status")))) {
+                return "冲抵资金账户已停用，请选择状态正常的账户";
+            }
+            if (num(row.get("childCount")) > 0) {
+                return "冲抵资金账户必须是末级账户，不能选择分类节点";
+            }
+            if (num(row.get("driverBound")) > 0) {
+                return "冲抵资金账户不能选择已绑定给司机的收款账户，请单设过渡户";
+            }
+        }
+        return null;
+    }
+
+    private static String str(Object o) {
+        return o == null ? "" : String.valueOf(o).trim();
+    }
+
+    private static long num(Object o) {
+        return o instanceof Number n ? n.longValue() : 0L;
     }
 
     @PostMapping("/bill-no-rule/page")

@@ -47,6 +47,7 @@ import java.util.*;
 public class TmsDeliveryAppController {
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.erp.system.SysParamService sysParamService;
 
     /**
      * 明细「已处理」与调度单「未发车」两套口径，直接复用 TmsAppController 的定义。
@@ -58,8 +59,10 @@ public class TmsDeliveryAppController {
     static final Set<String> DETAIL_DONE = TmsAppController.DETAIL_DONE;
     static final Set<String> BEFORE_DEPART = TmsAppController.DISPATCH_BEFORE_DEPART;
 
-    public TmsDeliveryAppController(JdbcTemplate jdbcTemplate) {
+    public TmsDeliveryAppController(JdbcTemplate jdbcTemplate,
+                                    com.erp.system.SysParamService sysParamService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.sysParamService = sysParamService;
     }
 
     // ==================== 接单 ====================
@@ -75,6 +78,10 @@ public class TmsDeliveryAppController {
      * 幂等：已是 ACCEPTED 时直接返回成功而不报错——司机在弱网下重复点
      * 「确认接单」是常态，报错只会让人以为接单失败而反复重试。
      * 已进入 LOADED 及之后的状态则拒绝，那是回退而非重复。
+     *
+     * 两道参数化前置校验（PRD-26 §5.5 阶段 C）：司机流程总开关、未交款接单拦截。
+     * 都放在幂等判定之后：已接单的单子重复点仍应直接返回成功，
+     * 不能因为「后来关了开关」或「后来产生了未交款」把已接的单子判成失败。
      */
     @PostMapping("/accept")
     @Transactional
@@ -96,6 +103,13 @@ public class TmsDeliveryAppController {
         if (!"ASSIGNED".equals(status)) {
             return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，仅「ASSIGNED」可确认接单");
         }
+
+        // 所有校验必须在写库之前：@Transactional 默认只对 RuntimeException 回滚，
+        // return fail 是正常返回不触发回滚。
+        String flowBlocked = driverFlowBlocked();
+        if (flowBlocked != null) return ApiResponse.fail("403", flowBlocked);
+        String settleBlocked = unsettledBlocked(driverId, dispatchId);
+        if (settleBlocked != null) return ApiResponse.fail("400", settleBlocked);
 
         Timestamp now = Timestamp.valueOf(TmsUtil.now());
         // accept_user 存司机姓名而非 driverId：这个字段的唯一用途是给人看，
@@ -1042,6 +1056,29 @@ public class TmsDeliveryAppController {
             return ApiResponse.fail("400", "当前配置要求先完成到店打卡才能签收");
         }
 
+        // 照片张数校验（PRD-26 §5.5，TMS_SIGN_PHOTO_COUNT）。
+        //
+        // 本次是新增校验而非改造：此前后端完全不校验张数，只有 APP 端硬编码 1 张下限，
+        // 走离线队列重放或直接调接口都能提交零照片签收，事后无凭据可查。
+        // 校验必须落在所有写库动作之前——@Transactional 只对 RuntimeException 回滚，
+        // return fail 属正常返回，放在写库之后会留下「报错但签收记录已生成」的脏数据。
+        //
+        // photos 的元素是 Map（{url, photoType}），与退货签收的 List<String> 结构不同，
+        // 这里按 url 非空计数，与下方 1.1 落库时的跳过条件保持同一口径，
+        // 避免出现「校验算 2 张、实际只落 1 张」。参数 0 表示不校验。
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
+                ? (List<Map<String, Object>>) pl : List.<Map<String, Object>>of();
+        int requirePhoto = sysParamService.getInt("TMS_SIGN_PHOTO_COUNT", 2, 0, 5);
+        if (requirePhoto > 0) {
+            long validPhotoCount = headPhotos.stream()
+                    .filter(p -> p != null && !TmsUtil.str(p.get("url")).isEmpty())
+                    .count();
+            if (validPhotoCount < requirePhoto) {
+                return ApiResponse.fail("400", "请至少拍摄 " + requirePhoto + " 张签收现场照片");
+            }
+        }
+
         BigDecimal requiredQty = TmsUtil.toBd(detail.get("qty"));
         String customerCode = TmsUtil.str(detail.get("customerCode"));
         String customerName = TmsUtil.str(detail.get("customerName"));
@@ -1096,9 +1133,7 @@ public class TmsDeliveryAppController {
         // APP 离线时先把签收请求排入本地队列，此刻 signId 还不存在，
         // 照片若拆成第二个请求，重放时必然缺 signId 被 400 拒绝并永久卡在队列里。
         // 签收时 signId 已生成，这里顺带写入即可让离线链路一次成功。
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
-                ? (List<Map<String, Object>>) pl : List.<Map<String, Object>>of();
+        // headPhotos 已在方法入口的张数校验处解析，此处直接复用
         for (Map<String, Object> p : headPhotos) {
             String url = TmsUtil.str(p.get("url"));
             if (url.isEmpty()) continue;
@@ -1277,6 +1312,40 @@ public class TmsDeliveryAppController {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 司机派送流程总开关守卫（P0117 TMS_DRIVER_FLOW_ENABLED）。
+     * 默认值为 Y，故 fallback 取 true：查库失败时不能把正常业务拦死。
+     *
+     * @return null 表示放行，非 null 为拦截原因
+     */
+    private String driverFlowBlocked() {
+        if (sysParamService.getBool("TMS_DRIVER_FLOW_ENABLED", true)) return null;
+        return "司机派送流程已关闭，暂不能接单，请联系管理员";
+    }
+
+    /**
+     * 未交款接单拦截守卫（P0124 TMS_ACCEPT_BEFORE_SETTLE）。
+     * 参数为 Y 表示「允许未交款就接单」，直接放行；默认 N 时才做未交款检查。
+     * 未交款判定：门店结算单已结算（settle_status='SETTLED'）但尚未被任何交账单认领
+     * （settlement_id IS NULL），说明钱还在司机手上没交回财务。
+     * 排除当前调度单自身，避免同一单重复接单时被自己的结算记录卡住。
+     *
+     * @return null 表示放行，非 null 为拦截原因
+     */
+    private String unsettledBlocked(String driverId, String dispatchId) {
+        if (sysParamService.getBool("TMS_ACCEPT_BEFORE_SETTLE", false)) return null;
+        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, """
+                SELECT settle_no, received_amount FROM tms_store_settlement
+                WHERE driver_id=? AND settle_status='SETTLED' AND settlement_id IS NULL AND dispatch_id<>?
+                ORDER BY settle_time
+                """, driverId, dispatchId);
+        if (rows.isEmpty()) return null;
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map<String, Object> r : rows) total = total.add(TmsUtil.toBd(r.get("receivedAmount")));
+        return "存在 " + rows.size() + " 笔未交账的门店结算单（合计 " + total.toPlainString()
+                + " 元，如 " + TmsUtil.str(rows.get(0).get("settleNo")) + "），请先完成交账后再接单";
+    }
 
     /** 加载调度单并校验司机权限。 */
     private Map<String, Object> loadDispatch(String dispatchId, String driverId) {
