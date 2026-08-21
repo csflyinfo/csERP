@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -253,16 +254,17 @@ public class SystemController {
             grouped.put(group, new ArrayList<>());
         }
         jdbcTemplate.queryForList("""
-                SELECT param_id paramId,
-                       param_key paramKey,
-                       param_name paramName,
-                       param_value paramValue,
-                       default_value defaultValue,
-                       param_group paramGroup,
+                SELECT param_id,
+                       param_key,
+                       param_name,
+                       param_value,
+                       default_value,
+                       param_group,
                        remark
                 FROM sys_param_runtime
                 ORDER BY param_id, param_key
                 """).forEach(row -> {
+            row = camelize(row);
             String group = str(row.get("paramGroup"));
             if (group.isEmpty()) {
                 group = "公共参数";
@@ -293,10 +295,31 @@ public class SystemController {
                       AND (SELECT COUNT(1) FROM base_fund_account c WHERE c.parent_code = a.fund_account_code) = 0
                       AND (SELECT COUNT(1) FROM tms_driver_fund_account d WHERE d.fund_account_code = a.fund_account_code) = 0
                     ORDER BY a.fund_account_code
-                    """);
+                    """).stream().map(SystemController::camelize).toList();
         } catch (Exception ignore) {
             return List.of();
         }
+    }
+
+    /**
+     * JDBC 返回的列名在 H2 下会被强制成大写（如 PARAM_VALUE），而前端按小驼峰读取（paramValue）。
+     * 这里统一把 key 转为小驼峰：先整体转小写再按下划线拼接，能同时兼容
+     * 「别名已写成 paramValue 但被 H2 转大写」和「原生列名 param_value」两种来源。
+     */
+    private static Map<String, Object> camelize(Map<String, Object> row) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : row.entrySet()) {
+            String k = e.getKey().toLowerCase(Locale.ROOT);
+            StringBuilder sb = new StringBuilder();
+            boolean upper = false;
+            for (char c : k.toCharArray()) {
+                if (c == '_') { upper = true; continue; }
+                sb.append(upper ? Character.toUpperCase(c) : c);
+                upper = false;
+            }
+            out.put(sb.toString(), e.getValue());
+        }
+        return out;
     }
 
     /**
