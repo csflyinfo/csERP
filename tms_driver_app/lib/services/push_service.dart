@@ -245,9 +245,18 @@ class PushService {
   }
 
   /// 登录成功后调用：补报登录前已拿到的 CID。
+  ///
+  /// 加 8s 超时：推送是辅助能力，绝不能阻塞登录主流程。
+  /// 真机上若个推 SDK 因网络/厂商通道异常卡住，没有超时会让登录按钮
+  /// 一直转圈（司机看到的就是「点登录没反应」），而实际上 token 已拿到、
+  /// 页面本该跳转。超时后 CID 仍可在下次 onMessageArrived 或冷启动时补报。
   Future<void> onLogin() async {
-    await init();
-    await registerToken();
+    try {
+      await init().timeout(const Duration(seconds: 8));
+      await registerToken().timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('[Push] onLogin 超时或失败，不阻塞登录: $e');
+    }
   }
 
   /// 退出登录：解绑设备，避免换人登录后仍收到前一位司机的消息。
