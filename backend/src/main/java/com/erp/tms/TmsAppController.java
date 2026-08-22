@@ -145,8 +145,15 @@ public class TmsAppController {
         List<Map<String, Object>> dispatches = TmsUtil.queryCamel(jdbcTemplate, """
                 SELECT dispatch_id, dispatch_no, dispatch_date, route_line, vehicle_plate, status,
                        loaded_qty, return_qty, store_count, accept_time
-                FROM tms_dispatch
+                FROM tms_dispatch d
                 WHERE driver_id = ? AND status IN ('ASSIGNED','ACCEPTED','LOADED','DEPARTED','DELIVERING')
+                  -- V77：该司机对应日期已提交/已审核交账，则当日任务不再算作「进行中」，
+                  -- 首页统计与待办卡片都应消失，交账=当日作业闭环。
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tms_settlement s
+                      WHERE s.driver_id = d.driver_id
+                        AND s.settle_date = d.dispatch_date
+                        AND s.status IN ('PENDING','APPROVED'))
                 """ + dateFilter + """
                 ORDER BY dispatch_date, dispatch_no
                 """, driverId);
@@ -224,8 +231,14 @@ public class TmsAppController {
         List<Map<String, Object>> dispatches = TmsUtil.queryCamel(jdbcTemplate, """
                 SELECT dispatch_id, dispatch_no, dispatch_date, route_line, vehicle_plate, status,
                        loaded_qty, return_qty, store_count, accept_time, depart_time, parent_dispatch_id
-                FROM tms_dispatch
+                FROM tms_dispatch d
                 WHERE driver_id = ? AND status IN ('ASSIGNED','ACCEPTED','LOADED','DEPARTED','DELIVERING')
+                  -- V77：当日已交账则任务不再进入首页进行中统计/卡片（与 /today-tasks 同口径）
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tms_settlement s
+                      WHERE s.driver_id = d.driver_id
+                        AND s.settle_date = d.dispatch_date
+                        AND s.status IN ('PENDING','APPROVED'))
                 ORDER BY dispatch_date, dispatch_no
                 """, driverId);
 
@@ -472,7 +485,9 @@ public class TmsAppController {
         return switch (s == null ? "" : s) {
             case "DRAFT" -> "草稿";
             case "ASSIGNED" -> "待接单";
-            case "ACCEPTED" -> "已接单";
+            // V77：司机接单后进入装车阶段，APP 卡片显示「待装车」比「已接单」更贴合下一步动作；
+            // 后台调度端 TmsDispatchController 的映射保持「已接单」，两端各取所需不互相影响。
+            case "ACCEPTED" -> "待装车";
             case "LOADED" -> "已装车";
             case "DEPARTED" -> "已发车";
             case "DELIVERING" -> "配送中";

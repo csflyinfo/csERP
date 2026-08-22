@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
+import '../../config/tms_status.dart';
 import '../../models/delivery.dart';
 import '../../providers/delivery_provider.dart';
 import '../../services/launch_service.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/point_bills_sheet.dart';
 import 'loading_confirm_page.dart';
 
 /// 调度任务配送点清单页（首页卡片「查看清单」入口）。
@@ -129,6 +131,15 @@ class _DispatchStoresPageState extends ConsumerState<DispatchStoresPage> {
                   // 否则拖完不点保存，编号和位置会对不上
                   displayNo: i + 1,
                   draggable: d.canSort && s.sortable,
+                  // V77：点配送点弹单据+商品清单。用该点第一张单的 detailId 定位门店。
+                  onTap: s.bills.isEmpty
+                      ? null
+                      : () => PointBillsSheet.show(
+                            context,
+                            dispatchId: widget.dispatchId,
+                            detailId: s.bills.first.detailId,
+                            customerName: s.customerName,
+                          ),
                 );
               },
             ),
@@ -182,7 +193,7 @@ class _DispatchStoresPageState extends ConsumerState<DispatchStoresPage> {
           ),
           if (d.appended) const MTag.purple('追加'),
           const SizedBox(width: 6),
-          MTag.gray(_statusText(d.status)),
+          MTag.gray(dispatchStatusText(d.status)),
         ]),
         const SizedBox(height: 6),
         Text(
@@ -285,6 +296,7 @@ class _StoreTile extends StatelessWidget {
   final int index;
   final int displayNo;
   final bool draggable;
+  final VoidCallback? onTap;
 
   const _StoreTile({
     super.key,
@@ -292,12 +304,16 @@ class _StoreTile extends StatelessWidget {
     required this.index,
     required this.displayNo,
     required this.draggable,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final s = store;
-    return Container(
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -372,6 +388,7 @@ class _StoreTile extends StatelessWidget {
             ),
           ),
       ]),
+      ),
     );
   }
 
@@ -420,17 +437,6 @@ class _StoreTile extends StatelessWidget {
     );
   }
 }
-
-String _statusText(String s) => const {
-      'ASSIGNED': '待接单',
-      'ACCEPTED': '已接单',
-      'LOADED': '已装车',
-      'DEPARTED': '已发车',
-      'DELIVERING': '配送中',
-      'COMPLETED': '已完成',
-      'CANCELLED': '已取消',
-    }[s] ??
-    s;
 
 String _qty(num v) =>
     v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);

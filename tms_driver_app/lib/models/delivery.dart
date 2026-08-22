@@ -1,5 +1,100 @@
 // 配送装车 & 签收模型（对接 /tms/app/loading/items、/tms/app/sign/items）。
 
+/// 配送点单据+商品清单（对接 /tms/app/loading/point-bills，V77）。
+///
+/// 「查看清单」和「装车确认」点击配送点时弹窗共用：
+/// 按单据（billType + sourceBillNo）分组，每张单下列出商品四列
+/// （商品名称、规格、单位、数量）。
+class PointBills {
+  final String dispatchId;
+  final String customerCode;
+  final String customerName;
+  final String customerAddress;
+  final num totalQty;
+  final int skuCount;
+  final List<PointBill> bills;
+
+  const PointBills({
+    this.dispatchId = '',
+    this.customerCode = '',
+    this.customerName = '',
+    this.customerAddress = '',
+    this.totalQty = 0,
+    this.skuCount = 0,
+    this.bills = const [],
+  });
+
+  factory PointBills.fromJson(Map<String, dynamic> j) => PointBills(
+        dispatchId: j['dispatchId']?.toString() ?? '',
+        customerCode: j['customerCode']?.toString() ?? '',
+        customerName: j['customerName']?.toString() ?? '',
+        customerAddress: j['customerAddress']?.toString() ?? '',
+        totalQty: j['totalQty'] as num? ?? 0,
+        skuCount: (j['skuCount'] as num?)?.toInt() ?? 0,
+        bills: (j['bills'] as List? ?? [])
+            .map((e) => PointBill.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// 配送点下的一张单据（发货或取退）。
+class PointBill {
+  final String billType; // RECEIPT / RETURN
+  final String billTypeText; // 发货 / 取退
+  final String sourceBillNo;
+  final num qty;
+  final int skuCount;
+  final List<PointBillItem> items;
+
+  const PointBill({
+    this.billType = 'RECEIPT',
+    this.billTypeText = '发货',
+    this.sourceBillNo = '',
+    this.qty = 0,
+    this.skuCount = 0,
+    this.items = const [],
+  });
+
+  bool get isReturn => billType == 'RETURN';
+
+  factory PointBill.fromJson(Map<String, dynamic> j) => PointBill(
+        billType: j['billType']?.toString() ?? 'RECEIPT',
+        billTypeText: j['billTypeText']?.toString() ?? '发货',
+        sourceBillNo: j['sourceBillNo']?.toString() ?? '',
+        qty: j['qty'] as num? ?? 0,
+        skuCount: (j['skuCount'] as num?)?.toInt() ?? 0,
+        items: (j['items'] as List? ?? [])
+            .map((e) => PointBillItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+/// 单据下的一个商品行（商品名称、规格、单位、数量）。
+class PointBillItem {
+  final String goodsCode;
+  final String goodsName;
+  final String spec;
+  final String unitName;
+  final num qty;
+
+  const PointBillItem({
+    this.goodsCode = '',
+    this.goodsName = '',
+    this.spec = '',
+    this.unitName = '',
+    this.qty = 0,
+  });
+
+  factory PointBillItem.fromJson(Map<String, dynamic> j) => PointBillItem(
+        goodsCode: j['goodsCode']?.toString() ?? '',
+        goodsName: j['goodsName']?.toString() ?? '',
+        spec: j['spec']?.toString() ?? '',
+        unitName: j['unitName']?.toString() ?? '',
+        qty: j['qty'] as num? ?? 0,
+      );
+}
+
+
 /// 装车清单（按调度单聚合，含多个发货单的 SKU 明细）。
 class LoadingDispatch {
   final String dispatchId;

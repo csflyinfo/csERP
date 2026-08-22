@@ -31,7 +31,7 @@ public class TmsUploadController {
     private final StorageService storageService;
 
     private static final Set<String> ALLOWED_BIZ_TYPES = Set.of(
-            "SIGN", "RETURN", "STORE", "SETTLEMENT", "SIGNATURE", "REJECT", "RESCHEDULE", "EXCEPTION"
+            "SIGN", "RETURN", "STORE", "SETTLEMENT", "SIGNATURE", "REJECT", "RESCHEDULE", "EXCEPTION", "DEPART"
     );
 
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB

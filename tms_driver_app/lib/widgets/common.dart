@@ -100,6 +100,9 @@ class Alert extends StatelessWidget {
   }
 }
 
+/// 按钮尺寸：常规（满宽主按钮）/ 小号（卡片内紧凑操作）。
+enum TmsButtonSize { regular, sm }
+
 /// 主按钮（对齐原型 .btn.primary）。
 class TmsButton extends StatelessWidget {
   final String text;
@@ -107,14 +110,20 @@ class TmsButton extends StatelessWidget {
   final Color? color;
   final Color? textColor;
   final bool outline;
-  const TmsButton.primary(this.text, {super.key, this.onPressed}) : color = TmsTheme.accent, textColor = Colors.white, outline = false;
-  const TmsButton.warn(this.text, {super.key, this.onPressed}) : color = TmsTheme.accent2, textColor = Colors.white, outline = false;
-  const TmsButton.danger(this.text, {super.key, this.onPressed}) : color = TmsTheme.bad, textColor = Colors.white, outline = false;
-  const TmsButton.purple(this.text, {super.key, this.onPressed}) : color = TmsTheme.returnPurple, textColor = Colors.white, outline = false;
-  const TmsButton.outline(this.text, {super.key, this.onPressed, this.color}) : textColor = color ?? TmsTheme.accent, outline = true;
+  final TmsButtonSize size;
+  final IconData? icon;
+  const TmsButton.primary(this.text, {super.key, this.onPressed, this.size = TmsButtonSize.regular, this.icon}) : color = TmsTheme.accent, textColor = Colors.white, outline = false;
+  const TmsButton.warn(this.text, {super.key, this.onPressed, this.size = TmsButtonSize.regular, this.icon}) : color = TmsTheme.accent2, textColor = Colors.white, outline = false;
+  const TmsButton.danger(this.text, {super.key, this.onPressed, this.size = TmsButtonSize.regular, this.icon}) : color = TmsTheme.bad, textColor = Colors.white, outline = false;
+  const TmsButton.purple(this.text, {super.key, this.onPressed, this.size = TmsButtonSize.regular, this.icon}) : color = TmsTheme.returnPurple, textColor = Colors.white, outline = false;
+  const TmsButton.outline(this.text, {super.key, this.onPressed, this.color, this.size = TmsButtonSize.regular, this.icon}) : textColor = color ?? TmsTheme.accent, outline = true;
 
   @override
   Widget build(BuildContext context) {
+    final isSm = size == TmsButtonSize.sm;
+    final label = Text(text,
+        style: TextStyle(
+            fontSize: isSm ? 12 : 14, fontWeight: FontWeight.w700));
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -123,10 +132,19 @@ class TmsButton extends StatelessWidget {
           backgroundColor: outline ? Colors.white : color,
           foregroundColor: textColor,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 11),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: outline ? BorderSide(color: color ?? TmsTheme.accent, width: 1.5) : BorderSide.none),
+          minimumSize: isSm ? const Size(0, 32) : null,
+          padding: EdgeInsets.symmetric(
+              vertical: isSm ? 6 : 11, horizontal: isSm ? 10 : 0),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isSm ? 8 : 10), side: outline ? BorderSide(color: color ?? TmsTheme.accent, width: 1.5) : BorderSide.none),
         ),
-        child: Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        child: icon == null
+            ? label
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: isSm ? 14 : 16),
+                const SizedBox(width: 4),
+                label,
+              ]),
       ),
     );
   }

@@ -1,14 +1,21 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/theme.dart';
+import '../../config/tms_status.dart';
 import '../../models/delivery.dart';
 import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/task_provider.dart';
+import '../../services/api_service.dart';
 import '../../services/location_service.dart';
+import '../../services/param_service.dart';
+import '../../services/photo_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/point_bills_sheet.dart';
 
 /// 实装数量变更回调（detailId|goodsCode → 新值）。
 typedef OnLoadedChanged = void Function(String key, num value);
@@ -78,12 +85,16 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     }
     final totalLoaded = _loadedQties.values.fold<num>(0, (s, v) => s + v);
 
-    // 状态机
+    // 状态机：ASSIGNED=待接单（司机还没点「开始装车」）；
+    // ACCEPTED=待装车（已接单，正在逐点装）；LOADED=全部装完；DEPARTED/DELIVERING=已上路。
     final isAssigned = d.status == 'ASSIGNED';
-    // 部分发车后调度单会停在 LOADED，DEPARTED/DELIVERING 说明整单已发完；
-    // 只要还有未发车的配送点，页面就得保持可操作，否则补装的点无法再发车。
+    // 接单后（含 ACCEPTED/LOADED/已发车补发）清单可操作；只要还有未发车的配送点，
+    // 页面就得保持可操作，否则补装的点无法再发车。
     final isLoaded = d.receipts.isNotEmpty && d.status != 'ASSIGNED';
     final isDeparted = d.receipts.isEmpty && d.status != 'ASSIGNED';
+    // 装车阶段（未发车）才能把装不下的配送点退回调度池。
+    final canReturnPoint =
+        d.status == 'ASSIGNED' || d.status == 'ACCEPTED' || d.status == 'LOADED';
 
     // 按逆配送顺序展示（后送的先装，seqNo 倒序）
     final sortedReceipts = List<LoadingReceipt>.from(d.receipts)
@@ -127,6 +138,7 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
                       editable: isLoaded && !r.loaded,
                       selectable: isLoaded && !r.loaded,
                       selected: _selected.contains(r.detailId),
+                      compact: true,
                       onSelect: (v) => setState(() {
                         if (v) {
                           _selected.add(r.detailId);
@@ -139,6 +151,15 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
                           : null,
                       onChanged: (key, v) => setState(() => _loadedQties[key] = v),
                       onScan: (isLoaded && !r.loaded) ? (it) => _scan(d, r, it) : null,
+                      onTapBills: () => PointBillsSheet.show(
+                        context,
+                        dispatchId: d.dispatchId,
+                        detailId: r.detailId,
+                        customerName: r.customerName,
+                      ),
+                      onReturn: (isLoaded && canReturnPoint && !r.loaded && !_busy)
+                          ? () => _confirmReturnPoint(d, r.detailId, r.customerName)
+                          : null,
                     )),
                 if (sortedReceipts.isEmpty)
                   const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('无装车清单', style: TextStyle(color: TmsTheme.muted)))),
@@ -198,15 +219,23 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
   }
 
   Widget _statusTag(String status) {
+    final text = dispatchStatusText(status);
     switch (status) {
       case 'ASSIGNED':
-        return const MTag.orange('待装车');
+        return MTag.orange(text);
+      case 'ACCEPTED':
+        return MTag.blue(text);
       case 'LOADED':
-        return const MTag.blue('装车中');
+        return MTag.blue(text);
       case 'DEPARTED':
-        return const MTag.green('已发车');
+      case 'DELIVERING':
+        return MTag.green(text);
+      case 'COMPLETED':
+        return MTag.gray(text);
+      case 'CANCELLED':
+        return MTag.red(text);
       default:
-        return MTag.gray(status);
+        return MTag.gray(text);
     }
   }
 
@@ -243,7 +272,7 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
             const SizedBox(height: 8),
             TmsButton.warn(
               _busy ? '处理中...' : '确认发车，开始配送',
-              onPressed: (_busy || !d.anyLoaded) ? null : () => _action(d, 'depart'),
+              onPressed: (_busy || !d.anyLoaded) ? null : () => _proceedDepart(d),
             ),
           ],
           if (isDeparted) ...[
@@ -283,11 +312,21 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     }
   }
 
-  Future<void> _action(LoadingDispatch d, String action, {bool force = false}) async {
+  Future<void> _action(LoadingDispatch d, String action, {
+    bool force = false,
+    num? departMileage,
+    String? departPhotoUrl,
+  }) async {
     setState(() => _busy = true);
     try {
       final res = await ref.read(loadingActionProvider(
-              LoadingActionArgs(dispatchId: d.dispatchId, action: action, force: force))
+              LoadingActionArgs(
+                dispatchId: d.dispatchId,
+                action: action,
+                force: force,
+                departMileage: departMileage,
+                departPhotoUrl: departPhotoUrl,
+              ))
           .future);
 
       // 发车完整性校验：后端发现有未装车配送点时返回 needConfirm 而非报错，
@@ -298,7 +337,7 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
         setState(() => _busy = false);
         final ok = await _confirmDepart(res);
         if (ok == true && mounted) {
-          await _action(d, 'depart', force: true);
+          await _proceedDepart(d, force: true);
         }
         return;
       }
@@ -380,6 +419,89 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
     );
   }
 
+  /// 发车前置：按系统参数决定是否采集「发车公里数 + 里程照片」，
+  /// 采集完（或参数要求为否）再真正调 /depart。
+  ///
+  /// 未装车确认弹窗（needConfirm）通过后也走这里，force 透传给真正的提交。
+  Future<void> _proceedDepart(LoadingDispatch d, {bool force = false}) async {
+    num? mileage;
+    String? photoUrl;
+    if (ParamService.instance.current.departMileageRequired) {
+      final got = await showDialog<_DepartMileageResult>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _DepartMileageDialog(),
+      );
+      if (got == null) return; // 司机取消，不发车
+      mileage = got.mileage;
+      photoUrl = got.photoUrl;
+    }
+    if (!mounted) return;
+    await _action(d, 'depart',
+        force: force, departMileage: mileage, departPhotoUrl: photoUrl);
+  }
+
+  /// 配送点退回调度池：必填原因 → 调 /loading/return-point → 刷新清单。
+  ///
+  /// 后端按客户编码展开同店全部明细（含取退单）一起退回；若该点是最后一个点，
+  /// 调度单会被 CANCELLED，此时直接退回上一页（装车页已无内容可展示）。
+  Future<void> _confirmReturnPoint(LoadingDispatch d, String detailId, String storeName) async {
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('退回「$storeName」', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('该配送点的全部单据会退回调度池重新安排，后台单据将记录「司机退回」。',
+              style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+          const SizedBox(height: 10),
+          TextField(
+            controller: controller,
+            maxLines: 3,
+            maxLength: 200,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: '请填写退回原因（必填，如：车厢装不下）',
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () {
+              if (controller.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('确认退回', style: TextStyle(color: TmsTheme.bad)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final res = await ref.read(returnPointProvider(ReturnPointArgs(
+        dispatchId: d.dispatchId,
+        detailIds: [detailId],
+        reason: controller.text.trim(),
+      )).future);
+      ref.invalidate(loadingItemsProvider(d.dispatchId));
+      ref.invalidate(loadingStoresProvider(d.dispatchId));
+      ref.invalidate(todayTasksProvider);
+      ref.invalidate(homeOverviewProvider);
+      final cancelled = res['cancelled'] == true;
+      _toast(cancelled ? '配送点已退回，调度单已无配送点' : '✅ $storeName 已退回调度池');
+      if (cancelled && mounted) Navigator.pop(context, true);
+    } catch (e) {
+      _toast('退回失败：${e.toString().replaceFirst("Exception: ", "")}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   /// 发车成功后启动 GPS 轨迹采集（15s 一次，落本地库后由 SyncService 批量上报）。
   ///
   /// 幂等：LocationService.start 内部已判重，重复点击发车不会启动多个 Timer。
@@ -425,15 +547,21 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
   }
 }
 
-/// 装车清单中的配送点卡片（含 SKU 行 + 勾选框 + 单点【装车】按钮）。
+/// 装车清单中的配送点卡片（含 SKU 行 + 勾选框 + 单点【装车】/【退回】按钮）。
+///
+/// compact=true 时压缩字号与内边距：装车页一屏要多摆几个配送点，原卡片
+/// 标题 13/内边距 12 在 6 寸机上一屏只放得下两张卡，司机要来回滚。
 class _ReceiptCard extends StatelessWidget {
   final LoadingReceipt receipt;
   final Map<String, num> loadedQties;
   final bool editable;
   final bool selectable;
   final bool selected;
+  final bool compact;
   final ValueChanged<bool> onSelect;
   final VoidCallback? onLoad;
+  final VoidCallback? onReturn;
+  final VoidCallback? onTapBills;
   final OnLoadedChanged onChanged;
   final void Function(LoadingItem)? onScan;
   const _ReceiptCard({
@@ -444,38 +572,61 @@ class _ReceiptCard extends StatelessWidget {
     required this.selected,
     required this.onSelect,
     required this.onChanged,
+    this.compact = false,
     this.onLoad,
+    this.onReturn,
+    this.onTapBills,
     this.onScan,
   });
 
   @override
   Widget build(BuildContext context) {
     final loaded = receipt.items.fold<num>(0, (s, it) => s + (loadedQties['${receipt.detailId}|${it.goodsCode}'] ?? 0));
+    final titleSize = compact ? 12.0 : 13.0;
+    final subSize = compact ? 10.0 : 11.0;
     return MCard(
+      padding: compact ? const EdgeInsets.all(8) : null,
       leftBar: receipt.loaded ? TmsTheme.ok : TmsTheme.accent,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          // 勾选框放在标题行首：司机是「一个点一个点」搬完再勾，
-          // 勾选热区跟门店名连在一起最好点。
-          if (selectable)
-            SizedBox(
-              width: 30,
-              child: Checkbox(
-                value: selected,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                onChanged: (v) => onSelect(v == true),
+        // 标题行：点击（非勾选区）弹出该配送点的单据+商品清单。
+        // 勾选框/按钮各自消费点击，只有标题与单号这一片是「查看单据」热区。
+        InkWell(
+          onTap: onTapBills,
+          borderRadius: BorderRadius.circular(6),
+          child: Row(children: [
+            if (selectable)
+              SizedBox(
+                width: 28,
+                child: Checkbox(
+                  value: selected,
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) => onSelect(v == true),
+                ),
               ),
+            Expanded(
+              child: Text('${receipt.seqNo > 0 ? "第${receipt.seqNo}站 " : ""}${receipt.customerName}',
+                  style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
             ),
-          Expanded(
-            child: Text('${receipt.seqNo > 0 ? "第${receipt.seqNo}站 " : ""}${receipt.customerName}',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-          ),
-          if (receipt.loaded) const MTag.green('已装车') else MTag.blue('${fmtQty(receipt.requiredQty)} 件'),
-        ]),
-        const SizedBox(height: 2),
-        Text('${receipt.sourceBillNo} · ${receipt.customerAddress}', style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
-        const SizedBox(height: 6),
+            if (receipt.loaded) const MTag.green('已装车') else MTag.blue('${fmtQty(receipt.requiredQty)} 件'),
+          ]),
+        ),
+        SizedBox(height: compact ? 1 : 2),
+        InkWell(
+          onTap: onTapBills,
+          borderRadius: BorderRadius.circular(6),
+          child: Row(children: [
+            Expanded(
+              child: Text('${receipt.sourceBillNo} · ${receipt.customerAddress}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: subSize, color: TmsTheme.muted)),
+            ),
+            if (onTapBills != null)
+              Icon(Icons.chevron_right, size: compact ? 14 : 16, color: TmsTheme.muted),
+          ]),
+        ),
+        SizedBox(height: compact ? 4 : 6),
         ...receipt.items.map((it) => _ItemRow(
               item: it,
               loadedQty: loadedQties['${receipt.detailId}|${it.goodsCode}'] ?? it.requiredQty,
@@ -483,17 +634,24 @@ class _ReceiptCard extends StatelessWidget {
               onChanged: (v) => onChanged('${receipt.detailId}|${it.goodsCode}', v),
               onScan: onScan == null ? null : () => onScan!(it),
             )),
-        const SizedBox(height: 6),
+        SizedBox(height: compact ? 4 : 6),
         Row(children: [
           Expanded(
             child: Text('应装 ${fmtQty(receipt.requiredQty)} 件 · 实装 ${fmtQty(loaded)} 件',
-                style: const TextStyle(fontSize: 11, color: TmsTheme.muted)),
+                style: TextStyle(fontSize: subSize, color: TmsTheme.muted)),
           ),
           if (receipt.loaded)
             Text(receipt.loadTime.isEmpty ? '已装车' : '装车 ${receipt.loadTime}',
-                style: const TextStyle(fontSize: 11, color: TmsTheme.ok, fontWeight: FontWeight.w700))
-          else if (onLoad != null)
-            SizedBox(width: 90, child: TmsButton.primary('装车', onPressed: onLoad)),
+                style: TextStyle(fontSize: subSize, color: TmsTheme.ok, fontWeight: FontWeight.w700))
+          else ...[
+            // 装不下时把整个配送点退回调度池；只有未装车且在装车阶段才显示。
+            if (onReturn != null) ...[
+              TmsButton.outline('退回', size: TmsButtonSize.sm, color: TmsTheme.bad, onPressed: onReturn),
+              const SizedBox(width: 6),
+            ],
+            if (onLoad != null)
+              TmsButton.primary('装车', size: TmsButtonSize.sm, onPressed: onLoad),
+          ],
         ]),
       ]),
     );
@@ -513,7 +671,7 @@ class _ItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final diff = loadedQty - item.requiredQty;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF0F1F4)))),
       child: Row(children: [
         Expanded(
@@ -566,6 +724,147 @@ class _ItemRow extends StatelessWidget {
           ),
         ],
       ]),
+    );
+  }
+}
+
+/// 发车公里数 + 里程照片采集结果。
+class _DepartMileageResult {
+  final num mileage;
+  final String photoUrl;
+  const _DepartMileageResult(this.mileage, this.photoUrl);
+}
+
+/// 发车留痕弹窗（V77）：系统参数要求时，确认发车前必须填发车公里数（>0）并拍一张里程表照片。
+///
+/// 照片在弹窗内即时上传拿到 URL，确认后随 /depart 一起提交；
+/// 取消（返回 null）则不发车，回到装车页。
+class _DepartMileageDialog extends StatefulWidget {
+  const _DepartMileageDialog();
+
+  @override
+  State<_DepartMileageDialog> createState() => _DepartMileageDialogState();
+}
+
+class _DepartMileageDialogState extends State<_DepartMileageDialog> {
+  final TextEditingController _ctrl = TextEditingController();
+  String? _photoUrl;
+  File? _photoFile;
+  bool _uploading = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePhoto() async {
+    final result = await PhotoService.instance.capture();
+    if (result.isFailed) {
+      setState(() => _error = result.error);
+      return;
+    }
+    if (!result.isSuccess || result.file == null) return; // 用户取消
+    setState(() {
+      _uploading = true;
+      _error = null;
+      _photoFile = File(result.file!.path);
+    });
+    try {
+      final up = await ApiService.instance.uploadImage(_photoFile!, bizType: 'DEPART');
+      final url = up['url']?.toString();
+      if (url == null || url.isEmpty) throw Exception('上传返回为空');
+      setState(() => _photoUrl = url);
+    } catch (e) {
+      setState(() {
+        _photoFile = null;
+        _error = '里程照片上传失败：${e.toString().replaceFirst("Exception: ", "")}';
+      });
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  void _submit() {
+    final m = num.tryParse(_ctrl.text.trim());
+    if (m == null || m <= 0) {
+      setState(() => _error = '请填写大于 0 的发车公里数');
+      return;
+    }
+    if (_photoUrl == null || _photoUrl!.isEmpty) {
+      setState(() => _error = '请拍摄里程表照片');
+      return;
+    }
+    Navigator.pop(context, _DepartMileageResult(m, _photoUrl!));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('发车留痕', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const Text('请填写车辆当前里程表读数，并拍摄一张里程照片，用于本次任务公里数核算。',
+            style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: '发车公里数',
+            hintText: '如 12345',
+            suffixText: 'km',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // 照片区：未拍显示拍照按钮，拍后显示缩略图 + 重拍。
+        GestureDetector(
+          onTap: _uploading ? null : _takePhoto,
+          child: Container(
+            height: 140,
+            decoration: BoxDecoration(
+              color: TmsTheme.primaryLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: TmsTheme.rule),
+            ),
+            child: _uploading
+                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                : _photoFile != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(_photoFile!, fit: BoxFit.cover, width: double.infinity),
+                      )
+                    : const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.add_a_photo_outlined, size: 32, color: TmsTheme.accent),
+                        SizedBox(height: 6),
+                        Text('点击拍摄里程表照片', style: TextStyle(fontSize: 12, color: TmsTheme.accent)),
+                      ]),
+          ),
+        ),
+        if (_photoUrl != null && _photoFile != null)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Row(children: [
+              Icon(Icons.check_circle, size: 13, color: TmsTheme.ok),
+              SizedBox(width: 4),
+              Expanded(child: Text('里程照片已上传，可点击重拍', style: TextStyle(fontSize: 10, color: TmsTheme.ok))),
+            ]),
+          ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(_error!, style: const TextStyle(fontSize: 12, color: TmsTheme.bad)),
+        ],
+      ]),
+      actions: [
+        TextButton(onPressed: _uploading ? null : () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: _uploading ? null : _submit,
+          child: const Text('确认发车', style: TextStyle(color: TmsTheme.bad, fontWeight: FontWeight.w700)),
+        ),
+      ],
     );
   }
 }

@@ -103,6 +103,8 @@ public class TmsAuthService {
         // 想保持必签的租户需在参数设置页显式改成【是】。
         p.put("signEsignRequired", sysParamService.getBool("TMS_SIGN_ESIGN_REQUIRED", false));
         p.put("handoverEsignRequired", sysParamService.getBool("TMS_HANDOVER_ESIGN_REQUIRED", false));
+        // 发车留痕（V77，PRD-27）：默认 Y，确认发车必须填发车公里数并拍 1 张里程照片
+        p.put("departMileageRequired", sysParamService.getBool("TMS_DEPART_MILEAGE_REQUIRED", true));
         return p;
     }
 

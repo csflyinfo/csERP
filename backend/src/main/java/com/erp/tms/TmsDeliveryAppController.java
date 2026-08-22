@@ -268,6 +268,243 @@ public class TmsDeliveryAppController {
     }
 
     /**
+     * 配送点单据 + 商品清单（V77）：供「查看清单」「装车确认」点击配送点时弹窗核对。
+     *
+     * 入参：dispatchId、detailId（任意一条该配送点的调度明细，用于定位门店）。
+     * 一个配送点 = 同 dispatchId 下同一 customer_code 的全部明细（与 {@link #loadingStores}
+     * 的门店归并口径一致，可能含多张发货/取退单）。
+     *
+     * 商品四列：商品名称、规格、单位、数量。
+     * 发货明细本身没有规格列（V17 建表如此），必须 LEFT JOIN base_goods 取 spec，
+     * 否则前端规格列恒空；退货申请明细自带 spec/unit_name，直接取。
+     */
+    @PostMapping("/loading/point-bills")
+    public ApiResponse<Map<String, Object>> loadingPointBills(@RequestBody Map<String, Object> body) {
+        String dispatchId = TmsUtil.str(body.get("dispatchId"));
+        String detailId = TmsUtil.str(body.get("detailId"));
+        if (dispatchId.isEmpty() || detailId.isEmpty()) {
+            return ApiResponse.fail("400", "dispatchId、detailId 不能为空");
+        }
+        loadDispatch(dispatchId, TmsUtil.currentDriverId());
+
+        List<Map<String, Object>> keyRows = jdbcTemplate.queryForList("""
+                SELECT customer_code, customer_name, seq_no,
+                       COALESCE(NULLIF(customer_address,''), '') AS customer_address
+                FROM tms_dispatch_detail WHERE dispatch_id=? AND detail_id=?
+                """, dispatchId, detailId);
+        if (keyRows.isEmpty()) throw new IllegalArgumentException("配送点不存在：" + detailId);
+        String customerCode = TmsUtil.str(keyRows.get(0).get("customer_code"));
+
+        List<Map<String, Object>> pointDetails = TmsUtil.queryCamel(jdbcTemplate, """
+                SELECT detail_id, bill_type, source_bill_no
+                FROM tms_dispatch_detail
+                WHERE dispatch_id=? AND customer_code=?
+                ORDER BY bill_type, source_bill_no, detail_id
+                """, dispatchId, customerCode);
+
+        List<Map<String, Object>> bills = new ArrayList<>();
+        BigDecimal pointQty = BigDecimal.ZERO;
+        int pointSku = 0;
+        for (Map<String, Object> dd : pointDetails) {
+            String billType = TmsUtil.str(dd.get("billType"));
+            String billNo = TmsUtil.str(dd.get("sourceBillNo"));
+            boolean isReturn = "RETURN".equals(billType);
+
+            List<Map<String, Object>> items;
+            if (isReturn) {
+                // 注意：H2 CASE_INSENSITIVE_IDENTIFIENTS 下 AS goodsCode 会被原样小写，
+                // queryCamel 只驼峰化下划线列名，所以这里必须用裸 snake_case 让它转驼峰。
+                items = TmsUtil.queryCamel(jdbcTemplate, """
+                        SELECT goods_code, goods_name, spec, unit_name, qty
+                        FROM sales_return_apply_detail
+                        WHERE apply_id = (SELECT apply_id FROM sales_return_apply WHERE apply_no = ?)
+                        ORDER BY detail_id
+                        """, billNo);
+            } else {
+                items = TmsUtil.queryCamel(jdbcTemplate, """
+                        SELECT d.goods_code, d.goods_name,
+                               COALESCE(g.spec, '') AS spec,
+                               d.unit_name, d.qty
+                        FROM sales_receipt_detail d
+                        JOIN sales_receipt r ON r.receipt_id = d.receipt_id
+                        LEFT JOIN base_goods g ON g.goods_code = d.goods_code
+                        WHERE r.receipt_no = ?
+                        ORDER BY d.detail_id
+                        """, billNo);
+            }
+            BigDecimal billQty = BigDecimal.ZERO;
+            for (Map<String, Object> it : items) billQty = billQty.add(TmsUtil.toBd(it.get("qty")));
+
+            Map<String, Object> bill = new LinkedHashMap<>();
+            bill.put("billType", billType);
+            bill.put("billTypeText", isReturn ? "取退" : "发货");
+            bill.put("sourceBillNo", billNo);
+            bill.put("qty", billQty);
+            bill.put("skuCount", items.size());
+            bill.put("items", items);
+            bills.add(bill);
+            pointQty = pointQty.add(billQty);
+            pointSku += items.size();
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dispatchId", dispatchId);
+        result.put("customerCode", customerCode);
+        result.put("customerName", keyRows.get(0).get("customer_name"));
+        result.put("customerAddress", keyRows.get(0).get("customer_address"));
+        result.put("bills", bills);
+        result.put("totalQty", pointQty);
+        result.put("skuCount", pointSku);
+        return ApiResponse.ok(result);
+    }
+
+    /**
+     * 装车退回（V77）：整个配送点装不下，把该点的单据退回调度池重新安排。
+     *
+     * 入参：dispatchId、detailIds:[]（该配送点下全部调度明细）、reason。
+     * 处理：
+     *   - 已发车（depart_time 不为空）的明细不允许退；
+     *   - 发货单回 UNDISPATCHED 并清空 dispatch/trip 关联，退货申请回「已安排调度」并清空司机/调度关联；
+     *   - 单据 remark 追加「[时间 司机XX 装车退回：原因]」（明细行随即删除，留痕必须落在单据上）；
+     *   - 删除这些 tms_dispatch_detail；重算调度单门店/件数快照；
+     *   - 若调度单已无任何明细，整单 CANCELLED（空车无存在意义）。
+     */
+    @PostMapping("/loading/return-point")
+    @Transactional
+    public ApiResponse<Map<String, Object>> returnPoint(@RequestBody Map<String, Object> body) {
+        String dispatchId = TmsUtil.str(body.get("dispatchId"));
+        String reason = TmsUtil.str(body.get("reason"));
+        if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
+        if (reason.isEmpty()) return ApiResponse.fail("400", "请填写退回原因");
+        if (reason.length() > 200) return ApiResponse.fail("400", "退回原因不能超过 200 字");
+
+        List<String> detailIds = new ArrayList<>();
+        Object raw = body.get("detailIds");
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                String s = TmsUtil.str(o);
+                if (!s.isEmpty()) detailIds.add(s);
+            }
+        }
+        if (detailIds.isEmpty()) return ApiResponse.fail("400", "未选择要退回的配送点");
+
+        String driverId = TmsUtil.currentDriverId();
+        Map<String, Object> dispatch = loadDispatch(dispatchId, driverId);
+        String status = TmsUtil.str(dispatch.get("status"));
+        if (!Set.of("ASSIGNED", "ACCEPTED", "LOADED").contains(status)) {
+            return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，不能在装车阶段退回");
+        }
+
+        String ph = String.join(",", java.util.Collections.nCopies(detailIds.size(), "?"));
+        // 已发车的不能退（货已离库）
+        Integer departed = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tms_dispatch_detail WHERE detail_id IN (" + ph + ") AND depart_time IS NOT NULL",
+                Integer.class, detailIds.toArray());
+        if (departed != null && departed > 0) {
+            return ApiResponse.fail("400", "配送点已发车，不能退回");
+        }
+        // 防越权：这些明细必须属于本司机的本调度单
+        Integer owned = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tms_dispatch_detail dd JOIN tms_dispatch d ON d.dispatch_id=dd.dispatch_id "
+                        + "WHERE dd.dispatch_id=? AND d.driver_id=? AND dd.detail_id IN (" + ph + ")",
+                Integer.class, buildArgs(dispatchId, driverId, detailIds));
+        if (owned == null || owned != detailIds.size()) {
+            return ApiResponse.fail("400", "存在不属于本调度单的配送点，退回中止");
+        }
+
+        // 退回粒度是「整个配送点」：前端装车页只展示发货单卡片，一个点还可能挂着退货单，
+        // 这里按 customer_code 把同店的全部明细（含取退）一并捞出来退回，避免只退半家。
+        List<Map<String, Object>> tapped = jdbcTemplate.queryForList(
+                "SELECT DISTINCT customer_code FROM tms_dispatch_detail WHERE detail_id IN (" + ph + ")",
+                detailIds.toArray());
+        if (!tapped.isEmpty()) {
+            List<String> codes = new ArrayList<>();
+            for (Map<String, Object> r : tapped) {
+                String c = TmsUtil.str(r.get("customer_code"));
+                if (!c.isEmpty()) codes.add(c);
+            }
+            if (!codes.isEmpty()) {
+                String cph = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+                List<String> expanded = jdbcTemplate.queryForList(
+                        "SELECT detail_id FROM tms_dispatch_detail WHERE dispatch_id=? AND customer_code IN (" + cph + ") "
+                                + "AND depart_time IS NULL ORDER BY detail_id",
+                        String.class, buildArgs(dispatchId, codes));
+                if (!expanded.isEmpty()) detailIds = expanded;
+                ph = String.join(",", java.util.Collections.nCopies(detailIds.size(), "?"));
+            }
+        }
+
+        List<Map<String, Object>> lines = jdbcTemplate.queryForList(
+                "SELECT bill_type, source_bill_no FROM tms_dispatch_detail WHERE detail_id IN (" + ph + ") ORDER BY detail_id",
+                detailIds.toArray());
+        String driverName = driverName(dispatch);
+        String stamp = TmsUtil.DT_FMT.format(TmsUtil.now());
+        String note = "[" + stamp + " 司机" + driverName + " 装车退回：" + reason + "]";
+
+        List<String> receiptNos = new ArrayList<>();
+        List<String> returnNos = new ArrayList<>();
+        for (Map<String, Object> ln : lines) {
+            String no = TmsUtil.str(ln.get("source_bill_no"));
+            if (no.isEmpty()) continue;
+            if ("RETURN".equals(TmsUtil.str(ln.get("bill_type")))) returnNos.add(no);
+            else receiptNos.add(no);
+        }
+        if (!receiptNos.isEmpty()) {
+            String rph = String.join(",", java.util.Collections.nCopies(receiptNos.size(), "?"));
+            jdbcTemplate.update(
+                    "UPDATE sales_receipt SET dispatch_status='UNDISPATCHED', dispatch_id=NULL, trip_id=NULL, "
+                            + "remark=CONCAT(COALESCE(remark,''), ?) WHERE receipt_no IN (" + rph + ")",
+                    buildArgs(note, receiptNos));
+        }
+        if (!returnNos.isEmpty()) {
+            String rph = String.join(",", java.util.Collections.nCopies(returnNos.size(), "?"));
+            jdbcTemplate.update(
+                    "UPDATE sales_return_apply SET logistics_status='已安排调度', driver_id=NULL, driver_name=NULL, "
+                            + "dispatch_id=NULL, trip_id=NULL, remark=CONCAT(COALESCE(remark,''), ?) WHERE apply_no IN (" + rph + ")",
+                    buildArgs(note, returnNos));
+        }
+
+        jdbcTemplate.update("DELETE FROM tms_dispatch_detail WHERE detail_id IN (" + ph + ")", detailIds.toArray());
+
+        // 重算调度单门店/件数快照（与建单口径一致：门店=去重客户数，件数=发货 qty 合计）
+        Integer storeCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(DISTINCT customer_code) FROM tms_dispatch_detail WHERE dispatch_id=?",
+                Integer.class, dispatchId);
+        BigDecimal loadedQty = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(dd.qty),0) FROM tms_dispatch_detail dd
+                WHERE dd.dispatch_id=? AND dd.bill_type='RECEIPT'
+                """, BigDecimal.class, dispatchId);
+        BigDecimal returnQty = jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(dd.qty),0) FROM tms_dispatch_detail dd
+                WHERE dd.dispatch_id=? AND dd.bill_type='RETURN'
+                """, BigDecimal.class, dispatchId);
+        jdbcTemplate.update(
+                "UPDATE tms_dispatch SET store_count=?, loaded_qty=?, return_qty=? WHERE dispatch_id=?",
+                storeCount == null ? 0 : storeCount,
+                loadedQty == null ? BigDecimal.ZERO : loadedQty,
+                returnQty == null ? BigDecimal.ZERO : returnQty, dispatchId);
+
+        boolean cancelled = false;
+        if (storeCount == null || storeCount == 0) {
+            jdbcTemplate.update("UPDATE tms_dispatch SET status='CANCELLED' WHERE dispatch_id=? AND status <> 'COMPLETED'", dispatchId);
+            jdbcTemplate.update("UPDATE tms_delivery_trip SET status='CANCELLED' WHERE dispatch_id=? AND status <> 'COMPLETED'", dispatchId);
+            cancelled = true;
+        }
+
+        TmsUtil.log(jdbcTemplate, "tms.app.delivery", "RETURN_POINT", dispatchId,
+                "司机" + driverName + "装车退回配送点：发货 " + receiptNos + " 取退 " + returnNos + "，原因：" + reason
+                        + (cancelled ? "（调度单已无配送点，置为已取消）" : ""));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("dispatchId", dispatchId);
+        result.put("returnedReceipts", receiptNos);
+        result.put("returnedReturns", returnNos);
+        result.put("cancelled", cancelled);
+        result.put("remainingStoreCount", storeCount == null ? 0 : storeCount);
+        return ApiResponse.ok(result);
+    }
+
+    /**
      * 调整配送点顺序：入参 dispatchId, customerCodes:[按新顺序排列的门店编码]。
      *
      * 为什么按门店传而不是按 detailId 传：
@@ -473,11 +710,16 @@ public class TmsDeliveryAppController {
     }
 
     /**
-     * 开始装车：调度单 ASSIGNED / ACCEPTED → LOADED，行程 PLANNED → LOADED。
+     * 开始装车：进入装车作业（V77 起不再把整单翻成 LOADED）。
      *
-     * 为什么同时放通 ASSIGNED：ACCEPTED 是新增状态，V68 之前的存量单仍停在
-     * ASSIGNED，只认 ACCEPTED 会把这些单永久卡死在装车前。新单走
-     * 「接单→装车」，存量单可直接装车，两者都不阻断。
+     * 旧实现 ASSIGNED/ACCEPTED → LOADED 是首页误显「已装车」的根因：司机只是点了
+     * 「开始装车」，货还在库里，调度单/行程/发货单却全被标成 LOADED，首页卡片直接
+     * 显示蓝标【已装车】。现在「开始装车」只保证司机已接单（ASSIGNED → ACCEPTED），
+     * 行程仍 PLANNED、发货单仍 DISPATCHED；真正「整车装完」由 {@link #loadingConfirm}
+     * 在全部配送点 load_status=LOADED 时再推进主状态到 LOADED。
+     *
+     * 放通 ASSIGNED：APP 上「接单」和「开始装车」是两个按钮，但存量单/直派单司机
+     * 可能跳过接单直接装车，这里把 ASSIGNED 顺带推进到 ACCEPTED，不阻断作业。
      */
     @PostMapping("/loading/start")
     @Transactional
@@ -489,17 +731,19 @@ public class TmsDeliveryAppController {
         Map<String, Object> dispatch = loadDispatch(dispatchId, driverId);
         String status = TmsUtil.str(dispatch.get("status"));
         if (!"ASSIGNED".equals(status) && !"ACCEPTED".equals(status)) {
-            return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，仅「已分配 / 已接单」可开始装车");
+            return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，仅「待接单 / 待装车」可开始装车");
         }
 
         Timestamp now = Timestamp.valueOf(TmsUtil.now());
-        jdbcTemplate.update("UPDATE tms_dispatch SET status='LOADED', arrange_time=? WHERE dispatch_id=?", now, dispatchId);
-        jdbcTemplate.update("UPDATE tms_delivery_trip SET status='LOADED', loading_time=? WHERE dispatch_id=?", now, dispatchId);
-        // 发货单 dispatch_status → LOADED
-        jdbcTemplate.update("UPDATE sales_receipt SET dispatch_status='LOADED' WHERE dispatch_id=?", dispatchId);
-
-        TmsUtil.log(jdbcTemplate, "tms.app.delivery", "LOADING_START", dispatchId, "开始装车");
-        return ApiResponse.ok(Map.of("dispatchId", dispatchId, "status", "LOADED"));
+        // 接单时间以第一次动作为准：ASSIGNED → ACCEPTED 时回填 accept_time，已接单则不动
+        if ("ASSIGNED".equals(status)) {
+            jdbcTemplate.update(
+                    "UPDATE tms_dispatch SET status='ACCEPTED', accept_time=COALESCE(accept_time,?) WHERE dispatch_id=?",
+                    now, dispatchId);
+            TmsUtil.log(jdbcTemplate, "tms.app.delivery", "ACCEPT", dispatchId, "司机开始装车（视同接单）");
+        }
+        TmsUtil.log(jdbcTemplate, "tms.app.delivery", "LOADING_START", dispatchId, "开始装车（进入逐点核对）");
+        return ApiResponse.ok(Map.of("dispatchId", dispatchId, "status", "ACCEPTED"));
     }
 
     /** 装车扫码核对：逐商品录入实装数量，写 tms_loading_check。 */
@@ -554,9 +798,9 @@ public class TmsDeliveryAppController {
         String driverId = TmsUtil.currentDriverId();
         Map<String, Object> dispatch = loadDispatch(dispatchId, driverId);
         String status = TmsUtil.str(dispatch.get("status"));
-        // DEPARTED/DELIVERING 也放通：部分发车后调度单会停在 LOADED，
-        // 但存量数据里整单已发车的单同样可能被追加新明细，不能因状态拦死
-        if (!Set.of("LOADED", "DEPARTED", "DELIVERING").contains(status)) {
+        // ACCEPTED 放通（V77）：loadingStart 后主单停在 ACCEPTED（待装车），逐点确认装车即从此状态开始；
+        // DEPARTED/DELIVERING 也放通：部分发车后追加新明细，不能因状态拦死补装。
+        if (!Set.of("ACCEPTED", "LOADED", "DEPARTED", "DELIVERING").contains(status)) {
             return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，需先开始装车");
         }
 
@@ -606,6 +850,19 @@ public class TmsDeliveryAppController {
         TmsUtil.log(jdbcTemplate, "tms.app.delivery", "LOADING_CONFIRM", dispatchId,
                 "确认装车 " + updated + " 个配送点，待装 " + pending + " 个");
 
+        // V77：全部配送点装完才把主状态推进到 LOADED（=已装车）。
+        // 部分装车时停在 ACCEPTED，首页显示「待装车」，与货还没装完的事实一致。
+        // 行程 PLANNED → LOADED、发货单 DISPATCHED → LOADED 也只在此时发生。
+        if (pending == 0 && loaded > 0) {
+            jdbcTemplate.update(
+                    "UPDATE tms_dispatch SET status='LOADED' WHERE dispatch_id=? AND status <> 'LOADED'",
+                    dispatchId);
+            jdbcTemplate.update(
+                    "UPDATE tms_delivery_trip SET status='LOADED', loading_time=COALESCE(loading_time,?) WHERE dispatch_id=?",
+                    now, dispatchId);
+            jdbcTemplate.update("UPDATE sales_receipt SET dispatch_status='LOADED' WHERE dispatch_id=?", dispatchId);
+        }
+
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("dispatchId", dispatchId);
         result.put("updated", updated);
@@ -644,10 +901,23 @@ public class TmsDeliveryAppController {
         String driverId = TmsUtil.currentDriverId();
         Map<String, Object> dispatch = loadDispatch(dispatchId, driverId);
         String status = TmsUtil.str(dispatch.get("status"));
-        // DEPARTED/DELIVERING 同样放通：部分发车后司机补装剩余点还要再发一次车，
-        // 此时主状态可能已被前一次发车推进，只认 LOADED 会把补发路径堵死。
-        if (!Set.of("LOADED", "DEPARTED", "DELIVERING").contains(status)) {
+        // ACCEPTED 放通（V77）：部分配送点已 load_status=LOADED 时允许直接带这些点发车，
+        // 不必等整单装完；DEPARTED/DELIVERING 放通：部分发车后补装剩余点再发一次。
+        if (!Set.of("ACCEPTED", "LOADED", "DEPARTED", "DELIVERING").contains(status)) {
             return ApiResponse.fail("400", "当前调度单状态为「" + status + "」，需先开始装车");
+        }
+
+        // 发车留痕：参数为 Y 时公里数与里程照片必填（照片先经 /upload/image 拿 URL 再提交）
+        boolean mileageRequired = isParamTrue("TMS_DEPART_MILEAGE_REQUIRED", true);
+        BigDecimal departMileage = TmsUtil.toBd(body.get("departMileage"));
+        String departPhotoUrl = TmsUtil.str(body.get("departPhotoUrl"));
+        if (mileageRequired) {
+            if (departMileage.signum() <= 0) {
+                return ApiResponse.fail("400", "请填写发车公里数");
+            }
+            if (departPhotoUrl.isEmpty()) {
+                return ApiResponse.fail("400", "请拍摄里程照片");
+            }
         }
 
         // 待发车明细（未发车的），按装车状态分成两组
@@ -711,15 +981,61 @@ public class TmsDeliveryAppController {
                 WHERE dispatch_id=? AND bill_type='RETURN' AND depart_time IS NULL
                 """, now, dispatchId);
 
-        // 3) 主状态：仍有未发车明细就停在 LOADED，装车入口不能消失
+        // 3) 主状态：仍有未发车明细就停在 ACCEPTED（V77：部分装车未整车装完），装车入口不能消失
         boolean allDeparted = unloaded.isEmpty();
         if (allDeparted) {
-            jdbcTemplate.update("UPDATE tms_dispatch SET status='DEPARTED', depart_time=COALESCE(depart_time,?) WHERE dispatch_id=?", now, dispatchId);
-            jdbcTemplate.update("UPDATE tms_delivery_trip SET status='DEPARTED', depart_time=COALESCE(depart_time,?) WHERE dispatch_id=?", now, dispatchId);
+            jdbcTemplate.update("""
+                    UPDATE tms_dispatch
+                    SET status='DEPARTED', depart_time=COALESCE(depart_time,?),
+                        depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                        depart_mileage_time=COALESCE(depart_mileage_time,?)
+                    WHERE dispatch_id=?
+                    """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
+            jdbcTemplate.update("""
+                    UPDATE tms_delivery_trip
+                    SET status='DEPARTED', depart_time=COALESCE(depart_time,?),
+                        depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                        depart_mileage_time=COALESCE(depart_mileage_time,?)
+                    WHERE dispatch_id=?
+                    """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
         } else {
-            // 首次部分发车也要落 depart_time：配送中/历史页要按发车时间排序展示
-            jdbcTemplate.update("UPDATE tms_dispatch SET status='LOADED', depart_time=COALESCE(depart_time,?) WHERE dispatch_id=?", now, dispatchId);
-            jdbcTemplate.update("UPDATE tms_delivery_trip SET status='LOADED', depart_time=COALESCE(depart_time,?) WHERE dispatch_id=?", now, dispatchId);
+            // 还有未发车明细：
+            //  - 首次部分发车（当前 ACCEPTED/LOADED）→ 主单停在 ACCEPTED/行程 PLANNED，保留装车入口；
+            //  - 已发车后补装再发（当前 DEPARTED/DELIVERING）→ 不能回退状态，只追加 depart_time/里程。
+            // 首次发车也要落 depart_time：配送中/历史页要按发车时间排序展示；
+            // 里程留痕同样在首次发车记录，后续补发不覆盖（COALESCE）。
+            boolean alreadyOut = Set.of("DEPARTED", "DELIVERING").contains(status);
+            if (alreadyOut) {
+                jdbcTemplate.update("""
+                        UPDATE tms_dispatch
+                        SET depart_time=COALESCE(depart_time,?),
+                            depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                            depart_mileage_time=COALESCE(depart_mileage_time,?)
+                        WHERE dispatch_id=?
+                        """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
+                jdbcTemplate.update("""
+                        UPDATE tms_delivery_trip
+                        SET depart_time=COALESCE(depart_time,?),
+                            depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                            depart_mileage_time=COALESCE(depart_mileage_time,?)
+                        WHERE dispatch_id=?
+                        """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
+            } else {
+                jdbcTemplate.update("""
+                        UPDATE tms_dispatch
+                        SET status='ACCEPTED', depart_time=COALESCE(depart_time,?),
+                            depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                            depart_mileage_time=COALESCE(depart_mileage_time,?)
+                        WHERE dispatch_id=?
+                        """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
+                jdbcTemplate.update("""
+                        UPDATE tms_delivery_trip
+                        SET status='PLANNED', depart_time=COALESCE(depart_time,?),
+                            depart_mileage=COALESCE(depart_mileage,?), depart_photo_url=COALESCE(depart_photo_url,?),
+                            depart_mileage_time=COALESCE(depart_mileage_time,?)
+                        WHERE dispatch_id=?
+                        """, now, departMileage, emptyToNull(departPhotoUrl), now, dispatchId);
+            }
         }
 
         String detail = "确认发车 " + departed + " 个配送点";
@@ -733,7 +1049,12 @@ public class TmsDeliveryAppController {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("dispatchId", dispatchId);
-        result.put("status", allDeparted ? "DEPARTED" : "LOADED");
+        // 部分发车后的主单状态：首次部分发车停在 ACCEPTED（待补装），已发车后补发则保持 DEPARTED/DELIVERING
+        String postStatus;
+        if (allDeparted) postStatus = "DEPARTED";
+        else if (Set.of("DEPARTED", "DELIVERING").contains(status)) postStatus = status;
+        else postStatus = "ACCEPTED";
+        result.put("status", postStatus);
         result.put("departTime", now.toString());
         result.put("needConfirm", false);
         result.put("departCount", departed);
@@ -1345,6 +1666,39 @@ public class TmsDeliveryAppController {
         for (Map<String, Object> r : rows) total = total.add(TmsUtil.toBd(r.get("receivedAmount")));
         return "存在 " + rows.size() + " 笔未交账的门店结算单（合计 " + total.toPlainString()
                 + " 元，如 " + TmsUtil.str(rows.get(0).get("settleNo")) + "），请先完成交账后再接单";
+    }
+
+    /** 读取 Y/N 系统参数，缺省取 defaultWhenMissing，异常一律回落默认值，不阻断作业。 */
+    private boolean isParamTrue(String key, boolean defaultWhenMissing) {
+        try {
+            return sysParamService.getBool(key, defaultWhenMissing);
+        } catch (Exception ignore) {
+            return defaultWhenMissing;
+        }
+    }
+
+    private static String emptyToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
+    /** 从 loadDispatch 结果取司机姓名（SELECT * + camelize 后字段为 driverName）。 */
+    private static String driverName(Map<String, Object> dispatch) {
+        String name = TmsUtil.str(dispatch.get("driverName"));
+        return name.isEmpty() ? "司机" : name;
+    }
+
+    /** 把若干前缀参数 + 一个 List 拼成 SQL IN 占位符的 Object[]。 */
+    private static Object[] buildArgs(Object first, List<?> list) {
+        return buildArgsList(list, first);
+    }
+    private static Object[] buildArgs(Object first, Object second, List<?> list) {
+        return buildArgsList(list, first, second);
+    }
+    private static Object[] buildArgsList(List<?> list, Object... prefix) {
+        Object[] arr = new Object[prefix.length + list.size()];
+        System.arraycopy(prefix, 0, arr, 0, prefix.length);
+        for (int i = 0; i < list.size(); i++) arr[prefix.length + i] = list.get(i);
+        return arr;
     }
 
     /** 加载调度单并校验司机权限。 */

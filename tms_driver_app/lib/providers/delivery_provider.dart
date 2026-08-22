@@ -18,6 +18,54 @@ final loadingStoresProvider =
   return LoadingStores.fromJson(data as Map<String, dynamic>);
 });
 
+/// 配送点单据+商品清单（V77，装车核对弹窗用）。
+final pointBillsProvider =
+    FutureProvider.family<PointBills, PointBillsArgs>((ref, args) async {
+  final data = await ApiService.instance.post('/tms/app/loading/point-bills',
+      body: {'dispatchId': args.dispatchId, 'detailId': args.detailId});
+  return PointBills.fromJson(data as Map<String, dynamic>);
+});
+
+class PointBillsArgs {
+  final String dispatchId;
+  final String detailId;
+  const PointBillsArgs({required this.dispatchId, required this.detailId});
+
+  // family 以参数为缓存键，不同配送点必须各取一份：
+  @override
+  bool operator ==(Object other) =>
+      other is PointBillsArgs &&
+      other.dispatchId == dispatchId &&
+      other.detailId == detailId;
+  @override
+  int get hashCode => Object.hash(dispatchId, detailId);
+}
+
+/// 配送点退回调度池参数（V77）。
+class ReturnPointArgs {
+  final String dispatchId;
+  final List<String> detailIds;
+  final String reason;
+  const ReturnPointArgs({
+    required this.dispatchId,
+    required this.detailIds,
+    required this.reason,
+  });
+}
+
+/// 装车退回（整个配送点退回调度池）。退回后调用方应刷新装车清单；
+/// 若返回 cancelled=true 说明调度单已空，应退回首页。
+final returnPointProvider =
+    FutureProvider.family<Map<String, dynamic>, ReturnPointArgs>((ref, args) async {
+  final data = await ApiService.instance.post('/tms/app/loading/return-point',
+      body: {
+        'dispatchId': args.dispatchId,
+        'detailIds': args.detailIds,
+        'reason': args.reason,
+      });
+  return (data as Map?)?.cast<String, dynamic>() ?? {};
+});
+
 /// 配送点调序参数。
 ///
 /// 与 LoadingActionArgs 同样不重写 == / hashCode：司机可能连续拖两次再提交，
@@ -67,11 +115,19 @@ class LoadingActionArgs {
   /// 空表示「全部装车」——后端会把该单所有未发车配送点一次置为已装车。
   final List<String> detailIds;
 
+  /// 仅对 depart 生效：发车公里数（V77，参数要求时必填）。
+  final num? departMileage;
+
+  /// 仅对 depart 生效：里程照片 URL（先上传再提交，V77）。
+  final String? departPhotoUrl;
+
   LoadingActionArgs({
     required this.dispatchId,
     required this.action,
     this.force = false,
     this.detailIds = const [],
+    this.departMileage,
+    this.departPhotoUrl,
   });
 }
 
@@ -97,6 +153,11 @@ final loadingActionProvider =
   // 只传非空 detailIds：后端把「不传/空数组」解释为全选装车，
   // 传空数组和不传等价，但显式省略更能表达「这次是全选」的意图。
   if (args.detailIds.isNotEmpty) body['detailIds'] = args.detailIds;
+  // 发车留痕（V77）：参数要求时由确认发车弹窗采集，带上后后端落库。
+  if (args.departMileage != null) body['departMileage'] = args.departMileage;
+  if (args.departPhotoUrl != null && args.departPhotoUrl!.isNotEmpty) {
+    body['departPhotoUrl'] = args.departPhotoUrl;
+  }
   final data = await ApiService.instance.enqueueOrPost(
     actionType: actionType,
     // 按配送点装车时把明细拼进 actionKey：离线队列按 actionType+actionKey 去重，

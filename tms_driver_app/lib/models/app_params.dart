@@ -33,6 +33,9 @@ class AppParams {
   /// 交账页是否展示并强制电子签名（false 时整块签名区不渲染）。
   final bool handoverEsignRequired;
 
+  /// 发车是否必须填写公里数并拍 1 张里程照片（V77，默认 true）。
+  final bool departMileageRequired;
+
   const AppParams({
     this.signPhotoCount = 2,
     this.returnPhotoCount = 2,
@@ -43,6 +46,7 @@ class AppParams {
     this.driverFlowEnabled = true,
     this.signEsignRequired = false,
     this.handoverEsignRequired = false,
+    this.departMileageRequired = true,
   });
 
   /// 默认值必须与后端 `TmsAuthService.appParamSnapshot()` 完全一致。
@@ -66,6 +70,7 @@ class AppParams {
         driverFlowEnabled: _bool(j['driverFlowEnabled'], defaults.driverFlowEnabled),
         signEsignRequired: _bool(j['signEsignRequired'], defaults.signEsignRequired),
         handoverEsignRequired: _bool(j['handoverEsignRequired'], defaults.handoverEsignRequired),
+        departMileageRequired: _bool(j['departMileageRequired'], defaults.departMileageRequired),
       );
 
   Map<String, dynamic> toJson() => {
@@ -78,6 +83,7 @@ class AppParams {
         'driverFlowEnabled': driverFlowEnabled,
         'signEsignRequired': signEsignRequired,
         'handoverEsignRequired': handoverEsignRequired,
+        'departMileageRequired': departMileageRequired,
       };
 
   String encode() => jsonEncode(toJson());
