@@ -4,8 +4,11 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.inventory.service.InventoryCostService;
+import com.erp.wms.WmsInboundService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -67,13 +70,17 @@ public class SalesReturnController {
     private final JdbcTemplate jdbcTemplate;
     private final InventoryCostService inventoryCostService;
     private final com.erp.common.util.BillNoGenerator billNoGen;
+    /** WMS 收货任务服务：推送仓库时同步建 PDA 任务。@Lazy 打破与 WmsInboundService 的循环依赖。 */
+    private final WmsInboundService wmsInboundService;
 
     public SalesReturnController(JdbcTemplate jdbcTemplate,
                                  InventoryCostService inventoryCostService,
-                                 com.erp.common.util.BillNoGenerator billNoGen) {
+                                 com.erp.common.util.BillNoGenerator billNoGen,
+                                 @Autowired(required = false) @Lazy WmsInboundService wmsInboundService) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
+        this.wmsInboundService = wmsInboundService;
     }
 
     // ========================================================================
@@ -528,7 +535,9 @@ public class SalesReturnController {
      * 幂等：入库单已存在时不重复生成，直接返回原单号。
      */
     @PostMapping("/return-order/push-warehouse")
-    @Transactional
+    // 注意：不加 @Transactional —— generateInboundFromApply 与 wmsInboundService.createFromSalesReturn
+    // 都有自己的事务，若把它们和物流状态 UPDATE 包在同一外层事务里，WMS 侧抛"已有任务"等
+    // 业务异常会把外层事务标 rollback-only（详见 spring-caught-exception-marks-tx-rollback-only）。
     public ApiResponse<Map<String, Object>> pushWarehouse(@Valid @RequestBody AuditRequest request) {
         Map<String, Object> order = findApplyById(request.bizId());
         String applyId = str(pick(order, "apply_id"));
@@ -555,11 +564,27 @@ public class SalesReturnController {
                 WHERE apply_id=?
                 """, LOGISTICS_PUSHED, "系统管理员", applyId);
 
+        // 同步生成 WMS 收货任务，PDA 才看得到
+        String wmsEffect = "";
+        String wmsTaskNo = "";
+        if (wmsInboundService != null && !inboundNo.isBlank()) {
+            try {
+                Map<String, Object> wms = wmsInboundService.createFromSalesReturn(inboundNo, "系统管理员");
+                wmsTaskNo = String.valueOf(wms.get("taskNo"));
+                wmsEffect = "，已下发 PDA 收货任务 " + wmsTaskNo;
+            } catch (Exception ex) {
+                // 不阻断推送：入库单已生成，WMS 任务失败由异常中心处理，或仓库手工再次触发
+                wmsEffect = "，但下发 PDA 任务失败：" + ex.getMessage();
+                log("sales.return.order", "PUSH_WAREHOUSE_WMS_FAIL", applyNo, wmsEffect);
+            }
+        }
+
         log("sales.return.order", "PUSH_WAREHOUSE", applyNo,
-                "推送仓库 → 生成退货入库单 " + inboundNo + "，流转状态 未安排 → 已推送仓库");
+                "推送仓库 → 生成退货入库单 " + inboundNo + wmsEffect + "，流转状态 未安排 → 已推送仓库");
         return ApiResponse.ok(Map.of("applyId", applyId, "applyNo", applyNo,
                 "logisticsStatus", LOGISTICS_PUSHED, "inboundNo", inboundNo,
-                "effect", "已推送仓库，生成退货入库单 " + inboundNo + "，等待仓库收货"));
+                "wmsTaskNo", wmsTaskNo,
+                "effect", "已推送仓库，生成退货入库单 " + inboundNo + wmsEffect));
     }
 
     /**
@@ -979,15 +1004,118 @@ public class SalesReturnController {
     @PostMapping("/return-inbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditInbound(@Valid @RequestBody AuditRequest request) {
+        Map<String, Object> r = doAuditInbound(request.bizId(), "系统管理员");
+        return ApiResponse.ok(r);
+    }
+
+    /**
+     * 运维补建接口：把历史 PENDING 退货入库单补建成 WMS 收货任务。
+     * <p>
+     * V86 之前推送仓库不会建 wms_inbound_task，已推送但 PDA 看不到的存量单据
+     * 通过本接口一次性补建。幂等：已有进行中任务的单据自动跳过。
+     * <p>仅管理员可调；返回 created/skipped/failed 三类明细。
+     */
+    @PostMapping("/return-inbound/sync-wms-tasks")
+    public ApiResponse<Map<String, Object>> syncWmsTasks() {
+        if (wmsInboundService == null) {
+            throw new IllegalStateException("WMS 服务未注入，无法补建任务");
+        }
+        List<Map<String, Object>> pending = jdbcTemplate.queryForList("""
+                SELECT inbound_no FROM sales_return_inbound
+                WHERE status = 'PENDING'
+                ORDER BY create_time ASC
+                """);
+        List<String> created = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        Map<String, String> failed = new LinkedHashMap<>();
+        for (Map<String, Object> row : pending) {
+            String no = str(pick(row, "inbound_no"));
+            try {
+                Map<String, Object> r = wmsInboundService.createFromSalesReturn(no, "系统补建");
+                created.add(no + " → " + r.get("taskNo"));
+            } catch (IllegalStateException ex) {
+                skipped.add(no + "（" + ex.getMessage() + "）");
+            } catch (Exception ex) {
+                failed.put(no, ex.getMessage());
+            }
+        }
+        log("sales.return.inbound", "SYNC_WMS_TASKS", "ADMIN",
+                "补建 WMS 收货任务：created=" + created.size() + ", skipped=" + skipped.size()
+                        + ", failed=" + failed.size());
+        return ApiResponse.ok(Map.of(
+                "total", pending.size(),
+                "created", created,
+                "skipped", skipped,
+                "failed", failed));
+    }
+
+    /**
+     * WMS 上架完成后回调：把 PDA 实收的数量/批次/仓库写回退货入库明细，再走审核回库。
+     * <p>
+     * 与 PC 审核唯一的差别：数据来源是 {@code wms_inbound_task_detail}（PDA 扫码收货时录的），
+     * 而不是 PC 上预先填好的 sales_return_inbound_detail。PDA 收货允许少收/分批，
+     * 实收数量写回明细后，按"少收不补、退货金额按入库金额走"的口径审核。
+     * <p>幂等：sales_return_inbound.status='APPROVED' 时直接返回原审核结果，不重复回库。
+     */
+    @Transactional
+    public Map<String, Object> auditFromWms(String inboundNo, String wmsTaskId, String operator) {
+        List<Map<String, Object>> heads = jdbcTemplate.queryForList(
+                "SELECT inbound_id, status, warehouse FROM sales_return_inbound WHERE inbound_no = ? OR inbound_id = ?",
+                inboundNo, inboundNo);
+        if (heads.isEmpty()) throw new IllegalArgumentException("退货入库单不存在：" + inboundNo);
+        Map<String, Object> head = heads.get(0);
+        String headWarehouse = str(pick(head, "warehouse"));
+        if ("APPROVED".equals(str(pick(head, "status")))) {
+            // 已审核（重复回调）：什么都不做，直接返回
+            return Map.of("inboundNo", inboundNo, "status", "APPROVED", "effect", "已审核，幂等跳过");
+        }
+
+        // 把 WMS 明细的实收数量/批次/生产日期回写到 sales_return_inbound_detail。
+        // WMS 任务里的 warehouse 优先，缺失时回退到入库单表头仓库。
+        List<Map<String, Object>> taskHead = jdbcTemplate.queryForList(
+                "SELECT warehouse FROM wms_inbound_task WHERE task_id = ?", wmsTaskId);
+        String wmsWarehouse = taskHead.isEmpty() ? "" : str(pick(taskHead.get(0), "warehouse"));
+        String fallbackWh = wmsWarehouse.isBlank() ? headWarehouse : wmsWarehouse;
+
+        List<Map<String, Object>> wmsDetails = jdbcTemplate.queryForList("""
+                SELECT detail_id, received_qty, qualified_qty, batch_no, production_date, remark
+                FROM wms_inbound_task_detail WHERE task_id = ?
+                """, wmsTaskId);
+        for (Map<String, Object> wd : wmsDetails) {
+            BigDecimal received = toBd(pick(wd, "received_qty"));
+            if (received.signum() <= 0) continue;
+            String remark = str(pick(wd, "remark"));
+            String sriDetailId = "";
+            if (remark.startsWith("SRI_DID=")) sriDetailId = remark.substring("SRI_DID=".length());
+            if (sriDetailId.isBlank()) continue;
+            // 合格数量优先（复检不通过数量已从 received_qty 扣减后落到 qualified_qty）
+            BigDecimal qualified = toBd(pick(wd, "qualified_qty"));
+            BigDecimal inboundQty = qualified.signum() > 0 ? qualified : received;
+            jdbcTemplate.update("""
+                    UPDATE sales_return_inbound_detail
+                    SET qty = ?,
+                        batch_no = COALESCE(NULLIF(?, ''), batch_no),
+                        production_date = COALESCE(?, production_date),
+                        warehouse = COALESCE(NULLIF(warehouse, ''), ?)
+                    WHERE detail_id = ?
+                    """, inboundQty, str(pick(wd, "batch_no")), pick(wd, "production_date"),
+                    fallbackWh, sriDetailId);
+        }
+
+        return doAuditInbound(inboundNo, operator);
+    }
+
+    /** 退货入库单审核核心逻辑（PC 端点与 WMS 回调共用）。 */
+    private Map<String, Object> doAuditInbound(String key, String operator) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT * FROM sales_return_inbound WHERE inbound_id = ? OR inbound_no = ?",
-                request.bizId(), request.bizId());
-        if (rows.isEmpty()) throw new IllegalArgumentException("退货入库单不存在：" + request.bizId());
+                "SELECT * FROM sales_return_inbound WHERE inbound_id = ? OR inbound_no = ?", key, key);
+        if (rows.isEmpty()) throw new IllegalArgumentException("退货入库单不存在：" + key);
         Map<String, Object> ib = rows.get(0);
         if (!"PENDING".equals(str(pick(ib, "status")))) throw new IllegalArgumentException("退货入库单已审核");
         String inboundId = str(pick(ib, "inbound_id"));
         String inboundNo = str(pick(ib, "inbound_no"));
         String applyNo = str(pick(ib, "source_apply_no"));
+        String headWarehouse = str(pick(ib, "warehouse"));
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM sales_return_inbound_detail WHERE inbound_id = ?", inboundId);
@@ -1026,6 +1154,7 @@ public class SalesReturnController {
             String batchNo = str(pick(d, "batch_no"));
             BigDecimal qty = toBd(pick(d, "qty"));
             String warehouse = str(pick(d, "warehouse"));
+            if (warehouse.isBlank()) warehouse = headWarehouse;
 
             // qty = 0 的零入库行跳过
             if (qty.signum() <= 0) continue;
@@ -1033,8 +1162,16 @@ public class SalesReturnController {
             if (warehouse.isBlank()) {
                 throw new IllegalArgumentException("商品 " + goodsName + " 未指定入库仓库，无法审核");
             }
-            if (batchNo.isBlank()) {
-                throw new IllegalArgumentException("商品 " + goodsName + " 未指定批次号，无法审核");
+            // 批次/生产日期回退规则（与采购链 createAndAuditForWms 一致，对齐全局"空批次允许"规则）：
+            //   1) 有生产日期无批次 → 自动生成 YYYYMMDD
+            //   2) 都没有 → 批次留空（upsertBatchStock 已支持空批次按 COALESCE 聚合）
+            //   3) 有批次则用用户值
+            java.time.LocalDate productionDate = parseDate(pick(d, "production_date"), null);
+            if (batchNo.isBlank() && productionDate != null) {
+                batchNo = productionDate.format(YYYYMMDD);
+                // 回写生成的批次号，保证审核后明细与库存一致
+                jdbcTemplate.update("UPDATE sales_return_inbound_detail SET batch_no = ? WHERE detail_id = ?",
+                        batchNo, str(pick(d, "detail_id")));
             }
 
             // 退货入库成本 = 当前库存成本单价
@@ -1042,8 +1179,8 @@ public class SalesReturnController {
             BigDecimal costAmount = qty.multiply(costPrice).setScale(2, RoundingMode.HALF_UP);
             totalCostAmount = totalCostAmount.add(costAmount);
 
-            // 回库 + 写流水
-            inventoryCostService.purchaseInbound(goodsCode, goodsName, warehouse, batchNo, qty, costPrice, inboundNo);
+            // 回库 + 写流水（purchaseInbound 支持空批次，内部按 COALESCE(batch_no,'') 聚合）
+            inventoryCostService.purchaseInbound(goodsCode, goodsName, warehouse, batchNo, qty, costPrice, inboundNo, productionDate);
 
             jdbcTemplate.update("""
                     UPDATE sales_return_inbound_detail SET cost_price=?, cost_amount=?
@@ -1062,11 +1199,12 @@ public class SalesReturnController {
                     qty.multiply(toBd(pick(d, "price"))).setScale(2, RoundingMode.HALF_UP));
         }
 
+        String op = strOrDefault(operator, "系统管理员");
         jdbcTemplate.update("""
                 UPDATE sales_return_inbound SET status='APPROVED', stock_updated=TRUE,
                     cost_amount=?, audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE inbound_id=?
-                """, totalCostAmount, "系统管理员", inboundId);
+                """, totalCostAmount, op, inboundId);
 
         // 回写退货单：已入库数量/金额 + 流转状态 → 已入库
         String applyEffect = "";
@@ -1075,11 +1213,14 @@ public class SalesReturnController {
         }
 
         log("sales.return.inbound", "AUDIT", inboundNo,
-                "退货入库审核 → 回库，成本 " + totalCostAmount + applyEffect);
-        return ApiResponse.ok(Map.of(
-                "inboundId", inboundId, "inboundNo", inboundNo, "status", "APPROVED",
-                "costAmount", totalCostAmount,
-                "effect", "库存已回库，成本已计价，入库数量已回写退货单" + applyEffect));
+                "退货入库审核 → 回库，成本 " + totalCostAmount + applyEffect + "（操作人：" + op + "）");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("inboundId", inboundId);
+        result.put("inboundNo", inboundNo);
+        result.put("status", "APPROVED");
+        result.put("costAmount", totalCostAmount);
+        result.put("effect", "库存已回库，成本已计价，入库数量已回写退货单" + applyEffect);
+        return result;
     }
 
     /**

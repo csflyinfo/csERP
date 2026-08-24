@@ -1,0 +1,91 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>销售订单池 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>.match{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px;margin-bottom:8px;font-size:12px}</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>📝 销售订单池（待出库）</h2><span class="sub">仅"已审核/未出库/未结案"订单可进入波次 · 一订单只进一个波次、只生成一张出库单</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打开智能组波推荐" onclick="autoWave()">✨ 智能组波</button>
+    <button class="btn primary" data-toast="请先在下方勾选订单" onclick="manualWave()">🌊 手动组波</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📄</div><div class="n blue">23</div><div class="l">待出库订单</div></div>
+    <div class="kpi"><div class="ic">⚡</div><div class="n red">3</div><div class="l">加急订单</div></div>
+    <div class="kpi"><div class="ic">📦</div><div class="n">186</div><div class="l">待发件数</div></div>
+    <div class="kpi"><div class="ic">🌊</div><div class="n orange">5</div><div class="l">建议组波数</div></div>
+    <div class="kpi"><div class="ic">🚚</div><div class="n purple">12</div><div class="l">已预分配司机</div></div>
+  </div>
+
+  <div class="alert info">💡 订单池为波次的来源：按线路/承运商/时窗/客户/商品聚合组波（参数 WMS_WAVE_GROUP_BY）。已在波次中的订单锁定，不重复出现。可在组波时一并做调度预分配（参数 WMS_DISPATCH_TIMING=两者皆可）。</div>
+
+  <div class="query">
+    <input placeholder="销售订单号/客户/商品" class="wide">
+    <select><option>全部线路</option><option>朝阳线</option><option>文三线</option><option>三里屯线</option></select>
+    <select><option>全部承运商</option><option>自营车队</option></select>
+    <select><option>要求发货时段</option></select>
+    <label><input type="checkbox" checked> 只看加急</label>
+    <label><input type="checkbox"> 已预分配</label>
+    <label><input type="checkbox"> 可越库</label>
+    <span class="spacer"></span>
+    <button class="btn">查询</button>
+  </div>
+
+  <div class="split r38">
+    <div class="tbl-wrap">
+      <table id="tblOrder">
+        <thead><tr><th><input type="checkbox" class="ck"></th><th>销售订单号</th><th>客户</th><th>线路/承运</th><th>行数</th><th>件数</th><th>金额</th><th>要求发货</th><th>调度</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="urgent"><td><input type="checkbox" class="ck" checked></td><td class="link mono" onclick="openOrder('SO20260823-0231')">SO20260823-0231</td><td>华联超市(建国路店) <span class="badge b-bad">加急</span></td><td>朝阳线/自营</td><td class="num">8</td><td class="num">42</td><td class="num">¥8,640</td><td>今日 14:00</td><td><span class="chip">预分配·张师傅</span></td><td><span class="badge b-info">待组波</span></td><td class="fix"><button class="btn sm primary" data-toast="已加入当前波次">加入波次</button></td></tr>
+          <tr><td><input type="checkbox" class="ck" checked></td><td class="link mono">SO20260823-0238</td><td>物美超市(海淀店)</td><td>朝阳线/自营</td><td class="num">12</td><td class="num">68</td><td class="num">¥12,300</td><td>今日 15:00</td><td><span class="chip">出库后指派</span></td><td><span class="badge b-info">待组波</span></td><td class="fix"><button class="btn sm primary">加入波次</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">SO20260823-0241</td><td>711便利店(三里屯店)</td><td>三里屯线/自营</td><td class="num">4</td><td class="num">16</td><td class="num">¥1,820</td><td>今日 16:00</td><td><span class="chip">预分配·李师傅</span></td><td><span class="badge b-info">待组波</span></td><td class="fix"><button class="btn sm primary">加入波次</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">SO20260823-0245</td><td>全家便利店(文一店)</td><td>文三线/顺丰</td><td class="num">6</td><td class="num">24</td><td class="num">¥3,160</td><td>今日 18:00</td><td><span class="chip">出库后指派</span></td><td><span class="badge b-info">待组波</span></td><td class="fix"><button class="btn sm primary">加入波次</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">SO20260823-0248</td><td>超市发(学院路店)</td><td>文三线/自营</td><td class="num">9</td><td class="num">38</td><td class="num">¥6,420</td><td>明日 09:00</td><td>—</td><td><span class="badge b-gray">待审/锁定</span></td><td class="fix"><button class="btn sm" disabled>未审核</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="detail" id="orderDetail">
+      <h4>👆 选择订单查看明细</h4>
+      <div class="muted">点击订单号或"加入波次"，可查看商品行、库存可用性与推荐波次。</div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblOrder'));
+function openOrder(no){
+  document.getElementById('orderDetail').innerHTML=`
+    <h4>📄 ${no} 明细</h4>
+    <div class="kv"><span>客户</span><b>华联超市(建国路店)</b></div>
+    <div class="kv"><span>线路/承运</span><b>朝阳线 / 自营车队</b></div>
+    <div class="kv"><span>要求发货</span><b class="red">今日 14:00（加急）</b></div>
+    <div class="kv"><span>调度预分配</span><b>张师傅（可在组波时调整）</b></div>
+    <h4 style="margin-top:12px">商品行 / 库存可用</h4>
+    <div class="match">✅ 农夫山泉550ml ×10 — A-01-02 可用 320，批次 20260801</div>
+    <div class="match">✅ 可口可乐330ml ×5 — B-03-05 可用 48，批次 20260720</div>
+    <div class="match" style="background:#fef2f2;border-color:#fecaca">❌ 康师傅牛肉面105g ×8 — B-03-05 拣货位 0，存储位 B-09 有24（需加急补货）</div>
+    <div class="match" style="background:#fffbeb;border-color:#fde68a">⚠️ 海天酱油500ml ×6 — 批次 20260510 临期，FEFO 将优先</div>
+    <div class="alert tip" style="margin-top:10px">推荐：与 SO...0238 同线路同 14-15 点时段组波；拣货模式推荐"汇总拣"；该单加急，建议触发越库/优先补货。</div>
+    <button class="btn primary" style="width:100%;margin-top:8px" onclick="toast('已加入新建波次 W20260823-08','ok')">加入新波次</button>
+  `;
+}
+function autoWave(){
+  openModal({title:'✨ 智能组波推荐',size:'lg',okText:'按推荐组波',body:`
+    <div class="alert info">系统按线路+时窗聚合，结合拣货模式规则(WMS_PICK_MODE_RULE)与批次库存，推荐以下波次：</div>
+    <div class="tbl-wrap"><table><thead><tr><th>推荐波次</th><th>线路/时段</th><th>订单数</th><th>行数/件数</th><th>推荐拣货模式</th><th>预分配司机</th></tr></thead><tbody>
+      <tr><td><b>波次A（建议）</b></td><td>朝阳线 14-15点</td><td class="num">2</td><td class="num">20/110</td><td><span class="chip ok">汇总拣</span></td><td>张师傅/出库后指派</td></tr>
+      <tr><td><b>波次B</b></td><td>三里屯线 16点</td><td class="num">1</td><td class="num">4/16</td><td><span class="chip">边拣边分</span></td><td>李师傅</td></tr>
+      <tr><td><b>波次C</b></td><td>文三线 18点</td><td class="num">1</td><td class="num">6/24</td><td><span class="chip">按单拣</span></td><td>出库后指派</td></tr>
+    </tbody></table></div>
+    <div class="field" style="margin-top:12px"><label>组波同时</label><div class="checks">
+      <label><input type="checkbox" checked> 锁定批次库存</label>
+      <label><input type="checkbox" checked> 对加急单触发越库建议</label>
+      <label><input type="checkbox"> 组波即调度预分配</label>
+    </div></div>
+  `,onOk:function(){toast('已生成 3 个波次并进入波次管理','ok');setTimeout(()=>window.wmsGo&&wmsGo('pc/wave.html'),800);}});
+}
+function manualWave(){toast('已将勾选订单加入新波次草稿','ok');}
+// 预选中第一行即看详情
+openOrder('SO20260823-0231');
+</script></body></html>

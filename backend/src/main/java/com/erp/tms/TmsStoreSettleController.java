@@ -398,8 +398,8 @@ public class TmsStoreSettleController {
                     """, TmsUtil.uuid("MJA"), settleId, a[0], a[1], a[2], a[3], idx++);
         }
         for (Map<String, Object> p : photos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             jdbcTemplate.update("""
                     INSERT INTO tms_store_settlement_photo(photo_id, settle_id, photo_type, photo_url, photo_path)
                     VALUES (?, ?, ?, ?, ?)
@@ -670,8 +670,8 @@ public class TmsStoreSettleController {
                 draft == null ? "" : TmsUtil.str(draft.get("remark")));
         if (draft != null) {
             for (Map<String, Object> p : mapList(draft.get("photos"))) {
-                String url = TmsUtil.str(p.get("url"));
-                if (url.isEmpty()) continue;
+                String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
                 jdbcTemplate.update("""
                         INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
                         VALUES (?, ?, ?, ?, ?)

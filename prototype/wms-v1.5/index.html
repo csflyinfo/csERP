@@ -1,0 +1,94 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>WMS V1.5 原型导航</title>
+<link rel="stylesheet" href="assets/wms.css">
+<style>
+.page{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+.hero{background:linear-gradient(135deg,#1677ff,#0958d9);color:#fff;border-radius:14px;padding:30px 34px;margin-bottom:22px;box-shadow:0 14px 36px rgba(22,119,255,.28)}
+.hero h1{margin:0 0 10px;font-size:25px}.hero p{margin:0;opacity:.94;font-size:13.5px;line-height:1.8}
+.entries{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;margin-bottom:18px}
+.cardx{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;text-decoration:none;color:inherit;transition:.15s;display:flex;gap:16px;align-items:center}
+.cardx:hover{border-color:var(--primary);box-shadow:0 8px 24px rgba(22,119,255,.14);transform:translateY(-2px)}
+.cardx .ic{width:54px;height:54px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;flex:0 0 auto}
+.cardx h3{margin:0 0 5px;font-size:16px}.cardx p{margin:0;color:var(--text-3);font-size:12.5px;line-height:1.6}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.group{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px}
+.group h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.tile{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;color:var(--text);text-decoration:none;transition:.15s}
+.tile:hover{border-color:var(--primary);background:var(--primary-bg)}
+.tile b{font-size:13.5px}.tile small{display:block;color:var(--text-3);margin-top:3px;font-size:11.5px;line-height:1.5}
+.tag{font-size:10px;background:var(--primary-bg);color:var(--primary);padding:1px 7px;border-radius:999px;margin-left:5px;vertical-align:middle}
+.pda{background:linear-gradient(135deg,#141c2e,#1b2538);color:#e8eefc;border-radius:12px;padding:22px 26px;display:flex;align-items:center;gap:20px}
+.pda .big{font-size:42px}.pda h3{color:#fff;margin:0 0 6px;font-size:17px}.pda p{margin:0;color:#9fb0d0;font-size:12.5px;line-height:1.7}
+.pda a{margin-left:auto;background:#22c55e;color:#06210f;padding:12px 22px;border-radius:9px;text-decoration:none;font-weight:700;font-size:14px;white-space:nowrap}
+@media(max-width:820px){.entries,.grid{grid-template-columns:1fr}}
+</style></head><body>
+<div class="page">
+  <div class="hero">
+    <h1>🏗️ V1.5 仓储作业版（WMS）交互原型</h1>
+    <p>对应方案文档 PRD-28 v0.4 · 账实分离 · 一单一出库 · 出库单审核（复核通过/拣货完成）即扣库存、装车不扣 · WMS↔TMS 以销售订单号 source_order_no 关联 · 改派返仓走既有 tms_reschedule_return、集货位仅位置标记不入库 · 全环节异常处理 · 多方式盘点</p>
+  </div>
+
+  <div class="entries">
+    <a class="cardx" href="shell.html" target="_blank">
+      <span class="ic" style="background:#eef6ff;color:#1677ff">🖥️</span>
+      <div><h3>PC 后台（统一工作台）→</h3><p>深色侧边栏 + 顶栏的统一作业入口，Ctrl+K 快速切换；含监控看板、入库、出库、库内、盘点/退货、库存/异常/报表、基础/参数全部模块，弹窗/抽屉/向导全交互。</p></div>
+    </a>
+    <a class="cardx" href="pda.html" target="_blank">
+      <span class="ic" style="background:#ecfdf3;color:#15803d">📱</span>
+      <div><h3>PDA 手持端 →</h3><p>统一九宫格首页 + 底部 Tab；覆盖收/上/拣/补/复/装、移库/冻结/调整/报损/组装/效期、动盘/全盘/采购退货/改派签收/异常上报全链路。</p></div>
+    </a>
+  </div>
+
+  <div class="grid">
+    <div class="group">
+      <h3>📊 监控与入库</h3>
+      <a class="tile" href="pc/dashboard.html" target="_blank"><b>作业进度看板</b><small>出库链路进度、库区积压、扣库存时点说明、告警</small></a>
+      <a class="tile" href="pc/inbound.html" target="_blank"><b>到货预约 / 收货</b><small>ASN、扫码验收向导、收货容差、档案核算重量</small></a>
+      <a class="tile" href="pc/putaway.html" target="_blank"><b>上架任务</b><small>推荐库位、自由上架、越库选项、上架流水</small></a>
+    </div>
+    <div class="group">
+      <h3>📤 出库作业</h3>
+      <a class="tile" href="pc/order-pool.html" target="_blank"><b>销售订单池</b><small>已审未出库订单、库存可用、智能组波建议</small></a>
+      <a class="tile" href="pc/preallocation.html" target="_blank"><b>预分配 / 下放 ⭐</b><small>左右线路分栏、改线/指派司机/指定集货区、下放弹窗改拣货策略、占集货位、生派车单与拣货任务</small></a>
+      <a class="tile" href="pc/wave.html" target="_blank"><b>波次管理 ⭐</b><small>左右波次-订单、分组/平铺切换、七步状态进度、指定加急/撤销下放、甘特图</small></a>
+      <a class="tile" href="pc/pick.html" target="_blank"><b>拣货任务 ⭐</b><small>按库区生成、我的/可支援库区抢单、汇总分播、超量均衡拆分、缺货加急</small></a>
+      <a class="tile" href="pc/sort-instruction.html" target="_blank"><b>分拣指令查询 ⭐</b><small>库区/列表切换、指令与商品明细、分拣墙分播去向、一键复检完成订单、导出</small></a>
+      <a class="tile" href="pc/replenish.html" target="_blank"><b>补货管理</b><small>被动/主动/手动/加急补货、补货建议、策略</small></a>
+      <a class="tile" href="pc/check.html" target="_blank"><b>复核 / 打包 ⭐</b><small>复检三配置、按订单集齐进度、拆零/整位视图、通过即审核扣库存、差异处理</small></a>
+      <a class="tile" href="pc/load.html" target="_blank"><b>装车 / 发运(TMS)</b><small>仅装出库完成单、调度时机、A→B/GPRC改派</small></a>
+    </div>
+    <div class="group">
+      <h3>🏭 库内作业</h3>
+      <a class="tile" href="pc/move.html" target="_blank"><b>移库 / 移位</b><small>主动/被动/整托、建单向导、库位两减两增</small></a>
+      <a class="tile" href="pc/adjust.html" target="_blank"><b>冻结 / 调整 / 报损</b><small>库位批次冻结、账实调整审批、报损计损</small></a>
+      <a class="tile" href="pc/assembly.html" target="_blank"><b>组装 / 拆卸</b><small>BOM 组合装、齐套校验、成品入位、成本汇总</small></a>
+      <a class="tile" href="pc/expiry.html" target="_blank"><b>效期 / 临期预警</b><small>分级预警、FEFO、临期处理、批次禁发</small></a>
+    </div>
+    <div class="group">
+      <h3>📋 盘点 / 退货</h3>
+      <a class="tile" href="pc/stocktake.html" target="_blank"><b>盘点管理</b><small>动盘/全盘/指定盘/抽盘/循环盘、明暗复盘</small></a>
+      <a class="tile" href="pc/return.html" target="_blank"><b>退货管理</b><small>销售退货入库不校库存、采购退货出库校库存</small></a>
+    </div>
+    <div class="group">
+      <h3>📈 库存 / 异常 / 报表</h3>
+      <a class="tile" href="pc/stock-query.html" target="_blank"><b>库存查询 / 对账</b><small>库位库存 vs 财务库存、账实分离、流水追溯</small></a>
+      <a class="tile" href="pc/exception.html" target="_blank"><b>异常中心 ⭐</b><small>全矩阵异常上报、挂起、分派、超时升级闭环</small></a>
+      <a class="tile" href="pc/performance.html" target="_blank"><b>绩效 / 报表</b><small>各环节作业量/时效、员工绩效、库容利用</small></a>
+    </div>
+    <div class="group">
+      <h3>⚙️ 基础 / 配置</h3>
+      <a class="tile" href="pc/bin.html" target="_blank"><b>库区 / 库位</b><small>三级库位、热力图、容量/冻结可视化</small></a>
+      <a class="tile" href="pc/goods.html" target="_blank"><b>商品 / 批次 / 策略</b><small>仓内属性、批次库存、上架拣货补货批次策略</small></a>
+      <a class="tile" href="pc/params.html" target="_blank"><b>WMS 系统参数</b><small>全部 WMS_* 流程开关与规则、含扣库存时点</small></a>
+    </div>
+  </div>
+
+  <div class="pda" style="margin-top:18px">
+    <span class="big">📱</span>
+    <div><h3>PDA 手持端（深色大字体 · 仓库现场适用）</h3>
+    <p>统一九宫格作业入口 + 底部 Tab（首页/任务/扫码/消息/我的）；<b>拣货/分拣已精简</b>：先任务选择（我的库区按顺序抢单 + 可支援库区跨区支援），进入任务后极简大扫码区+逐件聚焦（右上角一键切清单总览），汇总拣货后到分拣墙扫格口分播，复检大扫码+当前商品；扫码/点击可配。完整链路：收货→上架、拣货（缺货一键加急补货/异常挂起）→分播→复检（通过即扣库存）→装车、移库、冻结/调整/报损、组装拆卸、效期查询、动盘/全盘、销售退货、采购退货、改派返仓签收（集货位不入库）、库存查询、异常上报、库位查看。</p></div>
+    <a href="pda.html" target="_blank">打开 PDA →</a>
+  </div>
+
+  <p style="color:var(--text-3);font-size:12px;margin-top:20px;line-height:1.7">说明：本目录为纯静态 HTML/CSS/JS 交互原型，无外部依赖，数据均为演示用；PC 端共用 <code>assets/wms.css</code> + <code>assets/wms.js</code> 设计系统（toast/弹窗/抽屉/向导/表格选择/标签页），PDA 端为独立深色大字体样式。所有弹窗、抽屉、向导、按钮均可点击体验。</p>
+</div>
+</body></html>

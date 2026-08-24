@@ -1,0 +1,373 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>预分配/波次下放 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>🗺️ 预分配 / 波次下放</h2><span class="sub">订单审核后按线路分组 · 指派司机/集货区 · 下放生成派车单与库区拣货任务</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已按线路/件数智能推荐集货位">🤖 智能集货</button>
+    <button class="btn primary" onclick="releaseTasks()">⬇️ 下放任务（生成派车+拣货单）</button>
+  </div>
+
+  <div class="kpis c6">
+    <div class="kpi"><div class="ic">📋</div><div class="n blue">48</div><div class="l">已审核待分配</div></div>
+    <div class="kpi"><div class="ic">🚚</div><div class="n">6</div><div class="l">线路</div></div>
+    <div class="kpi"><div class="ic">📦</div><div class="n">1,260</div><div class="l">待发件数</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">32</div><div class="l">已选订单</div></div>
+    <div class="kpi"><div class="ic">🅿️</div><div class="n purple">14</div><div class="l">需占集货位</div></div>
+    <div class="kpi"><div class="ic">🔁</div><div class="n orange">2</div><div class="l">退货单(随车)</div></div>
+  </div>
+
+  <div class="alert tip" style="display:block">
+    💡 <b>作业方案：</b>已审核订单先在此按<b>线路</b>分组（未关联线路的门店归入"未分配线路"）。可改线路、指派司机、指定集货区，然后<b>下放</b>：① 生成/加入调度派车单（司机已有未发车单可并入，已发车则扫码领单）；② 按商品生成<b>库区拣货任务</b>（同品合并/按库区拆/超量均衡拆分，参数见<a href="params.html" style="color:inherit;text-decoration:underline">系统参数</a>）；③ 按集货策略占用集货位。<b>拣货库存锁定在波次下放时</b>，扣库存在出库单审核（复核通过/拣完免复核）时。
+  </div>
+
+  <div class="query">
+    <input placeholder="订单号/客户/门店/商品/司机" class="wide">
+    <select><option>全部线路</option><option>未分配线路</option><option>城东线</option></select>
+    <select><option>全部类型</option><option>销售出库</option><option>销售退货(随车带回)</option></select>
+    <label class="checks" style="margin-left:6px"><input type="checkbox" checked> 仅显示已审核未下放</label>
+    <span class="spacer"></span><button class="btn">查询</button>
+  </div>
+
+  <div class="split r34" style="align-items:stretch">
+    <!-- 左：线路分组 -->
+    <div class="panel tight" style="margin:0">
+      <div class="panel-h" style="padding:12px 14px"><b>🚚 线路分组</b>
+        <span class="spacer" style="flex:1"></span><button class="btn sm" data-toast="已新增线路">＋线路</button>
+      </div>
+      <div id="lineList" style="max-height:560px;overflow:auto"></div>
+    </div>
+
+    <!-- 右：订单列表 -->
+    <div>
+      <div class="panel tight" style="margin:0">
+        <div class="panel-h" style="padding:12px 14px;flex-wrap:wrap;gap:8px">
+          <b id="lineTitle">📋 订单列表</b>
+          <span id="lineSub" class="muted" style="font-size:12px"></span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn sm" onclick="changeLine()">🛣️ 修改线路</button>
+          <button class="btn sm" onclick="assignDriver()">👤 指派司机</button>
+          <button class="btn sm" onclick="assignColl()">🅿️ 指定集货区/位</button>
+        </div>
+        <div class="tbl-wrap" style="border:none;border-radius:0">
+          <table id="tblOrder">
+            <thead><tr><th style="width:36px"><input type="checkbox" class="ck" id="ckAll"></th><th>单据号</th><th>类型</th><th>客户/门店</th><th>商品行数</th><th>件数</th><th>司机</th><th>集货区/位</th><th>状态</th></tr></thead>
+            <tbody id="orderBody"></tbody>
+          </table>
+        </div>
+        <div class="foot" style="border-top:1px solid var(--line-2)">
+          <span id="selInfo" class="muted">未选择订单</span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn primary" onclick="releaseTasks()">⬇️ 下放任务（<span id="selCount">0</span>单）</button>
+        </div>
+      </div>
+
+      <div id="optPreview" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+// 线路数据
+var LINES=[
+  {code:'unassigned',name:'未分配线路',dft:true,cnt:14,pcs:320,driver:'',coll:'',note:'未关联线路的门店订单'},
+  {code:'L1',name:'城东线',cnt:12,pcs:380,driver:'张师傅',coll:'集货区A(默认)',note:'华联/全家/物美 城东门店'},
+  {code:'L2',name:'城西线',cnt:9,pcs:260,driver:'李师傅',coll:'集货区B(默认)',note:''},
+  {code:'L3',name:'城南线',cnt:7,pcs:180,driver:'王师傅',coll:'',note:'未指定集货区'},
+  {code:'L4',name:'城北线',cnt:4,pcs:90,driver:'',coll:'集货区A',note:'未指派司机'},
+  {code:'L5',name:'急单/越库专线',cnt:2,pcs:30,driver:'',coll:'越库暂存',note:'加急/越库直发'},
+];
+// 订单（按线路）
+var ORDERS={
+  unassigned:[
+    {no:'SO20260823-0241',type:'销售',cust:'便利蜂(万象城店)',lines:6,pcs:22,driver:'',coll:'',st:'已审核',cold:false},
+    {no:'SO20260823-0245',type:'销售',cust:'罗森(科技园店)',lines:18,pcs:58,driver:'',coll:'',st:'已审核',cold:false},
+    {no:'SO20260823-0249',type:'销售',cust:'新开门店(未建档线路)',lines:4,pcs:12,driver:'',coll:'',st:'已审核',cold:false},
+    {no:'SRT20260823-009',type:'退货',cust:'华联(建国路店)',lines:1,pcs:2,driver:'',coll:'',st:'随车带回',cold:false},
+  ],
+  L1:[
+    {no:'SO20260823-0218',type:'销售',cust:'华联(建国路店)',lines:5,pcs:38,driver:'张师傅',coll:'A-01',st:'已分配',cold:false},
+    {no:'SO20260823-0220',type:'销售',cust:'物美(西二旗店)',lines:8,pcs:52,driver:'张师傅',coll:'A-02',st:'已分配',cold:false},
+    {no:'SO20260823-0221',type:'销售',cust:'全家(文三店)',lines:3,pcs:16,driver:'张师傅',coll:'A-02',st:'已分配',cold:false},
+    {no:'SO20260823-0225',type:'销售',cust:'华联(建国路店)',lines:2,pcs:8,driver:'张师傅',coll:'A-01',st:'已分配',cold:true},
+  ],
+  L2:[
+    {no:'SO20260823-0230',type:'销售',cust:'大润发(西湖店)',lines:7,pcs:40,driver:'李师傅',coll:'B-01',st:'已分配',cold:false},
+    {no:'SO20260823-0231',type:'销售',cust:'永辉(滨江店)',lines:4,pcs:30,driver:'李师傅',coll:'B-02',st:'已分配',cold:false},
+  ],
+  L3:[
+    {no:'SO20260823-0235',type:'销售',cust:'盒马(萧山店)',lines:6,pcs:28,driver:'王师傅',coll:'',st:'待指定集货',cold:false},
+  ],
+  L4:[
+    {no:'SO20260823-0238',type:'销售',cust:'山姆(临平店)',lines:3,pcs:24,driver:'',coll:'A-03',st:'待指派司机',cold:false},
+  ],
+  L5:[
+    {no:'SO20260823-0240',type:'销售·加急',cust:'华联(应急补货)',lines:1,pcs:6,driver:'',coll:'越库位X-01',st:'加急',cold:false},
+  ],
+};
+var curLine='unassigned';
+var selected={};
+
+function renderLines(){
+  var box=document.getElementById('lineList');box.innerHTML='';
+  LINES.forEach(function(l){
+    var d=document.createElement('div');
+    d.className='line-item'+(l.code===curLine?' on':'');
+    d.onclick=function(){curLine=l.code;renderLines();renderOrders();};
+    d.innerHTML=`
+      <div class="li-main">${l.dft?'<span class="dft">默认</span> ':''}<b>${l.name}</b>
+        ${l.driver?'<span class="chip" style="float:right">👤 '+l.driver+'</span>':(l.code!=='unassigned'?'<span class="chip" style="float:right">未派司机</span>':'')}
+      </div>
+      <div class="li-sub">${l.note||''}</div>
+      <div class="li-stat"><span><b>${l.cnt}</b> 单</span><span><b>${l.pcs}</b> 件</span>${l.coll?'<span>🅿️ '+l.coll+'</span>':'<span class="muted">未设集货区</span>'}</div>`;
+    box.appendChild(d);
+  });
+}
+function renderOrders(){
+  var l=LINES.filter(function(x){return x.code===curLine;})[0];
+  document.getElementById('lineTitle').textContent='📋 '+l.name+' 下的订单';
+  document.getElementById('lineSub').textContent=l.note?('（'+l.note+'）'):'';
+  var body=document.getElementById('orderBody');body.innerHTML='';
+  (ORDERS[curLine]||[]).forEach(function(o){
+    var key=o.no;
+    var tr=document.createElement('tr');
+    tr.innerHTML=`<td><input type="checkbox" class="ck ckRow" data-k="${key}" ${selected[key]?'checked':''}></td>
+      <td class="link mono">${o.no}</td>
+      <td>${o.type.indexOf('退')>=0?'<span class="badge b-purple">'+o.type+'</span>':(o.type.indexOf('加急')>=0?'<span class="badge b-bad">'+o.type+'</span>':'<span class="badge b-info">'+o.type+'</span>')}</td>
+      <td>${o.cust}${o.cold?' <span class="badge b-wait">冷藏</span>':''}</td>
+      <td class="num">${o.lines}</td>
+      <td class="num">${o.pcs}</td>
+      <td>${o.driver||'<span class="muted">未指派</span>'}</td>
+      <td>${o.coll||'<span class="muted">未指定</span>'}</td>
+      <td>${stBadge(o.st)}</td>`;
+    body.appendChild(tr);
+  });
+  // select all checkbox state
+  var rows=document.querySelectorAll('.ckRow');
+  document.getElementById('ckAll').checked = rows.length>0 && [].every.call(rows,function(r){return r.checked;});
+  bindTableSelect(document.getElementById('tblOrder'),onSel);
+  updateSel();
+  renderPreview();
+}
+function stBadge(st){
+  if(st.indexOf('已分配')>=0)return '<span class="badge b-ok">'+st+'</span>';
+  if(st.indexOf('加急')>=0)return '<span class="badge b-bad">'+st+'</span>';
+  if(st.indexOf('待')>=0)return '<span class="badge b-wait">'+st+'</span>';
+  return '<span class="badge b-info">'+st+'</span>';
+}
+function onSel(){
+  selected={};
+  document.querySelectorAll('.ckRow:checked').forEach(function(r){selected[r.dataset.k]=true;});
+  updateSel();renderPreview();
+}
+function updateSel(){
+  var n=Object.keys(selected).length;
+  document.getElementById('selCount').textContent=n;
+  document.getElementById('selInfo').textContent=n?('已选 '+n+' 单，可批量改线路/指派司机/指定集货区/下放'):'未选择订单';
+}
+function getSelectedOrders(){
+  var all=[];for(var k in ORDERS){(ORDERS[k]||[]).forEach(function(o){if(selected[o.no])all.push(o);});}
+  return all;
+}
+var curStrategy='汇总拣货+先拣后分（同品合并，分拣墙按单分播）';
+var curCollBy='件数';
+function renderPreview(){
+  var box=document.getElementById('optPreview');
+  var l=LINES.filter(function(x){return x.code===curLine;})[0];
+  var picks=estimatePick(curStrategy);
+  box.innerHTML=`
+    <div class="panel" style="margin:0"><div class="panel-h"><b>🧮 下放预估（按默认策略，下放弹窗内可改）</b></div><div class="panel-b">
+      <div class="kv"><span>线路默认集货区</span><b>${l.coll||'<span class="muted">未绑定（下放时需指定或按策略分配）</span>'}</b></div>
+      <div class="kv"><span>拣货策略 (WMS_PICK_MODE)</span><b><span class="chip">${curStrategy}</span> <span class="muted">（下放时可改）</span></b></div>
+      <div class="kv"><span>拣货任务生成</span><b>按<b class="blue">库区</b>拆分：预计生成 <b class="blue">${picks.tasks}</b> 个库区拣货任务（PDA按库区抢单）</b></div>
+      <div class="kv"><span>超大订单拆分</span><b>单订单>${picks.thr}件自动拆≤${picks.max}个均衡任务（当前${picks.big}单触发）</b></div>
+      <div class="kv"><span>集货位占用 (WMS_COLLECTION_MODE)</span><b>${picks.collMode} · 按<b>${curCollBy}</b>占位 → 预计占 <b class="purple">${picks.collSlots}</b> 个集货位</b></div>
+      <div class="kv"><span>复检策略</span><b>${picks.check}；多拣货单按<b>订单集齐后复检</b></b></div>
+      <div class="alert tip" style="margin:10px 0 0">跨区支援模式：<b>自由领取+主管指定</b>（WMS_CROSS_ZONE_MODE 可配）。拣货员完成本区任务后可在 PDA"支援他区"领取剩余任务，主管也可主动调派；可支援库区/人员由 WMS_CROSS_ZONE_SCOPE 配置。</div>
+    </div></div>`;
+}
+function estimatePick(strategy){
+  var sel=getSelectedOrders();
+  var pcs=sel.reduce(function(a,o){return a+o.pcs;},0);
+  var vol=sel.reduce(function(a,o){return a+Math.round(o.pcs*0.03*10)/10;},0); // 模拟体积m³
+  var wt=sel.reduce(function(a,o){return a+o.pcs*4;},0); // 模拟重量kg
+  var thr=50,max=3,big=0;
+  // 按库区拆：按单拣时不并单但仍按库区；汇总/边拣边分按库区
+  var zones=4;
+  var tasks=zones;
+  sel.forEach(function(o){if(o.pcs>thr){big++;tasks+=Math.min(max,Math.ceil(o.pcs/thr))-1;}});
+  var collMode='一门店一集货位（同店多单共享）';
+  var stores={};sel.forEach(function(o){stores[o.cust]=true;});
+  var slotCap = curCollBy==='体积'?8:(curCollBy==='重量'?500:200); // m³ / kg / 件
+  var load = curCollBy==='体积'?vol:(curCollBy==='重量'?wt:pcs);
+  var extra=Math.ceil(load/slotCap);
+  var collSlots=Math.min(sel.length,Object.keys(stores).length)+Math.max(0,extra-Object.keys(stores).length);
+  var check = strategy&&strategy.indexOf('越库')>=0?'免复核（越库直发）':'拆零逐件复检';
+  return {tasks:Math.max(1,tasks),thr:thr,max:max,big:big,collMode:collMode,collSlots:Math.max(1,collSlots),check:check};
+}
+
+function changeLine(){
+  var n=Object.keys(selected).length;
+  if(!n){toast('请先勾选订单','warn');return;}
+  openModal({title:'🛣️ 批量修改线路',body:`
+    <div class="alert info">将把已选 <b>${n}</b> 个订单划到指定线路（未分配线路也可重新归集）。</div>
+    <div class="field"><label>目标线路</label><select id="newLine">
+      ${LINES.map(function(l){return '<option>'+l.name+'</option>';}).join('')}
+    </select></div>
+    <div class="field"><label class="checks" style="margin-top:8px"><input type="checkbox" checked> 同步带出该线路默认司机与集货区</label></div>
+  `,okText:'确认改线',onOk:function(){toast('已改线并带出默认司机/集货区','ok');}});
+}
+function assignDriver(){
+  var n=Object.keys(selected).length;
+  if(!n){toast('请先勾选订单','warn');return;}
+  openModal({title:'👤 指派司机',body:`
+    <div class="alert info">为已选 <b>${n}</b> 单指派司机。若该司机已有<b>未发车</b>派车单，下放时可选择并入；若已发车，指派后需司机扫码领单。</div>
+    <div class="form c2">
+      <div class="field"><label>司机</label><select id="drv"><option>张师傅 (京A·88888)</option><option>李师傅 (京A·66666)</option><option>王师傅 (京A·77777)</option><option>暂不指派(调度池)</option></select></div>
+      <div class="field"><label>车牌/车型</label><input value="京A·88888 / 4.2米厢货" readonly></div>
+    </div>
+    <div class="alert warn" style="margin-top:10px">⚠️ 张师傅当前有 <b>1 张未发车派车单</b>（城东线，已装12单）。下放时会提示"加入任务 / 新建派车单"。</div>
+  `,okText:'确认指派',onOk:function(){toast('司机已指派','ok');}});
+}
+function assignColl(){
+  var n=Object.keys(selected).length;
+  if(!n){toast('请先勾选订单','warn');return;}
+  openModal({title:'🅿️ 指定集货区 / 集货位',size:'lg',body:`
+    <div class="alert info">集货位在<b>波次下放时占用</b>，装车发运后释放。占用策略可在系统参数配置。</div>
+    <div class="form c2">
+      <div class="field"><label>集货区</label><select><option>集货区A（靠1号月台）</option><option>集货区B（靠2号月台）</option><option>越库暂存区</option></select></div>
+      <div class="field"><label>占用模式 (WMS_COLLECTION_MODE)</label><select id="collMode"><option>一门店一集货位（同店共享，推荐）</option><option>一单一集货位</option><option>按规则智能占用</option><option>集货位可混放多门店</option></select></div>
+      <div class="field"><label>占用依据 (WMS_COLLECTION_BY)</label><select><option>按件数（每200件/位）</option><option>按体积（每8m³/位）</option><option>按重量（每500kg/位）</option></select></div>
+    </div>
+    <h4 style="margin:12px 0 6px">集货位占位预览（区A）</h4>
+    <div class="bin-grid" style="grid-template-columns:repeat(8,1fr)">
+      ${['A-01','A-02','A-03','A-04','A-05','A-06','A-07','A-08','A-09','A-10','A-11','A-12','A-13','A-14','A-15','A-16'].map(function(c,i){
+        var cls = i<3?'b5':(i<8?'b3':(i<14?'b0':'frozen'));
+        var lbl = i<3?'占用':(i<8?'本单':(i<14?'空闲':'冻结'));
+        return '<div class="bin '+cls+'" style="aspect-ratio:1.4"><b>'+c+'</b><span>'+lbl+'</span></div>';
+      }).join('')}
+    </div>
+    <div class="alert tip" style="margin-top:10px">智能策略：小件/同门店多单拼一个集货位；大件或单店件数超阈值可占多个集货位；一个集货位是否可放多门店由参数控制。</div>
+  `,okText:'确认指定',onOk:function(){toast('集货区/位已指定，下放时占用','ok');}});
+}
+
+function releaseTasks(){
+  var n=Object.keys(selected).length;
+  if(!n){toast('请先勾选要下放的订单','warn');return;}
+  var picks=estimatePick();
+  openModal({title:'⬇️ 下放任务：生成派车单 + 拣货单',size:'lg',body:`
+    <div data-wizard>
+      <div class="wiz-steps">
+        <div class="s cur"><div class="c">1</div><div class="l">派车单</div></div>
+        <div class="s"><div class="c">2</div><div class="l">拣货/分拣任务</div></div>
+        <div class="s"><div class="c">3</div><div class="l">集货位占用</div></div>
+        <div class="s"><div class="c">4</div><div class="l">确认下放</div></div>
+      </div>
+
+      <div class="wiz-pane on">
+        <div class="alert warn" style="margin-top:0">⚠️ 所选订单中，司机 <b>张师傅</b> 已有 <b>1 张未发车派车单 DISP...128</b>（城东线，已装12单）。请选择：</div>
+        <label class="chk"><input type="radio" name="disp" checked> ➕ 加入现有派车单 DISP...128（同线路同司机，合并装车）</label>
+        <label class="chk"><input type="radio" name="disp"> 🆕 为本次订单新建派车单</label>
+        <div class="alert info" style="margin-top:10px">另一部分订单司机 <b>王师傅</b> 的任务已发车（DISP...120 在途），指派后该批订单进入"待司机扫码领单"，司机到达/返程后扫码领取，不自动并入在途单。</div>
+      </div>
+
+      <div class="wiz-pane">
+        <div class="field" style="margin-bottom:10px"><label>本次拣货策略（回显默认，下放时可改）</label>
+          <select id="wizStrat" onchange="window.__onStrat&&window.__onStrat()">
+            <option>按单拣货（一单拣到底，急单/越库）</option>
+            <option selected>汇总拣货+先拣后分（同品合并，分拣墙分播）</option>
+            <option>边拣边分（拣货同时分播到笼车）</option>
+            <option>分区接力（各库区接力拣同一单）</option>
+            <option>越库直发（收货直发月台，免存储）</option>
+          </select>
+        </div>
+        <div id="wizStratInfo"></div>
+        <div class="kv"><span>任务拆分</span><b>按库区拆 → 预计 <span class="blue" id="wizTaskN">${picks.tasks}</span> 个拣货任务</b></div>
+        <div class="kv"><span>超大单均衡拆分</span><b>单订单&gt;${picks.thr}件自动拆≤${picks.max}个，件数均分（当前${picks.big}单触发）</b></div>
+        <div class="alert tip" style="margin-top:10px">PDA 按<b>库区</b>推送任务：整箱区→A组、拆零区→B组、冷藏→冷链组、高值→专人。拣货员只看自己库区任务，按顺序抢单；本区做完可"支援他区"（跨区模式可配自由领取/主管指定）。</div>
+      </div>
+
+      <div class="wiz-pane">
+        <div class="field" style="margin-bottom:10px"><label>占用模式</label><select><option>一门店一集货位（同店多单共享，推荐）</option><option>一单一集货位</option><option>按规则智能占用</option><option>集货位可混放多门店</option></select></div>
+        <div class="field" style="margin-bottom:10px"><label>占用依据</label>
+          <select id="wizCollBy" onchange="window.__onCollBy&&window.__onCollBy()">
+            <option>件数（每200件/位）</option>
+            <option>体积（每8m³/位）</option>
+            <option>重量（每500kg/位）</option>
+          </select>
+        </div>
+        <div class="kv"><span>预计占用</span><b class="purple" id="wizCollN">${picks.collSlots} 个集货位</b></div>
+        <div class="kv"><span>释放时机</span><b>装车发运后释放集货位</b></div>
+        <div class="bin-grid" style="grid-template-columns:repeat(6,1fr);margin-top:10px">
+          ${['A-01','A-02','A-03','B-01','B-02','X-01'].map(function(c,i){return '<div class="bin b3" style="aspect-ratio:1.6"><b>'+c+'</b><span>本单占用</span></div>';}).join('')}
+        </div>
+      </div>
+
+      <div class="wiz-pane">
+        <h4 style="margin:0 0 8px">下放后将发生</h4>
+        <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">生成/并入派车单 DISP...</div><div class="t2">未发车可并入；已发车待扫码领单</div></div></div>
+        <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">生成 ${picks.tasks} 个库区拣货任务</div><div class="t2">锁定批次库存（FEFO），PDA按库区抢单</div></div></div>
+        <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">占用 ${picks.collSlots} 个集货位</div><div class="t2">按集货策略占位</div></div></div>
+        <div class="flowstep cur"><div class="n">4</div><div class="c"><div class="t1">拣货→分播→复检→出库扣库存→装车</div><div class="t2">复检通过/拣完免复核时审核出库单扣库存</div></div></div>
+      </div>
+
+      <div class="btnbar" style="border:none;padding:14px 0 0;justify-content:flex-end">
+        <button class="btn" data-wiz="prev">上一步</button>
+        <button class="btn primary" data-wiz="next">下一步</button>
+        <button class="btn ok" data-wiz="done" style="display:none">确认下放</button>
+      </div>
+    </div>`,noFooter:true,onReady:function(wz){
+  bindWizard(wz);
+  function refreshStrat(){
+    var sel=wz.querySelector('#wizStrat'); var v=sel?sel.value:curStrategy;
+    curStrategy=v;
+    var p=estimatePick(v);
+    var info=wz.querySelector('#wizStratInfo');
+    var map={
+      '按单拣货（一单拣到底，急单/越库）':'<div class="alert info" style="margin:0 0 10px">📄 按单拣：一张订单拣到底，不与其他订单合并；适合急单、越库、大单，拣货路径长但无分播环节。</div>',
+      '汇总拣货+先拣后分（同品合并，分拣墙分播）':'<div class="alert ok" style="margin:0 0 10px">🔗 汇总拣：同库区同 SKU 合并一次拣足，再到分拣墙/笼车按订单/门店分播；多订单效率最高。</div>',
+      '边拣边分（拣货同时分播到笼车）':'<div class="alert ok" style="margin:0 0 10px">🧺 边拣边分：推着多门店笼车，拣到即投对应格口，无需二次分播，适合门店数适中。</div>',
+      '分区接力（各库区接力拣同一单）':'<div class="alert info" style="margin:0 0 10px">🏃 分区接力：各库区接力拣同一订单并汇总，适合跨库区大单。</div>',
+      '越库直发（收货直发月台，免存储）':'<div class="alert warn" style="margin:0 0 10px">🚚 越库：收货不入库直转发货月台，免复检，适合急单/预配（WMS_CROSS_DOCK_ENABLED）。</div>'
+    };
+    if(info)info.innerHTML=map[v]||'';
+    var tn=wz.querySelector('#wizTaskN'); if(tn)tn.textContent=p.tasks;
+    var cn=wz.querySelector('#wizCollN'); if(cn)cn.textContent=p.collSlots+' 个集货位';
+  }
+  window.__onStrat=refreshStrat;
+  window.__onCollBy=function(){
+    var sel=wz.querySelector('#wizCollBy');
+    if(!sel)return;
+    curCollBy = sel.value.indexOf('体积')>=0?'体积':(sel.value.indexOf('重量')>=0?'重量':'件数');
+    var p=estimatePick(curStrategy);
+    var cn=wz.querySelector('#wizCollN'); if(cn)cn.textContent=p.collSlots+' 个集货位';
+  };
+  refreshStrat();
+}});
+}
+
+// 线路样式注入
+var st=document.createElement('style');
+st.textContent=`
+.line-item{padding:11px 14px;border-bottom:1px solid var(--line-2);cursor:pointer}
+.line-item:hover{background:#f7faff}
+.line-item.on{background:var(--primary-bg);border-left:3px solid var(--primary);padding-left:11px}
+.line-item .dft{font-size:10px;background:var(--warn);color:#fff;padding:1px 6px;border-radius:999px;margin-right:4px}
+.line-item .li-main b{font-size:13.5px}
+.line-item .li-sub{font-size:11px;color:var(--text-3);margin:3px 0 6px}
+.line-item .li-stat{display:flex;gap:14px;font-size:11px;color:var(--text-2)}
+.line-item .li-stat b{color:var(--primary);font-size:13px}
+.flowstep{display:flex;gap:10px;padding-bottom:12px;position:relative}
+.flowstep:before{content:'';position:absolute;left:13px;top:26px;bottom:0;width:2px;background:var(--line-2)}
+.flowstep:last-child:before{display:none}
+.flowstep .n{width:28px;height:28px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--ok);color:#fff;z-index:1}
+.flowstep.cur .n{background:var(--primary)}
+.flowstep .t1{font-size:13px;font-weight:600}.flowstep .t2{font-size:11px;color:var(--text-3);margin-top:2px}
+label.chk{display:flex;align-items:center;gap:8px;font-size:13px;padding:7px 0}
+label.chk input{width:17px;height:17px;accent-color:var(--primary)}
+`;
+document.head.appendChild(st);
+
+renderLines();renderOrders();
+</script>
+</body></html>

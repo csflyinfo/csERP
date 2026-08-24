@@ -1,0 +1,187 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>到货预约/收货 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>📥 到货预约 / 收货验收</h2><span class="sub">采购到货 · ASN 预约 · PDA 扫码验收 · 重量按商品档案核算</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打开 ASN 预约向导" onclick="newAsn()">＋ 到货预约(ASN)</button>
+    <button class="btn primary" data-toast="已新建无单收货临时单" onclick="toast('已建临时入库单，请补关联采购单','warn')">无单收货</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📅</div><div class="n blue">6</div><div class="l">今日预计到货</div></div>
+    <div class="kpi"><div class="ic">🚚</div><div class="n orange">2</div><div class="l">待卸货/验收中</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">5</div><div class="l">已收货</div></div>
+    <div class="kpi"><div class="ic">📤</div><div class="n">12</div><div class="l">待上架(行)</div></div>
+    <div class="kpi"><div class="ic">⚖️</div><div class="n">2.1t</div><div class="l">今日收货重量</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" data-tabs>
+      <div class="tab on">待收货 <span class="cnt">3</span></div>
+      <div class="tab">验收中 <span class="cnt">2</span></div>
+      <div class="tab">已收货 / 待上架 <span class="cnt">5</span></div>
+      <div class="tab">到货预约(ASN) <span class="cnt">6</span></div>
+      <div class="tab">异常收货 <span class="cnt">2</span></div>
+    </div>
+
+    <!-- 待收货 -->
+    <div class="tabpane on" style="padding:12px 16px">
+      <div class="query">
+        <input placeholder="ASN号/采购单号/供应商/送货单" class="wide">
+        <select><option>全部供应商</option></select>
+        <select><option>到货预约时段</option></select>
+        <input type="date" value="2026-08-23">
+        <label><input type="checkbox"> 超期到货</label>
+        <span class="spacer"></span>
+        <button class="btn">查询</button>
+      </div>
+      <div class="tbl-wrap">
+        <table id="tblIn">
+          <thead><tr><th><input type="checkbox" class="ck"></th><th>ASN/到货预约</th><th>采购订单</th><th>供应商</th><th>预计到货</th><th>行数</th><th>应收数量</th><th>核算重量</th><th>状态</th><th class="fix">操作</th></tr></thead>
+          <tbody>
+            <tr><td><input type="checkbox" class="ck"></td><td class="link" onclick="openAsn('ASN20260823-009')">ASN20260823-009</td><td class="mono">PO20260822-031</td><td>康师傅控股</td><td>08-23 09:00</td><td class="num">12</td><td class="num">100箱</td><td class="num">1.20t</td><td><span class="badge b-info">待卸货</span></td><td class="fix"><button class="btn sm primary" onclick="startReceive()">开始验收</button></td></tr>
+            <tr><td><input type="checkbox" class="ck"></td><td class="link" onclick="openAsn('ASN20260823-010')">ASN20260823-010</td><td class="mono">PO20260822-045</td><td>农夫山泉北京</td><td>08-23 10:30</td><td class="num">8</td><td class="num">320箱</td><td class="num">4.16t</td><td><span class="badge b-info">待到货</span></td><td class="fix"><button class="btn sm" data-toast="已通知门卫/月台">月台预约</button></td></tr>
+            <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="link" onclick="openAsn('ASN20260823-011')">ASN20260823-011</td><td class="mono">—</td><td>无单到货（可口可乐）</td><td>08-23 11:10</td><td class="num">?</td><td class="num">60箱</td><td class="num">—</td><td><span class="badge b-bad">无采购单</span></td><td class="fix"><button class="btn sm warn" data-toast="已建临时单，货入暂收隔离区待处理">隔离暂存</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="foot"><div class="pagebtn on">1</div><div class="pagebtn">2</div><span class="muted">共 3 条 · 选中 <b id="selN">0</b> 单</span>
+        <span class="muted" style="margin-left:auto">批量：</span>
+        <button class="btn sm" data-toast="已批量指定月台">指定月台</button>
+        <button class="btn sm" data-toast="已批量生成验收任务">生成验收任务</button>
+      </div>
+    </div>
+
+    <!-- 验收中 -->
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="alert warn">⚠️ ASN20260823-009 正在验收：王收货 PDA · 已扫 96/100 箱 · 超收提示（容差0%）</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>ASN</th><th>验收人</th><th>进度</th><th>应/实收</th><th>差异</th><th>开始时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="link">ASN20260823-009</td><td>王收货</td><td style="min-width:180px"><div class="bar"><i style="width:96%"></i></div></td><td class="mono">100/96箱</td><td class="orange">待确认超收</td><td>10:02</td><td><button class="btn sm" onclick="openAsn('ASN20260823-009')">查看明细</button></td></tr>
+          <tr><td class="link">ASN20260823-008</td><td>王收货</td><td style="min-width:180px"><div class="bar ok"><i style="width:100%"></i></div></td><td class="mono">50/50箱</td><td class="green">一致</td><td>08:40</td><td><button class="btn sm primary" data-toast="已生成入库单并推送上架任务" data-type="ok">确认收货→上架</button></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- 已收货 -->
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>入库单</th><th>来源ASN/PO</th><th>供应商</th><th>实收数量</th><th>核算重量</th><th>实收重量(蓝牙秤)</th><th>上架状态</th><th>收货时间</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="link mono">IN20260823-012</td><td>ASN...008/PO...029</td><td>海天味业</td><td class="num">86箱</td><td class="num">1.03t</td><td class="muted">未连秤(默认档案)</td><td><span class="badge b-wait">待上架 12行</span></td><td>09:10</td><td><button class="btn sm primary" onclick="window.wmsGo&&wmsGo('pc/putaway.html')">去上架</button></td></tr>
+          <tr><td class="link mono">IN20260823-011</td><td>ASN...007/PO...027</td><td>双汇</td><td class="num">60箱</td><td class="num">0.72t</td><td class="muted">0.72t ✓</td><td><span class="badge b-ok">上架完成</span></td><td>08:30</td><td><button class="btn sm" data-toast="已打开入库单详情">详情</button></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- ASN 预约 -->
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="alert info">💡 到货预约(ASN)可让仓库提前排班、预留月台；参数 WMS_ASN_APPOINT_ENABLED 控制是否强制预约。</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>ASN号</th><th>采购单</th><th>供应商</th><th>预约日期/时段</th><th>月台</th><th>行数/数量</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td class="link mono">ASN20260823-009</td><td>PO...031</td><td>康师傅</td><td>08-23 09:00-10:00</td><td>月台3</td><td>12/100箱</td><td><span class="badge b-info">待到货</span></td><td><button class="btn sm" data-toast="已改约到 14:00">改约</button></td></tr>
+          <tr><td class="link mono">ASN20260824-001</td><td>PO...052</td><td>伊利</td><td>08-24 08:00-09:00</td><td>月台1</td><td>20/400箱</td><td><span class="badge b-gray">已预约</span></td><td><button class="btn sm">编辑</button></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+
+    <!-- 异常 -->
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="alert bad">❌ 收货异常需在异常中心闭环：无单到货隔离、超收容差、破损、批次/效期异常、多批次、盲收/复检差异、库位满。</div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>异常号</th><th>ASN</th><th>类型</th><th>描述</th><th>处理方式</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr class="danger"><td class="link mono">EX...014</td><td>ASN...011</td><td>无订单到货</td><td>可口可乐 60箱 无采购单</td><td>暂收隔离，待采购补单/退回</td><td><span class="badge b-bad">待处理</span></td><td><button class="btn sm warn" data-toast="已转异常中心处理" onclick="window.wmsGo&&wmsGo('pc/exception.html')">去处理</button></td></tr>
+          <tr><td class="link mono">EX...019</td><td>ASN...009</td><td>超量收货</td><td>实到120 > 订单100</td><td>超收容差0%，主管确认</td><td><span class="badge b-wait">待主管确认</span></td><td><button class="btn sm">确认/拒收</button></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblIn'),function(rs){document.getElementById('selN').textContent=rs.length;});
+function openAsn(no){
+  openDrawer({title:'到货单详情 · '+no,body:`
+    <div class="kv"><span>ASN号</span><b class="mono">${no}</b></div>
+    <div class="kv"><span>采购订单</span><b class="mono">PO20260822-031</b></div>
+    <div class="kv"><span>供应商</span><b>康师傅控股</b></div>
+    <div class="kv"><span>预约/月台</span><b>08-23 09:00 · 月台3</b></div>
+    <div class="kv"><span>收货复检</span><b><span class="chip">未启用(WMS_RECHECK_ENABLED=0)</span></b></div>
+    <h4 style="margin:14px 0 8px">明细（应收）</h4>
+    <div class="tbl-wrap"><table><thead><tr><th>商品</th><th>批次/效期</th><th>应收</th><th>实收</th><th>单件重量</th></tr></thead><tbody>
+      <tr><td>康师傅红烧牛肉面105g</td><td>20260820/2027-08</td><td class="num">100箱</td><td class="num green">96箱</td><td class="num">1.2kg</td></tr>
+      <tr><td>康师傅鲜虾鱼板面</td><td>20260818/2027-08</td><td class="num">40箱</td><td class="num">0</td><td class="num">1.1kg</td></tr>
+    </tbody></table></div>
+    <div class="alert tip" style="margin-top:12px">⚖️ 重量自动核算 = 商品档案单件重量 base_weight × 实收数量；称重商品可连蓝牙秤做比对（WMS_SCALE_WEIGHT_ENABLED）。</div>
+  `,footer:`<button class="btn" data-act="close">关闭</button><button class="btn primary" onclick="toast('已开始 PDA 验收','ok');closeDrawer();">开始验收</button>`});
+}
+function startReceive(){
+  openModal({title:'收货验收向导',size:'lg',okText:'确认收货',body:`
+    <div data-wizard>
+      <div class="wiz-steps">
+        <div class="s cur"><div class="c">1</div><div class="l">核对单据</div></div>
+        <div class="s"><div class="c">2</div><div class="l">扫码验收</div></div>
+        <div class="s"><div class="c">3</div><div class="l">异常处理</div></div>
+        <div class="s"><div class="c">4</div><div class="l">确认收货</div></div>
+      </div>
+      <div class="wiz-pane on">
+        <div class="form c2">
+          <div class="field"><label>ASN/到货预约</label><input value="ASN20260823-009" readonly></div>
+          <div class="field"><label>采购订单</label><input value="PO20260822-031" readonly></div>
+          <div class="field"><label>供应商</label><input value="康师傅控股" readonly></div>
+          <div class="field"><label>送货人/车牌</label><input placeholder="请填写"></div>
+          <div class="field"><label>验收人</label><input value="王收货" readonly></div>
+          <div class="field"><label>收货模式</label><select><option>正常收货</option><option>盲收（不显示应收）</option></select></div>
+        </div>
+      </div>
+      <div class="wiz-pane">
+        <div class="scan-zone" style="background:#f8fafc;border:2px dashed var(--line);border-radius:8px;padding:20px;text-align:center" onclick="toast('条码已识别：康师傅红烧牛肉面105g 批次20260820','ok')">
+          <div style="font-size:30px">📷</div><b>PDA/扫码枪扫商品条码/箱码</b>
+          <div class="muted small" style="margin-top:4px">逐箱扫描；系统自动累加实收数量并核算重量</div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:12px"><table><thead><tr><th>商品</th><th>应收</th><th>实收</th><th>单位</th><th>状态</th></tr></thead><tbody>
+          <tr><td>康师傅红烧牛肉面105g</td><td class="num">100</td><td class="num green">96</td><td>箱</td><td><span class="badge b-wait">进行中</span></td></tr>
+          <tr><td>康师傅鲜虾鱼板面</td><td class="num">40</td><td class="num">0</td><td>箱</td><td><span class="badge b-gray">未扫</span></td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="wiz-pane">
+        <div class="alert warn">⚠️ 检测到：康师傅红烧牛肉面 实到可能 > 应收 100（超收容差 0%）。请选择处理方式：</div>
+        <div class="checks" style="margin-bottom:12px">
+          <label><input type="radio" name="ov"> 容差内按实收</label>
+          <label><input type="radio" name="ov" checked> 超容差，主管确认后按实收</label>
+          <label><input type="radio" name="ov"> 拒收多余数量</label>
+        </div>
+        <div class="field"><label>异常说明 / 拍照</label><textarea placeholder="记录破损、批次不符等；可拍照留痕"></textarea></div>
+      </div>
+      <div class="wiz-pane">
+        <div class="kv"><span>应收合计</span><b>140 箱</b></div>
+        <div class="kv"><span>实收合计</span><b class="green">136 箱</b></div>
+        <div class="kv"><span>核算重量</span><b>1.81 t（档案 base_weight × 实收）</b></div>
+        <div class="kv"><span>入库单</span><b class="mono">IN20260823-013（生成后可见）</b></div>
+        <div class="alert ok" style="margin-top:12px">✅ 确认后生成入库单，推送上架任务（库位策略推荐），并写库存/库存流水。收货复检若开启则需第二人复点。</div>
+      </div>
+      <div class="btnbar" style="border:none;padding:14px 0 0;justify-content:flex-end">
+        <button class="btn" data-wiz="prev">上一步</button>
+        <button class="btn primary" data-wiz="next">下一步</button>
+        <button class="btn ok" data-wiz="done" style="display:none">确认收货</button>
+      </div>
+    </div>
+  `,noFooter:true,onReady:function(wz){bindWizard(wz);}});
+}
+function newAsn(){
+  openModal({title:'新建到货预约(ASN)',body:`
+    <div class="form c2">
+      <div class="field"><label><span class="req">*</span>采购订单</label><select><option>PO20260822-031 康师傅</option><option>PO20260822-045 农夫山泉</option></select></div>
+      <div class="field"><label>供应商</label><input value="康师傅控股" readonly></div>
+      <div class="field"><label><span class="req">*</span>预约到货日期</label><input type="date" value="2026-08-24"></div>
+      <div class="field"><label><span class="req">*</span>预约时段</label><select><option>08:00-09:00</option><option>09:00-10:00</option></select></div>
+      <div class="field"><label>月台</label><select><option>月台1</option><option>月台2</option><option>月台3</option></select></div>
+      <div class="field"><label>预计数量</label><input value="100箱"></div>
+    </div>`,okText:'保存预约',onOk:function(){toast('ASN 已创建并通知供应商/月台','ok');}});
+}
+</script>
+</body></html>

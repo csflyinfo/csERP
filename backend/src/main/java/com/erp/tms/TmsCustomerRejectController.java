@@ -177,8 +177,8 @@ public class TmsCustomerRejectController {
         List<Map<String, Object>> headPhotos = body.get("photos") instanceof List<?> pl
                 ? (List<Map<String, Object>>) pl : new ArrayList<>();
         for (Map<String, Object> p : headPhotos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoId = TmsUtil.uuid("SP");
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
@@ -208,8 +208,8 @@ public class TmsCustomerRejectController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         int saved = 0;
         for (Map<String, Object> p : photos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoId = TmsUtil.uuid("SP");
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)

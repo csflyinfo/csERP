@@ -1,0 +1,294 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>分拣指令查询 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>
+.zone-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.zone-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:.12s}
+.zone-card:hover{border-color:var(--primary);box-shadow:0 6px 18px rgba(22,119,255,.12)}
+.zone-card.on{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.zone-card .zc-name{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.zone-card .zc-stat{font-size:12px;color:var(--text-3);margin:8px 0;line-height:1.8}
+.zone-card .zc-bar{height:8px;background:#eef2f7;border-radius:5px;overflow:hidden}
+.zone-card .zc-bar i{display:block;height:100%;background:linear-gradient(90deg,#1677ff,#00b8a9);border-radius:5px}
+.view-toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.view-toggle button{border:0;background:#fff;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--text-2)}
+.view-toggle button.on{background:var(--primary);color:#fff;font-weight:700}
+.prog{display:inline-flex;align-items:center;gap:6px}
+.prog .pbar{width:90px;height:7px;background:#eef2f7;border-radius:4px;overflow:hidden}
+.prog .pbar i{display:block;height:100%;background:var(--primary)}
+</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>📑 分拣指令查询</h2><span class="sub">按下放生成的分拣指令单跟踪拣货/分播进度；后台可对已集齐订单一键复检完成并触发扣库存链；支持列表/明细导出</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已导出当前列表为 Excel（含指令单汇总）">📤 导出列表</button>
+  </div>
+
+  <div class="alert info">
+    💡 拣货任务按<b>库区</b>生成，一张分拣指令单 = 一个波次在一个库区的作业单；汇总拣货模式下，拣完到分拣墙按订单/门店<b>分播</b>。
+    复检策略：<b>已开启 · 拆零逐件复检 · 按订单集齐后复检</b>（参数 WMS_CHECK_ENABLED/SCOPE/UNIT 可配）。
+  </div>
+
+  <div class="panel">
+    <div class="tabs" data-tabs>
+      <div class="tab on" data-tab="instr">分拣指令单</div>
+      <div class="tab" data-tab="detail">分拣指令明细</div>
+    </div>
+
+    <!-- 指令单 -->
+    <div class="tabpane on" data-pane="instr">
+      <div class="query" style="border:none;border-bottom:1px solid var(--line);border-radius:0">
+        <span class="view-toggle" id="viewToggle">
+          <button class="on" data-view="zone">🗺️ 按库区</button>
+          <button data-view="list">📋 按列表</button>
+        </span>
+        <input placeholder="指令号/波次/订单/门店" class="wide" id="kw">
+        <select id="fZone"><option value="">全部库区</option><option>A区</option><option>B区</option><option>C区</option><option>D区</option></select>
+        <select id="fMode"><option value="">全部模式</option><option>按单拣</option><option>汇总拣+分播</option><option>边拣边分</option><option>分区接力</option></select>
+        <select id="fStatus"><option value="">全部状态</option><option>待拣</option><option>拣货中</option><option>待分播</option><option>分播中</option><option>已完成</option><option>已复检</option></select>
+        <span class="spacer"></span>
+        <button class="btn">🔍 查询</button>
+      </div>
+
+      <!-- 库区视图 -->
+      <div id="zoneView" style="padding:16px">
+        <div class="zone-grid" id="zoneGrid"></div>
+        <div style="margin-top:18px">
+          <div class="panel-h" style="padding:0 0 8px;border-bottom:1px solid var(--line);margin-bottom:10px;display:flex;align-items:center">
+            <b id="zvTitle">A区 分拣指令</b>
+            <span class="muted small" style="margin-left:8px">点击库区卡片切换</span>
+          </div>
+          <div class="tbl-wrap"><table id="tblZone">
+            <thead><tr><th>指令号</th><th>波次</th><th>库区</th><th>拣货模式</th><th>订单/门店</th><th>件数</th><th>负责人</th><th>状态</th><th>进度</th><th class="fix">操作</th></tr></thead>
+            <tbody id="zoneBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- 列表视图 -->
+      <div id="listView" style="padding:12px 16px;display:none">
+        <div class="tbl-wrap"><table id="tblList">
+          <thead><tr><th>指令号</th><th>波次</th><th>库区</th><th>拣货模式</th><th>订单/门店</th><th>件数</th><th>负责人</th><th>状态</th><th>进度</th><th class="fix">操作</th></tr></thead>
+          <tbody id="listBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
+    <!-- 明细 -->
+    <div class="tabpane" data-pane="detail" style="padding:0">
+      <div class="query" style="border:none;border-bottom:1px solid var(--line);border-radius:0">
+        <input placeholder="指令号" id="dInstr" class="wide">
+        <select id="dZone"><option value="">全部库区</option><option>A区</option><option>B区</option><option>C区</option><option>D区</option></select>
+        <input placeholder="商品名称/编码" id="dGoods">
+        <input placeholder="批次号" id="dBatch">
+        <select><option>分播去向：全部</option><option>华联(建国路)</option><option>物美(海淀黄庄)</option><option>711(三里屯)</option></select>
+        <span class="spacer"></span>
+        <button class="btn">🔍 查询</button>
+        <button class="btn" data-toast="已导出指令明细为 Excel（含商品/批次/库位/分播去向）">📤 导出明细</button>
+      </div>
+      <div style="padding:12px 16px">
+        <div class="alert tip" style="margin-top:0">明细按 <b>FEFO 先到期先出</b> 排序，含应拣/已拣与分播去向订单门店；分播去向用于汇总拣货后的分拣墙分投。</div>
+        <div class="tbl-wrap"><table class="mini">
+          <thead><tr><th>指令号</th><th>波次</th><th>库区</th><th>库位</th><th>商品</th><th>批次</th><th>效期</th><th>FEFO顺位</th><th>应拣</th><th>已拣</th><th>分播去向(订单/门店)</th></tr></thead>
+          <tbody id="detailBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="../assets/wms.js"></script>
+<script>
+/* status: 0待拣 1拣货中 2待分播 3分播中 4已完成 5已复检 */
+var SNAME=['待拣','拣货中','待分播','分播中','已完成','已复检'];
+var INSTR=[
+  {no:'SI20260823-A01',wave:'W20260823-03',zone:'A区',mode:'按单拣',orders:2,stores:2,pcs:30,owner:'刘强',status:1,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-B01',wave:'W20260823-03',zone:'B区',mode:'按单拣',orders:2,stores:2,pcs:28,owner:'陈伟',status:1,prog:40,gathered:1,gTotal:3,note:'B-03-05 缺货补货中'},
+  {no:'SI20260823-D01',wave:'W20260823-03',zone:'D区',mode:'按单拣',orders:2,stores:2,pcs:8,owner:'赵丽',status:4,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-A02',wave:'W20260823-04',zone:'A区',mode:'汇总拣+分播',orders:3,stores:3,pcs:52,owner:'刘强',status:1,prog:80,gathered:0,gTotal:3},
+  {no:'SI20260823-B02',wave:'W20260823-04',zone:'B区',mode:'汇总拣+分播',orders:3,stores:3,pcs:44,owner:'孙明',status:1,prog:35,gathered:0,gTotal:3},
+  {no:'SI20260823-C02',wave:'W20260823-04',zone:'C区',mode:'汇总拣+分播',orders:3,stores:3,pcs:16,owner:'周杰',status:2,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-B03',wave:'W20260823-05',zone:'B区',mode:'边拣边分',orders:2,stores:2,pcs:26,owner:'孙明',status:0,prog:0,gathered:0,gTotal:2},
+  {no:'SI20260823-C03',wave:'W20260823-05',zone:'C区',mode:'边拣边分',orders:2,stores:2,pcs:12,owner:'周杰',status:0,prog:0,gathered:0,gTotal:2},
+  {no:'SI20260823-A03',wave:'W20260823-01',zone:'A区',mode:'按单拣',orders:1,stores:1,pcs:16,owner:'刘强',status:4,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-B04',wave:'W20260823-01',zone:'B区',mode:'按单拣',orders:1,stores:1,pcs:14,owner:'陈伟',status:4,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-D02',wave:'W20260823-01',zone:'D区',mode:'按单拣',orders:1,stores:1,pcs:8,owner:'赵丽',status:4,prog:100,gathered:1,gTotal:3},
+  {no:'SI20260823-A04',wave:'W20260823-06',zone:'A区',mode:'按单拣',orders:1,stores:1,pcs:22,owner:'刘强',status:5,prog:100,gathered:1,gTotal:1},
+  {no:'SI20260823-B05',wave:'W20260823-06',zone:'B区',mode:'按单拣',orders:1,stores:1,pcs:16,owner:'陈伟',status:5,prog:100,gathered:1,gTotal:1}
+];
+var DETAIL=[
+  ['SI20260823-A01','W20260823-03','A区','A-01-02','农夫山泉 550ml×24','20260801','2027-07-31',1,10,10,'华联(建国路) 6 / 京客隆(红庙) 4'],
+  ['SI20260823-B01','W20260823-03','B区','B-03-05','可口可乐 330ml×24','20260720','2027-07-15',1,5,2,'华联(建国路) 3 / 京客隆(红庙) 2'],
+  ['SI20260823-B01','W20260823-03','B区','B-03-05','康师傅红烧牛肉面 105g','20260601','2026-12-01',1,8,0,'华联(建国路) 5 / 京客隆(红庙) 3 ⚠缺货'],
+  ['SI20260823-D01','W20260823-03','D区','D-02-01','海天酱油 500ml','20260510','2027-05-01',1,6,6,'华联(建国路) 4 / 京客隆(红庙) 2'],
+  ['SI20260823-A02','W20260823-04','A区','A-02-04','怡宝纯净水 555ml×24','20260810','2027-08-01',1,24,24,'物美(海淀黄庄)12 / 超市发(双榆树)8 / 盒马(西直门)4'],
+  ['SI20260823-A02','W20260823-04','A区','A-05-01','农夫山泉 550ml×24','20260801','2027-07-31',2,28,18,'物美(海淀黄庄)14 / 超市发(双榆树)10 / 盒马(西直门)4'],
+  ['SI20260823-C02','W20260823-04','C区','C-01-03','乐事薯片 原味 70g','20260725','2026-10-25',1,16,16,'物美(海淀黄庄)6 / 超市发(双榆树)6 / 盒马(西直门)4'],
+  ['SI20260823-B03','W20260823-05','B区','B-08-02','脉动青柠 600ml×15','20260805','2027-02-01',1,26,0,'711(三里屯)14 / 全家(工体)12'],
+  ['SI20260823-B04','W20260823-01','B区','B-03-05','可口可乐 330ml×24','20260720','2027-07-15',1,14,14,'华联(亦庄店)14'],
+  ['SI20260823-A04','W20260823-06','A区','A-01-02','农夫山泉 550ml×24','20260801','2027-07-31',1,22,22,'超市发(学院路)22']
+];
+
+function sBadge(s){
+  var cls=['b-gray','b-info','b-wait','b-info','b-ok','b-ok'];
+  return '<span class="badge '+cls[s]+'">'+SNAME[s]+'</span>';
+}
+function progCell(p){return '<span class="prog"><span class="pbar"><i style="width:'+p+'%"></i></span><span class="small">'+p+'%</span></span>';}
+function actionCell(it){
+  var h='<button class="btn sm" onclick="showDetail(\''+it.no+'\')">📄 明细</button> ';
+  // 一键复检：该指令所属订单已集齐才能复检
+  if(it.status>=4 && it.gathered>=it.gTotal && it.status<5){
+    h+='<button class="btn sm primary" onclick="oneClickCheck(\''+it.no+'\')">✔ 一键复检</button>';
+  }else if(it.status<4){
+    h+='<button class="btn sm" disabled style="opacity:.5">集齐后复检</button>';
+  }else if(it.status===5){
+    h+='<span class="chip ok">已复检扣库存</span>';
+  }
+  return h;
+}
+function rowHtml(it){
+  return '<tr'+(it.note?' class="urgent"':'')+'><td class="mono link" onclick="showDetail(\''+it.no+'\')">'+it.no+'</td>'+
+    '<td class="mono">'+it.wave+'</td><td>'+it.zone+'</td><td>'+it.mode+'</td>'+
+    '<td class="num">'+it.orders+'/'+it.stores+'</td><td class="num">'+it.pcs+'</td>'+
+    '<td>'+it.owner+'</td><td>'+sBadge(it.status)+(it.note?'<div class="red small">⚠ '+it.note+'</div>':'')+'</td>'+
+    '<td>'+progCell(it.prog)+'</td><td class="fix" style="white-space:nowrap">'+actionCell(it)+'</td></tr>';
+}
+
+function getFiltered(){
+  var kw=document.getElementById('kw').value.trim();
+  var fz=document.getElementById('fZone').value;
+  var fm=document.getElementById('fMode').value;
+  var fs=document.getElementById('fStatus').value;
+  return INSTR.filter(function(it){
+    if(kw&&(it.no+it.wave+it.owner).indexOf(kw)<0)return false;
+    if(fz&&it.zone!==fz)return false;
+    if(fm&&it.mode!==fm)return false;
+    if(fs&&SNAME[it.status]!==fs)return false;
+    return true;
+  });
+}
+
+/* 库区卡片 */
+function renderZones(){
+  var zones=['A区','B区','C区','D区'];
+  var colors=['#1677ff','#0ea5e9','#7c3aed','#f59e0b'];
+  var html='';
+  var sel=window.__selZone||'A区';
+  zones.forEach(function(z,idx){
+    var list=INSTR.filter(function(it){return it.zone===z;});
+    var pcs=list.reduce(function(a,it){return a+it.pcs;},0);
+    var done=list.filter(function(it){return it.status>=4;}).length;
+    var prog=list.length?Math.round(list.reduce(function(a,it){return a+it.prog;},0)/list.length):0;
+    var urgent=list.some(function(it){return it.note;});
+    html+='<div class="zone-card'+(z===sel?' on':'')+'" data-zone="'+z+'">'+
+      '<div class="zc-name"><span style="color:'+colors[idx]+'">●</span>'+z+(urgent?' <span class="badge b-bad">异常</span>':'')+'</div>'+
+      '<div class="zc-stat">📋 '+list.length+' 张指令 · 🧺 '+pcs+' 件<br>✅ 已完成 '+done+'/'+list.length+'</div>'+
+      '<div class="zc-bar"><i style="width:'+prog+'%"></i></div>'+
+      '<div class="small muted" style="margin-top:5px">综合进度 '+prog+'%</div></div>';
+  });
+  document.getElementById('zoneGrid').innerHTML=html;
+}
+function renderZoneTable(){
+  var sel=window.__selZone||'A区';
+  document.getElementById('zvTitle').textContent=sel+' 分拣指令';
+  var list=getFiltered().filter(function(it){return it.zone===sel;});
+  document.getElementById('zoneBody').innerHTML=list.length?list.map(rowHtml).join(''):'<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">该库区无匹配指令</td></tr>';
+}
+function renderList(){
+  var list=getFiltered();
+  document.getElementById('listBody').innerHTML=list.length?list.map(rowHtml).join(''):'<tr><td colspan="10" class="muted" style="text-align:center;padding:24px">无匹配指令</td></tr>';
+}
+function renderDetail(){
+  var kw=document.getElementById('dInstr').value.trim();
+  var dz=document.getElementById('dZone').value;
+  var dg=document.getElementById('dGoods').value.trim();
+  var db=document.getElementById('dBatch').value.trim();
+  var list=DETAIL.filter(function(r){
+    if(kw&&r[0].indexOf(kw)<0)return false;
+    if(dz&&r[2]!==dz)return false;
+    if(dg&&(r[4]+'').indexOf(dg)<0)return false;
+    if(db&&r[5].indexOf(db)<0)return false;
+    return true;
+  });
+  document.getElementById('detailBody').innerHTML=list.map(function(r){
+    var short=(r[9]<r[8]);
+    return '<tr'+(short?' style="background:#fef2f2"':'')+
+      '<td class="mono">'+r[0]+'</td><td class="mono">'+r[1]+'</td><td>'+r[2]+'</td><td class="mono">'+r[3]+'</td>'+
+      '<td>'+r[4]+'</td><td class="mono">'+r[5]+'</td><td>'+r[6]+'</td>'+
+      '<td class="num">'+r[7]+'</td><td class="num">'+r[8]+'</td>'+
+      '<td class="num'+(short?' red':' green')+'">'+r[9]+(short?' ⚠':'')+'</td>'+
+      '<td>'+r[10]+'</td></tr>';
+  }).join('')||'<tr><td colspan="11" class="muted" style="text-align:center;padding:24px">无匹配明细</td></tr>';
+}
+function renderAll(){renderZones();renderZoneTable();renderList();renderDetail();}
+
+/* 库区卡片点击 */
+document.getElementById('zoneGrid').addEventListener('click',function(e){
+  var c=e.target.closest('.zone-card');if(!c)return;
+  window.__selZone=c.getAttribute('data-zone');renderZones();renderZoneTable();
+});
+/* 视图切换 */
+document.getElementById('viewToggle').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+  var v=b.getAttribute('data-view');
+  document.getElementById('zoneView').style.display=v==='zone'?'':'none';
+  document.getElementById('listView').style.display=v==='list'?'':'none';
+});
+/* 筛选 */
+['kw','fZone','fMode','fStatus'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',function(){renderZoneTable();renderList();});
+  document.getElementById(id).addEventListener('change',function(){renderZoneTable();renderList();});
+});
+['dInstr','dZone','dGoods','dBatch'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',renderDetail);
+  document.getElementById(id).addEventListener('change',renderDetail);
+});
+
+/* 指令明细抽屉 */
+function showDetail(no){
+  var it=INSTR.filter(function(x){return x.no===no;})[0];
+  var rows=DETAIL.filter(function(r){return r[0]===no;});
+  var sortHtml='';
+  if(it&&(it.mode==='汇总拣+分播'||it.mode==='边拣边分')){
+    var dests={};
+    rows.forEach(function(r){(r[10]+'').split('/').forEach(function(s){var m=s.match(/^(.*?)(\d+)$/);if(m){dests[m[1].trim()]=(dests[m[1].trim()]||0)+parseInt(m[2]);}});});
+    sortHtml='<h4 style="margin:14px 0 8px">🎯 分播去向（分拣墙格口）</h4>'+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
+      Object.keys(dests).map(function(d,idx){return '<div style="border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center;background:#f8fafc"><div style="font-size:18px">🅰️</div><b>格口 '+(idx+1)+'</b><div class="small muted">'+d+'</div><div class="small">应分 '+dests[d]+' 件</div></div>';}).join('')+'</div>';
+  }
+  openDrawer({
+    title:'📄 分拣指令明细 — '+no,
+    size:'lg',
+    body:(it?'<div class="kv"><span>波次/库区</span><b class="mono">'+it.wave+' · '+it.zone+'</b></div>'+
+      '<div class="kv"><span>拣货模式</span><b>'+it.mode+'</b></div>'+
+      '<div class="kv"><span>订单/门店·件数</span><b>'+it.orders+'单/'+it.stores+'店 · '+it.pcs+'件</b></div>'+
+      '<div class="kv"><span>负责人/状态</span><b>'+it.owner+' · '+sBadge(it.status)+' 集齐 '+it.gathered+'/'+it.gTotal+'</b></div>':'')+
+      '<h4 style="margin:12px 0 8px">📦 商品明细（FEFO）</h4>'+
+      '<div class="tbl-wrap"><table class="mini"><thead><tr><th>库位</th><th>商品</th><th>批次/效期</th><th>顺位</th><th>应拣</th><th>已拣</th><th>分播去向</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr><td class="mono">'+r[3]+'</td><td>'+r[4]+'</td><td class="mono">'+r[5]+'<br><span class="muted small">'+r[6]+'</span></td><td class="num">'+r[7]+'</td><td class="num">'+r[8]+'</td><td class="num">'+r[9]+'</td><td class="small">'+r[10]+'</td></tr>';}).join('')+
+      '</tbody></table></div>'+sortHtml
+  });
+}
+
+/* 一键复检完成订单 */
+function oneClickCheck(no){
+  var it=INSTR.filter(function(x){return x.no===no;})[0];
+  if(!it)return;
+  openModal({
+    title:'✔ 一键复检完成订单 — '+no,
+    size:'lg',
+    body:'<div class="alert warn">后台快捷动作：将对该指令所属<b>已集齐</b>的订单执行复检通过。复检粒度按参数 <code>WMS_CHECK_UNIT</code> = <b>按订单集齐后复检</b>（当前订单 '+(it?it.gathered+'/'+it.gTotal:'')+' 个库区拣货单已集齐）。</div>'+
+      '<div class="alert ok"><b>复检通过后自动触发扣库存链（关键口径）：</b><br>'+
+      '① 生成出库单（OUT）→ ② 出库单<b>审核即扣库存</b>（wms_bin_stock 实减，inv_stock_balance 财务减）→ ③ 按销售单生成发货单（sales_receipt，签收/拒收时取实际数量计算应收）。<br>装车环节<b>不再扣库存</b>。</div>'+
+      '<label class="chk" style="display:flex;align-items:center;gap:8px"><input type="checkbox" checked> 复检通过后自动进入可装车池</label>'+
+      '<label class="chk" style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="checkbox"> 打印复检/打包清单</label>',
+    okText:'确认复检通过并扣库存',
+    onOk:function(){
+      it.status=5;it.prog=100;
+      renderAll();
+      toast('指令 '+no+' 复检通过，出库单已审核扣库存、发货单已生成','ok');
+    }
+  });
+}
+
+bindTabs(document.querySelector('.panel'));
+renderAll();
+</script></body></html>

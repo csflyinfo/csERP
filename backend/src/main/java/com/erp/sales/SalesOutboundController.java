@@ -625,13 +625,60 @@ public class SalesOutboundController {
     @PostMapping("/outbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT outbound_id, outbound_no, source_order, customer, warehouse, amount, status
-                FROM sales_outbound WHERE (outbound_id = ? OR outbound_no = ?) AND status = 'PENDING'
+        // 原子抢占：先把 PENDING 行条件翻转为 AUDITING（仅本事务能命中 WHERE status='PENDING'），
+        // 杜绝两个并发审核同时读到 PENDING 后双扣库存。AUDITING 为瞬时态，事务提交时被 auditOutbound 改为 APPROVED。
+        int claimed = jdbcTemplate.update("""
+                UPDATE sales_outbound SET status = 'AUDITING'
+                WHERE (outbound_id = ? OR outbound_no = ?) AND status = 'PENDING'
                 """, request.bizId(), request.bizId());
-        if (rows.isEmpty()) throw new IllegalArgumentException("出库单不存在或已审核");
-        Map<String, Object> outbound = rows.get(0);
-        String outboundId = str(pick(outbound, "outbound_id"));
+        if (claimed == 0) {
+            // 不存在或已被审核/正在审核 —— 若已 APPROVED 则幂等返回已有发货单号
+            List<Map<String, Object>> done = jdbcTemplate.queryForList("""
+                    SELECT outbound_id, outbound_no, status FROM sales_outbound
+                    WHERE outbound_id = ? OR outbound_no = ?
+                    """, request.bizId(), request.bizId());
+            if (!done.isEmpty() && "APPROVED".equals(str(pick(done.get(0), "status")))) {
+                String existNo = str(pick(done.get(0), "outbound_no"));
+                String receiptNo = jdbcTemplate.queryForObject(
+                        "SELECT receipt_no FROM sales_receipt WHERE source_outbound_no = ? ORDER BY create_time DESC LIMIT 1",
+                        String.class, existNo);
+                return ApiResponse.ok(Map.of(
+                        "outboundId", str(pick(done.get(0), "outbound_id")),
+                        "status", "APPROVED",
+                        "receiptNo", receiptNo == null ? "" : receiptNo,
+                        "effect", "出库单已审核（幂等返回）"));
+            }
+            throw new IllegalArgumentException("出库单不存在或已审核");
+        }
+        // bizId 可能是出库单号而非主键，回查真实 outbound_id
+        List<Map<String, Object>> claimedRows = jdbcTemplate.queryForList("""
+                SELECT outbound_id FROM sales_outbound
+                WHERE outbound_id = ? OR outbound_no = ?
+                """, request.bizId(), request.bizId());
+        String outboundId = str(pick(claimedRows.get(0), "outbound_id"));
+        String receiptNo = auditOutbound(outboundId, "销售出库审核");
+        return ApiResponse.ok(Map.of(
+                "outboundId", outboundId,
+                "status", "APPROVED",
+                "receiptNo", receiptNo,
+                "effect", "已扣减库存并生成销售发货单 " + receiptNo));
+    }
+
+    /**
+     * 出库审核核心（包级可见，供 WMS 波次拣货完成/复核通过复用）。
+     *
+     * <p>扣减口径：释放批次锁与来源订单的余额锁 → 调 {@link InventoryCostService#salesOutbound}
+     * 扣实物/写流水 → 回写订单出库状态 → 自动生成销售发货单。WMS 不自行碰金额/成本。
+     *
+     * @return 生成的销售发货单号
+     */
+    @Transactional
+    String auditOutbound(String outboundId, String logDetail) {
+        List<Map<String, Object>> heads = jdbcTemplate.queryForList(
+                "SELECT outbound_id, outbound_no, source_order FROM sales_outbound WHERE outbound_id = ?",
+                outboundId);
+        if (heads.isEmpty()) throw new IllegalArgumentException("出库单不存在：" + outboundId);
+        Map<String, Object> outbound = heads.get(0);
         String outboundNo = str(pick(outbound, "outbound_no"));
         String sourceOrderNo = str(pick(outbound, "source_order"));
 
@@ -692,19 +739,179 @@ public class SalesOutboundController {
             }
         }
 
-        log("sales.outbound", "AUDIT", outboundNo, "销售出库审核");
+        log("sales.outbound", "AUDIT", outboundNo, logDetail);
 
         // 自动生成销售发货单（幂等）
         String receiptNo = receiptController.generateFromOutbound(outboundId);
         jdbcTemplate.update(
                 "UPDATE sales_outbound SET receipt_generated = TRUE WHERE outbound_id = ?",
                 outboundId);
+        return receiptNo;
+    }
 
-        return ApiResponse.ok(Map.of(
-                "outboundId", outboundId,
-                "status", "APPROVED",
-                "receiptNo", receiptNo,
-                "effect", "已扣减库存并生成销售发货单 " + receiptNo));
+    /**
+     * WMS 波次完成时：按已分配批次生成并审核一张销售出库单，扣库存并生成发货单。
+     *
+     * <p>与人工 {@code /sales/outbound/create} 的区别：批次锁在波次<b>下放</b>时已由
+     * {@code InventoryCostService.lockBatch} 预先占好，这里写明细时<b>不再重复加锁</b>，
+     * 直接进入审核兑现。{@code lines} 每项为 {@code {goodsCode, qty, batchNo}}。
+     *
+     * @return 生成的销售发货单号
+     */
+    @Transactional
+    public String createAndAuditForWms(String sourceOrderNo, String warehouse,
+                                       List<Map<String, Object>> lines, String logDetail) {
+        if (sourceOrderNo == null || sourceOrderNo.isBlank()) {
+            throw new IllegalArgumentException("缺少来源销售订单号");
+        }
+        List<Map<String, Object>> orderRows = jdbcTemplate.queryForList(
+                "SELECT order_id, order_no, customer, customer_code, salesman, warehouse, remark, status, amount " +
+                        "FROM sales_order WHERE order_no = ? OR order_id = ?",
+                sourceOrderNo, sourceOrderNo);
+        if (orderRows.isEmpty()) throw new IllegalArgumentException("销售订单不存在：" + sourceOrderNo);
+        Map<String, Object> order = orderRows.get(0);
+        if (!"APPROVED".equals(str(pick(order, "status")))) {
+            throw new IllegalArgumentException("销售订单未审核，无法出库：" + sourceOrderNo);
+        }
+        String orderNo = str(pick(order, "order_no"));
+        // 一单一出库：重复出库保护
+        List<Map<String, Object>> exists = jdbcTemplate.queryForList(
+                "SELECT outbound_no FROM sales_outbound WHERE source_order = ?", orderNo);
+        if (!exists.isEmpty()) {
+            throw new IllegalArgumentException("订单 " + orderNo + " 已生成出库单 " + str(pick(exists.get(0), "outbound_no")));
+        }
+
+        String customer = str(pick(order, "customer"));
+        String wh = (warehouse == null || warehouse.isBlank()) ? str(pick(order, "warehouse")) : warehouse;
+        // 业务员/片区/线路/司机：从 base_customer 反查（与 create 同口径）
+        String salesman = str(pick(order, "salesman"));
+        String territory = "", routeLine = "", driver = "";
+        String customerCode = str(pick(order, "customer_code"));
+        if (!customerCode.isBlank()) {
+            List<Map<String, Object>> cust = jdbcTemplate.queryForList(
+                    "SELECT salesman AS s, territory AS t, route_line AS r FROM base_customer WHERE customer_code = ? LIMIT 1",
+                    customerCode);
+            if (!cust.isEmpty()) {
+                if (salesman.isBlank()) salesman = str(pick(cust.get(0), "s"));
+                territory = str(pick(cust.get(0), "t"));
+                routeLine = str(pick(cust.get(0), "r"));
+            }
+        }
+        if (driver.isBlank() && !routeLine.isBlank()) {
+            List<String> ld = jdbcTemplate.queryForList(
+                    "SELECT driver FROM base_route_line WHERE route_line_name = ? OR route_line_code = ? LIMIT 1",
+                    String.class, routeLine, routeLine);
+            if (!ld.isEmpty()) driver = str(ld.get(0));
+        }
+
+        // 从订单明细取单价/商品名/单位
+        Map<String, Map<String, Object>> orderDetailByGoods = new HashMap<>();
+        for (Map<String, Object> od : jdbcTemplate.queryForList(
+                "SELECT goods_code, goods_name, unit_name, qty, price FROM sales_order_detail WHERE order_id = ?",
+                str(pick(order, "order_id")))) {
+            orderDetailByGoods.put(str(pick(od, "goods_code")), od);
+        }
+        // 反查 base_goods 补规格/条码/小单位
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        for (Map<String, Object> line : lines) codes.add(str(line.get("goodsCode")));
+        Map<String, Map<String, Object>> goodsInfo = new HashMap<>();
+        if (!codes.isEmpty()) {
+            String inClause = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+            for (Map<String, Object> g : jdbcTemplate.queryForList(
+                    "SELECT goods_code, spec, barcode, base_unit, unit_config FROM base_goods WHERE goods_code IN (" + inClause + ")",
+                    codes.toArray())) {
+                goodsInfo.put(str(pick(g, "goods_code")), g);
+            }
+        }
+
+        BigDecimal totalQty = BigDecimal.ZERO, totalAmount = BigDecimal.ZERO, totalCost = BigDecimal.ZERO;
+        List<Map<String, Object>> normalized = new ArrayList<>();
+        for (Map<String, Object> line : lines) {
+            String code = str(line.get("goodsCode"));
+            BigDecimal q = toBd(line.get("qty"));
+            if (q.signum() <= 0) continue;
+            Map<String, Object> od = orderDetailByGoods.getOrDefault(code, Map.of());
+            BigDecimal p = toBd(pick(od, "price"));
+            BigDecimal a = q.multiply(p).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal cp = inventoryCostService.getCurrentCostPrice(code, wh);
+            if (cp == null) cp = BigDecimal.ZERO;
+            BigDecimal ca = q.multiply(cp).setScale(2, RoundingMode.HALF_UP);
+            String batchNo = str(line.get("batchNo"));
+            totalQty = totalQty.add(q);
+            totalAmount = totalAmount.add(a);
+            totalCost = totalCost.add(ca);
+
+            Map<String, Object> g = goodsInfo.get(code);
+            String spec = g != null ? str(pick(g, "spec")) : "";
+            String barcode = g != null ? str(pick(g, "barcode")) : "";
+            String smallUnit = g != null ? str(pick(g, "base_unit")) : str(pick(od, "unit_name"));
+            BigDecimal smallQty = q;
+            if (g != null) {
+                Object uc = pick(g, "unit_config");
+                if (uc != null) {
+                    try {
+                        BigDecimal convert = extractSmallUnitConvertQty(String.valueOf(uc), str(pick(od, "unit_name")));
+                        if (convert != null && convert.signum() > 0) smallQty = q.multiply(convert);
+                    } catch (Exception ignore) {}
+                }
+            }
+            Map<String, Object> n = new HashMap<>();
+            n.put("code", code);
+            n.put("goodsName", str(pick(od, "goods_name")));
+            n.put("unitName", str(pick(od, "unit_name")));
+            n.put("qty", q); n.put("price", p); n.put("amount", a);
+            n.put("costPrice", cp); n.put("costAmount", ca); n.put("batchNo", batchNo);
+            n.put("spec", spec); n.put("barcode", barcode);
+            n.put("smallUnit", smallUnit); n.put("smallQty", smallQty);
+            normalized.add(n);
+        }
+        if (normalized.isEmpty()) throw new IllegalArgumentException("WMS 出库明细为空");
+
+        String id = "SOU" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String no = billNoGen.nextNo(com.erp.common.util.BillNoGenerator.BillType.SALES_OUTBOUND, "sales_outbound", "outbound_no");
+        try {
+            jdbcTemplate.update("""
+                    INSERT INTO sales_outbound (outbound_id, outbound_no, source_order, customer, warehouse,
+                        bill_date, qty, amount, cost_amount, status, stock_updated, receipt_generated,
+                        salesman, territory, route_line, driver, remark)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, 'PENDING', FALSE, FALSE, ?, ?, ?, ?, ?)
+                    """, id, no, orderNo, customer, wh, totalQty, totalAmount, totalCost,
+                    salesman, territory, routeLine, emptyToNull(driver),
+                    "WMS波次自动出库");
+        } catch (org.springframework.dao.DuplicateKeyException dup) {
+            // 并发/重放复核：另一事务已为该订单建了出库单（uk_sales_outbound_source_order）。
+            // 回查已存在的出库单：若已审核则幂等返回其发货单号，否则报错让用户重试，绝不重复扣账。
+            List<Map<String, Object>> existing = jdbcTemplate.queryForList(
+                    "SELECT outbound_id, outbound_no, status FROM sales_outbound WHERE source_order = ?", orderNo);
+            if (!existing.isEmpty() && "APPROVED".equals(str(pick(existing.get(0), "status")))) {
+                String existNo = str(pick(existing.get(0), "outbound_no"));
+                String receiptNo = jdbcTemplate.queryForObject(
+                        "SELECT receipt_no FROM sales_receipt WHERE source_outbound_no = ? ORDER BY create_time DESC LIMIT 1",
+                        String.class, existNo);
+                log("sales.outbound", "WMS_IDEMPOTENT", existNo, "并发/重放复核命中已审核出库单，幂等返回");
+                return receiptNo == null ? "" : receiptNo;
+            }
+            throw new IllegalArgumentException("订单 " + orderNo + " 的出库单正在生成中，请稍后重试");
+        }
+
+        // 注意：不在此调用 lockBatch —— 批次锁已在波次下放时由 WMS 预占，auditOutbound 会先释放再扣。
+        for (Map<String, Object> n : normalized) {
+            String detailId = "SOUD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+            jdbcTemplate.update("""
+                    INSERT INTO sales_outbound_detail (detail_id, outbound_id, goods_code, goods_name,
+                        warehouse, unit_name, qty, batch_no, price, amount, cost_price, cost_amount,
+                        spec, barcode, production_date, small_unit_name, small_unit_qty, remark)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 'WMS')
+                    """,
+                    detailId, id, str(n.get("code")), str(n.get("goodsName")), wh, str(n.get("unitName")),
+                    n.get("qty"), str(n.get("batchNo")), n.get("price"), n.get("amount"),
+                    n.get("costPrice"), n.get("costAmount"), str(n.get("spec")), str(n.get("barcode")),
+                    str(n.get("smallUnit")), n.get("smallQty"));
+        }
+
+        log("sales.outbound", "WMS_CREATE", no, "WMS波次生成出库单（来源订单：" + orderNo + "）");
+        return auditOutbound(id, logDetail == null || logDetail.isBlank()
+                ? "WMS波次完成自动出库审核" : logDetail);
     }
 
     // ============ 工具方法 ============

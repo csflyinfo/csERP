@@ -1,0 +1,74 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>系统参数 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>⚙️ WMS 系统参数</h2><span class="sub">参数驱动作业策略 · 分组管理 · 修改留痕 · 部分参数即时生效/部分需重启</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已导出参数配置">📤 导出</button>
+    <button class="btn primary" onclick="toast('参数已保存并留痕','ok')">💾 保存修改</button>
+  </div>
+
+  <div class="alert tip">💡 所有参数存于 <code>sys_param_runtime</code>，<code>param_group='WMS'</code>。参数变更写操作日志；涉及策略类即时生效，涉及缓存/线程池类需重启后端生效。鼠标悬停参数名看说明。</div>
+
+  <div class="layout">
+    <aside class="tree">
+      <div class="grp">📂 参数分组</div>
+      <div class="node cnt">入库/收货 <span class="cnt">6</span></div>
+      <div class="node cnt">上架策略 <span class="cnt">4</span></div>
+      <div class="node cnt on">波次/拣货/集货 <span class="cnt">12</span></div>
+      <div class="node cnt">补货 <span class="cnt">5</span></div>
+      <div class="node cnt">复检/出库 <span class="cnt">8</span></div>
+      <div class="node cnt">批次/效期 <span class="cnt">5</span></div>
+      <div class="node cnt">盘点 <span class="cnt">5</span></div>
+      <div class="node cnt">装车/调度(TMS) <span class="cnt">5</span></div>
+      <div class="node cnt">硬件外设 <span class="cnt">3</span></div>
+    </aside>
+
+    <div class="panel tight">
+      <div class="query"><input placeholder="搜索参数键/说明" class="wide"><span class="spacer"></span><button class="btn">搜索</button></div>
+      <table id="tblP">
+        <thead><tr><th>参数键</th><th>说明</th><th>当前值</th><th>默认值</th><th>生效</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">WMS_RECEIVE_TOLERANCE</td><td>收货容差(超收/短收比例)</td><td><input value="5%" style="width:90px"></td><td class="muted">5%</td><td><span class="chip ok">即时</span></td><td class="fix"><button class="btn sm" data-toast="已恢复默认">恢复</button></td></tr>
+          <tr><td class="mono">WMS_SCALE_WEIGHT_ENABLED</td><td>启用蓝牙电子秤实际重量比对</td><td><label class="switch"><input type="checkbox"></label></td><td class="muted">关</td><td><span class="chip ok">即时</span></td><td class="fix"><span class="muted">重量默认按档案 base_weight×实收</span></td></tr>
+          <tr><td class="mono">WMS_PUTAWAY_RULE</td><td>上架策略</td><td><select><option>就近+同品类集中</option><option>空库位优先</option><option>固定库位</option></select></td><td class="muted">就近</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_PUTAWAY_FREE_BIN</td><td>允许自由上架(改推荐库位)</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_CROSS_DOCK_ENABLED</td><td>越库直发</td><td><label class="switch"><input type="checkbox"></label></td><td class="muted">关</td><td><span class="chip warn">重启</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_BATCH_RULE</td><td>批次出库规则</td><td><select><option>FEFO 先到期先出</option><option>FIFO 先进先出</option><option>手动</option></select></td><td class="muted">FEFO</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_PICK_MODE</td><td>默认拣货策略（下放弹窗可临时改）</td><td><select><option>按单拣货（一单拣到底）</option><option selected>汇总拣货+先拣后分（同品合并分播）</option><option>边拣边分（拣同时分投笼车）</option><option>分区接力（各库区接力）</option><option>越库直发（收货直发月台）</option></select></td><td class="muted">汇总+分播</td><td><span class="chip ok">即时</span></td><td class="fix">下放时可改</td></tr>
+          <tr><td class="mono">WMS_PICK_ZONE_ENABLED</td><td>按库区生成拣货任务（PDA按库区领单）</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">拣货员只管本区商品</td></tr>
+          <tr><td class="mono">WMS_PICK_SPLIT_THRESHOLD</td><td>单订单超N件自动拆分多个拣货任务</td><td><input value="50" style="width:90px"></td><td class="muted">50件</td><td><span class="chip ok">即时</span></td><td class="fix">先按库区再区内拆分</td></tr>
+          <tr><td class="mono">WMS_PICK_SPLIT_MAX</td><td>单订单最多拆成几个拣货任务（件数均分）</td><td><input value="3" style="width:90px"></td><td class="muted">3个</td><td><span class="chip ok">即时</span></td><td class="fix">保证任务均衡</td></tr>
+          <tr><td class="mono">WMS_CROSS_ZONE_MODE</td><td>跨区支援模式</td><td><select><option>自由领取+主管指定（推荐）</option><option>仅自由领取</option><option>仅主管指定</option><option>关闭跨区</option></select></td><td class="muted">两者</td><td><span class="chip ok">即时</span></td><td class="fix">先完成本区可支援他区</td></tr>
+          <tr><td class="mono">WMS_CROSS_ZONE_SCOPE</td><td>可被支援的库区/可跨区人员范围</td><td><input value="A,B,C区 / 全员" style="width:160px"></td><td class="muted">全部库区</td><td><span class="chip ok">即时</span></td><td class="fix">多选库区与人员</td></tr>
+          <tr><td class="mono">WMS_PDA_CLICK_PICK</td><td>PDA允许点击商品操作（否则仅扫码）</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">兼顾扫码枪故障/新手</td></tr>
+          <tr><td class="mono">WMS_PDA_VIEW</td><td>PDA拣货默认视图</td><td><select><option selected>逐件聚焦（一次一商品）</option><option>清单总览（全部行）</option></select></td><td class="muted">逐件聚焦</td><td><span class="chip ok">即时</span></td><td class="fix">作业中可一键切换</td></tr>
+          <tr><td class="mono">WMS_COLLECTION_MODE</td><td>集货位占用模式（下放时占位）</td><td><select><option selected>一门店一集货位（同店多单共享）</option><option>一单一集货位</option><option>按规则智能占用</option><option>集货位可混放多门店</option></select></td><td class="muted">一门店一位</td><td><span class="chip ok">即时</span></td><td class="fix">装车发运后释放</td></tr>
+          <tr><td class="mono">WMS_COLLECTION_BY</td><td>集货位占用依据（超阈值占多位）</td><td><select><option>按件数（每200件/位）</option><option>按体积（每8m³/位）</option><option>按重量（每500kg/位）</option></select></td><td class="muted">按件数</td><td><span class="chip ok">即时</span></td><td class="fix">大件可一店多位</td></tr>
+          <tr><td class="mono">WMS_COLLECTION_THRESHOLD</td><td>单集货位容量阈值（按所选依据）</td><td><input value="200件 / 位" style="width:120px"></td><td class="muted">200</td><td><span class="chip ok">即时</span></td><td class="fix">超出则占多个集货位</td></tr>
+          <tr><td class="mono">WMS_REPLENISH_QTY_RULE</td><td>补货量算法</td><td><select><option>补到拣货位容量上限</option><option>补到N天销量</option><option>固定量</option></select></td><td class="muted">补满</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_REPLENISH_URGENT_ENABLED</td><td>启用加急补货(拣货缺货一键)</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_CHECK_ENABLED</td><td>是否开启出库复检</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">关则拣完即审核扣库存</td></tr>
+          <tr><td class="mono">WMS_CHECK_SCOPE</td><td>复检方式（整位/拆零）</td><td><select><option selected>拆零逐件复检</option><option>整位/整托复检</option><option>抽复检(20%)</option></select></td><td class="muted">拆零逐件</td><td><span class="chip ok">即时</span></td><td class="fix">高值强制逐件不可整位</td></tr>
+          <tr><td class="mono">WMS_CHECK_UNIT</td><td>订单拆多拣货单时复检粒度</td><td><select><option selected>按订单集齐后复检</option><option>按拣货单分别复检</option></select></td><td class="muted">按订单</td><td><span class="chip ok">即时</span></td><td class="fix">集齐进度可在复检台查看</td></tr>
+          <tr><td class="mono">WMS_CHECK_SHORT_ALLOWED</td><td>复核少发允许按差异放行</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">关</td><td><span class="chip ok">即时</span></td><td class="fix">差异留痕</td></tr>
+          <tr class="urgent"><td class="mono">WMS_OUTBOUND_DEDUCT_TIMING</td><td>出库扣库存时点</td><td><select><option>出库单审核时(复核通过/拣完免复核)</option><option>装车发运时</option></select></td><td class="muted">审核时</td><td><span class="chip ok">即时</span></td><td class="fix"><b class="red">关键口径：审核即扣，装车不扣</b></td></tr>
+          <tr><td class="mono">WMS_EXPIRY_BLOCK_DAYS</td><td>临期禁发阈值(到期前N天)</td><td><input value="0" style="width:90px"></td><td class="muted">0(到期即禁)</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_EXPIRY_WARN_DAYS</td><td>临期预警阈值(剩余≤N天)</td><td><input value="90" style="width:90px"></td><td class="muted">90</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_COUNT_FREEZE_WHOLE</td><td>全盘冻结全厂作业</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_COUNT_FREEZE_BIN</td><td>动盘冻结当前库位</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_DISPATCH_TIMING</td><td>TMS调度派单时机</td><td><select><option>波次预分配+出库后均可</option><option>仅波次预分配</option><option>仅出库后</option></select></td><td class="muted">两者</td><td><span class="chip ok">即时</span></td><td class="fix">关联键 source_order_no=销售单号</td></tr>
+          <tr><td class="mono">WMS_CANCEL_RELEASE_LOCK</td><td>取消订单/下放时释放锁</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_EXPEDITE_ENABLED</td><td>订单加急全链路插队</td><td><label class="switch on"><input type="checkbox" checked></label></td><td class="muted">开</td><td><span class="chip ok">即时</span></td><td class="fix">—</td></tr>
+          <tr><td class="mono">WMS_EXCEPTION_SUSPEND_TIMEOUT</td><td>异常挂起超时升级(分钟)</td><td><input value="120" style="width:90px"></td><td class="muted">120</td><td><span class="chip warn">重启</span></td><td class="fix">超时升级主管</td></tr>
+        </tbody>
+      </table>
+      <div class="foot"><span class="muted">共 58 个 WMS 参数</span><span class="muted" style="margin-left:auto">修改人 李主管 · 2026-08-23 10:00</span></div>
+    </div>
+  </div>
+</div>
+<script src="../assets/wms.js"></script>
+<script>
+document.querySelectorAll('.switch').forEach(function(sw){
+  sw.addEventListener('click',function(){var inp=sw.querySelector('input'); if(inp){inp.checked=!inp.checked;} sw.classList.toggle('on', inp?inp.checked:!sw.classList.contains('on')); toast('参数已修改，记得点保存','info');});
+});
+</script></body></html>

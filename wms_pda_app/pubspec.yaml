@@ -1,0 +1,22 @@
+name: wms_pda_app
+description: "WMS 仓库作业 PDA（收货/上架/拣货/复核/盘点/移库等手持终端）"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  dio: ^5.4.0
+  flutter_riverpod: ^2.4.9
+  shared_preferences: ^2.2.2
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

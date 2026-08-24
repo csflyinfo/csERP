@@ -1,0 +1,88 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>库存查询/对账 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>📈 库存查询 / 账实对账</h2><span class="sub">库位库存(wms_bin_stock) vs 财务库存(inv_stock_balance) · 流水追溯 · 对账</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已导出库存台账">📤 导出台账</button>
+    <button class="btn primary" onclick="toast('对账任务已生成','ok')">🔍 发起账实对账</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📦</div><div class="n">12,860</div><div class="l">财务库存(件)</div></div>
+    <div class="kpi"><div class="ic">📍</div><div class="n blue">12,858</div><div class="l">库位库存合计(件)</div></div>
+    <div class="kpi"><div class="ic">🔒</div><div class="n orange">320</div><div class="l">锁定量(件)</div></div>
+    <div class="kpi"><div class="ic">⚖️</div><div class="n red">-2</div><div class="l">账实差异(件)</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">99.98%</div><div class="l">账实相符率</div></div>
+  </div>
+
+  <div class="alert info">💡 <b>账实分离</b>：<code>wms_bin_stock</code> 记录物理库位批次库存（作业层，含库位分布），<code>inv_stock_balance</code>/<code>inv_batch_stock</code> 记录财务库存（金额成本层）。两层通过库存流水保持一致；正常作业（移库/补货/上架）只动库位层，出入库审核才联动财务层。<b>成本按商品+仓库移动加权平均，不按批次/库位</b>。</div>
+
+  <div class="panel tight">
+    <div class="tabs" data-tabs>
+      <div class="tab on">库存台账</div>
+      <div class="tab">库位分布</div>
+      <div class="tab">账实对账</div>
+      <div class="tab">库存流水</div>
+    </div>
+
+    <div class="tabpane on" style="padding:12px 16px">
+      <div class="query">
+        <input placeholder="商品名/编码/条码" class="wide">
+        <select><option>全部分类</option></select>
+        <select><option>全部仓库</option></select>
+        <label class="checks" style="margin-left:8px"><input type="checkbox"> 仅显示有差异</label>
+        <label class="checks"><input type="checkbox"> 仅显示临期</label>
+        <span class="spacer"></span><button class="btn">查询</button>
+      </div>
+      <table id="tblStk">
+        <thead><tr><th>商品</th><th>编码</th><th>仓库</th><th>财务库存</th><th>库位合计</th><th>可用</th><th>锁定</th><th>差异</th><th>成本单价(移动加权)</th><th>库存金额</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr><td>农夫山泉550ml</td><td class="mono">G00128</td><td>总仓</td><td class="num">500</td><td class="num">500</td><td class="num green">480</td><td class="num orange">20</td><td class="num green">0</td><td class="num">¥1.200000</td><td class="num">¥600.00</td><td class="fix"><button class="btn sm" data-toast="已查看分布/流水">分布/流水</button></td></tr>
+          <tr class="danger"><td>康师傅红烧牛肉面105g</td><td class="mono">G00203</td><td>总仓</td><td class="num">64</td><td class="num">62</td><td class="num">38</td><td class="num">24</td><td class="num red">-2</td><td class="num">¥4.000000</td><td class="num red">¥256.00</td><td class="fix"><button class="btn sm warn" data-toast="已转盘点/异常，差异待调账" onclick="window.wmsGo&&wmsGo('pc/exception.html')">查差异</button></td></tr>
+          <tr><td>可口可乐330ml</td><td class="mono">G00156</td><td>总仓</td><td class="num">180</td><td class="num">180</td><td class="num">180</td><td class="num">0</td><td class="num green">0</td><td class="num">¥2.500000</td><td class="num">¥450.00</td><td class="fix"><button class="btn sm">分布/流水</button></td></tr>
+          <tr><td>五粮液52°(整箱)</td><td class="mono">G00311</td><td>总仓</td><td class="num">18</td><td class="num">18</td><td class="num">12</td><td class="num">6</td><td class="num green">0</td><td class="num">¥5,200.000000</td><td class="num">¥93,600.00</td><td class="fix"><button class="btn sm">分布/流水</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="query"><input placeholder="商品/库位/批次" class="wide"><span class="spacer"></span><button class="btn">查询</button></div>
+      <table>
+        <thead><tr><th>库位</th><th>库区类型</th><th>商品</th><th>批次</th><th>到期日</th><th>数量</th><th>锁定</th><th>更新时间</th></tr></thead>
+        <tbody>
+          <tr><td class="link mono">A-01-01</td><td>整箱存储</td><td>农夫山泉550ml</td><td class="mono">20260720</td><td>2027-07-20</td><td class="num">180</td><td class="num">0</td><td class="muted">10:25</td></tr>
+          <tr><td class="link mono">A-01-02</td><td>整箱存储</td><td>农夫山泉550ml</td><td class="mono">20260801</td><td>2027-08-01</td><td class="num">300</td><td class="num orange">20</td><td class="muted">10:18</td></tr>
+          <tr><td class="link mono">B-03-05</td><td>拆零拣货</td><td>康师傅牛肉面</td><td class="mono">20260601</td><td class="orange">2026-12-01</td><td class="num">0</td><td class="num">0</td><td class="muted">09:50(缺货)</td></tr>
+          <tr><td class="link mono">B-09</td><td>整箱存储</td><td>康师傅牛肉面</td><td class="mono">20260601</td><td class="orange">2026-12-01</td><td class="num">62</td><td class="num orange">24</td><td class="muted">10:20</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <div class="alert warn">⚖️ 账实对账比对财务库存与库位库存合计。当前发现 1 个商品差异（康师傅牛肉面 -2），已关联盘点单 CT...008 / 异常 EX...028，复盘确认后审批调账。</div>
+      <table style="margin-top:12px">
+        <thead><tr><th>商品</th><th>财务账</th><th>库位账</th><th>差异</th><th>关联盘点/异常</th><th>处理建议</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="danger"><td>康师傅红烧牛肉面105g</td><td class="num">64</td><td class="num">62</td><td class="num red">-2</td><td class="mono">CT...008 / EX...028</td><td>复盘确认→盘亏调账</td><td class="fix"><button class="btn sm danger" data-toast="已审批调账，账实一致" data-type="ok">审批调账</button></td></tr>
+          <tr><td>农夫山泉550ml</td><td class="num">500</td><td class="num">500</td><td class="num green">0</td><td>—</td><td class="green">相符</td><td class="fix"><span class="muted">—</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="query"><input placeholder="商品/单据/类型" class="wide"><select><option>全部类型</option><option>入库</option><option>出库</option><option>移库</option><option>补货</option><option>调整</option><option>盘点</option></select><input type="date" value="2026-08-23"><span class="spacer"></span><button class="btn">查询</button></div>
+      <table>
+        <thead><tr><th>时间</th><th>类型</th><th>单据号</th><th>商品/批次</th><th>库位</th><th>变动±</th><th>操作人</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">10:25:18</td><td><span class="chip ok">移库</span></td><td class="mono">MV...012</td><td>康师傅/20260601</td><td>B-03-05→B-09</td><td class="num">±24</td><td>孙上架</td></tr>
+          <tr><td class="mono">10:12:03</td><td><span class="chip">出库扣账</span></td><td class="mono">OUT...088</td><td>多商品</td><td>—</td><td class="num red">-38</td><td>系统(复核审核)</td></tr>
+          <tr><td class="mono">09:40:22</td><td><span class="chip">补货</span></td><td class="mono">RP...015</td><td>乐事/20260705</td><td>A-03-03→B-02-03</td><td class="num">±12</td><td>孙上架</td></tr>
+          <tr><td class="mono">08:55:10</td><td><span class="chip ok">入库</span></td><td class="mono">IN...201</td><td>农夫山泉/20260801</td><td>A-01-02</td><td class="num green">+200</td><td>周收货</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script src="../assets/wms.js"></script>
+<script>bindTableSelect(document.getElementById('tblStk'));</script>
+</body></html>

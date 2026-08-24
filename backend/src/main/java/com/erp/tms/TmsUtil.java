@@ -74,6 +74,25 @@ public final class TmsUtil {
         catch (Exception e) { return LocalDate.now(); }
     }
 
+    /**
+     * 安全地把 JDBC 返回的日期对象转成 LocalDate：
+     * 兼容 java.sql.Date / java.sql.Timestamp / LocalDate / String / null。
+     * 注意：H2 2.x 的 DATE 列经 JdbcTemplate 返回的是 java.sql.Date，
+     * 直接 (LocalDate) map.get("col") 会抛 ClassCastException。
+     */
+    public static LocalDate toLocalDate(Object o) {
+        if (o == null) return null;
+        if (o instanceof LocalDate ld) return ld;
+        if (o instanceof java.sql.Date sd) return sd.toLocalDate();
+        if (o instanceof java.sql.Timestamp ts) return ts.toLocalDateTime().toLocalDate();
+        if (o instanceof java.util.Date d) return d.toInstant()
+                .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+        String s = str(o);
+        if (s.isEmpty()) return null;
+        try { return LocalDate.parse(s.length() >= 10 ? s.substring(0, 10) : s); }
+        catch (Exception e) { return null; }
+    }
+
     public static LocalDateTime now() { return LocalDateTime.now(); }
 
     /**
@@ -140,5 +159,28 @@ public final class TmsUtil {
         if (idx >= 0) return url.substring(idx + 9);
         int lastSlash = url.lastIndexOf('/');
         return lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
+    }
+
+    /**
+     * 校验照片/签名/附件 URL 的协议白名单，防御存储型 XSS（前端会把它渲染到 {@code <a href>} / {@code window.open}）。
+     *
+     * <p>允许：{@code /uploads/...}（本地存储相对路径）、{@code http://} / {@code https://}（MinIO/CDN 绝对地址）。
+     * 拒绝：{@code javascript:}、{@code data:}、{@code vbscript:} 以及任何其它协议或空值。
+     *
+     * @return 清洗后的 URL；非法时返回 {@code null}（调用方应跳过该附件，不要写库）
+     */
+    public static String sanitizeAssetUrl(String url) {
+        if (url == null) return null;
+        String v = url.trim();
+        if (v.isEmpty()) return null;
+        // 禁止控制字符 / 换行（防 CRLF 头注入与协议混淆）
+        for (int i = 0; i < v.length(); i++) {
+            char c = v.charAt(i);
+            if (c < 0x20 || c == 0x7f) return null;
+        }
+        String lower = v.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("/uploads/")) return v;
+        if (lower.startsWith("http://") || lower.startsWith("https://")) return v;
+        return null;
     }
 }

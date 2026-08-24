@@ -1,0 +1,129 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>退货管理 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>↩️ 退货管理</h2><span class="sub">销售退货入库（不校验可用库存） · 采购退货出库（需校验可用库存） · 验收/上架/出库</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打开采购退货出库" onclick="purReturn()">📤 采购退货出库</button>
+    <button class="btn primary" onclick="recvReturn()">📥 销售退货收货</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📥</div><div class="n blue">5</div><div class="l">销售退货待收</div></div>
+    <div class="kpi"><div class="ic">🚚</div><div class="n orange">3</div><div class="l">待上架</div></div>
+    <div class="kpi"><div class="ic">📤</div><div class="n purple">2</div><div class="l">采购退货待出</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n red">1</div><div class="l">差异待处理</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">14</div><div class="l">本月已处理</div></div>
+  </div>
+
+  <div class="alert info">💡 两类退货方向相反：<b>销售退货</b>是客户退回，属于<b>入库</b>单据，按收货验收→上架流程，<b>不校验可用库存</b>（退回即可收）；<b>采购退货</b>是退回供应商，属于<b>出库</b>单据，需从库位拣货出库，<b>必须校验可用库存</b>。销售退货可关联原销售单/发货单带回批次与成本。</div>
+
+  <div class="panel tight">
+    <div class="tabs" data-tabs>
+      <div class="tab on">销售退货（入库） <span class="cnt">5</span></div>
+      <div class="tab">采购退货（出库） <span class="cnt">2</span></div>
+      <div class="tab">退货差异/异常</div>
+    </div>
+
+    <div class="tabpane on" style="padding:12px 16px">
+      <div class="query"><input placeholder="退货单号/原销售单/客户/商品" class="wide"><select><option>全部状态</option></select><span class="spacer"></span><button class="btn">查询</button></div>
+      <table id="tblSR">
+        <thead><tr><th><input type="checkbox" class="ck"></th><th>退货单号</th><th>原销售单/发货单</th><th>客户</th><th>商品/批次</th><th>退回数量</th><th>退货原因</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="sel" onclick="srDetail('SR20260823-004')"><td onclick="event.stopPropagation()"><input type="checkbox" class="ck" checked></td><td class="link mono">SRT...004</td><td class="mono">SO...0218 / SR...0088</td><td>华联(建国路)</td><td>康师傅牛肉面/20260601</td><td class="num">2 箱</td><td>临期/客户拒收</td><td><span class="badge b-info">待验收</span></td><td class="fix" onclick="event.stopPropagation()"><button class="btn sm primary" onclick="srDetail('SRT...004')">验收</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">SRT...003</td><td class="mono">SO...0201</td><td>全家(文三店)</td><td>乐事薯片(破损)/20260705</td><td class="num">5 袋</td><td>运输破损</td><td><span class="badge b-wait">验收中</span></td><td class="fix"><button class="btn sm">继续</button></td></tr>
+          <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="link mono">SRT...002</td><td class="mono">SO...0188</td><td>物美(西二旗)</td><td>双汇火腿肠/20260510</td><td class="num orange">应退9/实退8</td><td>过期退回(少1件)</td><td><span class="badge b-bad">差异待处理</span></td><td class="fix"><button class="btn sm warn" data-toast="已转异常中心" onclick="window.wmsGo&&wmsGo('pc/exception.html')">处理</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">SRT...001</td><td class="mono">SO...0170</td><td>华联(建国路)</td><td>农夫山泉/20260801</td><td class="num">10 箱</td><td>多发退回</td><td><span class="badge b-ok">已上架</span></td><td class="fix"><button class="btn sm">流水</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="alert warn">📤 采购退货是出库单据：选择退供应商的商品/批次，从库位拣货，<b>校验可用库存</b>，出库后生成采购退货单并扣库存、联动应付冲减。</div>
+      <table>
+        <thead><tr><th>退货单号</th><th>供应商</th><th>采购单</th><th>商品/批次</th><th>退货数量</th><th>库位</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr><td class="link mono">PRT...002</td><td>康师傅总代理</td><td class="mono">PO...077</td><td>康师傅牛肉面/20260601</td><td class="num">30 箱</td><td>B-09</td><td><span class="badge b-wait">待拣货出库</span></td><td class="fix"><button class="btn sm primary" data-toast="已推送PDA拣货">拣货</button></td></tr>
+          <tr><td class="link mono">PRT...001</td><td>双汇供货</td><td class="mono">PO...070</td><td>双汇火腿肠(过期)/20260510</td><td class="num">9 箱</td><td>C-01-04</td><td><span class="badge b-info">待出库审核</span></td><td class="fix"><button class="btn sm">审核</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <div class="timeline">
+        <div class="ev bad"><b>SRT...002 差异</b><div class="t">应退9件实退8件（少1件）· 已转异常中心 · 待与客户/承运商核实</div></div>
+        <div class="ev warn"><b>SRT...003 破损登记</b><div class="t">运输破损5袋 · 拍照留痕 · 责任承运商</div></div>
+        <div class="ev ok"><b>SRT...001 入库完成</b><div class="t">农夫山泉10箱已上架 A-01-02 · 库存已增加</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblSR'));
+function recvReturn(){
+  openModal({title:'📥 销售退货收货验收',size:'lg',body:`
+    <div data-wizard>
+      <div class="wiz-steps">
+        <div class="s cur"><div class="c">1</div><div class="l">核对退货单</div></div>
+        <div class="s"><div class="c">2</div><div class="l">扫码验收/差异</div></div>
+        <div class="s"><div class="c">3</div><div class="l">确认入库</div></div>
+      </div>
+      <div class="wiz-pane on">
+        <div class="scan-zone" onclick="toast('已识别退货单 SRT...004','ok')"><div style="font-size:28px">📷</div><b>扫退货单/原发货单号</b></div>
+        <div class="kv" style="margin-top:10px"><span>原销售单</span><b class="mono">SO20260823-0218</b></div>
+        <div class="kv"><span>客户</span><b>华联超市(建国路店)</b></div>
+        <div class="kv"><span>退回商品</span><b>康师傅牛肉面 · 批次20260601 · 2箱</b></div>
+        <div class="kv"><span>退货原因</span><b>临期/客户拒收</b></div>
+      </div>
+      <div class="wiz-pane">
+        <div class="form c2">
+          <div class="field"><label>实收数量</label><input value="2"></div>
+          <div class="field"><label>良品/不良品</label><select><option>良品(可再售)</option><option>不良品(报损/退供)</option></select></div>
+          <div class="field" style="grid-column:1/3"><label>验收差异/拍照</label><textarea placeholder="如有差异记录原因并拍照"></textarea></div>
+        </div>
+        <div class="alert ok" style="margin-top:10px">✅ 实收2箱与单据一致。销售退货不校验可用库存，验收通过即可入。</div>
+      </div>
+      <div class="wiz-pane">
+        <div class="kv"><span>实收</span><b>2 箱（良品）</b></div>
+        <div class="kv"><span>建议上架位</span><b>B-03-05（同批次归位）</b></div>
+        <div class="alert tip" style="margin-top:10px">确认后生成退货入库单，库存增加，进入上架任务；批次沿用原批次（若有）。</div>
+      </div>
+      <div class="btnbar" style="border:none;padding:14px 0 0;justify-content:flex-end">
+        <button class="btn" data-wiz="prev">上一步</button>
+        <button class="btn primary" data-wiz="next">下一步</button>
+        <button class="btn ok" data-wiz="done" style="display:none">确认入库</button>
+      </div>
+    </div>`,noFooter:true,onReady:function(wz){bindWizard(wz);}});
+}
+function srDetail(no){
+  openDrawer({title:'📥 销售退货 · '+no,body:`
+    <div class="steps" style="margin:0 0 14px">
+      <div class="step done"><div class="dotc">✓</div><div class="sl">退货申请</div></div>
+      <div class="step cur"><div class="dotc">2</div><div class="sl">到货验收</div></div>
+      <div class="step"><div class="dotc">3</div><div class="sl">上架归位</div></div>
+      <div class="step"><div class="dotc">4</div><div class="sl">入库完成</div></div>
+    </div>
+    <div class="kv"><span>原销售单</span><b class="mono">SO20260823-0218</b></div>
+    <div class="kv"><span>客户</span><b>华联超市(建国路店)</b></div>
+    <div class="kv"><span>商品/批次</span><b>康师傅牛肉面 · 20260601</b></div>
+    <div class="kv"><span>退回数量</span><b>2 箱</b></div>
+    <div class="kv"><span>退货原因</span><b>临期/客户拒收</b></div>
+    <button class="btn primary" style="width:100%;margin-top:12px" onclick="toast('已开始PDA验收','ok');closeDrawer();">📷 开始PDA验收</button>
+    <div class="alert info" style="margin-top:10px;font-size:12px">销售退货属于入库单据，不校验可用库存；验收通过后库存增加并生成上架任务。</div>
+  `});
+}
+function purReturn(){
+  openModal({title:'📤 新建采购退货（出库）',body:`
+    <div class="form c2">
+      <div class="field"><label>供应商</label><select><option>康师傅总代理</option></select></div>
+      <div class="field"><label>原采购单</label><input placeholder="PO..."></div>
+      <div class="field"><label>退库商品/批次</label><input value="康师傅牛肉面/20260601"></div>
+      <div class="field"><label>退货数量</label><input value="30"></div>
+      <div class="field"><label>出库库位</label><input value="B-09(可用24, B-03-05可用14)"></div>
+      <div class="field"><label>退货原因</label><select><option>临期退供</option><option>质量问题</option><option>多发退回</option></select></div>
+    </div>
+    <div class="alert warn" style="margin-top:10px">⚠️ 采购退货是出库单据，提交后从指定库位拣货并<b>校验可用库存</b>（合计可用38，满足30）；出库审核扣库存、联动应付冲减。</div>
+  `,okText:'生成拣货任务',onOk:function(){toast('采购退货拣货任务已推送PDA','ok');}});
+}
+</script></body></html>

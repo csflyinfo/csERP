@@ -1,0 +1,228 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>拣货任务 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>
+.path{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.path .stop{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:11px}.path .stop.cur{border-color:var(--primary);background:var(--primary-bg);color:var(--primary);font-weight:700}
+.scheme{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.scheme .sc{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6}
+.scheme .sc b{color:var(--primary);display:block;margin-bottom:3px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--text-2)}
+.seg button.on{background:var(--primary);color:#fff;font-weight:700}
+.prog{display:inline-flex;align-items:center;gap:6px}.prog .pbar{width:80px;height:7px;background:#eef2f7;border-radius:4px;overflow:hidden}.prog .pbar i{display:block;height:100%;background:var(--primary)}
+.tag-zone{display:inline-block;min-width:34px;text-align:center;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;color:#fff}
+.tz-A{background:#1677ff}.tz-B{background:#0ea5e9}.tz-C{background:#7c3aed}.tz-D{background:#f59e0b}
+</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>🧺 拣货任务</h2><span class="sub">按库区生成任务 · PDA 人员只管自己库区商品并按顺序抢单 · 完成本区可跨区支援 · 汇总拣货后到分拣墙分播</span>
+    <span class="spacer"></span>
+    <button class="btn" onclick="window.wmsGo&&wmsGo('pc/preallocation.html')">🗺️ 去下放任务</button>
+    <button class="btn" data-toast="已按最优拣货路径重新排序">🗺️ 重排路径</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📋</div><div class="n blue">9</div><div class="l">待领/拣货中任务</div></div>
+    <div class="kpi"><div class="ic">🅰️</div><div class="n">4 区</div><div class="l">作业库区</div></div>
+    <div class="kpi"><div class="ic">⚡</div><div class="n red">1</div><div class="l">缺货待补</div></div>
+    <div class="kpi"><div class="ic">🤝</div><div class="n green">2</div><div class="l">可跨区支援</div></div>
+    <div class="kpi"><div class="ic">⏱️</div><div class="n">168/h</div><div class="l">人均效率</div></div>
+  </div>
+
+  <div class="scheme">
+    <div class="sc"><b>① 按库区生成任务</b>下放后按商品所在库区拆分拣货单，拣货员只领/只拣自己管理库区的商品。</div>
+    <div class="sc"><b>② 策略下放时可改</b>按单/汇总+分播/边拣边分/分区接力/越库，默认值在参数，下放弹窗可临时改。</div>
+    <div class="sc"><b>③ 超量均衡拆分</b>单订单超 <code>50</code> 件自动拆，最多 <code>3</code> 个任务，件数均分，保证任务均衡。</div>
+    <div class="sc"><b>④ 跨区支援可配</b>模式：自由领取+主管指定；完成本区后 PDA 显示可支援库区任务，抢单或等调派。</div>
+  </div>
+
+  <div class="split r38">
+    <div>
+      <div class="query" style="border-radius:8px 8px 0 0;border-bottom:none;margin-bottom:0;flex-wrap:wrap;gap:8px">
+        <span class="seg" id="scopeSeg">
+          <button class="on" data-scope="mine">🅰️ 我的库区（A区）</button>
+          <button data-scope="help">🤝 可支援库区</button>
+          <button data-scope="all">全部</button>
+        </span>
+        <input placeholder="指令号/波次/订单/拣货员" class="wide" id="kw">
+        <select id="fMode"><option value="">全部模式</option><option>按单拣</option><option>汇总拣+分播</option><option>边拣边分</option><option>分区接力</option></select>
+        <select id="fStatus"><option value="">全部状态</option><option>待领取</option><option>拣货中</option><option>待分播</option><option>缺货挂起</option><option>已完成</option></select>
+        <span class="spacer"></span><button class="btn">查询</button>
+      </div>
+      <div class="tbl-wrap" style="border-radius:0 0 8px 8px;max-height:calc(100vh - 360px);overflow:auto">
+        <table id="tblPick">
+          <thead><tr><th>库区</th><th>指令号/波次</th><th>模式</th><th>单/店</th><th>件数</th><th>负责人</th><th>状态/进度</th><th class="fix">操作</th></tr></thead>
+          <tbody id="pickBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="detail" id="pickBox"></div>
+  </div>
+</div>
+<script src="../assets/wms.js"></script>
+<script>
+/* scope: mine=A区(当前登录人管A区) ; help=B/C/D区(可支援) ; all */
+/* status: 0待领取 1拣货中 2待分播 3缺货挂起 4已完成 */
+var MY_ZONE='A区';
+var TASKS=[
+  {no:'SI20260823-A01',wave:'W20260823-03',zone:'A区',mode:'按单拣',orders:2,stores:2,pcs:30,owner:'我（刘强）',status:1,prog:100,split:false,help:false,
+    items:[{loc:'A-01-02',g:'农夫山泉 550ml×24',batch:'20260801',qty:10,picked:10},{loc:'A-03-01',g:'怡宝纯净水 555ml×24',batch:'20260810',qty:12,picked:12},{loc:'A-05-02',g:'康师傅冰红茶 500ml',batch:'20260725',qty:8,picked:6}],
+    sort:null},
+  {no:'SI20260823-A02',wave:'W20260823-04',zone:'A区',mode:'汇总拣+分播',orders:3,stores:3,pcs:52,owner:'我（刘强）',status:1,prog:80,split:false,help:false,
+    items:[{loc:'A-02-04',g:'怡宝纯净水 555ml×24',batch:'20260810',qty:24,picked:24},{loc:'A-05-01',g:'农夫山泉 550ml×24',batch:'20260801',qty:28,picked:18}],
+    sort:[{slot:'格口1',store:'物美(海淀黄庄)',qty:26},{slot:'格口2',store:'超市发(双榆树)',qty:18},{slot:'格口3',store:'盒马(西直门)',qty:8}]},
+  {no:'SI20260823-A03',wave:'W20260823-01',zone:'A区',mode:'按单拣',orders:1,stores:1,pcs:16,owner:'我（刘强）',status:2,prog:100,split:false,help:false,
+    items:[{loc:'A-01-02',g:'农夫山泉 550ml×24',batch:'20260801',qty:16,picked:16}],sort:null},
+  {no:'SI20260823-A04',wave:'W20260823-08',zone:'A区',mode:'按单拣',orders:1,stores:1,pcs:72,owner:'—',status:0,prog:0,split:true,help:false,
+    splitInfo:'该订单 72 件超阈值 50，已自动拆为 2 个均衡子任务（36+36），本子任务为 1/2，全部集齐后按订单复检。',
+    items:[{loc:'A-01-02',g:'农夫山泉 550ml×24',batch:'20260801',qty:36,picked:0}],sort:null},
+  /* 可支援库区 */
+  {no:'SI20260823-B01',wave:'W20260823-03',zone:'B区',mode:'按单拣',orders:2,stores:2,pcs:28,owner:'陈伟',status:3,prog:40,split:false,help:true,
+    items:[{loc:'B-03-05',g:'可口可乐 330ml×24',batch:'20260720',qty:5,picked:2},{loc:'B-03-05',g:'康师傅红烧牛肉面 105g',batch:'20260601',qty:8,picked:0}],
+    sort:null,note:'B-03-05 缺货，加急补货中'},
+  {no:'SI20260823-B02',wave:'W20260823-04',zone:'B区',mode:'汇总拣+分播',orders:3,stores:3,pcs:44,owner:'孙明',status:1,prog:35,split:false,help:true,
+    items:[{loc:'B-01-02',g:'雪碧 330ml×24',batch:'20260801',qty:24,picked:10},{loc:'B-04-03',g:'脉动青柠 600ml×15',batch:'20260805',qty:20,picked:6}],
+    sort:[{slot:'格口1',store:'物美(海淀黄庄)',qty:20},{slot:'格口2',store:'超市发(双榆树)',qty:16},{slot:'格口3',store:'盒马(西直门)',qty:8}]},
+  {no:'SI20260823-C02',wave:'W20260823-04',zone:'C区',mode:'汇总拣+分播',orders:3,stores:3,pcs:16,owner:'周杰',status:2,prog:100,split:false,help:true,
+    items:[{loc:'C-01-03',g:'乐事薯片 原味 70g',batch:'20260725',qty:16,picked:16}],
+    sort:[{slot:'格口1',store:'物美(海淀黄庄)',qty:6},{slot:'格口2',store:'超市发(双榆树)',qty:6},{slot:'格口3',store:'盒马(西直门)',qty:4}]},
+  {no:'SI20260823-B03',wave:'W20260823-05',zone:'B区',mode:'边拣边分',orders:2,stores:2,pcs:26,owner:'—（待领取）',status:0,prog:0,split:false,help:true,
+    items:[{loc:'B-08-02',g:'脉动青柠 600ml×15',batch:'20260805',qty:26,picked:0}],
+    sort:[{slot:'格口1',store:'711(三里屯)',qty:14},{slot:'格口2',store:'全家(工体)',qty:12}]},
+  {no:'SI20260823-D01',wave:'W20260823-03',zone:'D区',mode:'按单拣',orders:2,stores:2,pcs:8,owner:'赵丽',status:4,prog:100,split:false,help:true,
+    items:[{loc:'D-02-01',g:'海天酱油 500ml',batch:'20260510',qty:8,picked:8}],sort:null}
+];
+
+var SNAME=['待领取','拣货中','待分播','缺货挂起','已完成'];
+function sBadge(s){var c=['b-gray','b-info','b-purple','b-bad','b-ok'];return '<span class="badge '+c[s]+'">'+SNAME[s]+'</span>';}
+function zoneTag(z){return '<span class="tag-zone tz-'+z.charAt(0)+'">'+z+'</span>';}
+
+function getScopeFilter(){return document.querySelector('#scopeSeg button.on').getAttribute('data-scope');}
+function getFiltered(){
+  var sc=getScopeFilter();
+  var kw=document.getElementById('kw').value.trim();
+  var fm=document.getElementById('fMode').value;
+  var fs=document.getElementById('fStatus').value;
+  return TASKS.filter(function(t){
+    if(sc==='mine'&&t.zone!==MY_ZONE)return false;
+    if(sc==='help'&&(t.zone===MY_ZONE||!t.help))return false;
+    if(kw&&(t.no+t.wave+t.owner).indexOf(kw)<0)return false;
+    if(fm&&t.mode!==fm)return false;
+    if(fs&&SNAME[t.status]!==fs)return false;
+    return true;
+  });
+}
+function renderList(){
+  var list=getFiltered();
+  var cur=window.__curTask||(list[0]&&list[0].no);
+  var html=list.map(function(t){
+    var act='';
+    if(t.status===0){
+      act=t.zone===MY_ZONE?'<button class="btn sm primary" onclick="grab(\''+t.no+'\')">🎯 抢单</button>':'<button class="btn sm primary" onclick="grab(\''+t.no+'\',true)">🤝 支援抢单</button>';
+    }else if(t.status===1||t.status===3){
+      act='<button class="btn sm" onclick="pickDetail(\''+t.no+'\')">📋 作业</button>';
+      if(t.help&&t.zone!==MY_ZONE)act='<button class="btn sm ok" onclick="toast(\'已申请支援 '+t.zone+'，等待主管调派或直接抢单\')">🤝 支援</button> '+act;
+    }else if(t.status===2){
+      act='<button class="btn sm primary" onclick="toast(\'进入分拣墙分播\')">🎯 去分播</button>';
+    }else{
+      act='<span class="chip ok">已完成</span>';
+    }
+    if(t.zone!==MY_ZONE&&(t.status===0||t.status===1)){
+      act+=' <button class="btn sm" title="主管调派他人" onclick="assign(\''+t.no+'\')">👤调派</button>';
+    }
+    var cls=t.status===3?' class="urgent"':'';
+    return '<tr'+cls+' onclick="pickDetail(\''+t.no+'\')" style="cursor:pointer">'+
+      '<td>'+zoneTag(t.zone)+'</td>'+
+      '<td class="mono">'+t.no+'<br><span class="muted small">'+t.wave+'</span></td>'+
+      '<td><span class="chip">'+t.mode+'</span>'+(t.split?'<br><span class="badge b-wait" style="margin-top:2px">已拆分子任务</span>':'')+'</td>'+
+      '<td class="num">'+t.orders+'/'+t.stores+'</td>'+
+      '<td class="num">'+t.pcs+'</td>'+
+      '<td>'+t.owner+'</td>'+
+      '<td>'+sBadge(t.status)+'<div class="prog" style="margin-top:4px"><span class="pbar"><i style="width:'+t.prog+'%;background:'+(t.status===3?'var(--bad)':'var(--primary)')+'"></i></span><span class="small">'+t.prog+'%</span></div></td>'+
+      '<td class="fix" style="white-space:nowrap" onclick="event.stopPropagation()">'+act+'</td></tr>';
+  }).join('');
+  document.getElementById('pickBody').innerHTML=html||'<tr><td colspan="8" class="muted" style="text-align:center;padding:30px">'+(getScopeFilter()==='help'?'当前无可支援任务，先完成本区任务':'无匹配任务')+'</td></tr>';
+  if(cur&&list.some(function(t){return t.no===cur;}))pickDetail(cur);
+  else if(list[0])pickDetail(list[0].no);
+  else document.getElementById('pickBox').innerHTML='<h4>🧺 拣货指引</h4><div class="alert info">选择左侧任务查看拣货清单与路径</div>';
+}
+
+function pathHtml(items){
+  // 以库位顺序生成路径
+  var stops=items.map(function(it,idx){return '<span class="stop'+(it.picked>=it.qty?' done':'')+(it.picked<it.qty&&idx===items.findIndex(function(x){return x.picked<x.qty;})?' cur':'')+'">'+(idx+1)+' '+it.loc+(it.picked>=it.qty?' ✓':'')+(it.qty>0&&it.picked===0&&idx===items.findIndex(function(x){return x.picked<x.qty;})?' ⚠':'')+'</span>';});
+  return '<div class="path">'+stops.join('<span class="stop">→</span>')+'</div>';
+}
+
+function pickDetail(no){
+  window.__curTask=no;
+  var t=TASKS.filter(function(x){return x.no===no;})[0];if(!t)return;
+  var mine=t.zone===MY_ZONE;
+  var curItem=t.items.filter(function(it){return it.picked<it.qty;})[0];
+  var shortage=t.items.some(function(it){return it.qty>0&&it.picked===0;})&&t.status===3;
+  var sortHtml='';
+  if(t.sort){
+    sortHtml='<h4 style="margin-top:14px">🎯 分播去向（分拣墙）</h4>'+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+
+      t.sort.map(function(d){return '<div style="border:1px solid var(--line);border-radius:8px;padding:10px;text-align:center;background:#f8fafc"><div style="font-size:20px">🅰️</div><b>'+d.slot+'</b><div class="small muted">'+d.store+'</div><div class="small">应分 '+d.qty+' 件</div></div>';}).join('')+'</div>'+
+      '<div class="alert tip" style="margin-top:8px">汇总拣货：先在库区把同 SKU 合并拣出，到分拣墙按格口（订单/门店）分播。分播完成才进入复检。</div>';
+  }
+  var btns='';
+  if(t.status===0){
+    btns='<button class="btn primary" style="width:100%;margin-bottom:6px" onclick="grab(\''+t.no+'\''+(mine?'':',true')+')">'+(mine?'🎯 抢单开始拣货':'🤝 跨区支援抢单')+'</button>';
+  }else if(t.status===3){
+    btns='<button class="btn primary" style="width:100%;margin-bottom:6px" onclick="toast(\'已生成加急补货，补货到位后该位自动恢复\',\'ok\')">⚡ 缺货加急补货</button>'+
+      '<button class="btn" style="width:100%;margin-bottom:6px" data-toast="已改拣其他批次（FEFO 次顺位）并留痕">改拣批次</button>'+
+      '<button class="btn warn" style="width:100%" data-toast="已挂起并升级主管">异常挂起</button>';
+  }else if(t.status===2){
+    btns='<button class="btn primary" style="width:100%" onclick="toast(\'进入分拣墙分播\',\'ok\')">🎯 前往分播</button>';
+  }else if(t.status===1){
+    btns='<button class="btn primary" style="width:100%;margin-bottom:6px" data-toast="已在 PDA 继续作业">📱 在 PDA 继续拣货</button>'+
+      '<button class="btn warn" style="width:100%" data-toast="已挂起并升级主管">异常挂起</button>';
+  }else{
+    btns='<button class="btn" style="width:100%" onclick="window.wmsGo&&wmsGo(\'pc/check.html\')">✅ 查看复检</button>';
+  }
+  if(t.help&&!mine&&t.status<=1){
+    btns='<div class="alert ok">🤝 这是<b>可支援库区（'+t.zone+'）</b>任务。跨区模式：自由领取+主管指定（参数 WMS_CROSS_ZONE_MODE）。你可直接抢单支援，或等主管调派。</div>'+btns;
+  }
+  document.getElementById('pickBox').innerHTML=
+    '<h4>🧺 '+t.no+' 拣货指引</h4>'+
+    '<div class="kv"><span>库区/波次</span><b>'+zoneTag(t.zone)+' '+t.wave+(mine?' <span class="chip ok">我的库区</span>':' <span class="chip">支援库区</span>')+'</b></div>'+
+    '<div class="kv"><span>拣货模式</span><b>'+t.mode+'</b></div>'+
+    '<div class="kv"><span>订单/门店·件数</span><b>'+t.orders+'单/'+t.stores+'店 · '+t.pcs+'件</b></div>'+
+    '<div class="kv"><span>负责人/状态</span><b>'+t.owner+' · '+sBadge(t.status)+' '+t.prog+'%</b></div>'+
+    (t.splitInfo?'<div class="alert warn" style="margin:8px 0">✂️ '+t.splitInfo+'</div>':'')+
+    (t.note?'<div class="alert bad" style="margin:8px 0">⚠ '+t.note+'</div>':'')+
+    '<h4 style="margin-top:10px">🗺️ 推荐拣货路径（就近）</h4>'+pathHtml(t.items)+
+    (curItem?'<div class="loc-card"><div style="font-size:24px">🎯</div><div><div class="lc-name">当前库位 '+curItem.loc+'</div><div class="lc-path">'+curItem.g+' · 批次 '+curItem.batch+' · 应拣 <b>'+curItem.qty+'</b> 件，已拣 '+curItem.picked+'</div></div>':'<div class="alert ok">本任务商品已全部拣齐，'+(t.sort?'请到分拣墙分播':'等待齐套复检')+'</div>')+
+    btns+
+    '<h4 style="margin-top:14px">拣货清单（'+(t.mode.indexOf('汇总')>=0?'同 SKU 已合并':'按订单')+'）</h4>'+
+    '<div class="tbl-wrap"><table class="mini"><thead><tr><th>序</th><th>库位</th><th>商品</th><th>批次</th><th>应拣</th><th>已拣</th></tr></thead><tbody>'+
+    t.items.map(function(it,i){
+      var done=it.picked>=it.qty, short=(t.status===3&&it.picked===0);
+      return '<tr'+(short?' style="background:#fef2f2"':'')+'><td>'+(i+1)+'</td><td class="mono">'+it.loc+'</td><td>'+it.g+'</td><td class="mono">'+it.batch+'</td><td class="num">'+it.qty+'</td><td class="num'+(done?' green':(short?' red':''))+'">'+it.picked+(done?' ✓':(short?' 缺货':''))+'</td></tr>';
+    }).join('')+'</tbody></table></div>'+
+    sortHtml+
+    '<div class="alert tip" style="margin-top:10px">扣库存口径：无复核时全部拣齐确认即生成并审核出库单扣库存；启用复核则进入复检（本仓库当前：复检开启，按订单集齐后复检）。</div>';
+}
+
+function grab(no,isHelp){
+  var t=TASKS.filter(function(x){return x.no===no;})[0];
+  t.status=1;t.owner=isHelp?'我（刘强，跨区支援'+t.zone+'）':'我（刘强）';
+  renderList();
+  toast((isHelp?'已跨区支援抢单（'+t.zone+'），任务记入支援记录':'已抢单，开始拣货')+'，PDA 已置顶','ok');
+}
+function assign(no){
+  openModal({title:'👤 主管调派 — '+no,body:'<label><b>调派给</b><select><option>陈伟（B区）</option><option>孙明（B区）</option><option>周杰（C区）</option><option>赵丽（D区）</option></select></label><div class="alert info" style="margin-top:8px">调派后任务进入对方"我的库区"；跨区自由领取与主管调派可并存（WMS_CROSS_ZONE_MODE=两者）。</div>',okText:'确认调派',onOk:function(){toast('已调派并 PDA 通知','ok');}});
+}
+
+document.getElementById('scopeSeg').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+  renderList();
+});
+['kw','fMode','fStatus'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',renderList);
+  document.getElementById(id).addEventListener('change',renderList);
+});
+
+renderList();
+</script></body></html>

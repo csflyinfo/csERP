@@ -448,6 +448,163 @@ public class PurchaseController {
                 "effect", "库存增加，成本按移动加权平均法重算，生成库存流水；已自动生成采购收货单 " + receiptNo));
     }
 
+    /**
+     * WMS 上架完成时：按 WMS 收货数量生成并审核一张采购入库单，写财务库存与成本、自动生成采购收货单。
+     *
+     * <p>与人工 {@code /purchase/inbound/create} + {@code /audit} 的区别：
+     * <ul>
+     *   <li>单价取采购订单明细，WMS 只回传数量与批次/生产日期。</li>
+     *   <li>批次号自动规则与人工入库一致：输入批次优先，否则按生产日期生成 YYYYMMDD，否则留空。</li>
+     *   <li>幂等：同一 WMS 任务只生成一次（source_wms_task 唯一约束由 V82 追加）。</li>
+     * </ul>
+     *
+     * @return 生成的入库单号与收货单号
+     */
+    @Transactional
+    public Map<String, Object> createAndAuditForWms(String sourceOrderNo, String wmsTaskId, String operator) {
+        if (sourceOrderNo == null || sourceOrderNo.isBlank()) {
+            throw new IllegalArgumentException("缺少来源采购订单号");
+        }
+        // 幂等：同一 WMS 任务不重复过账
+        Integer dup = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pur_inbound WHERE source_wms_task = ?",
+                Integer.class, wmsTaskId);
+        if (dup != null && dup > 0) {
+            List<Map<String, Object>> old = jdbcTemplate.queryForList(
+                    "SELECT inbound_no FROM pur_inbound WHERE source_wms_task = ?", wmsTaskId);
+            return Map.of("inboundNo", str(pick(old.get(0), "inbound_no")), "idempotent", true);
+        }
+
+        List<Map<String, Object>> orderRows = jdbcTemplate.queryForList(
+                "SELECT order_id, order_no, supplier_name, warehouse, status FROM purchase_order WHERE order_no = ? OR order_id = ?",
+                sourceOrderNo, sourceOrderNo);
+        if (orderRows.isEmpty()) throw new IllegalArgumentException("采购订单不存在：" + sourceOrderNo);
+        Map<String, Object> order = orderRows.get(0);
+        if (!"APPROVED".equals(str(pick(order, "status")))) {
+            throw new IllegalArgumentException("采购订单未审核，无法入库：" + sourceOrderNo);
+        }
+        String orderNo = str(pick(order, "order_no"));
+        String supplier = str(pick(order, "supplier_name"));
+        String warehouse = str(pick(order, "warehouse"));
+        if (warehouse.isBlank()) warehouse = "总仓";
+
+        // 采购订单明细单价
+        Map<String, Map<String, Object>> orderDetailByGoods = new HashMap<>();
+        for (Map<String, Object> od : jdbcTemplate.queryForList(
+                "SELECT goods_code, goods_name, unit_name, qty, price FROM purchase_order_detail WHERE order_id = ?",
+                str(pick(order, "order_id")))) {
+            orderDetailByGoods.put(str(pick(od, "goods_code")), od);
+        }
+        // WMS 实收明细（合格数量优先，否则实收）
+        List<Map<String, Object>> wmsLines = jdbcTemplate.queryForList("""
+                SELECT goods_code, goods_name, unit_name, received_qty, qualified_qty,
+                       batch_no, production_date, expiry_date
+                FROM wms_inbound_task_detail WHERE task_id = ?
+                """, wmsTaskId);
+        if (wmsLines.isEmpty()) throw new IllegalArgumentException("WMS 收货明细为空");
+
+        BigDecimal totalQty = BigDecimal.ZERO, totalAmount = BigDecimal.ZERO;
+        List<PurchaseInboundDetail> detailEntities = new ArrayList<>();
+        String inboundId = "PI" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+        String inboundNo = billNoGen.nextNo(
+                com.erp.common.util.BillNoGenerator.BillType.PURCHASE_INBOUND, "pur_inbound", "inbound_no");
+
+        for (Map<String, Object> ln : wmsLines) {
+            BigDecimal q = toBd(pick(ln, "qualified_qty"));
+            if (q.signum() <= 0) q = toBd(pick(ln, "received_qty"));
+            if (q.signum() <= 0) continue;
+            String code = str(pick(ln, "goods_code"));
+            Map<String, Object> od = orderDetailByGoods.getOrDefault(code, Map.of());
+            BigDecimal p = toBd(pick(od, "price"));
+            BigDecimal a = q.multiply(p).setScale(2, RoundingMode.HALF_UP);
+            String goodsName = str(pick(ln, "goods_name"));
+            if (goodsName.isBlank()) goodsName = str(pick(od, "goods_name"));
+            String unitName = str(pick(ln, "unit_name"));
+            if (unitName.isBlank()) unitName = str(pick(od, "unit_name"));
+
+            LocalDate productionDate = parseDate(ln.get("production_date"), null);
+            LocalDate expiryDate = parseDate(ln.get("expiry_date"), null);
+            String batchNo = str(pick(ln, "batch_no"));
+            if (batchNo.isBlank() && productionDate != null) {
+                batchNo = productionDate.format(YYYYMMDD);
+            }
+
+            PurchaseInboundDetail d = new PurchaseInboundDetail();
+            d.setDetailId("PID" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase());
+            d.setInboundId(inboundId);
+            d.setGoodsCode(code);
+            d.setGoodsName(goodsName);
+            d.setWarehouse(warehouse);
+            d.setUnitName(unitName);
+            d.setExpectedQty(q);
+            d.setReceivedQty(q);
+            d.setBatchNo(batchNo);
+            d.setProductionDate(productionDate);
+            d.setExpiryDate(expiryDate);
+            d.setPrice(p);
+            d.setAmount(a);
+            d.setBeforeCost(p);
+            d.setAfterCost(p);
+            detailEntities.add(d);
+            totalQty = totalQty.add(q);
+            totalAmount = totalAmount.add(a);
+        }
+        if (detailEntities.isEmpty()) throw new IllegalArgumentException("WMS 合格收货数量为 0，无法过账");
+
+        PurchaseInbound inbound = new PurchaseInbound();
+        inbound.setInboundId(inboundId);
+        inbound.setInboundNo(inboundNo);
+        inbound.setSourceOrder(orderNo);
+        inbound.setSupplier(supplier);
+        inbound.setWarehouse(warehouse);
+        inbound.setBillDate(LocalDate.now());
+        inbound.setQty(totalQty);
+        inbound.setAmount(totalAmount);
+        inbound.setStatus("PENDING");
+        inbound.setStockUpdated(false);
+        inbound.setReceiptGenerated(false);
+        inboundService.save(inbound);
+        inboundDetailService.saveBatch(detailEntities);
+
+        // 回填 source_wms_task（V82 加的列），保证幂等
+        try {
+            jdbcTemplate.update("UPDATE pur_inbound SET source_wms_task = ? WHERE inbound_id = ?",
+                    wmsTaskId, inboundId);
+        } catch (Exception ignore) { /* 列缺失时不阻塞，迁移未跑则退化为非幂等 */ }
+
+        // 立即审核：写库存/成本 + 生成采购收货单
+        for (PurchaseInboundDetail d : detailEntities) {
+            inventoryCostService.purchaseInbound(
+                    d.getGoodsCode(), d.getGoodsName(), d.getWarehouse(),
+                    d.getBatchNo(), d.getReceivedQty(),
+                    d.getAfterCost() != null ? d.getAfterCost() : d.getPrice(),
+                    inboundNo, d.getProductionDate());
+            jdbcTemplate.update(
+                    "UPDATE base_goods SET latest_purchase_price = ? WHERE goods_code = ?",
+                    d.getPrice(), d.getGoodsCode());
+        }
+        inbound.setStatus("APPROVED");
+        inbound.setStockUpdated(true);
+        inboundService.updateById(inbound);
+
+        // 回写采购订单累计入库
+        BigDecimal cumulativeAmount = toBd(jdbcTemplate.queryForObject("""
+                SELECT COALESCE(SUM(amount),0) FROM pur_inbound WHERE source_order = ? AND status = 'APPROVED'
+                """, BigDecimal.class, orderNo));
+        BigDecimal orderAmount = toBd(pick(orderRows.get(0), "amount"));
+        String inboundStatus;
+        if (cumulativeAmount.signum() <= 0) inboundStatus = "未入库";
+        else if (orderAmount.signum() > 0 && cumulativeAmount.compareTo(orderAmount) >= 0) inboundStatus = "已入库";
+        else inboundStatus = "部分入库";
+        jdbcTemplate.update("UPDATE purchase_order SET inbound_amount = ?, inbound_status = ? WHERE order_no = ?",
+                cumulativeAmount, inboundStatus, orderNo);
+
+        String receiptNo = receiptController.generateFromInbound(inboundId);
+        log("purchase.inbound", "WMS_AUDIT", inboundNo, "WMS 上架自动过账，生成入库单与收货单 " + receiptNo);
+        return Map.of("inboundId", inboundId, "inboundNo", inboundNo, "receiptNo", receiptNo,
+                "totalQty", totalQty, "totalAmount", totalAmount);
+    }
+
     // ========== 采购退货已迁移到 PurchaseReturnController（完整三单流程） ==========
 
     @PostMapping("/expense/page")

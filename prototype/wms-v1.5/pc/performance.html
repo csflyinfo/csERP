@@ -1,0 +1,79 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>绩效报表 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>📊 绩效 / 报表</h2><span class="sub">员工作业量 · 各环节时效 · 出入库吞吐 · 库内利用率 · 异常分析</span>
+    <span class="spacer"></span>
+    <select style="height:34px;border:1px solid var(--line);border-radius:6px;padding:0 8px"><option>今日</option><option>本周</option><option>本月</option></select>
+    <button class="btn" data-toast="已导出报表">📤 导出</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📥</div><div class="n blue">3,260</div><div class="l">今日入库(件)</div></div>
+    <div class="kpi"><div class="ic">📤</div><div class="n green">4,180</div><div class="l">今日出库(件)</div></div>
+    <div class="kpi"><div class="ic">⏱️</div><div class="n">42分</div><div class="l">单均出库时长</div></div>
+    <div class="kpi"><div class="ic">🎯</div><div class="n green">99.6%</div><div class="l">拣货准确率</div></div>
+    <div class="kpi"><div class="ic">🚨</div><div class="n orange">12</div><div class="l">今日异常</div></div>
+  </div>
+
+  <div class="split c2">
+    <div class="panel">
+      <div class="panel-h"><b>各环节作业量（今日，按件）</b></div>
+      <div class="panel-b">
+        <div class="bar-row"><div class="top"><span>收货验收</span><span>3,260</span></div><div class="bar"><i style="width:78%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>上架</span><span>3,100</span></div><div class="bar"><i style="width:74%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>拣货</span><span>4,180</span></div><div class="bar ok"><i style="width:100%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>复核打包</span><span>4,120</span></div><div class="bar ok"><i style="width:98%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>补货</span><span>360</span></div><div class="bar warn"><i style="width:18%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>移库</span><span>320</span></div><div class="bar warn"><i style="width:15%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>盘点(库位)</span><span>86</span></div><div class="bar"><i style="width:20%"></i></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><b>出库各环节平均时效</b></div>
+      <div class="panel-b">
+        <div class="bar-row"><div class="top"><span>订单审核→波次下放</span><span class="green">6分</span></div><div class="bar ok"><i style="width:12%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>波次下放→拣货完成</span><span>18分</span></div><div class="bar"><i style="width:40%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>拣货→复核通过(扣库存)</span><span>12分</span></div><div class="bar"><i style="width:28%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>出库→装车发运</span><span>6分</span></div><div class="bar ok"><i style="width:14%"></i></div></div>
+        <div class="bar-row"><div class="top"><span>全链路平均</span><b>42分</b></div><div class="bar warn"><i style="width:60%"></i></div></div>
+        <div class="alert tip" style="margin-top:10px">🎯 行业标杆约 30 分钟；瓶颈在拣货环节，建议优化波次合并与拣货路径。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel tight" style="margin-top:12px">
+    <div class="tabs" data-tabs>
+      <div class="tab on">员工作业绩效</div>
+      <div class="tab">异常分析</div>
+      <div class="tab">库容利用</div>
+    </div>
+    <div class="tabpane on" style="padding:12px 16px">
+      <table>
+        <thead><tr><th>员工</th><th>岗位</th><th>收货(件)</th><th>上架(件)</th><th>拣货(件)</th><th>复核(单)</th><th>补货(次)</th><th>作业时长</th><th>准确率</th><th>绩效分</th></tr></thead>
+        <tbody>
+          <tr><td>赵拣货</td><td>拣货</td><td class="num">—</td><td class="num">—</td><td class="num">1,280</td><td class="num">—</td><td class="num">—</td><td>7.2h</td><td class="green">99.8%</td><td><b class="green">98</b></td></tr>
+          <tr><td>孙上架</td><td>上架/补货</td><td class="num">—</td><td class="num">1,560</td><td class="num">—</td><td class="num">—</td><td class="num">8</td><td>7.5h</td><td class="green">100%</td><td><b class="green">96</b></td></tr>
+          <tr><td>周收货</td><td>收货</td><td class="num">2,100</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>7.0h</td><td class="green">99.5%</td><td><b>92</b></td></tr>
+          <tr><td>赵复核</td><td>复核打包</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">186</td><td class="num">—</td><td>7.3h</td><td class="orange">98.9%</td><td><b class="orange">88</b></td></tr>
+          <tr><td>郑组装</td><td>组装/拆卸</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td>6.8h</td><td class="green">100%</td><td><b>90</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="bar-row"><div class="top"><span class="red">拣货缺货（补货不及时）</span><span>5 次</span></div><div class="bar bad"><i style="width:42%"></i></div></div>
+      <div class="bar-row"><div class="top"><span class="orange">复核差异（少发/错拣）</span><span>3 次</span></div><div class="bar warn"><i style="width:25%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>收货差异（超收容差）</span><span>2 次</span></div><div class="bar"><i style="width:18%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>盘点差异</span><span>1 次</span></div><div class="bar"><i style="width:10%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>改派/退货差异</span><span>1 次</span></div><div class="bar"><i style="width:8%"></i></div></div>
+    </div>
+    <div class="tabpane" style="padding:16px">
+      <div class="bar-row"><div class="top"><span>A 整箱存储区</span><span>83%</span></div><div class="bar"><i style="width:83%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>B 拆零拣货区</span><span>71%</span></div><div class="bar"><i style="width:71%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>C 临期待处理</span><span class="orange">45%</span></div><div class="bar warn"><i style="width:45%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>D 高值区</span><span>60%</span></div><div class="bar"><i style="width:60%"></i></div></div>
+      <div class="bar-row"><div class="top"><span>总体库容利用率</span><b>74%</b></div><div class="bar ok"><i style="width:74%"></i></div></div>
+    </div>
+  </div>
+</div>
+<script src="../assets/wms.js"></script>
+</body></html>

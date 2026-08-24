@@ -28,7 +28,9 @@ import java.util.UUID;
 @RequestMapping("/system")
 public class SystemController {
     /** 参数设置页左侧分组的展示顺序；未列出的 param_group 追加在后，NULL/空串落「公共参数」兜底。 */
-    private static final List<String> PARAM_GROUP_ORDER = List.of("公共参数", "销售", "销售退货", "库存", "TMS配送");
+    private static final List<String> PARAM_GROUP_ORDER = List.of(
+            "公共参数", "销售", "销售退货", "库存", "TMS配送",
+            "WMS基础参数", "WMS入库", "WMS出库");
 
     /** 照片张数类参数的合法区间（PRD-26 §3.3）。 */
     private static final Set<String> PHOTO_COUNT_KEYS = Set.of("TMS_SIGN_PHOTO_COUNT", "TMS_RETURN_PHOTO_COUNT");
@@ -219,15 +221,11 @@ public class SystemController {
     @PostMapping("/param/page")
     public ApiResponse<PageResult<Map<String, Object>>> paramPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT param_key paramKey,
-                       param_name paramName,
-                       param_value paramValue,
-                       default_value defaultValue,
-                       param_group paramGroup,
-                       remark
+                SELECT param_key, param_name, param_value, default_value, param_group,
+                       param_type, option_json, sort_no, min_value, max_value, unit, remark
                 FROM sys_param_runtime
-                ORDER BY param_group, param_key
-                """), request));
+                ORDER BY param_group, sort_no, param_key
+                """).stream().map(SystemController::camelize).toList(), request));
     }
 
     @PostMapping("/param/update")
@@ -260,9 +258,15 @@ public class SystemController {
                        param_value,
                        default_value,
                        param_group,
+                       param_type,
+                       option_json,
+                       sort_no,
+                       min_value,
+                       max_value,
+                       unit,
                        remark
                 FROM sys_param_runtime
-                ORDER BY param_id, param_key
+                ORDER BY param_group, sort_no, param_key
                 """).forEach(row -> {
             row = camelize(row);
             String group = str(row.get("paramGroup"));

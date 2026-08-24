@@ -1,0 +1,108 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>商品/批次/策略 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>📦 商品 / 批次 / 策略</h2><span class="sub">商品档案与仓内属性 · 批次库存 · 上架/拣货/补货/批次策略</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已导出商品库存">📤 导出</button>
+    <button class="btn primary" data-toast="已新增商品仓内属性" onclick="toast('请在ERP基础资料维护商品主档，WMS维护仓内属性','info')">＋ 维护仓内属性</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📦</div><div class="n">1,286</div><div class="l">在管SKU</div></div>
+    <div class="kpi"><div class="ic">🧾</div><div class="n blue">3,420</div><div class="l">有效批次</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n orange">42</div><div class="l">需补货商品</div></div>
+    <div class="kpi"><div class="ic">🔴</div><div class="n red">12</div><div class="l">缺货商品</div></div>
+    <div class="kpi"><div class="ic">⏳</div><div class="n purple">8</div><div class="l">临期商品</div></div>
+  </div>
+
+  <div class="layout">
+    <aside class="tree">
+      <div class="grp">📂 商品分类</div>
+      <div class="node cnt on">全部商品 <span class="cnt">1286</span></div>
+      <div class="node">饮料/水饮 <span class="cnt">320</span></div>
+      <div class="node">方便食品 <span class="cnt">210</span></div>
+      <div class="node">休闲零食 <span class="cnt">286</span></div>
+      <div class="node">调味/粮油 <span class="cnt">180</span></div>
+      <div class="node">酒水（高值） <span class="cnt">64</span></div>
+      <div class="node">日化/百货 <span class="cnt">226</span></div>
+      <div class="grp" style="margin-top:8px">🏷️ ABC分类</div>
+      <div class="node">A类(高频) <span class="cnt">186</span></div>
+      <div class="node">B类 <span class="cnt">520</span></div>
+      <div class="node">C类 <span class="cnt">580</span></div>
+    </aside>
+
+    <div class="panel tight">
+      <div class="tabs" data-tabs>
+        <div class="tab on">商品档案</div>
+        <div class="tab">批次库存</div>
+        <div class="tab">仓内策略</div>
+      </div>
+
+      <div class="tabpane on" style="padding:12px 16px">
+        <div class="query">
+          <input placeholder="商品名/编码/条码" class="wide">
+          <select><option>全部分类</option></select>
+          <select><option>全部状态</option><option>正常</option><option>缺货</option><option>停用</option></select>
+          <span class="spacer"></span><button class="btn">查询</button>
+        </div>
+        <table id="tblG">
+          <thead><tr><th><input type="checkbox" class="ck"></th><th>编码</th><th>商品</th><th>分类</th><th>条码</th><th>单位</th><th>保质期</th><th>ABC</th><th>总库存</th><th>可用/锁定</th><th>仓内属性</th><th class="fix">操作</th></tr></thead>
+          <tbody>
+            <tr class="sel" onclick="gDetail()"><td onclick="event.stopPropagation()"><input type="checkbox" class="ck" checked></td><td class="mono">G00128</td><td>农夫山泉550ml</td><td>饮料</td><td class="mono">6901234567890</td><td>瓶/箱</td><td>365天</td><td><span class="chip ok">A</span></td><td class="num">500</td><td class="num green">480 / 20</td><td>重货·整件拣</td><td class="fix" onclick="event.stopPropagation()"><button class="btn sm" onclick="gDetail()">策略</button></td></tr>
+            <tr><td><input type="checkbox" class="ck"></td><td class="mono">G00203</td><td>康师傅红烧牛肉面105g</td><td>方便食品</td><td class="mono">6902345678901</td><td>包/箱</td><td>180天</td><td><span class="chip ok">A</span></td><td class="num">62</td><td class="num orange">38 / 24</td><td>拆零·效期</td><td class="fix"><button class="btn sm">策略</button></td></tr>
+            <tr><td><input type="checkbox" class="ck"></td><td class="mono">G00311</td><td>五粮液52°(整箱)</td><td>酒水</td><td class="mono">6903456789012</td><td>瓶/箱</td><td>长期</td><td><span class="chip warn">A</span></td><td class="num">18</td><td class="num">12 / 6</td><td><b class="purple">高值·强制逐件复核</b></td><td class="fix"><button class="btn sm">策略</button></td></tr>
+            <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="mono">G00420</td><td>某品牌酸奶200g</td><td>饮料</td><td class="mono">6904567890123</td><td>盒</td><td>21天</td><td><span class="chip">B</span></td><td class="num red">0</td><td class="num red">0 / 0</td><td>冷藏·短保·称重</td><td class="fix"><button class="btn sm warn">补货</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tabpane" style="padding:12px 16px">
+        <table>
+          <thead><tr><th>商品</th><th>批次</th><th>生产日期</th><th>到期日</th><th>库位</th><th>库存</th><th>可用</th><th>锁定</th><th>FEFO顺位</th></tr></thead>
+          <tbody>
+            <tr><td>农夫山泉550ml</td><td class="mono">20260720</td><td>2026-07-20</td><td>2027-07-20</td><td>A-01-01</td><td class="num">180</td><td class="num">180</td><td class="num">0</td><td><span class="chip ok">先出</span></td></tr>
+            <tr><td>农夫山泉550ml</td><td class="mono">20260801</td><td>2026-08-01</td><td>2027-08-01</td><td>A-01-02</td><td class="num">320</td><td class="num">300</td><td class="num">20</td><td><span class="chip">后出</span></td></tr>
+            <tr class="urgent"><td>康师傅牛肉面</td><td class="mono">20260601</td><td>2026-06-01</td><td>2026-12-01</td><td>B-03-05/B-09</td><td class="num">62</td><td class="num">38</td><td class="num">24</td><td><span class="chip warn">临期优先消化</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="tabpane" style="padding:16px">
+        <div class="form c2">
+          <div class="field"><label>上架策略 (WMS_PUTAWAY_RULE)</label><select><option>就近+同品类集中（推荐）</option><option>空库位优先</option><option>固定库位</option><option>重量/周转率优先</option></select></div>
+          <div class="field"><label>是否允许自由上架 (WMS_PUTAWAY_FREE_BIN)</label><select><option>建议+可改</option><option>强制按建议</option></select></div>
+          <div class="field"><label>批次出库规则 (WMS_BATCH_RULE)</label><select><option>FEFO 先到期先出</option><option>FIFO 先进先出</option><option>手动指定</option></select></div>
+          <div class="field"><label>拣货模式 (WMS_PICK_MODE)</label><select><option>按单拣货</option><option>汇总拣货</option><option>边拣边分</option><option>分区接力</option><option>越库</option></select></div>
+          <div class="field"><label>补货量算法 (WMS_REPLENISH_QTY_RULE)</label><select><option>补到拣货位容量上限</option><option>补到N天销量</option><option>固定量</option></select></div>
+          <div class="field"><label>越库直发 (WMS_CROSS_DOCK_ENABLED)</label><select><option>关闭</option><option>开启(急单/预配)</option></select></div>
+          <div class="field" style="grid-column:1/3"><label class="checks"><label><input type="checkbox" checked> 高值商品（如酒水）强制逐件复核、不可免复核、双人清点</label></label></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblG'));
+function gDetail(){
+  openDrawer({title:'商品仓内策略 · 农夫山泉550ml',body:`
+    <div class="kv"><span>编码/条码</span><b class="mono">G00128 / 6901234567890</b></div>
+    <div class="kv"><span>分类 / ABC</span><b>饮料 / A类</b></div>
+    <div class="kv"><span>规格/单位</span><b>550ml × 24瓶/箱</b></div>
+    <div class="kv"><span>保质期</span><b>365天 · 需效期管理</b></div>
+    <h4 style="margin:14px 0 6px">仓内属性</h4>
+    <div class="kv"><span>存储区</span><b>饮料整箱区 A-01</b></div>
+    <div class="kv"><span>拣货位</span><b>B-01-02（拆零）/ 整件 A-01-01</b></div>
+    <div class="kv"><span>属性</span><b>重货、整件拣、大周转</b></div>
+    <div class="kv"><span>安全库存/容量</span><b>拣货位上限 30箱，阈值 8箱</b></div>
+    <div class="kv"><span>批次规则</span><b>FEFO 先到期先出</b></div>
+    <h4 style="margin:14px 0 6px">各库位分布</h4>
+    <table class="mini"><thead><tr><th>库位</th><th>批次</th><th>数量</th><th>类型</th></tr></thead><tbody>
+      <tr><td>A-01-01</td><td class="mono">20260720</td><td class="num">180</td><td>整箱存储</td></tr>
+      <tr><td>A-01-02</td><td class="mono">20260801</td><td class="num">300</td><td>整箱存储</td></tr>
+      <tr><td>B-01-02</td><td class="mono">20260801</td><td class="num">20(锁定)</td><td>拣货位</td></tr>
+    </tbody></table>
+  `,footer:`<button class="btn" data-act="close">关闭</button><button class="btn primary" onclick="toast('已保存策略','ok');closeDrawer();">保存策略</button>`});
+}
+</script></body></html>

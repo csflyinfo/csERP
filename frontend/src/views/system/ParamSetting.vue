@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { get, post } from '../../api/client.js'
 
+// TMS / 公共参数仍用前端硬编码控件类型（这些参数值仍是 Y/N 等格式，未数字化）
 const BOOL_KEYS = new Set([
   'TMS_DRIVER_FLOW_ENABLED', 'TMS_RETURN_MERGE_SETTLE', 'TMS_SIGN_ESIGN_REQUIRED',
   'TMS_SETTLE_PHOTO_REQUIRED', 'TMS_ACCEPT_BEFORE_SETTLE', 'TMS_ONSITE_RETURN_ENABLED',
@@ -11,9 +12,7 @@ const BOOL_KEYS = new Set([
 ])
 const PHOTO_COUNT_KEYS = new Set(['TMS_SIGN_PHOTO_COUNT', 'TMS_RETURN_PHOTO_COUNT'])
 const ACCOUNT_KEYS = new Set(['TMS_OFFSET_FUND_ACCOUNT'])
-// 参数已落库但功能实现排在后续版本，界面置灰只读，避免运营配了不生效。
-// PRD-26 阶段 D 已交付两项电子签名（TMS_SIGN_ESIGN_REQUIRED / TMS_HANDOVER_ESIGN_REQUIRED），
-// 故此处清空。机制本身保留：后续新参数「先落库、后实现」时仍按这个方式占位。
+// 参数已落库但功能实现排在后续版本，界面置灰只读
 const PENDING_KEYS = new Set([])
 
 const groups = ref([])
@@ -30,11 +29,25 @@ const currentItems = computed(() => {
 
 function show(msg) { feedback.value = msg; setTimeout(() => { feedback.value = '' }, 2200) }
 
-function ctlType(key) {
+/**
+ * 判断控件类型：
+ * - WMS 参数（paramType 非空）由后端元数据驱动
+ * - TMS/公共参数沿用前端硬编码
+ */
+function ctlType(item) {
+  // WMS 参数：以后端 paramType 为准
+  if (item.paramType) return item.paramType.toLowerCase()
+  const key = item.paramKey
   if (BOOL_KEYS.has(key)) return 'bool'
   if (PHOTO_COUNT_KEYS.has(key)) return 'count'
   if (ACCOUNT_KEYS.has(key)) return 'account'
   return 'text'
+}
+
+/** 解析后端下发的选项 JSON */
+function options(item) {
+  if (!item.optionJson) return []
+  try { return JSON.parse(item.optionJson) } catch { return [] }
 }
 
 async function load() {
@@ -45,14 +58,14 @@ async function load() {
       groupName: g.groupName,
       items: (g.items || []).map(it => ({
         ...it,
-        // paramValue 为 null 时回落 defaultValue，与后端 COALESCE 口径保持一致
         value: it.paramValue === null || it.paramValue === undefined ? (it.defaultValue ?? '') : String(it.paramValue),
       })),
     }))
     offsetAccounts.value = data?.offsetAccounts || []
     if (!activeGroup.value || !groups.value.some(g => g.groupName === activeGroup.value)) {
+      const wms = groups.value.find(g => g.groupName === 'WMS出库')
       const tms = groups.value.find(g => g.groupName === 'TMS配送')
-      activeGroup.value = tms ? tms.groupName : (groups.value[0]?.groupName || '')
+      activeGroup.value = wms ? wms.groupName : (tms ? tms.groupName : (groups.value[0]?.groupName || ''))
     }
     dirty.value = false
   } catch (e) {
@@ -80,6 +93,14 @@ function clampCount(item) {
   item.value = String(Number.isNaN(n) ? (item.defaultValue ?? '2') : Math.min(5, Math.max(0, n)))
 }
 
+function clampNumber(item) {
+  const n = Number(item.value)
+  if (Number.isNaN(n)) { item.value = item.defaultValue ?? '0'; return }
+  const min = item.minValue != null ? Number(item.minValue) : -Infinity
+  const max = item.maxValue != null ? Number(item.maxValue) : Infinity
+  item.value = String(Math.min(max, Math.max(min, n)))
+}
+
 async function save() {
   const items = currentItems.value
   for (const it of items) {
@@ -87,10 +108,16 @@ async function save() {
       const n = parseInt(it.value, 10)
       if (Number.isNaN(n) || n < 0 || n > 5) { show(`「${it.paramName}」必须是 0~5 的整数`); return }
     }
-    // 合并结算开启时冲抵账户必填，否则结算环节会在运行时报错
     if (it.paramKey === 'TMS_OFFSET_FUND_ACCOUNT' && !it.value) {
       const merge = items.find(x => x.paramKey === 'TMS_RETURN_MERGE_SETTLE')
       if (merge && merge.value === 'Y') { show('已开启退货合并结算，必须先指定销退冲抵资金账户'); return }
+    }
+    // WMS NUMBER 类型范围校验
+    if (it.paramType === 'NUMBER') {
+      const n = Number(it.value)
+      if (Number.isNaN(n)) { show(`「${it.paramName}」必须是数字`); return }
+      if (it.minValue != null && n < Number(it.minValue)) { show(`「${it.paramName}」不能小于 ${it.minValue}`); return }
+      if (it.maxValue != null && n > Number(it.maxValue)) { show(`「${it.paramName}」不能大于 ${it.maxValue}`); return }
     }
   }
   loading.value = true
@@ -136,24 +163,50 @@ onMounted(load)
       <div v-for="item in currentItems" :key="item.paramKey" class="item">
         <div class="lab" :class="{ off: PENDING_KEYS.has(item.paramKey) }">{{ item.paramName }}</div>
         <div class="ctl">
-          <template v-if="ctlType(item.paramKey) === 'bool'">
-            <label class="rd" :class="{ sel: item.value === 'Y', dis: PENDING_KEYS.has(item.paramKey) }">
+          <!-- WMS BOOL: 是/否 单选，值 1/0 -->
+          <template v-if="ctlType(item) === 'bool'">
+            <label class="rd" :class="{ sel: item.value === '1' || item.value === 'Y', dis: PENDING_KEYS.has(item.paramKey) }">
               <input
-                type="radio" :name="item.paramKey" value="Y"
-                :checked="item.value === 'Y'" :disabled="PENDING_KEYS.has(item.paramKey)"
-                @change="onChange(item, 'Y')"
+                type="radio" :name="item.paramKey" value="1"
+                :checked="item.value === '1' || item.value === 'Y'" :disabled="PENDING_KEYS.has(item.paramKey)"
+                @change="onChange(item, '1')"
               ><span>是</span>
             </label>
-            <label class="rd" :class="{ sel: item.value !== 'Y', dis: PENDING_KEYS.has(item.paramKey) }">
+            <label class="rd" :class="{ sel: item.value !== '1' && item.value !== 'Y', dis: PENDING_KEYS.has(item.paramKey) }">
               <input
-                type="radio" :name="item.paramKey" value="N"
-                :checked="item.value !== 'Y'" :disabled="PENDING_KEYS.has(item.paramKey)"
-                @change="onChange(item, 'N')"
+                type="radio" :name="item.paramKey" value="0"
+                :checked="item.value !== '1' && item.value !== 'Y'" :disabled="PENDING_KEYS.has(item.paramKey)"
+                @change="onChange(item, '0')"
               ><span>否</span>
             </label>
           </template>
 
-          <template v-else-if="ctlType(item.paramKey) === 'count'">
+          <!-- WMS SELECT: 下拉选项来自后端 option_json -->
+          <template v-else-if="ctlType(item) === 'select'">
+            <select :value="item.value" :disabled="PENDING_KEYS.has(item.paramKey)"
+                    @change="onChange(item, $event.target.value)">
+              <option v-for="opt in options(item)" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+          </template>
+
+          <!-- WMS NUMBER: 数字输入，带 min/max/unit -->
+          <template v-else-if="ctlType(item) === 'number'">
+            <input
+              type="number"
+              class="num"
+              :min="item.minValue ?? undefined"
+              :max="item.maxValue ?? undefined"
+              :step="item.step ?? 1"
+              :value="item.value"
+              :disabled="PENDING_KEYS.has(item.paramKey)"
+              @input="onChange(item, $event.target.value)"
+              @blur="clampNumber(item)"
+            >
+            <span v-if="item.unit" class="unit">{{ item.unit }}</span>
+          </template>
+
+          <!-- TMS 照片张数（0~5） -->
+          <template v-else-if="ctlType(item) === 'count'">
             <input
               type="number" min="0" max="5" class="num"
               :value="item.value"
@@ -163,7 +216,8 @@ onMounted(load)
             <span class="unit">张（0~5，0 表示不校验）</span>
           </template>
 
-          <template v-else-if="ctlType(item.paramKey) === 'account'">
+          <!-- TMS 冲抵账户 -->
+          <template v-else-if="ctlType(item) === 'account'">
             <select :value="item.value" @change="onChange(item, $event.target.value)">
               <option value="">请选择资金账户</option>
               <option v-for="a in offsetAccounts" :key="a.code" :value="a.code">
@@ -172,8 +226,11 @@ onMounted(load)
             </select>
           </template>
 
+          <!-- TEXT / fallback -->
           <template v-else>
-            <input type="text" class="txt" :value="item.value" @input="onChange(item, $event.target.value)">
+            <input type="text" class="txt" :value="item.value"
+                   :disabled="PENDING_KEYS.has(item.paramKey)"
+                   @input="onChange(item, $event.target.value)">
           </template>
 
           <span v-if="PENDING_KEYS.has(item.paramKey)" class="tag">后续版本支持</span>
@@ -202,11 +259,11 @@ onMounted(load)
 .item { display: grid; grid-template-columns: 230px 1fr; gap: 0 18px; margin-bottom: 20px; }
 .lab { text-align: right; font-weight: 700; padding-top: 7px; color: #1f2937; }
 .lab.off { color: #9aa4b2; }
-.ctl { min-height: 34px; display: flex; align-items: center; gap: 22px; }
+.ctl { min-height: 34px; display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
 .hint { grid-column: 2; color: #667085; font-size: 13px; margin-top: 6px; }
 select, input.num, input.txt { height: 34px; border: 1px solid #dbe3ef; border-radius: 4px; padding: 0 10px; font-size: 14px; color: #1f2937; background: #fff; }
 select { width: 430px; }
-input.num { width: 100px; }
+input.num { width: 120px; }
 input.txt { width: 430px; }
 select:disabled, input:disabled { background: #f5f6f8; color: #9aa4b2; }
 .unit { color: #667085; font-size: 13px; margin-left: -12px; }

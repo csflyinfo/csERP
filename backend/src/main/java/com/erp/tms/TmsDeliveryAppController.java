@@ -910,7 +910,8 @@ public class TmsDeliveryAppController {
         // 发车留痕：参数为 Y 时公里数与里程照片必填（照片先经 /upload/image 拿 URL 再提交）
         boolean mileageRequired = isParamTrue("TMS_DEPART_MILEAGE_REQUIRED", true);
         BigDecimal departMileage = TmsUtil.toBd(body.get("departMileage"));
-        String departPhotoUrl = TmsUtil.str(body.get("departPhotoUrl"));
+        String departPhotoUrlSanitized = TmsUtil.sanitizeAssetUrl(TmsUtil.str(body.get("departPhotoUrl")));
+        String departPhotoUrl = departPhotoUrlSanitized == null ? "" : departPhotoUrlSanitized;
         if (mileageRequired) {
             if (departMileage.signum() <= 0) {
                 return ApiResponse.fail("400", "请填写发车公里数");
@@ -1134,7 +1135,8 @@ public class TmsDeliveryAppController {
         }
 
         String reason = TmsUtil.str(body.get("abnormalReason"));
-        String photoUrl = TmsUtil.str(body.get("photoUrl"));
+        String photoUrlSanitized = TmsUtil.sanitizeAssetUrl(TmsUtil.str(body.get("photoUrl")));
+        String photoUrl = photoUrlSanitized == null ? "" : photoUrlSanitized;
         // 仅在服务端判定为异常时才强校验，避免正常打卡被误拦
         if (abnormal) {
             if (reason.isEmpty()) {
@@ -1434,7 +1436,8 @@ public class TmsDeliveryAppController {
         String payMethod = TmsUtil.str(body.get("payMethod"));
         String customerSigner = TmsUtil.str(body.get("customerSigner"));
         String remark = TmsUtil.str(body.get("remark"));
-        String signatureUrl = TmsUtil.str(body.get("signatureUrl"));
+        String signatureUrlSanitized = TmsUtil.sanitizeAssetUrl(TmsUtil.str(body.get("signatureUrl")));
+        String signatureUrl = signatureUrlSanitized == null ? "" : signatureUrlSanitized;
         Timestamp now = Timestamp.valueOf(TmsUtil.now());
 
         // 1. 写签收记录
@@ -1456,8 +1459,8 @@ public class TmsDeliveryAppController {
         // 签收时 signId 已生成，这里顺带写入即可让离线链路一次成功。
         // headPhotos 已在方法入口的张数校验处解析，此处直接复用
         for (Map<String, Object> p : headPhotos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoType = TmsUtil.str(p.get("photoType"));
             if (photoType.isEmpty()) photoType = "GOODS";
             jdbcTemplate.update("""
@@ -1519,8 +1522,8 @@ public class TmsDeliveryAppController {
             String photoId = TmsUtil.uuid("PH");
             String photoType = TmsUtil.str(p.get("photoType"));
             if (photoType.isEmpty()) photoType = "GOODS";
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
                     VALUES (?, ?, ?, ?, ?)

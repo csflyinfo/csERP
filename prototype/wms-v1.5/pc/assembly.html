@@ -1,0 +1,101 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>组装/拆卸 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>🧩 组装 / 拆卸</h2><span class="sub">BOM 组合装按单组装 · 礼盒/套装拆零 · 组装减子件增成品，拆卸反向</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打开拆卸单" onclick="disOp()">🔓 拆卸单</button>
+    <button class="btn primary" onclick="asmOp()">＋ 新建组装单</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">🧩</div><div class="n blue">2</div><div class="l">待组装</div></div>
+    <div class="kpi"><div class="ic">🔧</div><div class="n orange">1</div><div class="l">组装中</div></div>
+    <div class="kpi"><div class="ic">🔓</div><div class="n purple">1</div><div class="l">待拆卸</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">9</div><div class="l">今日完成</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n red">1</div><div class="l">子件缺料</div></div>
+  </div>
+
+  <div class="split r38">
+    <div>
+      <div class="panel tight">
+        <div class="tabs" data-tabs>
+          <div class="tab on">组装任务 <span class="cnt">3</span></div>
+          <div class="tab">拆卸任务 <span class="cnt">1</span></div>
+          <div class="tab">BOM/组合装</div>
+        </div>
+        <div class="tabpane on" style="padding:0 0 12px">
+          <div class="query"><input placeholder="组装单号/成品/来源订单" class="wide"><select><option>全部状态</option></select><span class="spacer"></span><button class="btn">查询</button></div>
+          <table id="tblAsm">
+            <thead><tr><th><input type="checkbox" class="ck"></th><th>组装单号</th><th>成品(BOM)</th><th>数量</th><th>来源订单</th><th>子件齐套</th><th>执行人</th><th>状态</th><th class="fix">操作</th></tr></thead>
+            <tbody>
+              <tr class="sel" onclick="asmDetail('ASM20260823-007')"><td onclick="event.stopPropagation()"><input type="checkbox" class="ck" checked></td><td class="link mono">ASM...007</td><td>中秋礼盒A(4件套)</td><td class="num">30 盒</td><td class="mono">SO...0231</td><td><span class="chip ok">齐套</span></td><td>郑组装</td><td><span class="badge b-wait">组装中</span></td><td class="fix" onclick="event.stopPropagation()"><button class="btn sm primary" onclick="asmDetail('ASM...007')">详情</button></td></tr>
+              <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="link mono">ASM...006</td><td>洗护套装B</td><td class="num">20 套</td><td class="mono">SO...0245</td><td><span class="chip bad">缺料:洗发水×4</span></td><td>—</td><td><span class="badge b-bad">待齐套</span></td><td class="fix"><button class="btn sm warn" data-toast="已触发加急补货/采购建议" data-type="warn">催料</button></td></tr>
+              <tr><td><input type="checkbox" class="ck"></td><td class="link mono">ASM...005</td><td>方便面整箱(24包)</td><td class="num">12 箱</td><td>库存预包</td><td><span class="chip ok">齐套</span></td><td>郑组装</td><td><span class="badge b-info">待执行</span></td><td class="fix"><button class="btn sm primary" data-toast="已推PDA">执行</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="detail" id="asmBox"></div>
+  </div>
+
+  <div class="alert info" style="margin-top:12px">💡 库存与成本影响：组装完成时按 BOM 扣减各子件库存、增加成品库存（wms_bin_stock + 财务账联动），成品成本 = Σ 子件移动加权成本 + 组装费用；拆卸反向（减成品、增子件）。需在指定组装/包装工位库位作业。</div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblAsm'));
+function asmDetail(no){
+  document.getElementById('asmBox').innerHTML=`
+    <h4>🧩 ${no}</h4>
+    <div class="steps" style="margin:0 0 12px">
+      <div class="step done"><div class="dotc">✓</div><div class="sl">建单/齐套校验</div></div>
+      <div class="step cur"><div class="dotc">2</div><div class="sl">领子件</div></div>
+      <div class="step"><div class="dotc">3</div><div class="sl">组装包装</div></div>
+      <div class="step"><div class="dotc">4</div><div class="sl">成品入位</div></div>
+    </div>
+    <div class="kv"><span>成品</span><b>中秋礼盒A（4件套）</b></div>
+    <div class="kv"><span>组装数量</span><b>30 盒</b></div>
+    <div class="kv"><span>工位</span><b>组装工位 P-02</b></div>
+    <h4 style="margin-top:12px">BOM 子件（领/耗）</h4>
+    <table class="mini"><thead><tr><th>子件</th><th>单耗</th><th>应领</th><th>已领</th></tr></thead><tbody>
+      <tr><td>月饼(莲蓉)</td><td class="num">1</td><td class="num">30</td><td class="num green">30</td></tr>
+      <tr><td>月饼(豆沙)</td><td class="num">1</td><td class="num">30</td><td class="num green">30</td></tr>
+      <tr><td>茶叶包</td><td class="num">2</td><td class="num">60</td><td class="num green">60</td></tr>
+      <tr><td>礼盒+手提袋</td><td class="num">1</td><td class="num">30</td><td class="num orange">18</td></tr>
+    </tbody></table>
+    <div class="bar-row" style="margin-top:10px"><div class="top"><span>组装进度</span><span>18/30 盒</span></div><div class="bar warn"><i style="width:60%"></i></div></div>
+    <button class="btn primary" style="width:100%;margin-top:10px" data-toast="已催办/推送PDA" data-type="ok">推送PDA继续</button>
+    <div class="alert ok" style="margin-top:10px;font-size:12px">完成后：扣减 4 种子件、增加成品 30 盒；成品成本按子件移动加权成本汇总。</div>
+  `;
+}
+function asmOp(){
+  openModal({title:'＋ 新建组装单',size:'lg',body:`
+    <div class="form c2">
+      <div class="field"><label><span class="req">*</span>成品(BOM)</label><select><option>中秋礼盒A(4件套)</option><option>洗护套装B</option></select></div>
+      <div class="field"><label>组装数量</label><input value="30"></div>
+      <div class="field"><label>来源订单(可选)</label><input placeholder="SO... 按单组装"></div>
+      <div class="field"><label>组装工位</label><select><option>P-02</option><option>P-01</option></select></div>
+    </div>
+    <h4 style="margin:12px 0 6px">BOM 齐套校验</h4>
+    <table><thead><tr><th>子件</th><th>需领</th><th>可用库存</th><th>结果</th></tr></thead><tbody>
+      <tr><td>月饼(莲蓉)</td><td class="num">30</td><td class="num">120</td><td class="green">✓</td></tr>
+      <tr><td>月饼(豆沙)</td><td class="num">30</td><td class="num">80</td><td class="green">✓</td></tr>
+      <tr><td>茶叶包</td><td class="num">60</td><td class="num">200</td><td class="green">✓</td></tr>
+      <tr><td>礼盒+手提袋</td><td class="num">30</td><td class="num">50</td><td class="green">✓</td></tr>
+    </tbody></table>
+    <div class="alert ok" style="margin-top:10px">✅ 子件齐套，可下发组装。</div>
+  `,okText:'下发组装',onOk:function(){toast('组装任务已下发并推送PDA','ok');}});
+}
+function disOp(){
+  openModal({title:'🔓 新建拆卸单',body:`
+    <div class="form c2">
+      <div class="field"><label>待拆成品/套装</label><input placeholder="扫码或选择"></div>
+      <div class="field"><label>拆卸数量</label><input></div>
+      <div class="field" style="grid-column:1/3"><label>拆卸原因</label><select><option>套装拆零销售</option><option>包装破损拆零</option><option>临期处理</option></select></div>
+    </div>
+    <div class="alert info" style="margin-top:10px">拆卸完成：减成品、按BOM增各子件，子件成本按成品成本依BOM权重分摊。</div>
+  `,okText:'下发拆卸',onOk:function(){toast('拆卸任务已下发','ok');}});
+}
+asmDetail('ASM20260823-007');
+</script></body></html>

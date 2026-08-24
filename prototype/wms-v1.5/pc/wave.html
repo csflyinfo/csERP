@@ -1,0 +1,407 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>波次管理 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>
+/* 左侧波次列表 */
+.wave-list{display:flex;flex-direction:column;gap:8px}
+.wave-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:11px 12px;cursor:pointer;transition:.12s}
+.wave-card:hover{border-color:var(--primary)}
+.wave-card.on{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.wave-card .wc-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.wave-card .wc-no{font-family:Consolas,monospace;font-size:13px;font-weight:700;color:var(--primary)}
+.wave-card .wc-meta{font-size:11px;color:var(--text-3);margin-bottom:7px;line-height:1.7}
+.wave-card .wc-foot{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-2)}
+/* 状态进度小流 */
+.mini-flow{display:flex;align-items:center;gap:3px;margin:6px 0}
+.mini-flow .mf{flex:1;height:5px;border-radius:3px;background:#e7ecf3}
+.mini-flow .mf.done{background:var(--ok)}
+.mini-flow .mf.cur{background:var(--primary)}
+/* 订单行状态流 */
+.osteps{display:flex;align-items:center;gap:0;margin:6px 0 2px}
+.osteps .os{flex:1;text-align:center;position:relative}
+.osteps .os .d{width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid var(--line);line-height:14px;margin:0 auto 2px;font-size:10px;font-weight:700;color:var(--text-3)}
+.osteps .os::after{content:'';position:absolute;top:8px;left:50%;width:100%;height:2px;background:var(--line);z-index:-1}
+.osteps .os:last-child::after{display:none}
+.osteps .os.done .d{background:var(--ok);border-color:var(--ok);color:#fff}
+.osteps .os.cur .d{background:var(--primary);border-color:var(--primary);color:#fff}
+.osteps .os .l{font-size:9px;color:var(--text-3);white-space:nowrap}
+.osteps .os.done .l{color:var(--ok)}.osteps .os.cur .l{color:var(--primary)}
+.osteps .os.bad .d{background:var(--bad);border-color:var(--bad);color:#fff}
+/* 甘特 */
+.gantt{display:flex;flex-direction:column;gap:6px}
+.gantt .grow{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:10px}
+.gantt .track{height:22px;background:#f1f5f9;border-radius:4px;position:relative;overflow:hidden}
+.gantt .seg{position:absolute;top:0;bottom:0;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;font-weight:600}
+.view-toggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.view-toggle button{border:0;background:#fff;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--text-2)}
+.view-toggle button.on{background:var(--primary);color:#fff;font-weight:700}
+</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>🌊 波次管理</h2><span class="sub">已下放组波的订单在这里跟踪进度，可指定加急 / 撤销下放（订单回到已审核未分配，重新进入预分配）</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已从订单池带入已选订单" onclick="window.wmsGo&&wmsGo('pc/order-pool.html')">＋ 从订单池组波</button>
+    <button class="btn" onclick="window.wmsGo&&wmsGo('pc/preallocation.html')">🗺️ 去预分配下放</button>
+  </div>
+
+  <div class="kpis c6">
+    <div class="kpi"><div class="ic">🌊</div><div class="n blue" id="kpiWave">6</div><div class="l">进行中波次</div></div>
+    <div class="kpi"><div class="ic">📦</div><div class="n">32</div><div class="l">波次内订单</div></div>
+    <div class="kpi"><div class="ic">🧺</div><div class="n">46</div><div class="l">今日已拣行</div></div>
+    <div class="kpi"><div class="ic">⚡</div><div class="n red">2</div><div class="l">加急订单</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">18</div><div class="l">已出库扣库存</div></div>
+    <div class="kpi"><div class="ic">🚚</div><div class="n purple">12</div><div class="l">已装车发运</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" data-tabs>
+      <div class="tab on" data-tab="board">波次/订单看板</div>
+      <div class="tab" data-tab="gantt">波次甘特图</div>
+    </div>
+
+    <!-- 看板：左右分栏 -->
+    <div class="tabpane on" data-pane="board" style="padding:0">
+      <div class="query" style="border:none;border-bottom:1px solid var(--line);border-radius:0">
+        <span class="view-toggle" id="viewToggle">
+          <button class="on" data-view="group">按波次分组</button>
+          <button data-view="flat">不分组（订单平铺）</button>
+        </span>
+        <input placeholder="波次号/销售订单号/客户" class="wide" id="kw">
+        <select id="fStatus"><option value="">全部状态</option><option>已下放</option><option>拣货中</option><option>分拣中</option><option>待复检</option><option>已出库</option><option>已发运</option></select>
+        <select id="fLine"><option value="">全部线路</option><option>朝阳线</option><option>海淀线</option><option>三里屯线</option><option>亦庄线</option></select>
+        <label><input type="checkbox" id="fUrgent"> 只看加急</label>
+        <span class="spacer"></span>
+        <button class="btn" id="wholeExpedite">🚩 整波加急</button>
+        <button class="btn warn" id="wholeCancel">↩️ 整波撤销下放</button>
+        <button class="btn">🔍 查询</button>
+      </div>
+
+      <div class="split r34" id="boardSplit" style="padding:12px 16px">
+        <!-- 左：波次列表（分组模式） -->
+        <div id="leftPane">
+          <div class="panel-h" style="padding:0 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px"><b>波次列表</b><span class="muted small" style="margin-left:8px" id="leftHint">点选波次查看右侧订单</span></div>
+          <div class="wave-list" id="waveList"></div>
+        </div>
+        <!-- 右：订单明细 -->
+        <div>
+          <div class="panel-h" style="padding:0 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px;display:flex;align-items:center">
+            <b id="rightTitle">订单明细</b>
+            <span class="muted small" style="margin-left:8px" id="rightHint"></span>
+            <span class="spacer"></span>
+            <span class="small muted">状态流：审核→下放→拣货→分拣→复检→出库扣库存→装车</span>
+          </div>
+          <div class="tbl-wrap" style="max-height:calc(100vh - 320px);overflow:auto">
+            <table id="tblOrder">
+              <thead><tr><th>销售订单</th><th>客户/门店</th><th>类型</th><th>行/件</th><th>库区进度</th><th>状态</th><th class="fix">操作</th></tr></thead>
+              <tbody id="orderBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 甘特 -->
+    <div class="tabpane" data-pane="gantt" style="padding:16px">
+      <div class="alert tip">横轴为今日时段；颜色段=各波次在 组波/拣货/分拣/复检/出库/装车 的时间分布。可直观看到 B 区 10-11 点拣货积压。</div>
+      <div class="gantt">
+        <div class="grow"><b>W...03 加急</b><div class="track"><div class="seg" style="left:5%;width:10%;background:#94a3b8">组波</div><div class="seg" style="left:16%;width:30%;background:#ea580c">拣货(缺货)</div></div></div>
+        <div class="grow"><b>W...04</b><div class="track"><div class="seg" style="left:8%;width:8%;background:#94a3b8">组波</div><div class="seg" style="left:17%;width:26%;background:#2563eb">拣货</div><div class="seg" style="left:44%;width:10%;background:#0ea5e9">分拣</div></div></div>
+        <div class="grow"><b>W...05</b><div class="track"><div class="seg" style="left:10%;width:6%;background:#94a3b8">组波</div><div class="seg" style="left:17%;width:20%;background:#2563eb">拣货</div><div class="seg" style="left:38%;width:8%;background:#0ea5e9">分拣</div><div class="seg" style="left:47%;width:8%;background:#7c3aed">复检</div></div></div>
+        <div class="grow"><b>W...01</b><div class="track"><div class="seg" style="left:2%;width:8%;background:#94a3b8">组波</div><div class="seg" style="left:11%;width:18%;background:#16a34a">拣/分/复检</div><div class="seg" style="left:30%;width:8%;background:#059669">出库扣库存</div></div></div>
+        <div class="grow"><b>W...02</b><div class="track"><div class="seg" style="left:0;width:6%;background:#94a3b8">组波</div><div class="seg" style="left:7%;width:16%;background:#16a34a">已完成</div><div class="seg" style="left:24%;width:8%;background:#0ea5e9">装车</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modalHost"></div>
+<script src="../assets/wms.js"></script>
+<script>
+/* ====== 演示数据 ======
+   stage: 0已审(已下放) 1拣货中 2分拣中 3待复检 4已出库扣库存 5已装车发运
+   状态流：订单审核 → 已下放(组波) → 拣货中 → 分拣中 → 待复检 → 已出库(扣库存) → 装车发运 */
+var STAGE_NAMES=['已下放','拣货中','分拣中','待复检','已出库','已发运'];
+var WAVES=[
+  {no:'W20260823-03',time:'08:40',line:'朝阳线',driver:'张师傅',mode:'按单拣',orders:[
+    {so:'SO20260823-0231',cust:'华联(建国路)',type:'销售',urgent:true,lines:8,pcs:42,stage:1,zones:[{n:'A区',d:1,p:1},{n:'B区',d:1,p:0.4},{n:'D区',d:1,p:1}],note:'B-03-05 缺货已加急补货'},
+    {so:'SO20260823-0236',cust:'京客隆(红庙)',type:'销售',urgent:false,lines:5,pcs:24,stage:2,zones:[{n:'A区',d:1,p:1},{n:'B区',d:1,p:1},{n:'C区',d:1,p:1}]}
+  ]},
+  {no:'W20260823-04',time:'08:55',line:'朝阳线',driver:'—（出库后指派）',mode:'汇总拣+分播',orders:[
+    {so:'SO20260823-0238',cust:'物美(海淀黄庄)',type:'销售',urgent:false,lines:12,pcs:68,stage:1,zones:[{n:'A区',d:1,p:1},{n:'B区',d:1,p:0.7},{n:'C区',d:1,p:0.5}]},
+    {so:'SO20260823-0239',cust:'超市发(双榆树)',type:'销售',urgent:false,lines:7,pcs:35,stage:1,zones:[{n:'A区',d:1,p:0.8},{n:'B区',d:1,p:0.3}]},
+    {so:'SO20260823-0240',cust:'盒马(西直门)',type:'退货',urgent:false,lines:3,pcs:9,stage:1,zones:[{n:'C区',d:1,p:0.6}]}
+  ]},
+  {no:'W20260823-05',time:'09:10',line:'三里屯线',driver:'李师傅',mode:'边拣边分',orders:[
+    {so:'SO20260823-0241',cust:'711(三里屯)',type:'销售',urgent:false,lines:4,pcs:16,stage:0,zones:[]},
+    {so:'SO20260823-0242',cust:'全家(工体)',type:'销售',urgent:true,lines:6,pcs:22,stage:0,zones:[]}
+  ]},
+  {no:'W20260823-01',time:'08:10',line:'亦庄线',driver:'王师傅',mode:'按单拣',orders:[
+    {so:'SO20260823-0218',cust:'华联(亦庄店)',type:'销售',urgent:false,lines:5,pcs:38,stage:3,zones:[{n:'A区',d:1,p:1},{n:'B区',d:1,p:1},{n:'D区',d:1,p:1}]}
+  ]},
+  {no:'W20260823-06',time:'09:35',line:'海淀线',driver:'—',mode:'按单拣',orders:[
+    {so:'SO20260823-0248',cust:'超市发(学院路)',type:'销售',urgent:false,lines:9,pcs:38,stage:4,zones:[]}
+  ]},
+  {no:'W20260823-02',time:'07:50',line:'亦庄线',driver:'赵师傅',mode:'按单拣',orders:[
+    {so:'SO20260823-0220',cust:'物美(西二旗)',type:'销售',urgent:false,lines:6,pcs:52,stage:5,zones:[]}
+  ]}
+];
+/* 不分组平铺时，额外追加一批跨波次订单用于演示筛选 */
+var EXTRA_FLAT=[
+  {so:'SO20260823-0250',cust:'永辉(通州)',type:'销售',urgent:false,lines:10,pcs:45,stage:2,zones:[{n:'A区',d:1,p:1},{n:'B区',d:1,p:0.9}],_w:'W20260823-07'},
+  {so:'SO20260823-0251',cust:'大润发(丰台)',type:'销售',urgent:false,lines:4,pcs:18,stage:1,zones:[{n:'C区',d:1,p:0.3}],_w:'W20260823-07'},
+  {so:'SO20260823-0252',cust:'便利店(望京)',type:'退货',urgent:false,lines:2,pcs:6,stage:0,zones:[],_w:'W20260823-08'}
+];
+
+var curView='group';   // group | flat
+var curWave=WAVES[0].no;
+
+function waveById(no){for(var i=0;i<WAVES.length;i++)if(WAVES[i].no===no)return WAVES[i];return null;}
+function waveStage(w){var mx=0;w.orders.forEach(function(o){if(o.stage>mx)mx=o.stage;});return mx;}
+function waveProgress(w){
+  // 综合拣货进度
+  var done=0,tot=0;w.orders.forEach(function(o){o.zones.forEach(function(z){tot++;if(z.p>=1)done++;});});
+  return tot?Math.round(done/tot*100):0;
+}
+function stageBadge(s){
+  var map=['b-gray','b-info','b-info','b-purple','b-ok','b-ok'];
+  var txt=STAGE_NAMES[s];
+  if(s===5)txt='已发运';
+  return '<span class="badge '+map[s]+'">'+txt+'</span>';
+}
+function typeBadge(t){return t==='退货'?'<span class="chip warn">退货</span>':'<span class="chip">销售</span>';}
+
+/* 订单状态流 7 节点 */
+function orderSteps(o){
+  var labels=['审核','下放','拣货','分拣','复检','出库','装车'];
+  // o.stage 对应：0已下放(节点1完成,当前在2之前) ... 5已发运(全完成)
+  // 完成节点数 = stage+1 (0->完成0,1? 审核下放都完成)
+  var doneCount = o.stage===0?2 : (o.stage+2); // stage0:审核+下放 完成=2; stage1拣货中=2完成第3当前
+  // 重新定义：节点下标 0审核 1下放 2拣货 3分拣 4复检 5出库 6装车
+  // stage0已下放 -> 0,1 done
+  // stage1拣货中 -> 0,1 done,2 cur
+  // stage2分拣中 -> 0,1,2 done,3 cur
+  // stage3待复检 -> ...4 cur
+  // stage4已出库 -> 0..5 done
+  // stage5已发运 -> 全done
+  var doneMap=[2,2,3,4,6,7][o.stage];
+  var curMap=[-1,2,3,4,-1,-1][o.stage];
+  var html='<div class="osteps">';
+  for(var i=0;i<7;i++){
+    var cls='os';
+    if(i<doneMap)cls+=' done';
+    else if(i===curMap)cls+=' cur';
+    if(o.urgent && o.stage===1 && i===2)cls+=' bad';
+    html+='<div class="'+cls+'"><div class="d">'+(i<doneMap?'✓':(i+1))+'</div><div class="l">'+labels[i]+'</div></div>';
+  }
+  return html+'</div>';
+}
+
+function zoneProgress(o){
+  if(o.stage>=4)return '<span class="muted small">库区作业已完成</span>';
+  if(!o.zones.length)return '<span class="muted small">待 PDA 领单</span>';
+  return o.zones.map(function(z){
+    var pct=Math.round(z.p*100);
+    var col=pct>=100?'var(--ok)':(pct>0?'var(--primary)':'var(--line)');
+    return '<span class="chip" style="background:#f8fafc"><b style="color:'+col+'">'+z.n+' '+pct+'%</b></span>';
+  }).join(' ');
+}
+
+function renderWaves(){
+  var kw=document.getElementById('kw').value.trim();
+  var html='';
+  WAVES.forEach(function(w){
+    var pcs=w.orders.reduce(function(a,o){return a+o.pcs;},0);
+    var st=waveStage(w);
+    var prog=waveProgress(w);
+    var match=!kw||w.no.indexOf(kw)>=0||w.orders.some(function(o){return o.so.indexOf(kw)>=0||o.cust.indexOf(kw)>=0;});
+    if(!match)return;
+    html+='<div class="wave-card'+(w.no===curWave?' on':'')+'" data-no="'+w.no+'">'+
+      '<div class="wc-top"><span class="wc-no">'+w.no+'</span>'+stageBadge(st)+
+      (w.orders.some(function(o){return o.urgent;})?'<span class="badge b-bad">加急</span>':'')+
+      '<span class="spacer" style="flex:1"></span><span class="muted small">'+w.time+' 下放</span></div>'+
+      '<div class="wc-meta">🚐 '+w.line+' · '+w.driver+' · 模式：'+w.mode+'</div>'+
+      '<div class="mini-flow">'+
+        '<div class="mf '+(st>=0?'done':'')+'"></div>'+
+        '<div class="mf '+(st>=1?(st===1?'cur':'done'):'')+'"></div>'+
+        '<div class="mf '+(st>=2?(st===2?'cur':'done'):'')+'"></div>'+
+        '<div class="mf '+(st>=3?(st===3?'cur':'done'):'')+'"></div>'+
+        '<div class="mf '+(st>=4?'done':'')+'"></div>'+
+        '<div class="mf '+(st>=5?'done':'')+'"></div>'+
+      '</div>'+
+      '<div class="wc-foot"><span>📦 '+w.orders.length+' 单</span><span>🧺 '+pcs+' 件</span>'+
+      '<span class="spacer" style="flex:1"></span><span>拣货 '+prog+'%</span></div>'+
+    '</div>';
+  });
+  document.getElementById('waveList').innerHTML=html||'<div class="alert info" style="margin:0">无匹配波次</div>';
+}
+
+function getFlatOrders(){
+  var list=[];
+  WAVES.forEach(function(w){w.orders.forEach(function(o){list.push(Object.assign({_w:w.no,_line:w.line,_driver:w.driver},o));});});
+  EXTRA_FLAT.forEach(function(o){list.push(o);});
+  return list;
+}
+
+function renderOrders(){
+  var kw=document.getElementById('kw').value.trim();
+  var fStatus=document.getElementById('fStatus').value;
+  var fLine=document.getElementById('fLine').value;
+  var fUrgent=document.getElementById('fUrgent').checked;
+  var orders;
+  if(curView==='group'){
+    var w=waveById(curWave);
+    document.getElementById('rightTitle').textContent=w?w.no+' 订单明细':'订单明细';
+    document.getElementById('rightHint').textContent=w?(w.line+' · '+w.driver+' · '+w.mode+' · '+w.orders.length+'单'):'';
+    orders=w?w.orders.slice():[];
+    orders.forEach(function(o){o._w=w.no;});
+  }else{
+    document.getElementById('rightTitle').textContent='全部订单（不分组）';
+    document.getElementById('rightHint').textContent='跨波次平铺，可按状态/线路/加急筛选';
+    orders=getFlatOrders();
+  }
+  orders=orders.filter(function(o){
+    if(kw && o.so.indexOf(kw)<0 && o.cust.indexOf(kw)<0 && (o._w||'').indexOf(kw)<0)return false;
+    if(fStatus && STAGE_NAMES[o.stage]!==fStatus)return false;
+    if(fLine && (o._line||waveById(o._w)?.line)!==fLine)return false;
+    if(fUrgent && !o.urgent)return false;
+    return true;
+  });
+  var html='';
+  if(!orders.length){html='<tr><td colspan="7" class="muted" style="text-align:center;padding:30px">无匹配订单</td></tr>';}
+  orders.forEach(function(o){
+    var trCls=o.urgent?' class="urgent"':'';
+    var action='';
+    if(o.stage<=1){
+      // 已下放/拣货中：可加急、可撤销（拣货中撤销需主管）
+      action+='<button class="btn sm" onclick="expedite(\''+o.so+'\')">🚩加急</button> ';
+      action+='<button class="btn sm warn" onclick="cancelOrder(\''+o.so+'\','+o.stage+')">↩️撤销</button> ';
+    }else if(o.stage===3){
+      action+='<button class="btn sm primary" onclick="window.wmsGo&&wmsGo(\'pc/check.html\')">去复检</button> ';
+    }
+    action+='<button class="btn sm" onclick="orderDetail(\''+o.so+'\')">明细</button>';
+    html+='<tr'+trCls+'>'+
+      '<td class="mono link">'+o.so+(o._w?'<div class="muted small">'+o._w+'</div>':'')+'</td>'+
+      '<td>'+o.cust+(o.urgent?' <span class="badge b-bad">加急</span>':'')+'</td>'+
+      '<td>'+typeBadge(o.type)+'</td>'+
+      '<td class="num">'+o.lines+'/'+o.pcs+'</td>'+
+      '<td>'+zoneProgress(o)+(o.note?'<div class="red small" style="margin-top:3px">⚠ '+o.note+'</div>':'')+'</td>'+
+      '<td>'+stageBadge(o.stage)+orderSteps(o)+'</td>'+
+      '<td class="fix" style="white-space:nowrap">'+action+'</td></tr>';
+  });
+  document.getElementById('orderBody').innerHTML=html;
+}
+
+function renderAll(){renderWaves();renderOrders();}
+
+/* 事件：左侧波次选择 */
+document.getElementById('waveList').addEventListener('click',function(e){
+  var card=e.target.closest('.wave-card');if(!card)return;
+  curWave=card.getAttribute('data-no');renderWaves();renderOrders();
+});
+/* 视图切换 */
+document.getElementById('viewToggle').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  curView=b.getAttribute('data-view');
+  this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+  document.getElementById('leftPane').style.display=curView==='group'?'':'none';
+  document.getElementById('boardSplit').className=curView==='group'?'split r34':'split';
+  document.getElementById('wholeExpedite').style.visibility=curView==='group'?'':'hidden';
+  document.getElementById('wholeCancel').style.visibility=curView==='group'?'':'hidden';
+  renderOrders();
+});
+['kw','fStatus','fLine','fUrgent'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',renderAll);
+  document.getElementById(id).addEventListener('change',renderAll);
+});
+
+/* ====== 操作 ====== */
+function expedite(so){
+  openModal({
+    title:'🚩 指定订单加急 — '+so,
+    body:'<div class="alert warn">加急订单将在 <b>拣货 / 分拣 / 复检 / 装车</b> 全链路置顶插队，并通知相关 PDA 作业人员。</div>'+
+      '<div class="form c2">'+
+      '<label><b>加急原因</b><select><option>客户临时催单</option><option>车次截单时间</option><option>生鲜/冷链时效</option><option>缺货补发</option></select></label>'+
+      '<label><b>优先级</b><select><option>高（插队到当前波次最前）</option><option>极高（中断当前作业优先处理）</option></select></label>'+
+      '</div>'+
+      '<label class="chk" style="display:flex;align-items:center;gap:8px;margin-top:10px"><input type="checkbox" checked> 同步走越库直发（如收货区有货，跳过库区拣货）</label>',
+    okText:'确认加急',
+    onOk:function(){toast('订单 '+so+' 已加急，全链路已置顶插队','ok');}
+  });
+}
+function cancelOrder(so,stage){
+  if(stage>=1){
+    // 拣货中需主管
+    openModal({
+      title:'↩️ 撤销下放（需主管权限）',
+      body:'<div class="alert bad">订单 <b class="mono">'+so+'</b> 已进入拣货，撤销将：释放批次锁与集货位、作废未完成的拣货/分拣任务，<b>已拣货物需人工归位</b>。已生成的出库/扣库存不受影响（本单尚未出库）。</div>'+
+        '<div class="alert info">撤销后订单回到「已审核未分配」状态，重新出现在预分配页，可再次下放。波次内其他订单不受影响；波次为空则自动关闭。</div>'+
+        '<label><b>主管工号 / 授权码</b><input placeholder="请主管刷卡或输入授权码"></label>',
+      okText:'主管确认撤销',
+      okClass:'danger',
+      onOk:function(){
+        // 从数据中移除该订单
+        WAVES.forEach(function(w){w.orders=w.orders.filter(function(o){return o.so!==so;});});
+        WAVES=WAVES.filter(function(w){return w.orders.length>0 || w.no!==curWave;});
+        if(!waveById(curWave)&&WAVES.length)curWave=WAVES[0].no;
+        renderAll();
+        toast('已撤销下放，订单回到已审核未分配，可重新预分配','warn');
+      }
+    });
+  }else{
+    openModal({
+      title:'↩️ 撤销下放 — '+so,
+      body:'<div class="alert warn">确认撤销该订单的下放？将释放批次锁与集货位、作废拣货任务，订单回到「已审核未分配」，重新出现在预分配页。波次内其他订单不受影响。</div>',
+      okText:'确认撤销',
+      okClass:'warn',
+      onOk:function(){
+        WAVES.forEach(function(w){w.orders=w.orders.filter(function(o){return o.so!==so;});});
+        renderAll();
+        toast('已撤销下放，订单回到已审核未分配','warn');
+      }
+    });
+  }
+}
+document.getElementById('wholeExpedite').onclick=function(){
+  var w=waveById(curWave);if(!w){toast('请先选择波次');return;}
+  openModal({
+    title:'🚩 整波加急 — '+w.no,
+    body:'<div class="alert warn">将把波次 <b>'+w.no+'</b>（'+w.orders.length+' 单）全部置顶插队，并通知 PDA。</div>',
+    okText:'整波加急',onOk:function(){w.orders.forEach(function(o){o.urgent=true;});renderAll();toast('整波已加急','ok');}
+  });
+};
+document.getElementById('wholeCancel').onclick=function(){
+  var w=waveById(curWave);if(!w){toast('请先选择波次');return;}
+  var picked=w.orders.some(function(o){return o.stage>=1;});
+  if(picked){
+    openModal({title:'整波撤销需主管终止',body:'<div class="alert bad">波次 <b>'+w.no+'</b> 存在已拣货订单，整波撤销将中止全部进行中任务、已拣货物归位。需主管授权。</div><label><b>主管授权码</b><input placeholder="主管刷卡/授权码"></label>',okText:'主管终止波次',okClass:'danger',onOk:function(){toast('已提交主管终止申请，波次已挂起','bad');}});
+  }else{
+    openModal({title:'整波撤销下放',body:'<div class="alert warn">将撤销波次 <b>'+w.no+'</b> 全部 '+w.orders.length+' 单的下放，释放批次锁/集货位，订单回到预分配。</div>',okText:'确认整波撤销',okClass:'warn',onOk:function(){WAVES=WAVES.filter(function(x){return x.no!==w.no;});if(WAVES.length)curWave=WAVES[0].no;renderAll();toast('整波已撤销，订单回到已审核未分配','warn');}});
+  }
+};
+function orderDetail(so){
+  var o=null,w=null;
+  WAVES.forEach(function(x){x.orders.forEach(function(y){if(y.so===so){o=y;w=x;}});});
+  if(!o)EXTRA_FLAT.forEach(function(y){if(y.so===so){o=y;}});
+  if(!o)return;
+  var rows=[
+    ['农夫山泉 550ml×24','A-01-02','20260801','10 箱','10 箱'],
+    ['可口可乐 330ml×24','B-03-05','20260720','5 箱',(o.urgent?'0 箱（缺货）':'5 箱')],
+    ['海天酱油 500ml','D-02-01','20260510','6 箱','6 箱'],
+    ['康师傅红烧牛肉面 105g','B-03-05','20260601','8 箱',(o.urgent?'0 箱（加急补货中）':'8 箱')]
+  ];
+  openDrawer({
+    title:'📦 订单明细 — '+so,
+    body:'<div class="kv"><span>客户/门店</span><b>'+o.cust+'</b></div>'+
+      '<div class="kv"><span>所属波次</span><b class="mono">'+(o._w||(w&&w.no)||'—')+'</b></div>'+
+      '<div class="kv"><span>类型 / 行件</span><b>'+o.type+' · '+o.lines+'行 / '+o.pcs+'件</b></div>'+
+      '<div class="kv"><span>当前状态</span><b>'+stageBadge(o.stage)+'</b></div>'+
+      orderSteps(o)+
+      '<h4 style="margin:12px 0 6px">商品明细（FEFO）</h4>'+
+      '<div class="tbl-wrap"><table class="mini"><thead><tr><th>商品</th><th>库位</th><th>批次</th><th>应拣</th><th>已拣</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr'+(r[4].indexOf('缺货')>=0?' style="background:#fef2f2"':'')+'><td>'+r[0]+'</td><td class="mono">'+r[1]+'</td><td class="mono">'+r[2]+'</td><td class="num">'+r[3]+'</td><td class="num">'+r[4]+'</td></tr>';}).join('')+
+      '</tbody></table></div>'+
+      (o.note?'<div class="alert bad" style="margin-top:10px">⚠ '+o.note+'</div>':'')
+  });
+}
+
+bindTabs(document.querySelector('.panel'));
+renderAll();
+</script></body></html>

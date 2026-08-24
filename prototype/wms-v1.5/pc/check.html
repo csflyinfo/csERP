@@ -1,0 +1,222 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>复核/打包 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>
+.scan-zone{border:2px dashed #93c5fd;background:var(--primary-bg);border-radius:10px;padding:22px;text-align:center;cursor:pointer;margin:10px 0}
+.scan-zone:hover{background:#dbeafe}
+.cfg{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 12px}
+.cfg .c{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6}
+.cfg .c b{display:block;color:var(--primary);margin-bottom:3px}
+.gather{display:flex;align-items:center;gap:10px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.gather .gbar{flex:1;height:10px;background:#eef2f7;border-radius:5px;overflow:hidden}
+.gather .gbar i{display:block;height:100%;background:linear-gradient(90deg,#1677ff,#00b8a9)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--text-2)}
+.seg button.on{background:var(--primary);color:#fff;font-weight:700}
+.pallet{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.pallet .pcell{border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center;background:#f8fafc;cursor:pointer}
+.pallet .pcell.done{background:var(--ok-bg);border-color:#bbf7d0}
+.pallet .pcell.cur{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>✅ 复核 / 打包</h2><span class="sub">复检策略可配 · 按订单集齐后复检 · 复检通过即生成并审核出库单扣库存、生成发货单</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打印面单/箱单">🖨️ 打印面单</button>
+    <button class="btn" onclick="window.wmsGo&&wmsGo('pc/sort-instruction.html')">📑 去分拣指令一键复检</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📋</div><div class="n blue">3</div><div class="l">待复检单</div></div>
+    <div class="kpi"><div class="ic">🔍</div><div class="n orange">1</div><div class="l">复检中</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n red">1</div><div class="l">差异待处理</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">18</div><div class="l">今日已通过(扣库存)</div></div>
+    <div class="kpi"><div class="ic">🎯</div><div class="n">0.32%</div><div class="l">复检差错率</div></div>
+  </div>
+
+  <div class="alert info">
+    🔑 <b>复检策略（参数可配）：</b>
+    ① <b>是否复检</b> <code>WMS_CHECK_ENABLED</code>=开（关则拣货完成即审核扣库存）；
+    ② <b>复检方式</b> <code>WMS_CHECK_SCOPE</code>=拆零逐件（可改整位/整托、抽复检20%，高值强制逐件）；
+    ③ <b>复检粒度</b> <code>WMS_CHECK_UNIT</code>=按订单集齐后复检（订单拆多库区拣货单时，集齐后才复检；可改按拣货单分别复检）。
+  </div>
+
+  <div class="split r38">
+    <div>
+      <div class="query" style="border-radius:8px 8px 0 0;border-bottom:none;margin-bottom:0;flex-wrap:wrap;gap:8px">
+        <span class="seg" id="viewSeg">
+          <button class="on" data-view="broken">🔍 拆零逐件复检</button>
+          <button data-view="pallet">📦 整位/整托复检</button>
+        </span>
+        <input placeholder="波次/订单/出库单/客户" class="wide" id="kw">
+        <select><option>全部复检员</option><option>赵复核</option><option>钱复核</option></select>
+        <select id="fStatus"><option value="">全部状态</option><option>待集齐</option><option>待复检</option><option>复检中</option><option>差异待处理</option><option>已通过</option></select>
+        <span class="spacer"></span><button class="btn">查询</button>
+      </div>
+      <div class="tbl-wrap" style="border-radius:0 0 8px 8px;max-height:calc(100vh - 380px);overflow:auto">
+        <table id="tblCheck">
+          <thead><tr><th>波次/订单</th><th>客户</th><th>件数</th><th>集齐进度</th><th>复检员</th><th>差异</th><th>状态</th><th class="fix">操作</th></tr></thead>
+          <tbody id="checkBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="detail" id="checkBox"></div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+/* 复检单：gathered/gTotal = 该订单各库区拣货单集齐进度；status: 待集齐/待复检/复检中/差异待处理/已通过 */
+var ORDERS=[
+  {so:'SO20260823-0218',wave:'W20260823-01',cust:'华联(亦庄店)',pcs:38,zones:3,gathered:3,scope:'broken',checker:'赵复核',status:'差异待处理',diff:'少发2箱',
+    items:[
+      {g:'农夫山泉 550ml×24',batch:'20260801',qty:10,scanned:10},
+      {g:'可口可乐 330ml×24',batch:'20260720',qty:5,scanned:5},
+      {g:'康师傅红烧牛肉面 105g',batch:'20260601',qty:8,scanned:6},
+      {g:'海天酱油 500ml',batch:'20260510',qty:9,scanned:9},
+      {g:'双汇火腿肠',batch:'20260810',qty:6,scanned:0}
+    ]},
+  {so:'SO20260823-0231',wave:'W20260823-03',cust:'华联(建国路)',pcs:42,zones:3,gathered:2,scope:'broken',checker:'—',status:'待集齐',diff:'',
+    items:[
+      {g:'农夫山泉 550ml×24',batch:'20260801',qty:10,scanned:0},
+      {g:'可口可乐 330ml×24',batch:'20260720',qty:5,scanned:0},
+      {g:'康师傅红烧牛肉面 105g',batch:'20260601',qty:8,scanned:0},
+      {g:'海天酱油 500ml',batch:'20260510',qty:6,scanned:0}
+    ]},
+  {so:'SO20260823-0238',wave:'W20260823-04',cust:'物美(海淀黄庄)',pcs:68,zones:3,gathered:3,scope:'broken',checker:'—',status:'待复检',diff:'',
+    items:[
+      {g:'怡宝纯净水 555ml×24',batch:'20260810',qty:24,scanned:0},
+      {g:'农夫山泉 550ml×24',batch:'20260801',qty:28,scanned:0},
+      {g:'雪碧 330ml×24',batch:'20260801',qty:16,scanned:0}
+    ]},
+  {so:'SO20260823-0248',wave:'W20260823-06',cust:'超市发(学院路)',pcs:38,zones:1,gathered:1,scope:'pallet',checker:'钱复核',status:'复检中',diff:'',
+    pallets:[{code:'PLT-A01',done:true},{code:'PLT-A02',done:true},{code:'PLT-B01',done:false,cur:true},{code:'PLT-B02',done:false}]},
+  {so:'SO20260823-0220',wave:'W20260823-02',cust:'物美(西二旗)',pcs:52,zones:1,gathered:1,scope:'broken',checker:'赵复核',status:'已通过',diff:'一致',out:'OUT20260823-0088',sr:'SR20260823-0090',
+    items:[
+      {g:'农夫山泉 550ml×24',batch:'20260801',qty:20,scanned:20},
+      {g:'可口可乐 330ml×24',batch:'20260720',qty:16,scanned:16},
+      {g:'怡宝纯净水 555ml×24',batch:'20260810',qty:16,scanned:16}
+    ]}
+];
+var SCLS={'待集齐':'b-gray','待复检':'b-purple','复检中':'b-info','差异待处理':'b-bad','已通过':'b-ok'};
+
+function getView(){return document.querySelector('#viewSeg button.on').getAttribute('data-view');}
+function getFiltered(){
+  var kw=document.getElementById('kw').value.trim();
+  var fs=document.getElementById('fStatus').value;
+  var v=getView();
+  return ORDERS.filter(function(o){
+    if(v==='pallet'&&o.scope!=='pallet')return false;
+    if(v==='broken'&&o.scope!=='broken')return false;
+    if(kw&&(o.so+o.wave+o.cust).indexOf(kw)<0)return false;
+    if(fs&&o.status!==fs)return false;
+    return true;
+  });
+}
+function renderList(){
+  var list=getFiltered();
+  var cur=window.__cur||(list[0]&&list[0].so);
+  var html=list.map(function(o){
+    var pct=Math.round(o.gathered/o.zones*100);
+    var gather='<span class="prog" style="display:inline-flex;align-items:center;gap:6px"><span style="width:80px;height:7px;background:#eef2f7;border-radius:4px;overflow:hidden;display:inline-block"><i style="display:block;height:100%;width:'+pct+'%;background:'+(pct>=100?'var(--ok)':'var(--primary)')+'"></i></span><span class="small">'+o.gathered+'/'+o.zones+' 区</span></span>';
+    var act='';
+    if(o.status==='待集齐')act='<button class="btn sm" disabled style="opacity:.5">待集齐</button>';
+    else if(o.status==='已通过')act='<button class="btn sm" data-toast="已打开出库单">出库单</button>';
+    else if(o.status==='差异待处理')act='<button class="btn sm primary" onclick="detail(\''+o.so+'\')">处理差异</button>';
+    else act='<button class="btn sm primary" onclick="detail(\''+o.so+'\')">复检</button>';
+    var cls=o.status==='差异待处理'?' class="urgent"':'';
+    return '<tr'+cls+' onclick="detail(\''+o.so+'\')" style="cursor:pointer">'+
+      '<td class="mono">'+o.wave+'<br>'+o.so+'</td><td>'+o.cust+'</td><td class="num">'+o.pcs+'</td>'+
+      '<td>'+gather+'</td><td>'+o.checker+'</td>'+
+      '<td class="'+(o.diff&&o.diff!=='一致'?'red':'green')+'">'+(o.diff||'—')+'</td>'+
+      '<td><span class="badge '+SCLS[o.status]+'">'+o.status+'</span></td>'+
+      '<td class="fix" onclick="event.stopPropagation()">'+act+'</td></tr>';
+  }).join('');
+  document.getElementById('checkBody').innerHTML=html||'<tr><td colspan="8" class="muted" style="text-align:center;padding:30px">无匹配复检单</td></tr>';
+  if(cur&&list.some(function(o){return o.so===cur;}))detail(cur);
+  else if(list[0])detail(list[0].so);
+  else document.getElementById('checkBox').innerHTML='<h4>✅ 复检台</h4><div class="alert info">选择左侧复检单开始作业</div>';
+}
+
+function detail(so){
+  window.__cur=so;
+  var o=ORDERS.filter(function(x){return x.so===so;})[0];if(!o)return;
+  var canCheck=o.gathered>=o.zones && o.status!=='已通过';
+  var pct=Math.round(o.gathered/o.zones*100);
+  var cfg='<div class="cfg">'+
+    '<div class="c"><b>① 是否复检</b>开启（WMS_CHECK_ENABLED）</div>'+
+    '<div class="c"><b>② 复检方式</b>'+(o.scope==='pallet'?'整位/整托核对':'拆零逐件扫码')+'</div>'+
+    '<div class="c"><b>③ 复检粒度</b>按订单集齐后复检（'+o.gathered+'/'+o.zones+' 区已集齐）</div></div>';
+  var gather='<div class="gather"><span>📦 库区集齐</span><div class="gbar"><i style="width:'+pct+'%"></i></div><b>'+o.gathered+'/'+o.zones+' 区</b>'+
+    (canCheck?'<span class="chip ok">已集齐，可复检</span>':'<span class="chip">等待拣货集齐</span>')+'</div>';
+
+  var body='',actions='';
+  if(o.scope==='broken'){
+    var scanned=o.items.reduce(function(a,it){return a+it.scanned;},0);
+    var hasDiff=o.items.some(function(it){return it.scanned<it.qty;});
+    body='<div class="scan-zone" onclick="toast(\'条码已核对 ✓\',\'ok\')"><div style="font-size:30px">📷</div><b>扫商品 / 箱码逐件复检</b><div class="muted small" style="margin-top:4px">PDA/扫码枪扫描；校验商品、批次、数量；高值商品强制逐件不可整位</div></div>'+
+      '<div class="kv"><span>应发/已扫</span><b>'+o.pcs+' 件 / <span class="'+(hasDiff?'orange':'green')+'">'+scanned+' 件</span></b></div>'+
+      '<h4 style="margin-top:10px">明细</h4><div class="tbl-wrap"><table class="mini"><thead><tr><th>商品</th><th>批次</th><th>应发</th><th>实扫</th><th>结果</th></tr></thead><tbody>'+
+      o.items.map(function(it){var ok=it.scanned>=it.qty;var short=it.qty>0&&it.scanned<it.qty&&it.scanned>0;var wait=it.scanned===0;
+        return '<tr'+(short?' style="background:#fef2f2"':'')+'><td>'+it.g+'</td><td class="mono">'+it.batch+'</td><td class="num">'+it.qty+'</td><td class="num">'+it.scanned+'</td><td class="'+(ok?'green':(short?'red':'muted'))+'">'+(ok?'✓ 一致':(short?'少发'+(it.qty-it.scanned):'待扫'))+'</td></tr>';}).join('')+
+      '</tbody></table></div>';
+    if(o.status==='差异待处理'){
+      actions='<div class="alert bad" style="margin-top:10px">❗ 存在差异，必须先处理才能通过（差异在扣账前纠正）：</div>'+
+        '<button class="btn primary" style="width:100%;margin-bottom:6px" onclick="toast(\'已通知拣货员补拣\',\'ok\')">📤 通知补拣（缺货/破损/拣错）</button>'+
+        '<button class="btn" style="width:100%;margin-bottom:6px" data-toast="按差异出库已留痕（WMS_CHECK_SHORT_ALLOWED=1）">按差异放行出库(留痕)</button>'+
+        '<button class="btn warn" style="width:100%" data-toast="已挂起进入异常中心">🚨 异常挂起</button>';
+    }else if(o.status==='已通过'){
+      actions='<div class="alert ok" style="margin-top:10px">✅ 已复检通过，出库单 <b class="mono">'+o.out+'</b> 已审核扣库存，发货单 <b class="mono">'+o.sr+'</b> 已生成待装车。</div>';
+    }else if(canCheck){
+      actions='<button class="btn primary" style="width:100%;margin-top:10px" onclick="passCheck(\''+o.so+'\')">✔ 复检通过并扣库存</button>';
+    }else{
+      actions='<div class="alert info" style="margin-top:10px">⏳ 该订单尚有库区拣货单未集齐，集齐后才能复检（按订单集齐模式）。</div>';
+    }
+  }else{
+    // 整位/整托视图
+    body='<div class="scan-zone" onclick="toast(\'整托 '+o.cust+' 已核对 ✓\',\'ok\')"><div style="font-size:30px">📦</div><b>扫整托/笼车牌照，整托核对</b><div class="muted small" style="margin-top:4px">整托数量与系统一致即通过；高值商品不走整托，强制逐件</div></div>'+
+      '<div class="pallet">'+o.pallets.map(function(p){
+        return '<div class="pcell '+(p.done?'done':'')+(p.cur?' cur':'')+'"><div style="font-size:24px">'+(p.done?'✅':'📦')+'</div><b>'+p.code+'</b><div class="small muted">'+(p.done?'已核对':(p.cur?'当前待扫':'待扫'))+'</div></div>';
+      }).join('')+'</div>';
+    if(o.status!=='已通过'&&canCheck)actions='<button class="btn primary" style="width:100%;margin-top:10px" onclick="passCheck(\''+o.so+'\')">✔ 整托复检通过并扣库存</button>';
+  }
+
+  document.getElementById('checkBox').innerHTML=
+    '<h4>🔍 复检台 · '+so+'</h4>'+cfg+gather+
+    '<div class="kv"><span>客户/件数</span><b>'+o.cust+' · '+o.pcs+'件</b></div>'+
+    '<div class="kv"><span>波次/复检员</span><b class="mono">'+o.wave+' · '+o.checker+'</b></div>'+
+    body+actions+
+    '<h4 style="margin-top:14px">打包/发运信息</h4>'+
+    '<div class="field" style="margin-bottom:8px"><label>装箱/笼车</label><select><option>笼车 L018</option><option>笼车 L019</option></select></div>'+
+    '<div class="field"><label>面单/箱单</label><select><option>打印 1 张面单</option><option>按箱打印箱单</option></select></div>';
+}
+
+function passCheck(so){
+  openModal({title:'✔ 复检通过 → 生成出库单并扣库存',size:'lg',body:
+    '<div class="alert ok" style="margin:0">✅ 订单 <b class="mono">'+so+'</b> 复检通过，系统立即执行（与分拣指令页"一键复检"同一套服务）：</div>'+
+    '<div class="timeline" style="margin-top:14px">'+
+      '<div class="ev ok"><b>生成销售出库单</b><div class="t">OUT 单号自动生成，按实发数量</div></div>'+
+      '<div class="ev ok"><b>审核出库单 → 扣库存（关键口径）</b><div class="t">出库单<b>审核即扣</b>：wms_bin_stock 实物减、inv_stock_balance 财务减；按商品+仓库移动加权平均结转成本；释放批次/波次锁。装车不扣库存。</div></div>'+
+      '<div class="ev ok"><b>生成发货单 sales_receipt</b><div class="t">SR 单号生成，dispatch_status=UNDISPATCHED，待 TMS 调度/装车；签收/拒收时取实际数量算应收。</div></div>'+
+      '<div class="ev"><b>进入可装车池</b><div class="t">若波次已预分配司机则任务可见；司机扫码装车（装车不扣库存）。</div></div>'+
+    '</div>',
+    okText:'确认通过并扣库存',onOk:function(){
+      var o=ORDERS.filter(function(x){return x.so===so;})[0];
+      o.status='已通过';o.diff='一致';o.checker=o.checker==='—'?'赵复核':o.checker;
+      o.out='OUT20260823-00'+(80+Math.floor(Math.random()*9));o.sr='SR20260823-00'+(90+Math.floor(Math.random()*9));
+      renderList();
+      toast('复检通过：出库单已审核扣库存，发货单已生成','ok');
+    }});
+}
+
+document.getElementById('viewSeg').addEventListener('click',function(e){
+  var b=e.target.closest('button');if(!b)return;
+  this.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);});
+  renderList();
+});
+['kw','fStatus'].forEach(function(id){
+  document.getElementById(id).addEventListener('input',renderList);
+  document.getElementById(id).addEventListener('change',renderList);
+});
+
+renderList();
+</script></body></html>

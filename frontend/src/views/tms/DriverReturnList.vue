@@ -135,9 +135,15 @@ function onReset() {
   loadList()
 }
 
-// 模板里不能直接用 window（不在 Vue 模板全局白名单内），需经方法透出
+// 模板里不能直接用 window（不在 Vue 模板全局白名单内），需经方法透出。
+// 协议白名单兜底：后端已对入库 URL 做 /uploads/ 与 http(s) 校验，这里再挡一层，
+// 防止历史脏数据里的 javascript:/data: URL 在 window.open 时执行。
 function openPhoto(url) {
-  if (url) window.open(url, '_blank')
+  if (!url) return
+  const v = String(url).trim().toLowerCase()
+  if (v.startsWith('/uploads/') || v.startsWith('http://') || v.startsWith('https://')) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
 }
 
 onMounted(loadList)

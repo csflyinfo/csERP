@@ -132,6 +132,16 @@ function onReset() { queryFilters.value = {}; pageNo.value = 1; loadRows() }
 function handlePageChange(n) { pageNo.value = n; loadRows() }
 function handlePageSizeChange(s) { pageSize.value = s; pageNo.value = 1; loadRows() }
 
+// 照片 URL 协议白名单：后端已挡 javascript:/data:，前端再兜一层防历史脏数据。
+// 返回 null 时模板会阻止跳转并不渲染 img src。
+function safeAssetUrl(url) {
+  if (!url) return null
+  const v = String(url).trim()
+  const lower = v.toLowerCase()
+  if (lower.startsWith('/uploads/') || lower.startsWith('http://') || lower.startsWith('https://')) return v
+  return null
+}
+
 async function openDetail(row) {
   detailOpen.value = true
   detailLoading.value = true
@@ -262,8 +272,11 @@ onMounted(() => { loadRows() })
               <div class="toolbar"><b>现场照片（{{ detail.photos?.length || 0 }}）</b></div>
               <div style="padding:10px">
                 <div v-if="detail.photos?.length" class="photo-grid">
-                  <a v-for="(url, i) in detail.photos" :key="i" :href="url" target="_blank" class="photo-item">
-                    <img :src="url" :alt="'现场照片' + (i + 1)" />
+                  <a v-for="(url, i) in detail.photos" :key="i"
+                     :href="safeAssetUrl(url)"
+                     @click="safeAssetUrl(url) ? null : $event.preventDefault()"
+                     target="_blank" rel="noopener noreferrer" class="photo-item">
+                    <img :src="safeAssetUrl(url) || ''" :alt="'现场照片' + (i + 1)" />
                   </a>
                 </div>
                 <div v-else class="muted-tip">无现场照片</div>

@@ -1,0 +1,88 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>上架任务 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>.pa-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.pa-box{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:12px}</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>📤 上架任务</h2><span class="sub">收货完成生成上架任务 · 库位策略自动推荐 · PDA 扫码上架</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已按上架策略重新推荐库位">🔄 重新推荐库位</button>
+    <button class="btn primary" data-toast="已批量分派给上架员" data-type="ok">批量分派</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📋</div><div class="n blue">12</div><div class="l">待上架行</div></div>
+    <div class="kpi"><div class="ic">🚶</div><div class="n orange">3</div><div class="l">上架中任务</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">26</div><div class="l">今日已上架行</div></div>
+    <div class="kpi"><div class="ic">⚖️</div><div class="n">1.8t</div><div class="l">今日上架重量</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n orange">1</div><div class="l">库位满/改放异常</div></div>
+  </div>
+
+  <div class="layout">
+    <div class="tree">
+      <div class="grp">任务状态</div>
+      <div class="node on">全部 <span class="cnt">15</span></div>
+      <div class="node">└ 待上架 <span class="cnt">12</span></div>
+      <div class="node">└ 上架中 <span class="cnt">3</span></div>
+      <div class="node">└ 已完成 <span class="cnt">26</span></div>
+      <div class="grp">库区</div>
+      <div class="node">A区 整箱存储</div>
+      <div class="node">B区 拆零拣货</div>
+      <div class="node">C区 冷藏</div>
+      <div class="node">D区 高值</div>
+      <div class="grp">上架策略</div>
+      <div class="node">就近优先</div>
+      <div class="node">定址上架</div>
+      <div class="node">空库位优先</div>
+      <div class="node">品类聚集</div>
+      <div class="node">越库直发</div>
+    </div>
+    <div>
+      <div class="query">
+        <input placeholder="入库单/商品/批次/推荐库位" class="wide">
+        <select><option>全部上架员</option><option>孙上架</option></select>
+        <select><option>全部状态</option></select>
+        <input type="date" value="2026-08-23">
+        <span class="spacer"></span>
+        <button class="btn">查询</button>
+      </div>
+      <div class="tbl-wrap">
+        <table id="tblPa">
+          <thead><tr><th><input type="checkbox" class="ck"></th><th>上架任务</th><th>入库单</th><th>商品</th><th>批次/效期</th><th>待上数量</th><th>推荐库位</th><th>实际上架</th><th>上架员</th><th>状态</th><th class="fix">操作</th></tr></thead>
+          <tbody>
+            <tr><td><input type="checkbox" class="ck"></td><td class="link mono" onclick="openPa('PA20260823-031')">PA...031</td><td class="mono">IN...013</td><td>康师傅红烧牛肉面105g</td><td>20260820/2027-08</td><td class="num">100箱</td><td><span class="chip ok">B-03-05</span></td><td>—</td><td>未分派</td><td><span class="badge b-info">待上架</span></td><td class="fix"><button class="btn sm primary" onclick="assignPa('PA...031')">分派</button></td></tr>
+            <tr><td><input type="checkbox" class="ck"></td><td class="link mono">PA...032</td><td class="mono">IN...013</td><td>康师傅鲜虾鱼板面</td><td>20260818/2027-08</td><td class="num">40箱</td><td><span class="chip ok">B-03-06</span></td><td>40箱</td><td>孙上架</td><td><span class="badge b-wait">上架中</span></td><td class="fix"><button class="btn sm" onclick="openPa('PA...032')">监控</button></td></tr>
+            <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="link mono">PA...028</td><td class="mono">IN...012</td><td>海天金标生抽500ml</td><td>20260510/2027-05</td><td class="num">86箱</td><td><span class="chip bad">D-02-01已满</span></td><td>0</td><td>孙上架</td><td><span class="badge b-bad">库位满·改放</span></td><td class="fix"><button class="btn sm warn" data-toast="已改推邻近库位 D-02-02">改推库位</button></td></tr>
+            <tr><td><input type="checkbox" class="ck"></td><td class="link mono">PA...025</td><td class="mono">IN...012</td><td>农夫山泉550ml</td><td>20260801/2027-08</td><td class="num">320箱</td><td><span class="chip ok">A-01-02</span></td><td>320箱</td><td>孙上架</td><td><span class="badge b-ok">已完成</span></td><td class="fix"><button class="btn sm" data-toast="已打开流水">流水</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="foot"><div class="pagebtn on">1</div><div class="pagebtn">2</div><span class="muted">共 41 行</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblPa'));
+function openPa(no){
+  openDrawer({title:'上架任务 · '+no,body:`
+    <div class="kv"><span>入库单</span><b class="mono">IN20260823-013</b></div>
+    <div class="kv"><span>商品/批次</span><b>康师傅红烧牛肉面105g · 20260820</b></div>
+    <div class="kv"><span>待上数量</span><b>100 箱</b></div>
+    <h4 style="margin:14px 0 8px">库位推荐（策略：就近 + 品类聚集）</h4>
+    <div class="pa-grid">
+      <div class="pa-box" style="border-color:var(--primary);background:var(--primary-bg)"><b class="blue">🥇 B-03-05（推荐）</b><br><small class="muted">拆零拣货位 · 同品类聚集 · 步行最近 · 容量42%</small></div>
+      <div class="pa-box"><b>B-03-06</b><br><small class="muted">同排 · 容量68%</small></div>
+      <div class="pa-box"><b>B-09（整箱存储）</b><br><small class="muted">容量25% · 适用于整托存储</small></div>
+      <div class="pa-box"><b>越库 JH 集货位</b><br><small class="muted">有紧急出库需求时可直发（WMS_CROSS_DOCK_ENABLED）</small></div>
+    </div>
+    <div class="alert info" style="margin-top:12px">仓管可扫其他库位改放，需选改放原因（WMS_PUTAWAY_FREE_BIN=1），改放记录用于策略优化。上架完成写 wms_bin_stock 与库存流水。</div>
+    <h4 style="margin:14px 0 8px">作业轨迹</h4>
+    <div class="timeline">
+      <div class="ev ok"><b>09:10 入库单生成</b><div class="t">IN...013 收货完成</div></div>
+      <div class="ev"><b>09:11 推荐库位</b><div class="t">策略计算完成 B-03-05</div></div>
+      <div class="ev warn"><b>待上架</b><div class="t">等待分派/作业</div></div>
+    </div>
+  `,footer:`<button class="btn" data-act="close">关闭</button><button class="btn primary" onclick="toast('已分派孙上架并推送PDA','ok');closeDrawer();">分派并推送PDA</button>`});
+}
+function assignPa(no){toast(no+' 已分派给上架员','ok');}
+</script></body></html>

@@ -61,9 +61,24 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/auth/login", "/auth/logout", "/actuator/**", "/h2-console/**").permitAll()
                     .requestMatchers("/tms/app/login").permitAll()
+                    // 危险端点（冒烟清库 / 业务流程跑批）仅 ADMIN，防止司机端 888888 登录后越权
+                    .requestMatchers("/testing/**", "/flow/**").hasRole("ADMIN")
                     .requestMatchers("/system/**").hasRole("ADMIN")
                     .anyRequest().authenticated())
-            .headers(h -> h.frameOptions(fo -> fo.sameOrigin()))
+            .headers(h -> h
+                    // H2 console 走 iframe，必须 SAMEORIGIN；不能 DENY
+                    .frameOptions(fo -> fo.sameOrigin())
+                    // 浏览器不得对响应做 MIME 嗅探（防上传脚本被当 HTML/JS 执行）
+                    .contentTypeOptions(cta -> {})
+                    // 基础 CSP：本服务只出 JSON（与 H2 console 调试页），前端由独立静态域承载。
+                    // frame-ancestors/base-uri/form-action 防点击劫持与基标签注入；
+                    // script-src 放开 unsafe-inline 仅为兼容 H2 console 内联脚本——生产环境 H2 console 应关闭。
+                    .contentSecurityPolicy(csp -> csp.policyDirectives(
+                            "default-src 'self'; img-src 'self' data: blob:; "
+                            + "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+                            + "connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"))
+                    // 仅在 HTTPS 下下发（开发环境 http 自动忽略），防止协议降级与 Cookie 劫持
+                    .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)))
             .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

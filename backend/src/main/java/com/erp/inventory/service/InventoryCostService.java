@@ -330,21 +330,22 @@ public class InventoryCostService {
     @Transactional
     public void lockStock(String goodsCode, String warehouse, BigDecimal qty) {
         if (qty == null || qty.signum() <= 0) return;
-        InvStockBalance balance = stockBalanceService.getOne(
-                new QueryWrapper<InvStockBalance>()
-                        .eq("goods_code", goodsCode)
-                        .eq("warehouse", warehouse)
-        );
-        BigDecimal available = balance == null || balance.getAvailableQty() == null
-                ? BigDecimal.ZERO : balance.getAvailableQty();
-        if (balance == null || available.compareTo(qty) < 0) {
+        // 原子条件更新：一次性把「校验可用量 ≥ 锁定量」和「写回 locked/available」放进同一条 UPDATE，
+        // 行锁在语句内持有，杜绝并发下两个事务都读到足够 available 后超锁（TOCTOU）。
+        // 锁定 = locked 加 qty、available 减 qty（available = physical − locked − frozen 恒等式自动保持）。
+        int rows = jdbcTemplate.update("""
+                UPDATE inv_stock_balance
+                SET locked_qty = COALESCE(locked_qty, 0) + ?,
+                    available_qty = COALESCE(available_qty, 0) - ?
+                WHERE goods_code = ? AND warehouse = ?
+                  AND COALESCE(available_qty, 0) >= ?
+                """, qty, qty, goodsCode, warehouse, qty);
+        if (rows == 0) {
+            // 区分「无库存记录」与「可用不足」，给出与旧实现一致的报错
+            BigDecimal available = getAvailableQty(goodsCode, warehouse);
             throw new IllegalArgumentException(
                     "可用库存不足，无法锁定：" + goodsCode + " / " + warehouse + "，需 " + qty + "，可用 " + available);
         }
-        BigDecimal locked = nz(balance.getLockedQty()).add(qty);
-        balance.setLockedQty(locked);
-        balance.setAvailableQty(nz(balance.getPhysicalQty()).subtract(locked).subtract(nz(balance.getFrozenQty())));
-        stockBalanceService.updateById(balance);
     }
 
     /**
@@ -359,20 +360,14 @@ public class InventoryCostService {
     @Transactional
     public void releaseLock(String goodsCode, String warehouse, BigDecimal qty) {
         if (qty == null || qty.signum() <= 0) return;
-        InvStockBalance balance = stockBalanceService.getOne(
-                new QueryWrapper<InvStockBalance>()
-                        .eq("goods_code", goodsCode)
-                        .eq("warehouse", warehouse)
-        );
-        if (balance == null) return;
-        BigDecimal locked = nz(balance.getLockedQty());
-        // 夹取：已锁的比要释放的少，就只释放已锁的那部分
-        BigDecimal release = qty.min(locked);
-        if (release.signum() <= 0) return;
-        BigDecimal newLocked = locked.subtract(release);
-        balance.setLockedQty(newLocked);
-        balance.setAvailableQty(nz(balance.getPhysicalQty()).subtract(newLocked).subtract(nz(balance.getFrozenQty())));
-        stockBalanceService.updateById(balance);
+        // 向下夹取：实际释放量 = LEAST(qty, 当前已锁量)，不会把 locked_qty 打成负数，
+        // available 同步加回。单条原子 UPDATE 避免并发释放互相覆盖。
+        jdbcTemplate.update("""
+                UPDATE inv_stock_balance
+                SET locked_qty = COALESCE(locked_qty, 0) - LEAST(?, COALESCE(locked_qty, 0)),
+                    available_qty = COALESCE(available_qty, 0) + LEAST(?, COALESCE(locked_qty, 0))
+                WHERE goods_code = ? AND warehouse = ?
+                """, qty, qty, goodsCode, warehouse);
     }
 
     /** null 当 0 —— 历史数据里 locked_qty / frozen_qty 可能为 NULL。 */
@@ -420,27 +415,28 @@ public class InventoryCostService {
     public void lockBatch(String goodsCode, String warehouse, String batchNo, BigDecimal qty) {
         if (qty == null || qty.signum() <= 0) return;
         if (batchNo == null || batchNo.isBlank()) return;   // 未指定批次的行不落批次锁
-        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT batch_stock_id, COALESCE(qty, 0) AS qty, COALESCE(locked_qty, 0) AS locked_qty
-                FROM inv_batch_stock
+        // 原子条件更新：仅当批次剩余可用量（qty − locked）足够时才加锁，行锁在语句内持有。
+        int rows = jdbcTemplate.update("""
+                UPDATE inv_batch_stock
+                SET locked_qty = COALESCE(locked_qty, 0) + ?
                 WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
-                """, goodsCode, warehouse, batchNo);
-        if (rows.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "批次不存在，无法锁定：" + goodsCode + " / " + warehouse + " / 批次 " + batchNo);
-        }
-        Map<String, Object> r = rows.get(0);
-        BigDecimal batchQty = toBd(r.get("qty"), r.get("QTY"));
-        BigDecimal locked = toBd(r.get("locked_qty"), r.get("LOCKED_QTY"));
-        BigDecimal available = batchQty.subtract(locked);
-        if (qty.compareTo(available) > 0) {
+                  AND COALESCE(qty, 0) - COALESCE(locked_qty, 0) >= ?
+                """, qty, goodsCode, warehouse, batchNo, qty);
+        if (rows == 0) {
+            java.util.List<Map<String, Object>> exist = jdbcTemplate.queryForList("""
+                    SELECT COALESCE(qty, 0) AS qty, COALESCE(locked_qty, 0) AS locked_qty
+                    FROM inv_batch_stock
+                    WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
+                    """, goodsCode, warehouse, batchNo);
+            if (exist.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "批次不存在，无法锁定：" + goodsCode + " / " + warehouse + " / 批次 " + batchNo);
+            }
+            BigDecimal batchQty = toBd(exist.get(0).get("qty"), exist.get(0).get("QTY"));
+            BigDecimal locked = toBd(exist.get(0).get("locked_qty"), exist.get(0).get("LOCKED_QTY"));
             throw new IllegalArgumentException("批次可用量不足，无法锁定：" + goodsCode + " / 批次 " + batchNo
-                    + "，需 " + qty + "，可用 " + available);
+                    + "，需 " + qty + "，可用 " + batchQty.subtract(locked));
         }
-        Object idV = r.get("batch_stock_id") != null ? r.get("batch_stock_id") : r.get("BATCH_STOCK_ID");
-        jdbcTemplate.update(
-                "UPDATE inv_batch_stock SET locked_qty = COALESCE(locked_qty, 0) + ? WHERE batch_stock_id = ?",
-                qty, idV);
     }
 
     /**
@@ -453,20 +449,12 @@ public class InventoryCostService {
     public void releaseBatchLock(String goodsCode, String warehouse, String batchNo, BigDecimal qty) {
         if (qty == null || qty.signum() <= 0) return;
         if (batchNo == null || batchNo.isBlank()) return;
-        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT batch_stock_id, COALESCE(locked_qty, 0) AS locked_qty
-                FROM inv_batch_stock
+        // 向下夹取，原子释放：不会把 locked_qty 打成负数
+        jdbcTemplate.update("""
+                UPDATE inv_batch_stock
+                SET locked_qty = COALESCE(locked_qty, 0) - LEAST(?, COALESCE(locked_qty, 0))
                 WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
-                """, goodsCode, warehouse, batchNo);
-        if (rows.isEmpty()) return;
-        Map<String, Object> r = rows.get(0);
-        BigDecimal locked = toBd(r.get("locked_qty"), r.get("LOCKED_QTY"));
-        BigDecimal release = qty.min(locked);
-        if (release.signum() <= 0) return;
-        Object idV = r.get("batch_stock_id") != null ? r.get("batch_stock_id") : r.get("BATCH_STOCK_ID");
-        jdbcTemplate.update(
-                "UPDATE inv_batch_stock SET locked_qty = COALESCE(locked_qty, 0) - ? WHERE batch_stock_id = ?",
-                release, idV);
+                """, qty, goodsCode, warehouse, batchNo);
     }
 
     /**
@@ -475,33 +463,48 @@ public class InventoryCostService {
     @Transactional
     public void salesOutbound(String goodsCode, String goodsName, String warehouse, String batchNo,
                                BigDecimal outboundQty, String sourceBill) {
+        if (outboundQty == null || outboundQty.signum() <= 0) {
+            // 负数/零出库会变成加库存，必须拒绝
+            throw new IllegalArgumentException("出库数量必须大于 0：" + goodsCode + " / " + warehouse);
+        }
         InvStockBalance balance = stockBalanceService.getOne(
                 new QueryWrapper<InvStockBalance>()
                         .eq("goods_code", goodsCode)
                         .eq("warehouse", warehouse)
         );
-        if (balance == null || balance.getAvailableQty().compareTo(outboundQty) < 0) {
+        if (balance == null) {
             throw new IllegalArgumentException("库存不足：" + goodsCode + " / " + warehouse);
         }
+        BigDecimal costPrice = nz(balance.getCostPrice());
 
-        BigDecimal costPrice = balance.getCostPrice();
-        BigDecimal newQty = balance.getPhysicalQty().subtract(outboundQty);
-        BigDecimal newAmount = newQty.multiply(costPrice).setScale(2, RoundingMode.HALF_UP);
+        // 原子条件扣减：仅当可用量足够时才把 physical/available 各减 outboundQty，
+        // 行锁在 UPDATE 内持有，杜绝并发双读导致的超扣。
+        int rows = jdbcTemplate.update("""
+                UPDATE inv_stock_balance
+                SET physical_qty = COALESCE(physical_qty, 0) - ?,
+                    available_qty = COALESCE(available_qty, 0) - ?,
+                    stock_amount = (COALESCE(physical_qty, 0) - ?) * ?,
+                    last_inout_time = CURRENT_TIMESTAMP
+                WHERE goods_code = ? AND warehouse = ?
+                  AND COALESCE(available_qty, 0) >= ?
+                """, outboundQty, outboundQty, outboundQty, costPrice,
+                goodsCode, warehouse, outboundQty);
+        if (rows == 0) {
+            throw new IllegalArgumentException("库存不足：" + goodsCode + " / " + warehouse);
+        }
+        BigDecimal newQty = nz(balance.getPhysicalQty()).subtract(outboundQty);
 
-        balance.setPhysicalQty(newQty);
-        balance.setAvailableQty(newQty.subtract(balance.getLockedQty() != null ? balance.getLockedQty() : BigDecimal.ZERO)
-                .subtract(balance.getFrozenQty() != null ? balance.getFrozenQty() : BigDecimal.ZERO));
-        balance.setStockAmount(newAmount);
-        balance.setLastInoutTime(LocalDateTime.now());
-        stockBalanceService.updateById(balance);
-
-        // 批次层：从指定批次扣减；若 batch 为空则按 FIFO 从最早生产日期开始扣
+        // 批次层：从指定批次扣减；同样带 qty >= ? 的条件守卫，防止批次超扣
         if (batchNo != null && !batchNo.isBlank()) {
-            jdbcTemplate.update("""
+            int batchRows = jdbcTemplate.update("""
                     UPDATE inv_batch_stock
                     SET qty = qty - ?, stock_amount = (qty - ?) * cost_price, last_inout_time = CURRENT_TIMESTAMP
                     WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
-                    """, outboundQty, outboundQty, goodsCode, warehouse, batchNo);
+                      AND qty >= ?
+                    """, outboundQty, outboundQty, goodsCode, warehouse, batchNo, outboundQty);
+            if (batchRows == 0) {
+                throw new IllegalArgumentException("批次库存不足：" + goodsCode + " / 批次 " + batchNo);
+            }
         }
 
         writeLedger("OUT", goodsCode, goodsName, warehouse, batchNo, outboundQty, costPrice,

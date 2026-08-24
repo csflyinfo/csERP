@@ -1,0 +1,100 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>移库/移位 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>↔️ 移库 / 移位</h2><span class="sub">库位间库存转移 · 整库位/按批次/按件移库 · 移库不影响总账，只改库位分布与流水</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已按库位整理规则生成建议">🤖 库位整理建议</button>
+    <button class="btn primary" onclick="newMove()">＋ 新建移库单</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">📋</div><div class="n blue">4</div><div class="l">待执行移库</div></div>
+    <div class="kpi"><div class="ic">🚶</div><div class="n orange">2</div><div class="l">移库中</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">18</div><div class="l">今日已完成</div></div>
+    <div class="kpi"><div class="ic">📦</div><div class="n">320</div><div class="l">移库件数</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n orange">1</div><div class="l">差异待处理</div></div>
+  </div>
+
+  <div class="alert info">💡 移库类型：<b>主动移库</b>（整理库位、合并尾箱、补货类调整）、<b>被动移库</b>（库位损坏、盘点调整）、<b>整托移库</b>。系统校验源库位库存、目标库位容量与批次；移库完成写 wms_bin_stock 两减两增 + 库存流水，不影响财务总账与成本。</div>
+
+  <div class="query">
+    <input placeholder="移库单号/商品/批次/源/目标库位" class="wide">
+    <select><option>全部类型</option><option>主动移库</option><option>被动移库</option><option>整托移库</option></select>
+    <select><option>全部状态</option></select>
+    <input type="date" value="2026-08-23">
+    <span class="spacer"></span><button class="btn">查询</button>
+  </div>
+
+  <div class="split r38">
+    <div class="tbl-wrap">
+      <table id="tblMove">
+        <thead><tr><th><input type="checkbox" class="ck"></th><th>移库单号</th><th>类型</th><th>源库位</th><th>目标库位</th><th>商品/批次</th><th>数量</th><th>执行人</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="sel" onclick="moveDetail('MV20260823-012')"><td onclick="event.stopPropagation()"><input type="checkbox" class="ck" checked></td><td class="link mono">MV...012</td><td><span class="chip">主动整理</span></td><td>B-03-05</td><td>B-09</td><td>康师傅牛肉面/20260601</td><td class="num">24箱</td><td>孙上架</td><td><span class="badge b-wait">移库中</span></td><td class="fix" onclick="event.stopPropagation()"><button class="btn sm" onclick="moveDetail('MV...012')">详情</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">MV...011</td><td><span class="chip">合并尾箱</span></td><td>B-01-02</td><td>B-01-03</td><td>农夫山泉/20260801</td><td class="num">4箱</td><td>孙上架</td><td><span class="badge b-ok">已完成</span></td><td class="fix"><button class="btn sm" data-toast="已查看流水">流水</button></td></tr>
+          <tr class="danger"><td><input type="checkbox" class="ck"></td><td class="link mono">MV...010</td><td><span class="chip warn">被动(库位坏)</span></td><td>C-01-04</td><td>C-01-05</td><td>双汇火腿肠/20260810</td><td class="num orange">60/58(差2)</td><td>孙上架</td><td><span class="badge b-bad">差异待处理</span></td><td class="fix"><button class="btn sm warn" data-toast="已转异常中心" onclick="window.wmsGo&&wmsGo('pc/exception.html')">处理</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">MV...009</td><td><span class="chip ok">整托移库</span></td><td>A-01-02</td><td>A-03-01</td><td>农夫山泉整托</td><td class="num">1托(40箱)</td><td>叉车·周</td><td><span class="badge b-info">待执行</span></td><td class="fix"><button class="btn sm primary" data-toast="已推送到PDA" data-type="ok">执行</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="detail" id="moveBox"></div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblMove'));
+function newMove(){
+  openModal({title:'新建移库单',size:'lg',okText:'生成移库任务',body:`
+    <div data-wizard>
+      <div class="wiz-steps">
+        <div class="s cur"><div class="c">1</div><div class="l">选源库位/批次</div></div>
+        <div class="s"><div class="c">2</div><div class="l">选目标库位</div></div>
+        <div class="s"><div class="c">3</div><div class="l">确认并下发</div></div>
+      </div>
+      <div class="wiz-pane on">
+        <div class="scan-zone" onclick="toast('已扫码：B-03-05','ok')"><div style="font-size:28px">📍</div><b>扫源库位码</b><div class="muted small">选择要移出的库位</div></div>
+        <div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th><input type="checkbox" checked></th><th>商品</th><th>批次</th><th>可用量</th><th>移出量</th></tr></thead><tbody>
+          <tr><td><input type="checkbox" checked></td><td>康师傅红烧牛肉面105g</td><td>20260601</td><td class="num">24</td><td><div class="stepper" style="margin:4px 0"><button>−</button><input value="24"><button>+</button></div></td></tr>
+        </tbody></table></div>
+      </div>
+      <div class="wiz-pane">
+        <div class="scan-zone" onclick="toast('已选目标库位：B-09','ok')"><div style="font-size:28px">🎯</div><b>扫/选目标库位</b><div class="muted small">系统校验容量、品类混放规则</div></div>
+        <div class="alert ok" style="margin-top:10px">✅ B-09（整箱存储位，容量 25%，可放入 24 箱），同品类可混放。</div>
+      </div>
+      <div class="wiz-pane">
+        <div class="kv"><span>源→目标</span><b>B-03-05 → B-09</b></div>
+        <div class="kv"><span>移库量</span><b>24 箱</b></div>
+        <div class="kv"><span>类型</span><b>主动整理（拣货位→存储位）</b></div>
+        <div class="kv"><span>执行人</span><b>孙上架</b></div>
+        <div class="alert tip" style="margin-top:10px">确认后生成移库任务推送 PDA；PDA 扫源、扫目标确认。移库只改变库位分布并写流水，不影响总账与成本。</div>
+      </div>
+      <div class="btnbar" style="border:none;padding:14px 0 0;justify-content:flex-end">
+        <button class="btn" data-wiz="prev">上一步</button>
+        <button class="btn primary" data-wiz="next">下一步</button>
+        <button class="btn ok" data-wiz="done" style="display:none">生成任务</button>
+      </div>
+    </div>`,noFooter:true,onReady:function(wz){bindWizard(wz);}});
+}
+function moveDetail(no){
+  document.getElementById('moveBox').innerHTML=`
+    <h4>↔️ ${no}</h4>
+    <div class="steps" style="margin:0 0 12px">
+      <div class="step done"><div class="dotc">✓</div><div class="sl">建单</div></div>
+      <div class="step cur"><div class="dotc">2</div><div class="sl">源位拣出</div></div>
+      <div class="step"><div class="dotc">3</div><div class="sl">送目标位</div></div>
+      <div class="step"><div class="dotc">4</div><div class="sl">确认完成</div></div>
+    </div>
+    <div class="kv"><span>类型</span><b>主动整理</b></div>
+    <div class="kv"><span>源库位</span><b>B-03-05（拣货位，需腾空整理）</b></div>
+    <div class="kv"><span>目标库位</span><b>B-09（存储位）</b></div>
+    <div class="kv"><span>商品/批次</span><b>康师傅牛肉面 · 20260601</b></div>
+    <div class="kv"><span>应移/已移</span><b>24 / 18 箱</b></div>
+    <div class="bar-row" style="margin-top:8px"><div class="top"><span>进度</span><span>75%</span></div><div class="bar"><i style="width:75%"></i></div></div>
+    <button class="btn primary" style="width:100%;margin-top:8px" data-toast="已催办PDA" data-type="ok">催办(PDA)</button>
+    <h4 style="margin-top:14px">库存影响（完成时）</h4>
+    <div class="alert info" style="font-size:12px">wms_bin_stock：B-03-05 减 24、B-09 加 24（同批次）；写库存流水 MV...012。inv_stock_balance（财务账）不变，成本不变。</div>
+  `;
+}
+moveDetail('MV20260823-012');
+</script></body></html>

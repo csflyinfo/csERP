@@ -503,8 +503,8 @@ public class TmsExceptionReportController {
     private int savePhotos(String reportId, List<Map<String, Object>> photos) {
         int saved = 0;
         for (Map<String, Object> p : photos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoId = TmsUtil.uuid("SP");
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)

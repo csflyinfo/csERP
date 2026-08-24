@@ -22,13 +22,16 @@ public class OrderController {
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.inventory.service.InventoryCostService inventoryCostService;
+    private final com.erp.wms.WmsInboundService wmsInboundService;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
-                           com.erp.inventory.service.InventoryCostService inventoryCostService) {
+                           com.erp.inventory.service.InventoryCostService inventoryCostService,
+                           com.erp.wms.WmsInboundService wmsInboundService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
+        this.wmsInboundService = wmsInboundService;
     }
 
     // ============ 销售订单 ============
@@ -749,9 +752,12 @@ public class OrderController {
         return ApiResponse.ok(head);
     }
 
-    /** 采购订单审核：PENDING → APPROVED，写审核时间，inbound_status=待入库 */
+    /** 采购订单审核：PENDING → APPROVED，写审核时间，inbound_status=待入库。
+     *  注意：本方法不加 @Transactional —— 内部要调用 WmsInboundService.createFromPurchase()
+     *  （该方法有自己的事务），若外层包事务，createFromPurchase 抛"已有进行中任务"时
+     *  即使被 catch 也会把外层事务标成 rollback-only，导致审核 UPDATE 回滚。
+     *  审核本身只一条 UPDATE，单语句天然原子，无需显式事务。 */
     @PostMapping("/purchase/order/audit")
-    @Transactional
     public ApiResponse<Map<String, Object>> auditPurchase(@RequestBody Map<String, Object> req) {
         String key = str(req.get("orderId"));
         if (key.isBlank()) key = str(req.get("bizId"));
@@ -769,11 +775,29 @@ public class OrderController {
                     inbound_status = '待入库'
                 WHERE order_id = ?
                 """, "系统管理员", realOrderId);
+        String orderNo = str(pickCS(rows.get(0), "order_no"));
+        // 审核通过后自动在 WMS 侧建收货任务，PDA 端"收货作业"才看得到。
+        // 幂等：重复审核 / 已有进行中任务会抛 IllegalStateException，吞掉不影响审核结果。
+        String wmsWarning = null;
+        try {
+            Map<String, Object> created = wmsInboundService.createFromPurchase(orderNo, "系统管理员");
+            if (created != null && created.get("taskNo") != null) {
+                wmsWarning = "已自动生成收货任务：" + created.get("taskNo");
+            }
+        } catch (IllegalStateException already) {
+            // 已有进行中的任务，正常
+            wmsWarning = already.getMessage();
+        } catch (Exception wmsErr) {
+            // WMS 任务生成失败不应阻断审核主流程，提示后人工补建
+            wmsWarning = "WMS 收货任务自动生成失败：" + wmsErr.getMessage()
+                    + "（可稍后在 PDA 端手工拉取/在 WMS 模块补建）";
+        }
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
-        out.put("orderNo", str(pickCS(rows.get(0), "order_no")));
+        out.put("orderNo", orderNo);
         out.put("status", "APPROVED");
         out.put("success", true);
+        if (wmsWarning != null) out.put("wmsWarning", wmsWarning);
         return ApiResponse.ok(out);
     }
 

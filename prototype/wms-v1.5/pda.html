@@ -1,0 +1,931 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WMS PDA 作业终端 - 原型</title>
+<style>
+:root{
+  --bg:#0b1220; --card:#141c2e; --card2:#1b2538; --line:#243049; --line2:#2d3a55;
+  --txt:#e8eefc; --txt2:#9fb0d0; --txt3:#6b7a99;
+  --pri:#2f7bff; --pri-d:#1c5fd0; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --pur:#a855f7; --info:#38bdf8;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:"思源黑体","Source Han Sans SC","Microsoft YaHei",system-ui,sans-serif;background:#070b14;color:var(--txt);min-height:100vh;display:flex;flex-wrap:wrap;gap:28px;justify-content:center;padding:24px}
+.desc{width:100%;text-align:center;color:#9fb0d0;max-width:900px;margin:0 auto 4px}
+.desc h1{font-size:20px;color:#fff;margin-bottom:6px}
+.desc p{font-size:13px;line-height:1.7}
+.phone{width:390px;height:820px;background:var(--bg);border-radius:42px;border:10px solid #050810;box-shadow:0 24px 60px rgba(0,0,0,.6),inset 0 0 0 2px #1a2438;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:26px;background:#050810;border-radius:0 0 18px 18px;z-index:50}
+.statusbar{height:38px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 6px;font-size:12px;color:var(--txt2);flex:0 0 auto}
+.statusbar .right b{color:var(--txt);font-weight:600}
+.appbar{flex:0 0 auto;padding:8px 16px 10px;display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,#111a2e,#0b1220)}
+.appbar .back{width:34px;height:34px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;border:1px solid var(--line2)}
+.appbar h2{font-size:17px;font-weight:700;flex:1}
+.appbar .act{font-size:12px;color:var(--pri);cursor:pointer}
+.screen{flex:1;overflow-y:auto;padding:12px 14px 90px;-webkit-overflow-scrolling:touch}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:72px;background:rgba(14,21,38,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);display:flex;padding-bottom:8px;z-index:40}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--txt3);cursor:pointer}
+.tab .ic{font-size:21px}
+.tab.on{color:var(--pri)}
+.tab.scan .ic{width:46px;height:46px;background:linear-gradient(145deg,var(--pri),var(--pri-d));border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;margin-top:-20px;box-shadow:0 6px 18px rgba(47,123,255,.5);color:#fff;border:3px solid var(--bg)}
+
+/* home */
+.hello{padding:6px 4px 14px}
+.hello .who{font-size:20px;font-weight:800}
+.hello .who small{font-size:12px;color:var(--txt2);font-weight:400;margin-left:8px}
+.hello .sub{font-size:12px;color:var(--txt3);margin-top:3px}
+.search{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 14px;display:flex;align-items:center;gap:8px;color:var(--txt3);font-size:13px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 6px;margin-bottom:16px}
+.gi{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;position:relative;transition:transform .1s}
+.gi:active{transform:scale(.94)}
+.gi .ic{font-size:25px}
+.gi .nm{font-size:12px;text-align:center;line-height:1.2;color:var(--txt)}
+.gi .badge{position:absolute;top:6px;right:8px;background:var(--bad);color:#fff;font-size:10px;border-radius:10px;padding:1px 6px;font-weight:700;min-width:18px;text-align:center}
+.sect-t{font-size:13px;color:var(--txt2);font-weight:700;margin:6px 2px 10px;display:flex;align-items:center;gap:6px}
+.sect-t b{color:var(--txt)}
+.quick{background:linear-gradient(135deg,#16223d,#101a30);border:1px solid var(--line2);border-radius:16px;padding:14px;margin-bottom:14px}
+.quick h3{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.taskrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.taskrow:first-of-type{border-top:none}
+.taskrow .ti{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto}
+.taskrow .tm{flex:1;min-width:0}
+.taskrow .tm .t1{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.taskrow .tm .t2{font-size:11px;color:var(--txt3);margin-top:2px}
+.taskrow .go{color:var(--pri);font-size:12px;font-weight:600}
+
+/* generic */
+.scan{background:linear-gradient(135deg,rgba(47,123,255,.16),rgba(47,123,255,.04));border:1.5px dashed var(--pri);border-radius:18px;padding:24px 16px;text-align:center;margin-bottom:14px;cursor:pointer}
+.scan .ic{font-size:46px;display:block;margin-bottom:8px;filter:drop-shadow(0 4px 10px rgba(47,123,255,.4))}
+.scan .b{font-size:16px;font-weight:700}
+.scan .s{font-size:12px;color:var(--txt2);margin-top:5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:12px}
+.card h4{font-size:14px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--txt2)}
+.kv .v{font-weight:600;text-align:right}
+.kv .v.red{color:var(--bad)} .kv .v.ok{color:var(--ok)} .kv .v.warn{color:var(--warn)} .kv .v.pur{color:var(--pur)}
+.rowline{display:flex;justify-content:space-between;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);font-size:13px}
+.rowline:last-child{border-bottom:none}
+.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600}
+.t-ok{background:rgba(34,197,94,.15);color:var(--ok)} .t-wait{background:rgba(245,158,11,.16);color:var(--warn)}
+.t-bad{background:rgba(239,68,68,.15);color:var(--bad)} .t-info{background:rgba(56,189,248,.15);color:var(--info)}
+.t-pur{background:rgba(168,85,247,.15);color:var(--pur)} .t-gray{background:rgba(155,170,196,.14);color:var(--txt2)}
+.btn{display:block;width:100%;padding:13px;border-radius:13px;border:none;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;background:var(--card2);color:var(--txt);border:1px solid var(--line2)}
+.btn:active{transform:scale(.98)}
+.btn.pri{background:linear-gradient(145deg,var(--pri),var(--pri-d));color:#fff;border:none;box-shadow:0 6px 16px rgba(47,123,255,.4)}
+.btn.ok{background:linear-gradient(145deg,#22c55e,#16a34a);color:#fff;border:none}
+.btn.bad{background:linear-gradient(145deg,#ef4444,#dc2626);color:#fff;border:none}
+.btn.warn{background:linear-gradient(145deg,#f59e0b,#d97706);color:#fff;border:none}
+.btn.ghost{background:transparent;border:1px solid var(--line2);color:var(--txt2)}
+.btnrow{display:flex;gap:8px} .btnrow .btn{margin-top:10px}
+.stepper{display:flex;align-items:center;justify-content:flex-end;gap:0}
+.stepper button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line2);background:var(--card2);color:var(--txt);font-size:18px;font-weight:700}
+.stepper input{width:54px;height:34px;text-align:center;background:var(--bg);border:1px solid var(--line2);border-radius:9px;color:var(--txt);font-size:15px;font-weight:700;margin:0 6px}
+.prog{height:8px;border-radius:6px;background:var(--bg);overflow:hidden;margin:6px 0}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--pri),var(--info));border-radius:6px}
+.dots{display:flex;gap:6px;margin:10px 0}
+.dots .d{flex:1;height:6px;border-radius:4px;background:var(--line2)}
+.dots .d.on{background:var(--pri)}
+.dots .d.done{background:var(--ok)}
+.flowstep{display:flex;gap:10px;position:relative;padding-bottom:16px}
+.flowstep:before{content:'';position:absolute;left:13px;top:26px;bottom:0;width:2px;background:var(--line2)}
+.flowstep:last-child:before{display:none}
+.flowstep .n{width:28px;height:28px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--card2);border:2px solid var(--line2);color:var(--txt2);z-index:1}
+.flowstep.done .n{background:var(--ok);border-color:var(--ok);color:#fff}
+.flowstep.cur .n{background:var(--pri);border-color:var(--pri);color:#fff;box-shadow:0 0 0 4px rgba(47,123,255,.2)}
+.flowstep .c .t1{font-size:13px;font-weight:600}
+.flowstep .c .t2{font-size:11px;color:var(--txt3);margin-top:2px}
+.alert{padding:11px 13px;border-radius:12px;font-size:12px;line-height:1.6;margin-bottom:12px}
+.alert.tip{background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);color:#bae6fd}
+.alert.ok{background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);color:#bbf7d0}
+.alert.warn{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#fde68a}
+.alert.bad{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#fecaca}
+.mini-t{width:100%;border-collapse:collapse;font-size:12.5px}
+.mini-t th{text-align:left;color:var(--txt3);font-weight:500;padding:7px 6px;border-bottom:1px solid var(--line)}
+.mini-t td{padding:9px 6px;border-bottom:1px solid var(--line)}
+.mini-t .num{text-align:right;font-variant-numeric:tabular-nums}
+.mini-t .red{color:var(--bad)} .mini-t .ok{color:var(--ok)} .mini-t .warn{color:var(--warn)}
+.muted{color:var(--txt3)}
+.bin{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:100%;aspect-ratio:1;background:var(--card2);border:1px solid var(--line2);border-radius:10px;font-size:10px;color:var(--txt2);padding:4px}
+.bin b{font-size:11px;color:var(--txt)}
+.path-stop{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12.5px;border-bottom:1px solid var(--line)}
+.path-stop .n{width:24px;height:24px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:0 0 auto}
+.path-stop.cur .n{background:var(--pri);color:#fff}
+.path-stop.done .n{background:var(--ok);color:#fff}
+.path-stop .arrow{margin-left:auto;color:var(--txt3)}
+.note{font-size:11px;color:var(--txt3);line-height:1.6;margin-top:8px}
+label.chk{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 0}
+label.chk input{width:18px;height:18px;accent-color:var(--pri)}
+.hometabs{display:flex;gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:2px}
+.hometabs .ht{flex:0 0 auto;padding:7px 14px;background:var(--card);border:1px solid var(--line);border-radius:20px;font-size:12.5px;color:var(--txt2);cursor:pointer}
+.hometabs .ht.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+/* pick: 任务卡 / 当前商品大卡 / 分播 */
+.task-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer}
+.task-card.help{border-color:rgba(34,197,94,.4)}
+.task-card .tc-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.task-card .zn{font-size:11px;font-weight:800;color:#fff;padding:2px 9px;border-radius:6px}
+.task-card .tc-no{font-family:Consolas,monospace;font-size:13px;font-weight:700}
+.task-card .tc-meta{font-size:12px;color:var(--txt2);line-height:1.7}
+.bigprog{height:10px;border-radius:6px;background:var(--bg);overflow:hidden;margin:8px 0 4px}
+.bigprog i{display:block;height:100%;background:linear-gradient(90deg,var(--pri),var(--info))}
+.curprod{background:linear-gradient(145deg,rgba(47,123,255,.18),rgba(47,123,255,.05));border:1.5px solid var(--pri);border-radius:16px;padding:16px;text-align:center;margin:12px 0}
+.curprod .loc{font-size:30px;font-weight:800;color:var(--pri);letter-spacing:1px}
+.curprod .gname{font-size:16px;font-weight:700;margin:8px 0 4px}
+.curprod .qty{font-size:40px;font-weight:900;line-height:1}
+.curprod .qty small{font-size:14px;color:var(--txt2);font-weight:600}
+.view-sw{position:absolute;top:9px;right:12px;font-size:11px;color:var(--pri);background:rgba(47,123,255,.15);padding:4px 10px;border-radius:999px;cursor:pointer;z-index:5}
+.listrow{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.listrow .lk{font-family:Consolas,monospace;color:var(--info);font-size:12px}
+.cage{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0}
+.cage .cell{border:1.5px solid var(--line);border-radius:12px;padding:12px;text-align:center;cursor:pointer;background:var(--card)}
+.cage .cell.on{border-color:var(--pri);background:rgba(47,123,255,.15)}
+.cage .slot{font-size:22px}.cage .store{font-size:11px;color:var(--txt2);margin:3px 0}.cage .need{font-size:12px;font-weight:700}
+.twobtn{display:flex;gap:8px}.twobtn .btn{flex:1}
+.headrel{position:relative}
+</style>
+</head>
+<body>
+<div class="desc">
+  <h1>📦 WMS V1.5 · PDA 作业终端（统一入口 · 全作业链路）</h1>
+  <p>深色大字体仓库作业风格。底部 Tab：<b>首页(九宫格)</b> / <b>任务</b> / <b>扫码</b> / <b>消息</b> / <b>我的</b>。首页为统一作业入口，覆盖入库、出库、库内、盘点、退货、改派签收全流程。点击任一功能图标进入真实作业交互；屏幕内按钮均可点。</p>
+</div>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>10:25</span><span class="right">📶 5G <b>86%</b> 🔋</span></div>
+  <div id="appbar" class="appbar" style="display:none"></div>
+  <div id="screen" class="screen"></div>
+  <div class="tabbar">
+    <div class="tab on" data-tab="home" onclick="go('home')"><div class="ic">🏠</div>首页</div>
+    <div class="tab" data-tab="tasks" onclick="go('tasks')"><div class="ic">📋</div>任务</div>
+    <div class="tab scan" data-tab="scan" onclick="go('scan')"><div class="ic">📷</div></div>
+    <div class="tab" data-tab="msg" onclick="go('msg')"><div class="ic">🔔</div>消息</div>
+    <div class="tab" data-tab="me" onclick="go('me')"><div class="ic">👤</div>我的</div>
+  </div>
+</div>
+
+<script>
+var stack=[];
+function $(h){var d=document.createElement('div');d.innerHTML=h;return d.firstElementChild;}
+function toast(m,t){
+  var el=document.createElement('div');
+  el.style.cssText='position:absolute;left:50%;top:72%;transform:translateX(-50%);background:rgba(20,28,46,.96);color:#fff;padding:11px 18px;border-radius:12px;font-size:13px;z-index:99;border:1px solid #2d3a55;max-width:300px;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.5)';
+  var col={ok:'#22c55e',bad:'#ef4444',warn:'#f59e0b',info:'#38bdf8'}[t||'info'];
+  el.innerHTML=(col?'<span style="color:'+col+'">●</span> ':'')+m;
+  document.querySelector('.phone').appendChild(el);
+  setTimeout(function(){el.style.opacity='0';el.style.transition='opacity .3s';setTimeout(function(){el.remove();},300);},1800);
+}
+function setBar(title,back,act){
+  var bar=document.getElementById('appbar');
+  if(title){bar.style.display='flex';
+    bar.innerHTML='<div class="back" onclick="'+(back||'go(\'home\')')+'">‹</div><h2>'+title+'</h2>'+(act||'');
+  } else bar.style.display='none';
+  document.getElementById('screen').scrollTop=0;
+}
+function setTab(t){document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('on',x.dataset.tab===t);});}
+function go(name,arg){
+  stack.push(name);
+  render(name,arg);
+}
+function back(){stack.pop();var cur=stack.pop()||'home';render(cur);}
+function render(name,arg){
+  var s=document.getElementById('screen');s.innerHTML='';
+  setTab(name==='home'?'home':name==='tasks'?'tasks':name==='scan'?'scan':name==='msg'?'msg':name==='me'?'me':'');
+  if(SCREENS[name]){SCREENS[name](s,arg);}
+  else {setBar(null);s.innerHTML='<div class="muted" style="text-align:center;padding:60px 0">建设中…</div>';}
+}
+
+var GROUPS=[
+  {t:'入库作业',items:[
+    {ic:'🚚',nm:'到货收货',go:'receive',bd:3},
+    {ic:'📥',nm:'验货上架',go:'putaway',bd:5},
+    {ic:'↩️',nm:'销售退货',go:'returnIn'},
+  ]},
+  {t:'出库作业',items:[
+    {ic:'🌊',nm:'拣货/分拣',go:'pick',bd:2},
+    {ic:'🔁',nm:'补货',go:'replenish',bd:1},
+    {ic:'✅',nm:'复核打包',go:'check',bd:1},
+    {ic:'🚛',nm:'装车发运',go:'load'},
+  ]},
+  {t:'库内作业',items:[
+    {ic:'↔️',nm:'移库移位',go:'move'},
+    {ic:'🔒',nm:'冻结/解冻',go:'freeze'},
+    {ic:'📝',nm:'库存调整',go:'adjust'},
+    {ic:'🗑️',nm:'报损报废',go:'loss'},
+    {ic:'🧩',nm:'组装拆卸',go:'assembly'},
+    {ic:'⏳',nm:'效期查询',go:'expiry'},
+  ]},
+  {t:'盘点 / 退货',items:[
+    {ic:'⚡',nm:'动盘',go:'countMove'},
+    {ic:'📊',nm:'全盘/指定盘',go:'countFull'},
+    {ic:'📤',nm:'采购退货',go:'returnOut'},
+    {ic:'🔄',nm:'改派签收',go:'reschedule',bd:1},
+  ]},
+  {t:'查询 / 异常',items:[
+    {ic:'🔍',nm:'库存查询',go:'stock'},
+    {ic:'🚨',nm:'异常上报',go:'exception',bd:2},
+    {ic:'🗺️',nm:'库位查看',go:'binview'},
+  ]},
+];
+
+var SCREENS={};
+SCREENS.home=function(s){
+  setBar(null);
+  s.innerHTML=`
+  <div class="hello"><div class="who">赵拣货 <small>白班 · B区拣货组</small></div><div class="sub">杭州总仓 · 今日待办 12 项，2 项加急 🔴</div></div>
+  <div class="search">🔍 <span>搜索功能 / 扫单号跳转（支持 波次/库位/商品/箱码）</span></div>
+  <div class="quick">
+    <h3>⚡ 待办作业（优先级）</h3>
+    <div class="taskrow" onclick="go('pick')"><div class="ti" style="background:rgba(239,68,68,.18)">🔴</div><div class="tm"><div class="t1">加急拣货 W20260823-03</div><div class="t2">B-03区 · 8行38件 · 缺货待加急补货</div></div><div class="go">去拣货 ›</div></div>
+    <div class="taskrow" onclick="go('check')"><div class="ti" style="background:rgba(245,158,11,.18)">🟡</div><div class="tm"><div class="t1">复核差异 W20260823-01</div><div class="t2">少发2箱待处理 · 赵复核</div></div><div class="go">去处理 ›</div></div>
+    <div class="taskrow" onclick="go('putaway')"><div class="ti" style="background:rgba(47,123,255,.18)">🔵</div><div class="tm"><div class="t1">上架任务 PA...012（5项）</div><div class="t2">收货口 R-01 待上架</div></div><div class="go">去上架 ›</div></div>
+  </div>`;
+  GROUPS.forEach(function(g){
+    var d=document.createElement('div');
+    var items=g.items.map(function(it){
+      return `<div class="gi" onclick="go('${it.go}')">${it.bd?`<span class="badge">${it.bd}</span>`:''}<span class="ic">${it.ic}</span><span class="nm">${it.nm}</span></div>`;
+    }).join('');
+    d.innerHTML=`<div class="sect-t">${g.t} <b>(${g.items.length})</b></div><div class="grid">${items}</div>`;
+    s.appendChild(d);
+  });
+};
+
+SCREENS.tasks=function(s){
+  setBar('我的任务',null);
+  var tabs=['全部','待处理','进行中','加急','已完成'];
+  s.innerHTML='<div class="hometabs">'+tabs.map(function(t,i){return '<div class="ht'+(i===1?' on':'')+'">'+t+'</div>';}).join('')+'</div>';
+  var list=[
+    {ic:'🌊',c:'rgba(239,68,68,.18)',t:'加急拣货 W...03',d:'B-03 · 8行38件 · 缺货',st:'待处理',cls:'t-bad',go:'pick'},
+    {ic:'✅',c:'rgba(245,158,11,.18)',t:'复核差异 W...01',d:'少发2箱待处理',st:'待处理',cls:'t-wait',go:'check'},
+    {ic:'📥',c:'rgba(47,123,255,.18)',t:'上架 PA...012',d:'R-01 · 5项',st:'待处理',cls:'t-info',go:'putaway'},
+    {ic:'🔁',c:'rgba(168,85,247,.18)',t:'加急补货 RP...018',d:'B-09→B-03-05 · 8箱',st:'进行中',cls:'t-pur',go:'replenish'},
+    {ic:'⚡',c:'rgba(56,189,248,.18)',t:'动盘 CT...009',d:'B-03区 · 12库位',st:'进行中',cls:'t-info',go:'countMove'},
+    {ic:'↔️',c:'rgba(34,197,94,.15)',t:'移库 MV...012',d:'B-03-05→B-09 · 24箱',st:'进行中',cls:'t-ok',go:'move'},
+  ];
+  list.forEach(function(x){
+    var d=document.createElement('div');d.className='card';
+    d.innerHTML=`<div class="taskrow" style="padding:4px 0" onclick="go('${x.go}')"><div class="ti" style="background:${x.c}">${x.ic}</div><div class="tm"><div class="t1">${x.t}</div><div class="t2">${x.d}</div></div><span class="tag ${x.cls}">${x.st}</span></div>`;
+    s.appendChild(d);
+  });
+};
+
+SCREENS.scan=function(s){
+  setBar('扫码中心',null);
+  s.innerHTML=`
+  <div class="scan" onclick="toast('扫码成功：W20260823-03','ok')"><span class="ic">📷</span><div class="b">对准条码/二维码扫描</div><div class="s">支持 库位码 · 商品码 · 箱码 · 单号 · 集货位码</div></div>
+  <div class="card"><h4>🔍 最近扫码</h4>
+    <div class="rowline"><span class="mono">库位 B-03-05</span><span class="tag t-gray">10:24</span></div>
+    <div class="rowline"><span class="mono">商品 6902345678901</span><span class="tag t-gray">10:22</span></div>
+    <div class="rowline"><span class="mono">波次 W20260823-03</span><span class="tag t-gray">10:18</span></div>
+  </div>
+  <div class="card"><h4>⚡ 快捷扫码作业</h4>
+    <button class="btn ghost" onclick="go('pick')">🌊 扫码拣货</button>
+    <button class="btn ghost" onclick="go('receive')">🚚 扫码收货</button>
+    <button class="btn ghost" onclick="go('countMove')">⚡ 扫码动盘</button>
+    <button class="btn ghost" onclick="go('reschedule')">🔄 改派签收</button>
+  </div>`;
+};
+
+SCREENS.msg=function(s){
+  setBar('消息通知',null);
+  var msgs=[
+    ['bad','🚨 加急补货任务','B-03-05 康师傅牛肉面缺货，已生成加急补货 RP...018','2分钟前'],
+    ['warn','⚠️ 复核差异待处理','W...01 少发2箱，请通知补拣或按差异放行','15分钟前'],
+    ['info','📋 新波次下放','W20260823-03 已下放，8行待拣','32分钟前'],
+    ['ok','✅ 上架完成','PA...011 已全部上架完成','1小时前'],
+    ['pur','⏳ 临期预警','康师傅牛肉面 批次20260601 剩100天','2小时前'],
+  ];
+  msgs.forEach(function(m){
+    var d=document.createElement('div');d.className='card';
+    d.innerHTML=`<div style="font-size:13px;font-weight:700;margin-bottom:5px">${m[1]}</div><div class="muted" style="font-size:12px;line-height:1.6">${m[2]}</div><div class="muted" style="font-size:11px;margin-top:7px">${m[3]}</div>`;
+    s.appendChild(d);
+  });
+};
+
+SCREENS.me=function(s){
+  setBar('我的',null);
+  s.innerHTML=`
+  <div class="card" style="display:flex;align-items:center;gap:14px">
+    <div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(145deg,var(--pri),var(--pur));display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800">赵</div>
+    <div><div style="font-size:17px;font-weight:800">赵拣货</div><div class="muted" style="font-size:12px;margin-top:3px">工号 PDA007 · B区拣货组 · PDA-07号机</div></div>
+  </div>
+  <div class="card"><h4>今日绩效</h4>
+    <div class="kv"><span class="k">拣货件数</span><span class="v ok">1,280 件</span></div>
+    <div class="kv"><span class="k">作业时长</span><span class="v">7.2 小时</span></div>
+    <div class="kv"><span class="k">准确率</span><span class="v ok">99.8%</span></div>
+    <div class="kv"><span class="k">绩效排名</span><span class="v">第 1 / 12</span></div>
+  </div>
+  <div class="card">
+    <div class="rowline">🔔 消息提醒设置 <span class="muted">›</span></div>
+    <div class="rowline">🔊 扫码声音/震动 <span class="tag t-ok">已开</span></div>
+    <div class="rowline">📶 离线作业队列 <span class="tag t-ok">3条已同步</span></div>
+    <div class="rowline">⚖️ 蓝牙电子秤 <span class="tag t-gray">未连接</span></div>
+    <div class="rowline">ℹ️ 版本 <span class="muted">WMS-PDA v1.5.0</span></div>
+  </div>`;
+};
+
+/* ============ 入库：收货 ============ */
+SCREENS.receive=function(s){
+  setBar('到货收货',"go('home')");
+  s.innerHTML=`
+  <div class="scan" onclick="toast('已识别到货单 ASN20260823-088','ok')"><span class="ic">🚚</span><div class="b">扫 ASN / 送货单号</div><div class="s">或从下方待收列表选择</div></div>
+  <div class="hometabs"><div class="ht on">待收货 3</div><div class="ht">验收中</div><div class="ht">已收待上架 5</div></div>
+  <div class="card" onclick="receiveFlow()"><h4>ASN20260823-088 · 康师傅总代理</h4>
+    <div class="kv"><span class="k">预约到货</span><span class="v">2026-08-23 09:00</span></div>
+    <div class="kv"><span class="k">商品/行数</span><span class="v">5 行 · 500 件</span></div>
+    <div class="kv"><span class="k">承运/车牌</span><span class="v">京A·12345</span></div>
+    <button class="btn pri" style="margin-top:10px">开始扫码验收</button>
+  </div>
+  <div class="card"><h4>ASN...087 · 农夫山泉</h4><div class="kv"><span class="k">商品/件数</span><span class="v">300 件</span></div><button class="btn ghost" style="margin-top:10px">验收</button></div>`;
+};
+function receiveFlow(){
+  var s=document.getElementById('screen');s.innerHTML='';
+  setBar('收货验收 · ASN...088',"go('receive')");
+  s.innerHTML=`
+  <div class="dots"><div class="d done"></div><div class="d on"></div><div class="d"></div><div class="d"></div></div>
+  <div class="scan" onclick="toast('商品已扫：康师傅牛肉面 ×24 ✓','ok')"><span class="ic">📦</span><div class="b">逐件/逐箱扫商品码</div><div class="s">已扫 120 / 应收 500</div></div>
+  <div class="card"><h4>📦 康师傅红烧牛肉面105g / 批次20260823</h4>
+    <div class="kv"><span class="k">应收</span><span class="v">120 箱</span></div>
+    <div class="kv"><span class="k">实收</span><span class="v ok">120 箱</span></div>
+    <div class="kv"><span class="k">库位建议</span><span class="v">A-02 / B-03</span></div>
+  </div>
+  <div class="card"><h4>📦 农夫山泉550ml / 20260823</h4>
+    <div class="kv"><span class="k">应收</span><span class="v">200 箱</span></div>
+    <div class="kv"><span class="k">实收</span><span class="v warn">198 箱（短收2，容差内）</span></div>
+    <div class="kv"><span class="k">入库重量(档案核算)</span><span class="v">200×0.55=110kg</span></div>
+  </div>
+  <div class="alert warn">⚠️ 农夫山泉短收 2 箱，在容差(5%)内可确认；超出容差需登记差异。重量按商品档案 base_weight×实收 自动核算，蓝牙秤仅作可选比对（WMS_SCALE_WEIGHT_ENABLED）。</div>
+  <button class="btn ok" onclick="toast('收货完成，已生成上架任务','ok');setTimeout(function(){go('putaway');},800);">✔ 确认收货并生成上架</button>
+  <button class="btn ghost" onclick="toast('已登记差异/拍照','warn')">📷 登记差异/拍照</button>`;
+}
+
+/* ============ 上架 ============ */
+SCREENS.putaway=function(s){
+  setBar('验货上架',"go('home')");
+  s.innerHTML=`
+  <div class="card"><h4>📥 上架任务 PA20260823-012</h4>
+    <div class="kv"><span class="k">来源</span><span class="v">收货单 IN...201</span></div>
+    <div class="kv"><span class="k">待上架</span><span class="v">5 项 · 320 件</span></div>
+    <div class="prog"><i style="width:40%"></i></div><div class="muted" style="font-size:11px">已上架 2/5 项</div>
+  </div>
+  <div class="alert tip">📍 当前推荐：<b>康师傅牛肉面 24箱 → B-03-05</b>（同品类集中、就近拣货位）。系统按 WMS_PUTAWAY_RULE 推荐，可改（WMS_PUTAWAY_FREE_BIN）。</div>
+  <div class="scan" onclick="toast('库位已确认：B-03-05 ✓','ok')"><span class="ic">📍</span><div class="b">扫目标库位码确认上架</div><div class="s">B-03-05 · 拆零拣货位</div></div>
+  <div class="card"><h4>推荐库位</h4>
+    <div class="rowline"><span>📍 B-03-05 <span class="tag t-pur">推荐</span></span><span class="tag t-ok">容量足</span></div>
+    <div class="rowline"><span>📍 B-09 <span class="tag t-gray">备选</span></span><span class="muted">整箱存储</span></div>
+    <div class="rowline"><span>🚚 越库直发 <span class="tag t-gray">WMS_CROSS_DOCK</span></span><span class="muted">关</span></div>
+  </div>
+  <div class="card"><h4>🧾 上架明细</h4>
+    <table class="mini-t"><tr><th>商品/批次</th><th class="num">数量</th><th class="num">库位</th></tr>
+      <tr><td>康师傅牛肉面<br><span class="muted">20260601</span></td><td class="num">24箱</td><td class="num ok">B-03-05</td></tr>
+      <tr><td>农夫山泉<br><span class="muted">20260801</span></td><td class="num">120箱</td><td class="num">A-01-02</td></tr>
+    </table>
+  </div>
+  <button class="btn pri" onclick="toast('上架确认成功，库存已记库位','ok')">✔ 确认上架（库位+数量）</button>`;
+};
+
+/* ============ 拣货 / 分拣（精简） ============
+   流程：pickList（我的库区/可支援库区 抢单）→ pickTask（极简逐件聚焦 ⇄ 清单总览）→ pickSort（汇总单分播）
+   状态机用 window.pdaPick 保存当前任务与进度，纯演示数据。*/
+var PDA_PICK_TASKS=[
+  {no:'SI...B01',wave:'W...03',zone:'B区',zoneColor:'#0ea5e9',mode:'按单拣',orders:1,pcs:8,picked:0,
+    items:[{loc:'B-03-05',g:'可口可乐 330ml×24',batch:'20260720',qty:5,picked:0},{loc:'B-03-05',g:'康师傅红烧牛肉面 105g',batch:'20260601',qty:3,picked:0}],
+    sort:null,urgent:true},
+  {no:'SI...B02',wave:'W...04',zone:'B区',zoneColor:'#0ea5e9',mode:'汇总拣+分播',orders:3,pcs:44,picked:0,
+    items:[{loc:'B-01-02',g:'雪碧 330ml×24',batch:'20260801',qty:24,picked:0},{loc:'B-04-03',g:'脉动青柠 600ml×15',batch:'20260805',qty:20,picked:0}],
+    sort:[{slot:'格口1',store:'物美(海淀黄庄)',qty:20},{slot:'格口2',store:'超市发(双榆树)',qty:16},{slot:'格口3',store:'盒马(西直门)',qty:8}],urgent:false},
+  {no:'SI...B03',wave:'W...05',zone:'B区',zoneColor:'#0ea5e9',mode:'边拣边分',orders:2,pcs:26,picked:0,
+    items:[{loc:'B-08-02',g:'脉动青柠 600ml×15',batch:'20260805',qty:26,picked:0}],
+    sort:[{slot:'格口1',store:'711(三里屯)',qty:14},{slot:'格口2',store:'全家(工体)',qty:12}],urgent:false},
+  {no:'SI...C02',wave:'W...04',zone:'C区',zoneColor:'#7c3aed',mode:'汇总拣+分播',orders:3,pcs:16,picked:0,help:true,
+    items:[{loc:'C-01-03',g:'乐事薯片 原味 70g',batch:'20260725',qty:16,picked:0}],
+    sort:[{slot:'格口1',store:'物美(海淀黄庄)',qty:6},{slot:'格口2',store:'超市发(双榆树)',qty:6},{slot:'格口3',store:'盒马(西直门)',qty:4}],urgent:false}
+];
+var PDA_CLICK_PICK=true;  // WMS_PDA_CLICK_PICK：false=仅扫码
+function pdaPickBar(extraAct){
+  return '<span class="view-sw" onclick="pdaToggleView()">逐件聚焦 ⇄ 清单</span>'+(extraAct||'');
+}
+SCREENS.pick=function(s){
+  setBar('拣货/分拣',"go('home')");
+  var myZone='B区';
+  var mine=PDA_PICK_TASKS.filter(function(t){return !t.help;});
+  var help=PDA_PICK_TASKS.filter(function(t){return t.help;});
+  function card(t,isHelp){
+    var done=t.items.reduce(function(a,it){return a+it.picked;},0);
+    var pct=Math.round(done/t.pcs*100);
+    return '<div class="task-card'+(isHelp?' help':'')+'" onclick="pdaGrab(\''+t.no+'\','+(isHelp?'true':'false')+')">'+
+      '<div class="tc-top"><span class="zn" style="background:'+t.zoneColor+'">'+t.zone+'</span>'+
+      '<span class="tc-no">'+t.no+'</span>'+(t.urgent?'<span class="tag t-bad">加急</span>':'')+(isHelp?'<span class="tag t-ok">可支援</span>':'')+'</div>'+
+      '<div class="tc-meta">🌊 '+t.wave+' · '+t.mode+'<br>📦 '+t.orders+'单 · 应拣 <b>'+t.pcs+'</b> 件'+(isHelp?'<br><span style="color:var(--ok)">🤝 完成本区后可抢单支援（自由领取+主管指定）</span>':'')+'</div>'+
+      (pct>0?'<div class="bigprog"><i style="width:'+pct+'%"></i></div><div class="muted" style="font-size:11px">已拣 '+done+'/'+t.pcs+'</div>':'')+
+      '<button class="btn pri" style="margin-top:10px">'+(pct>0?'继续拣货':(isHelp?'🤝 跨区支援抢单':'🎯 按顺序抢单'))+'</button></div>';
+  }
+  s.innerHTML=
+    '<div class="hometabs"><div class="ht on" onclick="pdaPickTab(this,\'mine\')">🅰️ 我的库区（'+myZone+'）</div><div class="ht" onclick="pdaPickTab(this,\'help\')">🤝 可支援库区</div></div>'+
+    '<div id="pickMine">'+(mine.length?mine.map(function(t){return card(t,false);}).join(''):'<div class="alert ok">本区任务已完成，去「可支援库区」帮忙吧 👍</div>')+'</div>'+
+    '<div id="pickHelp" style="display:none">'+(help.length?help.map(function(t){return card(t,true);}).join(''):'<div class="alert info">暂无可支援库区任务</div>')+'</div>'+
+    '<div class="note">任务按库区生成，只显示你管理库区的商品；可支援库区由参数 WMS_CROSS_ZONE_SCOPE 配置。下方「扫码设置」可切换 仅扫码/扫码+点击。</div>'+
+    '<button class="btn ghost" onclick="pdaToggleClick()">'+(PDA_CLICK_PICK?'✅ 当前：扫码+点击商品可操作（点此切为仅扫码）':'🔒 当前：仅扫码可操作（点此开启点击）')+'</button>';
+};
+function pdaPickTab(el,tab){
+  document.querySelectorAll('.hometabs .ht').forEach(function(x){x.classList.remove('on');});
+  el.classList.add('on');
+  document.getElementById('pickMine').style.display=tab==='mine'?'':'none';
+  document.getElementById('pickHelp').style.display=tab==='help'?'':'none';
+}
+function pdaToggleClick(){PDA_CLICK_PICK=!PDA_CLICK_PICK;SCREENS.pick(document.getElementById('screen'));toast(PDA_CLICK_PICK?'已开启扫码+点击':'已切为仅扫码');}
+function pdaGrab(no,isHelp){
+  var t=PDA_PICK_TASKS.filter(function(x){return x.no===no;})[0];if(!t)return;
+  window.pdaPick={task:t,view:'focus',idx:t.items.findIndex(function(it){return it.picked<it.qty;})};
+  if(window.pdaPick.idx<0)window.pdaPick.idx=0;
+  if(isHelp)toast('已跨区支援抢单（'+t.zone+'）','ok');else toast('已抢单，开始拣货','ok');
+  pdaRenderTask();
+}
+function pdaToggleView(){if(!window.pdaPick)return;window.pdaPick.view=window.pdaPick.view==='focus'?'list':'focus';pdaRenderTask();}
+function pdaRenderTask(){
+  var s=document.getElementById('screen'),P=window.pdaPick;if(!P)return;
+  var t=P.task;
+  setBar(t.zone+' · '+t.no,pdaBackList,pdaPickBar());
+  var done=t.items.reduce(function(a,it){return a+it.picked;},0);
+  var pct=Math.round(done/t.pcs*100);
+  var allDone=done>=t.pcs;
+  var head='<div class="card headrel"><h4>🛒 '+t.wave+' · '+t.mode+(t.urgent?' 🔴':'')+'</h4>'+
+    '<div class="kv"><span class="k">订单/件数</span><span class="v">'+t.orders+'单 · '+done+'/'+t.pcs+'件</span></div>'+
+    '<div class="bigprog"><i style="width:'+pct+'%"></i></div></div>';
+
+  var body='';
+  if(allDone){
+    body='<div class="curprod"><div style="font-size:48px">🎉</div><div class="gname">本任务已全部拣齐</div>'+
+      (t.sort?'<div class="muted" style="margin-top:6px">下一步：到分拣墙按格口分播</div>':'<div class="muted" style="margin-top:6px">等待齐套复检</div>')+'</div>';
+    if(t.sort){
+      body+='<button class="btn pri" onclick="pdaRenderSort()">🎯 前往分播（分拣墙）</button>';
+    }else{
+      body+='<button class="btn ok" onclick="toast(\'拣货完成，等待按订单集齐复检\',\'ok\');setTimeout(function(){go(\'pick\');},700)">✔ 完成拣货</button>';
+    }
+  }else if(P.view==='list'){
+    body='<div class="card"><h4>📋 清单总览（全部行）</h4>'+
+      t.items.map(function(it,i){
+        var d=it.picked>=it.qty, cur=(i===P.idx);
+        var clickable=PDA_CLICK_PICK?('onclick="pdaPickIdx('+i+')"'):'';
+        return '<div class="list-row" style="'+(cur?'background:rgba(47,123,255,.12);border-radius:8px;padding:9px 8px;':'')+'" '+clickable+'>'+
+          '<span class="lk">'+it.loc+'</span><div style="flex:1"><div style="font-weight:600">'+it.g+'</div><div class="muted" style="font-size:11px">批次 '+it.batch+' · 应拣 '+it.qty+'</div></div>'+
+          (d?'<span class="tag t-ok">✓'+it.picked+'</span>':'<b style="color:var(--pri)">'+it.picked+'/'+it.qty+'</b>')+'</div>';
+      }).join('')+'</div>';
+    if(!PDA_CLICK_PICK)body+='<div class="alert tip">🔒 当前仅扫码模式：请用扫码枪扫商品/库位码确认；如需点击，回任务列表开启"扫码+点击"。</div>';
+    body+='<div class="scan" onclick="pdaScanItem()"><span class="ic">📷</span><div class="b">扫商品/库位码确认</div><div class="s">大扫码区，扫中即完成当前行并自动下一条</div></div>';
+  }else{
+    var it=t.items[P.idx];
+    body='<div class="scan" onclick="pdaScanItem()"><span class="ic">📷</span><div class="b">扫商品 / 库位码</div><div class="s">大扫码区 · 扫码自动确认并进入下一商品</div></div>'+
+      '<div class="curprod"><div class="loc">📍 '+it.loc+'</div><div class="gname">'+it.g+'</div>'+
+      '<div class="muted" style="margin-bottom:8px">批次 '+it.batch+'（FEFO 先到期先出）</div>'+
+      '<div class="qty">'+(it.picked+1)+'<small>/'+it.qty+' 件</small></div></div>';
+    if(PDA_CLICK_PICK){
+      body+='<button class="btn pri" onclick="pdaScanItem()">✔ 点击确认本件（可点模式）</button>';
+    }else{
+      body+='<div class="alert tip">🔒 仅扫码模式：请扫码确认，不支持点击</div>';
+    }
+  }
+  // 底部两大按钮
+  var foot='<div class="twobtn"><button class="btn bad" onclick="go(\'replenish\',\'urgent\')">⚡ 缺货加急</button><button class="btn warn" onclick="toast(\'已挂起并升级主管\',\'warn\')">🚨 异常</button></div>';
+  s.innerHTML=head+body+foot;
+}
+function pdaPickIdx(i){window.pdaPick.idx=i;window.pdaPick.view='focus';pdaRenderTask();}
+function pdaBackList(){go('pick');}
+function pdaScanItem(){
+  var P=window.pdaPick;if(!P)return;var t=P.task;
+  var it=t.items[P.idx];
+  if(!it){pdaRenderTask();return;}
+  it.picked++;
+  if(it.picked>=it.qty){
+    // 下一个未完成
+    var nx=t.items.findIndex(function(x,i){return i>P.idx&&x.picked<x.qty;});
+    P.idx=nx>=0?nx:t.items.findIndex(function(x){return x.picked<x.qty;});
+    toast(it.g+' 已拣齐 ✓','ok');
+  }else{
+    toast('已扫 '+it.g+' '+(it.picked)+'/'+it.qty,'ok');
+  }
+  pdaRenderTask();
+}
+function pdaRenderSort(){
+  var s=document.getElementById('screen'),P=window.pdaPick;if(!P)return;var t=P.task;
+  setBar('分播 · '+t.no,pdaBackToTask);
+  s.innerHTML='<div class="alert tip">🎯 汇总拣货：扫/选分拣墙格口（对应订单/门店），录入分投数量。</div>'+
+    '<div class="scan" onclick="toast(\'已扫格口：格口1 物美(海淀黄庄)\',\'ok\')"><span class="ic">🅰️</span><div class="b">扫笼车格口码</div><div class="s">或点击下方格口选择</div></div>'+
+    '<div class="cage">'+
+    t.sort.map(function(d,i){
+      return '<div class="cell'+(i===0?' on':'')+'" onclick="pdaSortCell('+i+')"><div class="slot">🅰️</div><b>'+d.slot+'</b><div class="store">'+d.store+'</div><div class="need">应分 '+d.qty+'</div></div>';
+    }).join('')+'</div>'+
+    '<div class="card"><h4>当前分播：'+t.sort[0].store+'</h4>'+
+      '<div class="kv"><span class="k">应分 / 已分</span><span class="v">'+t.sort[0].qty+' / 0 件</span></div>'+
+      '<div class="stepper" style="justify-content:center;margin:10px 0"><button>−</button><input value="0"><button>+</button></div>'+
+      '<div class="twobtn"><button class="btn ghost" onclick="toast(\'已记录分播数量\')">记录数量</button><button class="btn pri" onclick="pdaSortDone()">✔ 分播完成</button></div>'+
+    '</div>';
+}
+function pdaSortCell(i){toast('已选 '+PDA_PICK_TASKS[0].no+' 格口 '+(i+1));}
+function pdaBackToTask(){pdaRenderTask();}
+function pdaSortDone(){
+  toast('分播完成，进入复检','ok');
+  setTimeout(function(){go('check');},700);
+}
+
+/* ============ 补货 ============ */
+SCREENS.replenish=function(s,mode){
+  setBar(mode==='urgent'?'⚡ 加急补货':'补货',"go('home')");
+  s.innerHTML=`
+  <div class="alert bad">⚡ 加急补货任务 RP20260823-018（拣货缺货触发，优先级置顶）</div>
+  <div class="scan" onclick="toast('已扫源库位：B-09 ✓','ok')"><span class="ic">📤</span><div class="b">第1步：扫源库位（存储位）</div><div class="s">B-09 · 康师傅牛肉面 24箱</div></div>
+  <div class="card"><h4>补货信息</h4>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面 / 20260601</span></div>
+    <div class="kv"><span class="k">从(源)</span><span class="v">B-09（整箱存储，24箱）</span></div>
+    <div class="kv"><span class="k">到(目标拣货位)</span><span class="v red">B-03-05（现0，缺货）</span></div>
+    <div class="kv"><span class="k">补货量</span><span class="v">8 箱（补到容量上限算法）</span></div>
+    <div class="stepper" style="margin-top:10px;justify-content:flex-start"><button>−</button><input value="8"><button>+</button></div>
+  </div>
+  <div class="scan" onclick="toast('已扫目标库位：B-03-05，补货完成 ✓','ok')"><span class="ic">📥</span><div class="b">第2步：送到并扫目标拣货位</div><div class="s">补货确认后 B-03-05 恢复，缺货拣货行自动可继续</div></div>
+  <button class="btn pri" onclick="toast('补货完成，拣货行已解锁','ok');setTimeout(function(){go('pick');},700);">✔ 确认补货完成</button>
+  <div class="note">补货只在库位间转移：wms_bin_stock 两减两增 + 流水，不影响总库存/成本。加急补货优先于普通补货任务。</div>`;
+};
+
+/* ============ 复核（精简：大扫码 + 当前商品） ============ */
+var PDA_CHECK_VIEW='focus';
+SCREENS.check=function(s){
+  setBar('复核打包',"go('home')",'<span class="view-sw" onclick="pdaCheckToggle()">逐件 ⇄ 清单</span>');
+  var items=[
+    {g:'农夫山泉 550ml×24',batch:'20260801',qty:10,scanned:10},
+    {g:'可口可乐 330ml×24',batch:'20260720',qty:5,scanned:5},
+    {g:'康师傅红烧牛肉面 105g',batch:'20260601',qty:8,scanned:6},
+    {g:'海天酱油 500ml',batch:'20260510',qty:9,scanned:0},
+    {g:'双汇火腿肠',batch:'20260810',qty:6,scanned:0}
+  ];
+  var cur=items.find(function(it){return it.scanned<it.qty;});
+  var scanned=items.reduce(function(a,it){return a+Math.min(it.scanned,it.qty);},0);
+  var total=items.reduce(function(a,it){return a+it.qty;},0);
+  var pct=Math.round(scanned/total*100);
+  var head='<div class="card headrel"><h4>📋 W...01 / SO...0218</h4>'+
+    '<div class="kv"><span class="k">客户</span><span class="v">华联(亦庄店)</span></div>'+
+    '<div class="kv"><span class="k">已扫 / 应发</span><span class="v">'+scanned+' / '+total+' 件</span></div>'+
+    '<div class="bigprog"><i style="width:'+pct+'%"></i></div></div>';
+  var body='';
+  if(PDA_CHECK_VIEW==='list'){
+    body='<div class="card"><h4>清单（逐件复检）</h4>'+items.map(function(it){
+      var ok=it.scanned>=it.qty, short=it.scanned>0&&it.scanned<it.qty;
+      return '<div class="list-row"><div style="flex:1"><b>'+it.g+'</b><div class="muted" style="font-size:11px">批次 '+it.batch+' · 应发 '+it.qty+'</div></div>'+(ok?'<span class="tag t-ok">✓'+it.scanned+'</span>':(short?'<span class="tag t-bad">少'+(it.qty-it.scanned)+'</span>':'<span class="tag t-gray">待扫</span>'))+'</div>';
+    }).join('')+'</div>';
+  }
+  body+='<div class="scan" onclick="pdaCheckScan()"><span class="ic">📷</span><div class="b">扫商品 / 箱码复检</div><div class="s">拆零逐件 · 扫中即核对当前商品</div></div>';
+  if(cur){
+    body+='<div class="curprod"><div class="loc">🔍 当前待扫</div><div class="gname">'+cur.g+'</div><div class="muted" style="margin-bottom:8px">批次 '+cur.batch+'（FEFO）</div><div class="qty">'+cur.scanned+'<small>/'+cur.qty+' 件</small></div></div>';
+  }else{
+    body+='<div class="curprod"><div style="font-size:48px">✅</div><div class="gname">全部扫齐</div></div>';
+  }
+  var diff=(cur&&cur.scanned>0&&cur.scanned<cur.qty);
+  if(diff){
+    body+='<div class="alert bad">❗ '+cur.g+' 少发，请处理差异（扣账前纠正）</div>';
+  }
+  body+='<div class="twobtn"><button class="btn warn" onclick="toast(\'已通知补拣/登记破损\',\'warn\')">📤 补拣/破损</button><button class="btn bad" onclick="go(\'exception\')">🚨 异常</button></div>';
+  if(!diff&&scanned>=total){
+    body+='<button class="btn ok" style="margin-top:10px" onclick="checkPass()">✔ 复检通过并扣库存</button>';
+  }else{
+    body+='<button class="btn ghost" style="margin-top:10px" onclick="toast(\'按差异放行需 WMS_CHECK_SHORT_ALLOWED 且留痕\',\'warn\')">按差异放行(留痕)</button>';
+  }
+  s.innerHTML=head+body;
+};
+function pdaCheckToggle(){PDA_CHECK_VIEW=PDA_CHECK_VIEW==='focus'?'list':'focus';SCREENS.check(document.getElementById('screen'));}
+function pdaCheckScan(){toast('条码已核对 ✓','ok');}
+function checkPass(){
+  var s=document.getElementById('screen');s.innerHTML='';
+  setBar('✔ 复核通过',"go('check')");
+  s.innerHTML=`
+  <div style="text-align:center;padding:20px 0"><div style="font-size:56px">✅</div><div style="font-size:18px;font-weight:800;margin-top:8px">复核通过，库存已扣减</div></div>
+  <div class="card"><h4>系统自动执行</h4>
+    <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">生成销售出库单</div><div class="t2">OUT20260823-0088 · 按实发</div></div></div>
+    <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">审核出库单 → 扣库存</div><div class="t2">InventoryCostService.salesOutbound：按商品+仓库移动加权平均结转成本，扣减库存、释放锁</div></div></div>
+    <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">生成发货单</div><div class="t2">SR20260823-0090 · UNDISPATCHED 待调度装车</div></div></div>
+    <div class="flowstep cur"><div class="n">4</div><div class="c"><div class="t1">推送装车/发运</div><div class="t2">司机扫码装车（装车不扣库存，仅物理交接）</div></div></div>
+  </div>
+  <div class="kv card"><span class="k">出库件数</span><span class="v">38 件</span></div>
+  <div class="kv card"><span class="k">出库成本(移动加权)</span><span class="v">¥ 6,240.00</span></div>
+  <button class="btn pri" onclick="go('load')">→ 去装车发运</button>
+  <button class="btn ghost" onclick="go('home')">返回首页</button>`;
+}
+
+/* ============ 装车发运 ============ */
+SCREENS.load=function(s){
+  setBar('装车发运 (TMS)',"go('home')");
+  s.innerHTML=`
+  <div class="card"><h4>🚛 车辆 · 张师傅 · 京A·88888</h4>
+    <div class="kv"><span class="k">线路</span><span class="v">城东线（华联/全家/物美）</span></div>
+    <div class="kv"><span class="k">状态</span><span class="v ok">装车中</span></div>
+    <div class="kv"><span class="k">已装/应装</span><span class="v">12 / 18 单</span></div>
+  </div>
+  <div class="alert tip">💡 只能装载<b>出库已完成（已扣库存）</b>的订单，关联键 source_order_no = 销售单号。装车仅做物理交接，<b>不再扣库存</b>。</div>
+  <div class="scan" onclick="toast('已装车：SO...0220 (OUT...080) ✓','ok')"><span class="ic">📦</span><div class="b">扫箱码/发货单装车</div><div class="s">扫描后校验是否出库完成、是否本车</div></div>
+  <div class="card"><h4>本车待装</h4>
+    <div class="rowline"><span>SO...0220 · 物美</span><span class="tag t-ok">可装</span></div>
+    <div class="rowline"><span>SO...0221 · 全家</span><span class="tag t-ok">可装</span></div>
+    <div class="rowline" style="opacity:.6"><span>SO...0241 · 华联</span><span class="tag t-bad">出库未完成·禁装</span></div>
+  </div>
+  <button class="btn ok" onclick="toast('装车完成，确认发车 → TMS 在途','ok')">✔ 装车完成确认发车</button>
+  <button class="btn ghost" onclick="go('reschedule')">🔄 改派返仓签收</button>`;
+};
+
+/* ============ 改派返仓签收 ============ */
+SCREENS.reschedule=function(s){
+  setBar('改派返仓签收',"go('home')");
+  s.innerHTML=`
+  <div class="alert tip">🔄 司机在 TMS 发起改派返仓(GPRC)，货物随车带回。PDA 扫 GPRC 单/箱码签收并登记放到<b>集货位</b>。集货位只是<b>单据位置标记</b>，用于找货——<b>不入库、不写 wms_bin_stock、不动库存</b>（货物本就是已出库状态）。</div>
+  <div class="scan" onclick="toast('已识别改派单 GPRC20260823-005 ✓','ok')"><span class="ic">🔄</span><div class="b">扫 GPRC 改派单号 / 箱码</div><div class="s">核对原配送单、客户、商品、件数</div></div>
+  <div class="card"><h4>GPRC...005 · 改派返仓</h4>
+    <div class="kv"><span class="k">原配送单</span><span class="v">SR...0090</span></div>
+    <div class="kv"><span class="k">客户</span><span class="v">华联超市(建国路店)</span></div>
+    <div class="kv"><span class="k">商品件数</span><span class="v">康师傅牛肉面 8 箱</span></div>
+    <div class="kv"><span class="k">改派原因</span><span class="v warn">客户不在，要求改期</span></div>
+    <div class="kv"><span class="k">状态</span><span class="v pur">PENDING 待仓库签收</span></div>
+  </div>
+  <div class="card"><h4>📦 逐箱核对</h4>
+    <div class="rowline"><span>箱码 BOX...8801</span><span class="tag t-ok">已扫</span></div>
+    <div class="rowline"><span>箱码 BOX...8802</span><span class="tag t-ok">已扫</span></div>
+    <div class="rowline"><span>箱码 BOX...8803</span><span class="tag t-bad">少1件</span></div>
+    <button class="btn ghost" style="margin-top:8px" onclick="toast('已拍照并登记差异','warn')">📷 差异拍照/登记</button>
+  </div>
+  <div class="scan" onclick="toast('集货位 JH-03 已登记 ✓','ok')" style="border-color:var(--pur);background:rgba(168,85,247,.1)"><span class="ic" style="filter:drop-shadow(0 4px 10px rgba(168,85,247,.4))">🗺️</span><div class="b">扫/选放入的集货位</div><div class="s">JH-03 · 仅位置标记，不记库存</div></div>
+  <button class="btn pri" onclick="rescheduleDone()">✔ 确认签收（回调 TMS check）</button>
+  <div class="note">签收后：GPRC 状态 PENDING→CHECKED，sales_receipt.dispatch_status=RESCHEDULED；调度即可重新指派司机(redispatch)，新司机到集货位取货装车。全程不反审核出库单、不增减库存。</div>`;
+};
+function rescheduleDone(){
+  toast('签收成功，已登记集货位 JH-03，回调 TMS','ok');
+  setTimeout(function(){
+    var s=document.getElementById('screen');s.innerHTML='';setBar('签收完成',"go('home')");
+    s.innerHTML=`<div style="text-align:center;padding:24px 0"><div style="font-size:56px">✅</div><div style="font-size:17px;font-weight:800;margin-top:8px">改派单已签收 (CHECKED)</div></div>
+    <div class="card">
+      <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">扫码核对</div><div class="t2">GPRC...005 · 8箱（少1件已留痕）</div></div></div>
+      <div class="flowstep done"><div class="n">✓</div><div class="c"><div class="t1">登记集货位</div><div class="t2">JH-03（位置标记，无库存变动）</div></div></div>
+      <div class="flowstep cur"><div class="n">3</div><div class="c"><div class="t1">等待调度重新派车</div><div class="t2">CHECKED → REDISPATCHED → 新司机取货</div></div></div>
+    </div>
+    <button class="btn pri" onclick="go('home')">返回首页</button>`;
+  },700);
+}
+
+/* ============ 移库 ============ */
+SCREENS.move=function(s){
+  setBar('移库移位',"go('home')");
+  s.innerHTML=`
+  <div class="card"><h4>↔️ 移库单 MV20260823-012</h4>
+    <div class="kv"><span class="k">类型</span><span class="v">主动整理</span></div>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面 / 20260601</span></div>
+    <div class="kv"><span class="k">源→目标</span><span class="v">B-03-05 → B-09</span></div>
+    <div class="kv"><span class="k">应移/已移</span><span class="v warn">24 / 18 箱</span></div>
+    <div class="prog"><i style="width:75%"></i></div>
+  </div>
+  <div class="scan" onclick="toast('已扫源库位：B-03-05 ✓','ok')"><span class="ic">📍</span><div class="b">第1步：扫源库位</div><div class="s">校验源位库存与批次</div></div>
+  <div class="card"><h4>移出数量</h4><div class="stepper" style="justify-content:flex-start"><button>−</button><input value="6"><button>+</button></div></div>
+  <div class="scan" onclick="toast('已扫目标库位：B-09 ✓','ok')"><span class="ic">🎯</span><div class="b">第2步：扫目标库位确认放入</div><div class="s">校验容量、品类混放规则</div></div>
+  <button class="btn pri" onclick="toast('移库确认，库位库存已更新+流水','ok')">✔ 确认移库</button>
+  <div class="note">移库只改变库位分布：wms_bin_stock 两减两增 + 流水，财务总账与成本不变。如实物与单据数量不符，按差异上报异常。</div>`;
+};
+
+/* ============ 冻结/解冻 ============ */
+SCREENS.freeze=function(s){
+  setBar('冻结 / 解冻',"go('home')");
+  s.innerHTML=`
+  <div class="alert warn">🔒 冻结后该库位/批次阻止上下架、拣货、盘点。用于盘点、质量异议、破损排查。解冻需主管权限。</div>
+  <div class="scan" onclick="toast('已扫库位：B-02-09','ok')"><span class="ic">🔒</span><div class="b">扫库位 / 批次码</div></div>
+  <div class="card"><h4>选择冻结原因</h4>
+    <label class="chk"><input type="radio" name="fr" checked> 盘点冻结</label>
+    <label class="chk"><input type="radio" name="fr"> 质量异议</label>
+    <label class="chk"><input type="radio" name="fr"> 破损排查</label>
+    <label class="chk"><input type="radio" name="fr"> 临期排查</label>
+  </div>
+  <button class="btn warn" onclick="toast('已冻结，相关作业将跳过','warn')">🔒 确认冻结</button>
+  <div class="card" style="margin-top:12px"><h4>当前我负责的冻结位</h4>
+    <div class="rowline"><span>📍 B-01-07 · 盘点</span><button class="btn ghost" style="width:auto;margin:0;padding:7px 14px" onclick="toast('解冻申请已提交主管','info')">申请解冻</button></div>
+    <div class="rowline"><span>📍 D-02-02 · 质量异议</span><span class="tag t-pur">高值</span></div>
+  </div>`;
+};
+
+/* ============ 库存调整 ============ */
+SCREENS.adjust=function(s){
+  setBar('库存调整',"go('home')");
+  s.innerHTML=`
+  <div class="alert warn">📝 调整用于经审批的账实差异。必须填原因、拍照、主管审批通过才调账并写流水，联动财务库存与成本。</div>
+  <div class="scan" onclick="toast('已扫库位：B-09','ok')"><span class="ic">📍</span><div class="b">扫库位 / 商品码</div></div>
+  <div class="card"><h4>调整明细</h4>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面/20260601</span></div>
+    <div class="kv"><span class="k">账面数量</span><span class="v">26</span></div>
+    <div class="kv"><span class="k">实盘数量</span><span class="v"><input style="width:70px;background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--txt);padding:6px;text-align:center" value="24"></span></div>
+    <div class="kv"><span class="k">调整</span><span class="v red">-2（盘亏）</span></div>
+  </div>
+  <div class="card"><h4>调整原因</h4>
+    <label class="chk"><input type="radio" name="ar" checked> 盘点差异(复盘确认)</label>
+    <label class="chk"><input type="radio" name="ar"> 货损货差</label>
+    <label class="chk"><input type="radio" name="ar"> 历史漏记</label>
+    <textarea placeholder="说明并拍照" style="width:100%;margin-top:8px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--txt);padding:10px;font-size:13px;min-height:60px"></textarea>
+  </div>
+  <button class="btn warn" onclick="toast('调整单已提交主管审批','ok')">📤 提交审批</button>`;
+};
+
+/* ============ 报损 ============ */
+SCREENS.loss=function(s){
+  setBar('报损报废',"go('home')");
+  s.innerHTML=`
+  <div class="alert bad">🗑️ 报损针对破损、过期、变质、无法销售商品。需拍照、定责、主管审批；通过后减库存并按移动加权成本计损失。</div>
+  <div class="scan" onclick="toast('已扫商品/批次','ok')"><span class="ic">🗑️</span><div class="b">扫报损商品 / 批次码</div></div>
+  <div class="card"><h4>报损信息</h4>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">双汇火腿肠/20260510（过期）</span></div>
+    <div class="kv"><span class="k">库位</span><span class="v">C-01-04</span></div>
+    <div class="kv"><span class="k">报损数量</span><span class="v"><div class="stepper" style="display:inline-flex"><button>−</button><input value="9"><button>+</button></div></span></div>
+    <div class="kv"><span class="k">损失金额</span><span class="v red">¥144.00（移动加权成本自动）</span></div>
+  </div>
+  <div class="card"><label class="chk"><input type="radio" name="lr" checked> 破损</label>
+    <label class="chk"><input type="radio" name="lr"> 过期/变质</label>
+    <label class="chk"><input type="radio" name="lr"> 质量问题</label>
+    <textarea placeholder="责任界定/拍照说明" style="width:100%;margin-top:8px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--txt);padding:10px;font-size:13px;min-height:56px"></textarea>
+  </div>
+  <button class="btn bad" onclick="toast('报损单已提交主管审批','bad')">🗑️ 提交报损审批</button>`;
+};
+
+/* ============ 组装拆卸 ============ */
+SCREENS.assembly=function(s){
+  setBar('组装 / 拆卸',"go('home')");
+  s.innerHTML=`
+  <div class="hometabs"><div class="ht on">组装任务</div><div class="ht">拆卸任务</div></div>
+  <div class="card"><h4>🧩 组装单 ASM...007 · 中秋礼盒A(4件套)</h4>
+    <div class="kv"><span class="k">来源订单</span><span class="v">SO...0231 · 30盒</span></div>
+    <div class="kv"><span class="k">工位</span><span class="v">组装工位 P-02</span></div>
+    <div class="kv"><span class="k">进度</span><span class="v warn">18/30 盒</span></div>
+    <div class="prog"><i style="width:60%"></i></div>
+  </div>
+  <div class="scan" onclick="toast('已扫子件：月饼(莲蓉) ✓','ok')"><span class="ic">📦</span><div class="b">扫子件 / 按 BOM 领料</div><div class="s">组装完成扫成品码入位</div></div>
+  <div class="card"><h4>BOM 子件领用</h4>
+    <table class="mini-t"><tr><th>子件</th><th class="num">应领</th><th class="num">已领</th></tr>
+      <tr><td>月饼(莲蓉)</td><td class="num">30</td><td class="num ok">30</td></tr>
+      <tr><td>月饼(豆沙)</td><td class="num">30</td><td class="num ok">30</td></tr>
+      <tr><td>茶叶包</td><td class="num">60</td><td class="num ok">60</td></tr>
+      <tr><td>礼盒+手提袋</td><td class="num">30</td><td class="num warn">18</td></tr>
+    </table>
+  </div>
+  <button class="btn pri" onclick="toast('成品已扫码入位，扣子件增成品+成本','ok')">✔ 组装完成入位</button>
+  <div class="note">组装完成：按 BOM 扣减子件、增加成品库存，成品成本=Σ子件移动加权成本+组装费用；拆卸反向。</div>`;
+};
+
+/* ============ 效期查询 ============ */
+SCREENS.expiry=function(s){
+  setBar('效期查询',"go('home')");
+  s.innerHTML=`
+  <div class="scan" onclick="toast('已扫商品，显示批次效期','ok')"><span class="ic">⏳</span><div class="b">扫商品 / 批次码查效期</div></div>
+  <div class="card"><h4>康师傅牛肉面 · 批次20260601</h4>
+    <div class="kv"><span class="k">生产日期</span><span class="v">2026-06-01</span></div>
+    <div class="kv"><span class="k">到期日</span><span class="v warn">2026-12-01</span></div>
+    <div class="kv"><span class="k">剩余天数</span><span class="v red">100 天（临期预警≤90将触发）</span></div>
+    <div class="kv"><span class="k">出库规则</span><span class="v pur">FEFO 先到期先出</span></div>
+  </div>
+  <div class="card"><h4>各批次 FEFO 顺位</h4>
+    <div class="rowline"><span>20260601（剩100天）</span><span class="tag t-wait">优先消化</span></div>
+    <div class="rowline"><span>20260701（剩130天）</span><span class="tag t-gray">后出</span></div>
+    <div class="rowline"><span>20260815（剩175天）</span><span class="tag t-gray">后出</span></div>
+  </div>
+  <button class="btn warn" onclick="toast('已标记临期/转处理建议','warn')">⚡ 临期处理（促销/退供/报损）</button>`;
+};
+
+/* ============ 盘点：动盘 ============ */
+SCREENS.countMove=function(s){
+  setBar('动盘（动态盘点）',"go('home')");
+  s.innerHTML=`
+  <div class="alert tip">⚡ 动盘在作业间隙随时发起，针对某库位/商品/批次，不停业、仅短时冻该库位；扫库位即盘，盘完即走，适合 A 类/账实疑点。</div>
+  <div class="card"><h4>动盘任务 CT20260823-009 · B-03区/A类</h4>
+    <div class="kv"><span class="k">模式</span><span class="v">暗盘（盲盘，不显示账面）</span></div>
+    <div class="kv"><span class="k">进度</span><span class="v">8 / 12 库位</span></div>
+    <div class="prog"><i style="width:66%"></i></div>
+  </div>
+  <div class="scan" onclick="toast('库位 B-03-05 已识别，请清点实盘数量','ok')"><span class="ic">📍</span><div class="b">扫库位码开始盘点</div><div class="s">暗盘不显示账面数量</div></div>
+  <div class="card"><h4>📍 B-03-05 · 清点</h4>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面/20260601</span></div>
+    <div class="kv"><span class="k">实盘数量</span><span class="v"><div class="stepper" style="display:inline-flex"><button>−</button><input value="1"><button>+</button></div></span></div>
+    <div class="note">逐批次录入；盘点时该库位短时冻结，盘完即解锁。</div>
+  </div>
+  <button class="btn pri" onclick="toast('已提交，差异>0 自动转复盘','ok')">✔ 提交该库位盘点</button>
+  <button class="btn ghost" onclick="toast('已拍照/备注差异','info')">📷 拍照/备注</button>`;
+};
+
+/* ============ 全盘/指定盘 ============ */
+SCREENS.countFull=function(s){
+  setBar('全盘 / 指定盘',"go('home')");
+  s.innerHTML=`
+  <div class="hometabs"><div class="ht on">全盘 CT...008</div><div class="ht">指定盘 CT...007</div></div>
+  <div class="card"><h4>📊 全盘任务 CT20260823-008（月末）</h4>
+    <div class="kv"><span class="k">范围/冻结</span><span class="v">全仓 · 全厂冻结(WMS_COUNT_FREEZE_WHOLE)</span></div>
+    <div class="kv"><span class="k">模式</span><span class="v">明盘 + 复盘</span></div>
+    <div class="kv"><span class="k">初盘进度</span><span class="v ok">186/186 库位（初盘完成）</span></div>
+    <div class="kv"><span class="k">差异</span><span class="v red">3 处待复盘</span></div>
+  </div>
+  <div class="alert warn">📋 初盘发现 3 处差异，需复盘二次确认。复盘确认后转主管审批调账。</div>
+  <div class="card"><h4>待复盘库位</h4>
+    <div class="rowline" onclick="go('countMove')"><span>📍 B-09 康师傅牛肉面<br><span class="muted" style="font-size:11px">账面26 / 初盘24（-2）</span></span><span class="tag t-bad">盘亏</span></div>
+    <div class="rowline"><span>📍 A-01-02 农夫山泉<br><span class="muted" style="font-size:11px">账面318 / 初盘320（+2）</span></span><span class="tag t-wait">待复盘</span></div>
+  </div>
+  <button class="btn pri" onclick="toast('已进入复盘扫码','ok')">🔍 开始复盘</button>
+  <div class="note">全盘可多人分区同时盘，支持初盘→复盘→审核；差异审批后才调账（写流水、联动财务）。</div>`;
+};
+
+/* ============ 采购退货（出库） ============ */
+SCREENS.returnOut=function(s){
+  setBar('采购退货出库',"go('home')");
+  s.innerHTML=`
+  <div class="alert warn">📤 采购退货是<b>出库</b>单据：从库位拣货退供应商，<b>校验可用库存</b>，出库审核扣库存、联动应付冲减。</div>
+  <div class="card"><h4>PRT...002 · 退康师傅总代理</h4>
+    <div class="kv"><span class="k">原采购单</span><span class="v">PO...077</span></div>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面/20260601</span></div>
+    <div class="kv"><span class="k">退货数量</span><span class="v">30 箱</span></div>
+    <div class="kv"><span class="k">拣货库位</span><span class="v">B-09(24)+B-03-05(14) 可用38</span></div>
+  </div>
+  <div class="scan" onclick="toast('已扫库位 B-09，拣24箱 ✓','ok')"><span class="ic">📤</span><div class="b">按单从库位拣货</div><div class="s">逐库位扫码，校验可用库存</div></div>
+  <button class="btn pri" onclick="toast('拣货完成，提交出库审核','ok')">✔ 拣货完成</button>
+  <div class="note">与销售退货方向相反：销售退货是入库不校验库存；采购退货是出库必须校验可用库存。</div>`;
+};
+
+/* ============ 销售退货（入库） ============ */
+SCREENS.returnIn=function(s){
+  setBar('销售退货收货',"go('home')");
+  s.innerHTML=`
+  <div class="alert tip">📥 销售退货是<b>入库</b>单据：客户退回，验收→上架，<b>不校验可用库存</b>。可关联原销售单带回批次。</div>
+  <div class="scan" onclick="toast('已识别退货单 SRT...004','ok')"><span class="ic">↩️</span><div class="b">扫退货单 / 原发货单号</div></div>
+  <div class="card"><h4>SRT...004 · 华联(建国路)</h4>
+    <div class="kv"><span class="k">原销售单</span><span class="v">SO...0218</span></div>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面/20260601</span></div>
+    <div class="kv"><span class="k">应退</span><span class="v">2 箱</span></div>
+    <div class="kv"><span class="k">退货原因</span><span class="v warn">临期/客户拒收</span></div>
+  </div>
+  <div class="card"><h4>验收</h4>
+    <div class="kv"><span class="k">实收数量</span><span class="v"><div class="stepper" style="display:inline-flex"><button>−</button><input value="2"><button>+</button></div></span></div>
+    <label class="chk"><input type="radio" name="q" checked> 良品（可再售）</label>
+    <label class="chk"><input type="radio" name="q"> 不良品（报损/退供）</label>
+  </div>
+  <button class="btn ok" onclick="toast('退货验收完成，已生成上架任务（库存增加）','ok')">✔ 确认退货入库</button>
+  <button class="btn ghost" onclick="toast('差异已拍照登记','warn')">📷 差异拍照</button>`;
+};
+
+/* ============ 库存查询 ============ */
+SCREENS.stock=function(s){
+  setBar('库存查询',"go('home')");
+  s.innerHTML=`
+  <div class="scan" onclick="toast('已扫商品：农夫山泉','ok')"><span class="ic">🔍</span><div class="b">扫商品 / 库位 / 批次查库存</div></div>
+  <div class="card"><h4>农夫山泉550ml · G00128</h4>
+    <div class="kv"><span class="k">财务库存</span><span class="v">500 瓶</span></div>
+    <div class="kv"><span class="k">可用 / 锁定</span><span class="v"><span class="ok">480</span> / <span class="warn">20</span></span></div>
+    <div class="kv"><span class="k">成本(移动加权)</span><span class="v">¥1.20 / 瓶</span></div>
+  </div>
+  <div class="card"><h4>📍 库位/批次分布（wms_bin_stock）</h4>
+    <table class="mini-t"><tr><th>库位</th><th>批次</th><th class="num">数量</th><th class="num">锁定</th></tr>
+      <tr><td>A-01-01</td><td>20260720</td><td class="num">180</td><td class="num">0</td></tr>
+      <tr><td>A-01-02</td><td>20260801</td><td class="num">300</td><td class="num warn">20</td></tr>
+      <tr><td>B-01-02</td><td>20260801</td><td class="num">20</td><td class="num">0</td></tr>
+    </table>
+    <div class="note" style="margin-top:8px">账实分离：库位库存合计应与财务库存一致；成本按商品+仓库移动加权平均，不按批次/库位。</div>
+  </div>`;
+};
+
+/* ============ 异常上报 ============ */
+SCREENS.exception=function(s){
+  setBar('异常上报 / 挂起',"go('home')");
+  s.innerHTML=`
+  <div class="alert bad">🚨 当场无法解决的问题在此上报、挂起、分派。挂起会冻结相关库存/库位，进异常中心，超时升级主管。</div>
+  <div class="card"><h4>异常类型</h4>
+    <label class="chk"><input type="radio" name="ex" checked> 拣货缺货</label>
+    <label class="chk"><input type="radio" name="ex"> 收货/复核差异</label>
+    <label class="chk"><input type="radio" name="ex"> 商品破损</label>
+    <label class="chk"><input type="radio" name="ex"> 库位/设备异常</label>
+    <label class="chk"><input type="radio" name="ex"> 退货/改派差异</label>
+  </div>
+  <div class="card"><h4>关联与等级</h4>
+    <div class="kv"><span class="k">关联单据</span><span class="v"><input style="width:130px;background:var(--bg);border:1px solid var(--line2);border-radius:8px;color:var(--txt);padding:6px 8px" value="W...03"></span></div>
+    <div class="kv"><span class="k">等级</span><span class="v red">紧急</span></div>
+    <textarea placeholder="描述异常情况，可拍照留痕" style="width:100%;margin-top:8px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;color:var(--txt);padding:10px;font-size:13px;min-height:70px">B-03-05 拣货位康师傅牛肉面缺货，订单需8箱，已通知加急补货。</textarea>
+  </div>
+  <button class="btn bad" onclick="toast('异常已上报并挂起，已分派责任人','bad')">🚨 提交并挂起</button>
+  <button class="btn ghost" onclick="toast('已拍照','info')">📷 拍照</button>`;
+};
+
+/* ============ 库位查看 ============ */
+SCREENS.binview=function(s){
+  setBar('库位查看',"go('home')");
+  s.innerHTML=`
+  <div class="scan" onclick="toast('已扫库位：B-03-05','ok')"><span class="ic">🗺️</span><div class="b">扫库位码看库存</div></div>
+  <div class="card"><h4>📍 B-03-05 · 拆零拣货位</h4>
+    <div class="kv"><span class="k">库区</span><span class="v">B 拆零拣货区</span></div>
+    <div class="kv"><span class="k">状态</span><span class="v red">缺货</span></div>
+    <div class="kv"><span class="k">占用/容量</span><span class="v">0 / 24箱</span></div>
+  </div>
+  <div class="card"><h4>库位商品</h4>
+    <div class="kv"><span class="k">商品/批次</span><span class="v">康师傅牛肉面/20260601</span></div>
+    <div class="kv"><span class="k">现存量</span><span class="v red">0</span></div>
+    <div class="kv"><span class="k">到期日</span><span class="v warn">2026-12-01</span></div>
+  </div>
+  <div class="btnrow">
+    <button class="btn warn" onclick="go('replenish','urgent')">⚡ 补货</button>
+    <button class="btn ghost" onclick="go('move')">↔️ 移库</button>
+  </div>
+  <button class="btn ghost" onclick="go('freeze')">🔒 冻结库位</button>`;
+};
+
+/* boot */
+go('home');
+</script>
+</body></html>

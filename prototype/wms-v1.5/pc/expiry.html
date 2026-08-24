@@ -1,0 +1,93 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>效期/临期预警 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>⏳ 效期 / 临期预警</h2><span class="sub">批次效期可视化 · 临期禁发/先出 · FEFO 与临期处理（促销/退货/报损）</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已导出临期清单">📤 导出</button>
+    <button class="btn warn" onclick="handleExpiry()">⚡ 批量临期处理</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">🟢</div><div class="n green">1,820</div><div class="l">正常批次(件)</div></div>
+    <div class="kpi"><div class="ic">🟡</div><div class="n orange">126</div><div class="l">临期预警(件)</div></div>
+    <div class="kpi"><div class="ic">🔴</div><div class="n red">38</div><div class="l">即将过期(件)</div></div>
+    <div class="kpi"><div class="ic">⛔</div><div class="n red">9</div><div class="l">已过期禁发(件)</div></div>
+    <div class="kpi"><div class="ic">📉</div><div class="n">2.1%</div><div class="l">临期占比</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs" data-tabs>
+      <div class="tab on">效期看板</div>
+      <div class="tab">批次库存清单</div>
+      <div class="tab">临期处理记录</div>
+      <div class="tab">效期策略参数</div>
+    </div>
+
+    <div class="tabpane on" style="padding:16px">
+      <div class="alert warn">⏳ 按商品保质期与剩余天数分级：<span class="chip ok">正常</span> 剩余>阈值1；<span class="chip warn">临期预警</span> 剩余≤阈值1；<span class="chip bad">即将过期</span> 剩余≤阈值2；<span class="chip bad">过期禁发</span> 已过保质期。出库按 FEFO（先到期先出）推荐批次；过期/临期超阈值自动拦截（参数 WMS_EXPIRY_BLOCK_DAYS）。</div>
+      <h4 style="margin:14px 0 8px">按剩余效期分布</h4>
+      <div class="bar-row"><div class="top"><span class="green">● 正常 &gt;90天</span><span>1,820 件</span></div><div class="bar ok"><i style="width:92%"></i></div></div>
+      <div class="bar-row"><div class="top"><span class="orange">● 临期 31-90天</span><span>88 件</span></div><div class="bar warn"><i style="width:18%"></i></div></div>
+      <div class="bar-row"><div class="top"><span class="red">● 即将过期 ≤30天</span><span>38 件</span></div><div class="bar bad"><i style="width:8%"></i></div></div>
+      <div class="bar-row"><div class="top"><span class="red">● 已过期</span><span>9 件</span></div><div class="bar bad"><i style="width:3%"></i></div></div>
+
+      <h4 style="margin:18px 0 8px">临期 TOP 批次</h4>
+      <table>
+        <thead><tr><th>商品</th><th>批次</th><th>生产日期</th><th>到期日</th><th>剩余</th><th>库存件数</th><th>库位</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="danger"><td>双汇火腿肠</td><td class="mono">20260510</td><td>2026-05-10</td><td class="red">2026-08-25</td><td class="red">2天</td><td class="num">9</td><td>C-01-04</td><td><span class="badge b-bad">过期禁发</span></td><td class="fix"><button class="btn sm danger" onclick="toast('已转报损','bad')">报损</button></td></tr>
+          <tr class="urgent"><td>康师傅牛肉面</td><td class="mono">20260601</td><td>2026-06-01</td><td>2026-12-01</td><td class="orange">12天(阈值30)</td><td class="num">38</td><td>B-03-05/B-09</td><td><span class="badge b-wait">即将过期</span></td><td class="fix"><button class="btn sm warn" onclick="handleExpiry()">处理</button></td></tr>
+          <tr><td>乐事薯片70g</td><td class="mono">20260705</td><td>2026-07-05</td><td>2026-10-05</td><td class="orange">43天</td><td class="num">60</td><td>B-02-03</td><td><span class="badge b-wait">临期预警</span></td><td class="fix"><button class="btn sm">处理</button></td></tr>
+          <tr><td>农夫山泉550ml</td><td class="mono">20260801</td><td>2026-08-01</td><td>2027-08-01</td><td class="green">343天</td><td class="num">320</td><td>A-01-02</td><td><span class="badge b-ok">正常</span></td><td class="fix"><button class="btn sm">FEFO</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:12px 16px">
+      <div class="query"><input placeholder="商品/批次" class="wide"><select><option>全部状态</option><option>正常</option><option>临期</option><option>禁发</option></select><span class="spacer"></span><button class="btn">查询</button></div>
+      <table>
+        <thead><tr><th>商品</th><th>批次</th><th>库位</th><th>库存</th><th>生产/到期</th><th>剩余天数</th><th>FEFO顺位</th></tr></thead>
+        <tbody>
+          <tr><td>农夫山泉550ml</td><td class="mono">20260801</td><td>A-01-02</td><td class="num">320</td><td>2026-08-01 / 2027-08-01</td><td class="green">343</td><td><span class="chip">后出</span></td></tr>
+          <tr><td>农夫山泉550ml</td><td class="mono">20260720</td><td>A-01-01</td><td class="num">180</td><td>2026-07-20 / 2027-07-20</td><td>331</td><td><span class="chip ok">先出(FEFO)</span></td></tr>
+          <tr><td>康师傅牛肉面</td><td class="mono">20260601</td><td>B-03-05</td><td class="num">38</td><td>2026-06-01 / 2026-12-01</td><td class="orange">100</td><td><span class="chip warn">优先消化</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <div class="timeline">
+        <div class="ev warn"><b>临期促销锁定</b><div class="t">康师傅牛肉面 批次20260601 38件 → 转促销专区/锁定 FEFO 优先发 · 李主管 10:00</div></div>
+        <div class="ev bad"><b>过期冻结报损</b><div class="t">双汇火腿肠 批次20260510 9件 → 已冻结转报损 LOSS...001 · 09:30</div></div>
+        <div class="ev ok"><b>临期退货供应商</b><div class="t">某乳品 批次20260715 20件 → 采购退货申请 · 昨日</div></div>
+      </div>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <div class="form c2">
+        <div class="field"><label>批次出库规则 (WMS_BATCH_RULE)</label><select><option>FEFO 先到期先出（推荐）</option><option>FIFO 先进先出</option><option>手动指定</option></select></div>
+        <div class="field"><label>临期预警阈值（剩余≤N天）</label><input value="90"></div>
+        <div class="field"><label>即将过期阈值（剩余≤N天）</label><input value="30"></div>
+        <div class="field"><label>过期禁发 (WMS_EXPIRY_BLOCK_DAYS)</label><select><option>到期即禁发</option><option>到期前N天禁发</option></select></div>
+        <div class="field" style="grid-column:1/3"><label class="checks"><label><input type="checkbox" checked> 临期商品在拣货/复核环节强提示并要求 FEFO 优先；超阈值批次拦截出库</label></label></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+function handleExpiry(){
+  openModal({title:'⚡ 临期批次处理',body:`
+    <div class="kv"><span>批次</span><b>康师傅牛肉面 · 20260601（剩12天）</b></div>
+    <div class="kv"><span>库存</span><b>38 件（库位 B-03-05/B-09）</b></div>
+    <h4 style="margin:12px 0 6px">处理方式</h4>
+    <div class="alert warn" style="display:flex;gap:8px;flex-direction:column">
+      <label><input type="radio" name="he" checked> 🎯 锁定 FEFO 优先出库（近效期先发，正常订单优先消化）</label>
+      <label><input type="radio" name="he"> 🏷️ 转促销/特价专区，标记临期销售</label>
+      <label><input type="radio" name="he"> ↩️ 发起供应商退货（采购退货）</label>
+      <label><input type="radio" name="he"> 🗑️ 报损报废（过期/无法销售）</label>
+    </div>
+  `,okText:'确认处理',onOk:function(){toast('已生成处理任务并记录留痕','ok');}});
+}
+</script></body></html>

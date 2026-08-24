@@ -1,0 +1,141 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>盘点管理 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>📊 盘点管理</h2><span class="sub">动盘/全盘/指定盘/抽盘/循环盘 · 明盘/暗盘/复盘 · 差异审批后调账</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已生成循环盘任务(按ABC到期)">🔁 循环盘到期</button>
+    <button class="btn primary" onclick="newCount()">＋ 新建盘点任务</button>
+  </div>
+
+  <div class="kpis c5">
+    <div class="kpi"><div class="ic">🔄</div><div class="n blue">2</div><div class="l">盘点中</div></div>
+    <div class="kpi"><div class="ic">⚡</div><div class="n purple">1</div><div class="l">动盘进行</div></div>
+    <div class="kpi"><div class="ic">⚠️</div><div class="n orange">3</div><div class="l">差异待复盘</div></div>
+    <div class="kpi"><div class="ic">📝</div><div class="n red">2</div><div class="l">待审批调账</div></div>
+    <div class="kpi"><div class="ic">🎯</div><div class="n">99.6%</div><div class="l">本月账实相符率</div></div>
+  </div>
+
+  <div class="alert info">💡 五种盘点方式：<b>动盘</b>（作业间隙扫库位即盘，不冻/仅短时冻该位，适合A类高频）、<b>全盘</b>（全仓，月末/季末，可冻全厂，多人分区，初盘→复盘→审核）、<b>指定盘</b>（按库区/商品/品牌/批次效期/ABC/供应商/库存阈值圈定）、<b>抽盘</b>（随机抽样）、<b>循环盘</b>（按ABC频率自动到期）。盘点模式：明盘（显示账面）/暗盘盲盘（不显示）/复盘（差异二次确认）。冻结范围由 WMS_COUNT_FREEZE_WHOLE / WMS_COUNT_FREEZE_BIN 控制。</div>
+
+  <div class="panel tight">
+    <div class="tabs" data-tabs>
+      <div class="tab on">盘点任务 <span class="cnt">5</span></div>
+      <div class="tab">差异处理 <span class="cnt">3</span></div>
+      <div class="tab">盘点策略/循环计划</div>
+      <div class="tab">盘点流水</div>
+    </div>
+
+    <div class="tabpane on" style="padding:12px 16px">
+      <div class="query">
+        <input placeholder="任务号/库区/商品/盘点人" class="wide">
+        <select><option>全部方式</option><option>动盘</option><option>全盘</option><option>指定盘</option><option>抽盘</option><option>循环盘</option></select>
+        <select><option>全部状态</option></select>
+        <span class="spacer"></span><button class="btn">查询</button>
+      </div>
+      <table id="tblCnt">
+        <thead><tr><th><input type="checkbox" class="ck"></th><th>任务号</th><th>方式</th><th>范围</th><th>模式</th><th>库位数</th><th>进度</th><th>差异</th><th>盘点人</th><th>状态</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="sel" onclick="cntDetail('CT20260823-009','动盘')"><td onclick="event.stopPropagation()"><input type="checkbox" class="ck" checked></td><td class="link mono">CT...009</td><td><span class="chip ok">动盘</span></td><td>B-03 区/A类商品</td><td>暗盘</td><td class="num">12</td><td style="min-width:120px"><div class="bar"><i style="width:66%"></i></div><small>8/12</small></td><td class="orange">1处</td><td>周盘点</td><td><span class="badge b-wait">盘点中</span></td><td class="fix" onclick="event.stopPropagation()"><button class="btn sm primary" onclick="cntDetail('CT...009','动盘')">详情</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">CT...008</td><td><span class="chip">全盘</span></td><td>全仓(月末)</td><td>明盘+复盘</td><td class="num">186</td><td><div class="bar ok"><i style="width:100%"></i></div><small>初盘完成</small></td><td class="red">3处</td><td>多组分派</td><td><span class="badge b-wait">差异待复盘</span></td><td class="fix"><button class="btn sm warn" onclick="cntDetail('CT...008','全盘')">复盘</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">CT...007</td><td><span class="chip">指定盘</span></td><td>临期批次(效期≤90天)</td><td>暗盘</td><td class="num">18</td><td><div class="bar"><i style="width:30%"></i></div><small>6/18</small></td><td>—</td><td>王仓管</td><td><span class="badge b-info">盘点中</span></td><td class="fix"><button class="btn sm">详情</button></td></tr>
+          <tr><td><input type="checkbox" class="ck"></td><td class="link mono">CT...006</td><td><span class="chip">循环盘</span></td><td>A类(月)/B类(季)到期</td><td>复盘</td><td class="num">24</td><td><div class="bar ok"><i style="width:100%"></i></div></td><td class="green">相符</td><td>系统分派</td><td><span class="badge b-ok">已完成</span></td><td class="fix"><button class="btn sm">报告</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:12px 16px">
+      <table>
+        <thead><tr><th>任务</th><th>库位</th><th>商品/批次</th><th>账面</th><th>初盘</th><th>复盘</th><th>差异</th><th>处理</th><th class="fix">操作</th></tr></thead>
+        <tbody>
+          <tr class="danger"><td class="mono">CT...008</td><td>B-09</td><td>康师傅牛肉面/20260601</td><td class="num">26</td><td class="num red">24</td><td class="num red">24</td><td class="num red">-2</td><td><span class="badge b-bad">盘亏→待调账</span></td><td class="fix"><button class="btn sm danger" data-toast="已审批调账 -2，库存已减并写流水" data-type="ok">审批调账</button></td></tr>
+          <tr class="urgent"><td class="mono">CT...008</td><td>A-01-02</td><td>农夫山泉/20260801</td><td class="num">318</td><td class="num green">320</td><td>—</td><td class="num green">+2</td><td><span class="badge b-wait">待复盘</span></td><td class="fix"><button class="btn sm warn" data-toast="已推送复盘任务" data-type="warn">安排复盘</button></td></tr>
+          <tr><td class="mono">CT...009</td><td>B-03-05</td><td>康师傅牛肉面/20260601</td><td class="num">0</td><td class="num orange">1</td><td>—</td><td class="num orange">+1</td><td><span class="badge b-info">待核实</span></td><td class="fix"><button class="btn sm">核实</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <div class="form c2">
+        <div class="field"><label>循环盘-A类频率</label><input value="每月一次"></div>
+        <div class="field"><label>循环盘-B类频率</label><input value="每季一次"></div>
+        <div class="field"><label>循环盘-C类频率</label><input value="每半年一次"></div>
+        <div class="field"><label>全盘冻结策略 (WMS_COUNT_FREEZE_WHOLE)</label><select><option>全盘冻结全厂作业</option><option>不冻结，分区轮盘</option></select></div>
+        <div class="field"><label>动盘冻结 (WMS_COUNT_FREEZE_BIN)</label><select><option>仅冻结当前盘点库位</option><option>不冻结</option></select></div>
+        <div class="field"><label>复盘差异阈值</label><input value="差异>0 必复盘"></div>
+      </div>
+    </div>
+
+    <div class="tabpane" style="padding:16px">
+      <table><thead><tr><th>时间</th><th>任务</th><th>库位</th><th>商品</th><th>账面/实盘</th><th>盘点人</th><th>方式</th></tr></thead><tbody>
+        <tr><td class="mono">10:32</td><td class="mono">CT...009</td><td>B-03-04</td><td>可口可乐</td><td>12 / 12</td><td>周盘点</td><td>动盘</td></tr>
+        <tr><td class="mono">10:28</td><td class="mono">CT...009</td><td>B-03-03</td><td>乐事薯片</td><td>18 / 18</td><td>周盘点</td><td>动盘</td></tr>
+        <tr><td class="mono">10:20</td><td class="mono">CT...008</td><td>A-01-02</td><td>农夫山泉</td><td>318 / 320(+2)</td><td>王仓管</td><td>全盘初盘</td></tr>
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblCnt'));
+function newCount(){
+  openModal({title:'＋ 新建盘点任务',size:'lg',body:`
+    <div data-wizard>
+      <div class="wiz-steps">
+        <div class="s cur"><div class="c">1</div><div class="l">选择盘点方式</div></div>
+        <div class="s"><div class="c">2</div><div class="l">圈定范围/冻结</div></div>
+        <div class="s"><div class="c">3</div><div class="l">分派并下发</div></div>
+      </div>
+      <div class="wiz-pane on">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
+          <label class="loc-card" style="cursor:pointer"><input type="radio" name="cm" checked style="margin-right:4px">⚡<div class="lc-name">动盘</div><div class="lc-path">作业间隙即盘</div></label>
+          <label class="loc-card" style="cursor:pointer"><input type="radio" name="cm" style="margin-right:4px">📊<div class="lc-name">全盘</div><div class="lc-path">全仓月末</div></label>
+          <label class="loc-card" style="cursor:pointer"><input type="radio" name="cm" style="margin-right:4px">🎯<div class="lc-name">指定盘</div><div class="lc-path">按条件圈定</div></label>
+          <label class="loc-card" style="cursor:pointer"><input type="radio" name="cm" style="margin-right:4px">🎲<div class="lc-name">抽盘</div><div class="lc-path">随机抽样</div></label>
+          <label class="loc-card" style="cursor:pointer"><input type="radio" name="cm" style="margin-right:4px">🔁<div class="lc-name">循环盘</div><div class="lc-path">ABC到期</div></label>
+        </div>
+        <div class="field" style="margin-top:12px"><label>盘点模式</label><select><option>暗盘(盲盘，不显示账面) - 推荐</option><option>明盘(显示账面)</option><option>复盘(差异二次确认)</option></select></div>
+      </div>
+      <div class="wiz-pane">
+        <div class="form c2">
+          <div class="field"><label>库区/库位</label><select><option>B-03 区（12 库位）</option><option>全仓</option></select></div>
+          <div class="field"><label>商品范围</label><select><option>A类商品</option><option>全部商品</option><option>按品牌/分类</option></select></div>
+          <div class="field"><label>批次/效期</label><select><option>全部</option><option>临期批次</option></select></div>
+          <div class="field"><label>冻结策略</label><select><option>仅冻当前库位(动盘)</option><option>冻结全厂(全盘)</option><option>不冻结</option></select></div>
+        </div>
+        <div class="alert ok" style="margin-top:10px">✅ 将圈定 12 个库位、约 28 个批次。</div>
+      </div>
+      <div class="wiz-pane">
+        <div class="kv"><span>方式/模式</span><b>动盘 / 暗盘</b></div>
+        <div class="kv"><span>范围</span><b>B-03 区 · A类商品 · 12 库位</b></div>
+        <div class="kv"><span>盘点人</span><b>周盘点（可多人分区）</b></div>
+        <div class="kv"><span>差异规则</span><b>差异&gt;0 自动转复盘，审批后调账</b></div>
+        <div class="alert tip" style="margin-top:10px">下发后推送 PDA；动盘扫库位即盘，盘完即走。差异经复盘确认、主管审批后才调账（写流水、联动财务）。</div>
+      </div>
+      <div class="btnbar" style="border:none;padding:14px 0 0;justify-content:flex-end">
+        <button class="btn" data-wiz="prev">上一步</button>
+        <button class="btn primary" data-wiz="next">下一步</button>
+        <button class="btn ok" data-wiz="done" style="display:none">下发盘点</button>
+      </div>
+    </div>`,noFooter:true,onReady:function(wz){bindWizard(wz);}});
+}
+function cntDetail(no,type){
+  openDrawer({title:'📊 盘点任务 · '+no,body:`
+    <div class="steps" style="margin:0 0 14px">
+      <div class="step done"><div class="dotc">✓</div><div class="sl">建单/冻结</div></div>
+      <div class="step cur"><div class="dotc">2</div><div class="sl">初盘(PDA)</div></div>
+      <div class="step"><div class="dotc">3</div><div class="sl">复盘差异</div></div>
+      <div class="step"><div class="dotc">4</div><div class="sl">审批调账</div></div>
+    </div>
+    <div class="kv"><span>方式</span><b>${type} · 暗盘（不显示账面）</b></div>
+    <div class="kv"><span>进度</span><b>8 / 12 库位</b></div>
+    <h4 style="margin:12px 0 6px">已盘库位</h4>
+    <table class="mini"><thead><tr><th>库位</th><th>商品/批次</th><th>实盘</th><th>结果</th></tr></thead><tbody>
+      <tr><td>B-03-02</td><td>农夫山泉/20260801</td><td class="num">10</td><td class="green">相符</td></tr>
+      <tr><td>B-03-05</td><td>康师傅/20260601</td><td class="num orange">1</td><td class="orange">差异待核</td></tr>
+      <tr><td>B-03-06</td><td>可口可乐/20260720</td><td class="num">12</td><td class="green">相符</td></tr>
+    </tbody></table>
+    <div class="alert warn" style="margin-top:12px">B-03-05 初盘有差异(账面0/实盘1)，已自动加入复盘清单；复盘确认后转主管审批调账。</div>
+  `,footer:`<button class="btn" data-act="close">关闭</button><button class="btn primary" onclick="toast('已催办PDA','ok');closeDrawer();">催办PDA</button>`});
+}
+</script></body></html>

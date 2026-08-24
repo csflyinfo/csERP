@@ -324,7 +324,9 @@ async function testSalesCloseLoop() {
       details: [{ goodsCode, goodsName, unitName: '箱', qty: 999, price: 35, batchNo: batchA }],
     })
   } catch (e) {
-    overQtyRejected = /超过订单剩余/.test(e.message)
+    // V80 起一单一出库由唯一索引强制，第二次出库必被「已生成出库单」挡下；
+    // 即便没有该约束，超量也会被「超过订单剩余」挡下。两者都算通过。
+    overQtyRejected = /超过订单剩余|已生成出库单/.test(e.message)
   }
   assert(overQtyRejected, 'sales outbound quantity exceeding order remainder should be rejected')
 

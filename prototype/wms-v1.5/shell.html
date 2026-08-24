@@ -1,0 +1,149 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>WMS 仓储管理系统 V1.5</title>
+<link rel="stylesheet" href="assets/wms.css">
+<style>
+body{overflow:hidden}
+.app{display:flex;height:100vh}
+/* sidebar */
+.side{width:210px;background:#0f1729;color:#c7d0de;display:flex;flex-direction:column;flex-shrink:0;transition:.2s}
+.side.collapsed{width:56px}
+.logo{height:54px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
+.logo .lg{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#00C48C,#00b8a9);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.logo b{font-size:15px;color:#fff;white-space:nowrap;overflow:hidden}
+.side.collapsed .logo b{display:none}
+.menu{flex:1;overflow:auto;padding:8px 0}
+.menu::-webkit-scrollbar{width:4px}.menu::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+.m-grp{font-size:11px;color:#64748b;padding:12px 16px 5px;letter-spacing:.5px;white-space:nowrap;overflow:hidden}
+.side.collapsed .m-grp{text-align:center;font-size:0}
+.m-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:13px;color:#c7d0de;white-space:nowrap;border-left:3px solid transparent}
+.m-item:hover{background:rgba(255,255,255,.05);color:#fff}
+.m-item.on{background:linear-gradient(90deg,rgba(22,119,255,.25),transparent);color:#fff;border-left-color:#1677ff}
+.m-item .mi{font-size:16px;width:20px;text-align:center;flex-shrink:0}
+.m-item .ml{flex:1;overflow:hidden;text-overflow:ellipsis}
+.m-item .mc{background:#ef4444;color:#fff;font-size:10px;border-radius:999px;padding:0 6px;line-height:16px;min-width:16px;text-align:center}
+.side.collapsed .m-item .ml,.side.collapsed .m-item .mc{display:none}
+.side-foot{padding:10px 14px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#64748b;display:flex;align-items:center;gap:8px}
+.side.collapsed .side-foot span{display:none}
+/* main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:54px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 18px;flex-shrink:0}
+.topbar .collapse{cursor:pointer;font-size:18px;color:var(--text-2)}.topbar .crumb{font-size:14px;color:var(--text-2)}
+.topbar .crumb b{color:var(--text)}
+.topbar .spacer{flex:1}
+.topbar .search{width:240px;height:32px;border:1px solid var(--line);border-radius:16px;padding:0 14px;font-size:13px;outline:none}
+.topbar .ic-btn{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text-2);position:relative}
+.topbar .ic-btn:hover{background:#f1f5f9}
+.topbar .ic-btn .badge-dot{position:absolute;top:6px;right:7px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:2px solid #fff}
+.user{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 8px;border-radius:8px}
+.user:hover{background:#f1f5f9}
+.user .av{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#1677ff,#00b8a9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.iframe-wrap{flex:1;position:relative;background:var(--bg)}
+.iframe-wrap iframe{width:100%;height:100%;border:0;display:block}
+/* quick switcher */
+.quick{position:absolute;top:60px;left:50%;transform:translateX(-50%);width:520px;background:#fff;border-radius:10px;box-shadow:var(--shadow);border:1px solid var(--line);z-index:50;display:none;overflow:hidden}
+.quick.show{display:block}
+.quick .qh{padding:12px 16px;border-bottom:1px solid var(--line-2)}
+.quick input{width:100%;height:34px;border:1px solid var(--line);border-radius:6px;padding:0 12px;font-size:14px;outline:none}
+.quick .ql{max-height:360px;overflow:auto}
+.quick .qi{padding:10px 16px;cursor:pointer;display:flex;gap:10px;align-items:center}
+.quick .qi:hover{background:var(--primary-bg)}
+.quick .qi .mi{font-size:18px;width:24px}.quick .qi b{font-size:13px}.quick .qi small{display:block;color:var(--text-3);font-size:11px}
+</style></head><body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="logo"><div class="lg">📦</div><b>WMS 仓储系统</b></div>
+    <nav class="menu" id="menu">
+      <div class="m-grp">作业监控</div>
+      <div class="m-item on" data-src="pc/dashboard.html"><span class="mi">📊</span><span class="ml">作业进度看板</span></div>
+
+      <div class="m-grp">入库管理</div>
+      <div class="m-item" data-src="pc/inbound.html"><span class="mi">📥</span><span class="ml">到货预约 / 收货</span></div>
+      <div class="m-item" data-src="pc/putaway.html"><span class="mi">📤</span><span class="ml">上架任务</span></div>
+
+      <div class="m-grp">出库管理</div>
+      <div class="m-item" data-src="pc/order-pool.html"><span class="mi">📝</span><span class="ml">销售订单池</span></div>
+      <div class="m-item" data-src="pc/preallocation.html"><span class="mi">🗺️</span><span class="ml">预分配 / 下放</span><span class="mc">48</span></div>
+      <div class="m-item" data-src="pc/wave.html"><span class="mi">🌊</span><span class="ml">波次管理</span></div>
+      <div class="m-item" data-src="pc/pick.html"><span class="mi">🧺</span><span class="ml">拣货任务</span></div>
+      <div class="m-item" data-src="pc/sort-instruction.html"><span class="mi">📑</span><span class="ml">分拣指令查询</span></div>
+      <div class="m-item" data-src="pc/replenish.html"><span class="mi">🔁</span><span class="ml">补货管理</span><span class="mc">3</span></div>
+      <div class="m-item" data-src="pc/check.html"><span class="mi">✅</span><span class="ml">复核 / 打包</span></div>
+      <div class="m-item" data-src="pc/load.html"><span class="mi">🚚</span><span class="ml">装车 / 发运 (TMS)</span></div>
+
+      <div class="m-grp">库内作业</div>
+      <div class="m-item" data-src="pc/move.html"><span class="mi">↔️</span><span class="ml">移库 / 移位</span></div>
+      <div class="m-item" data-src="pc/adjust.html"><span class="mi">⚖️</span><span class="ml">冻结 / 调整 / 报损</span></div>
+      <div class="m-item" data-src="pc/assembly.html"><span class="mi">🧩</span><span class="ml">组装 / 拆卸</span></div>
+      <div class="m-item" data-src="pc/expiry.html"><span class="mi">⏰</span><span class="ml">效期 / 临期预警</span><span class="mc">5</span></div>
+
+      <div class="m-grp">盘点 / 退货</div>
+      <div class="m-item" data-src="pc/stocktake.html"><span class="mi">📍</span><span class="ml">盘点管理</span></div>
+      <div class="m-item" data-src="pc/return.html"><span class="mi">↩️</span><span class="ml">退货管理</span></div>
+
+      <div class="m-grp">库存 / 异常 / 报表</div>
+      <div class="m-item" data-src="pc/stock-query.html"><span class="mi">🔍</span><span class="ml">库存查询 / 对账</span></div>
+      <div class="m-item" data-src="pc/exception.html"><span class="mi">🚨</span><span class="ml">异常中心</span><span class="mc">3</span></div>
+      <div class="m-item" data-src="pc/performance.html"><span class="mi">📈</span><span class="ml">绩效报表</span></div>
+
+      <div class="m-grp">基础 / 配置</div>
+      <div class="m-item" data-src="pc/bin.html"><span class="mi">🗺️</span><span class="ml">库区 / 库位</span></div>
+      <div class="m-item" data-src="pc/goods.html"><span class="mi">🏷️</span><span class="ml">商品 / 批次 / 策略</span></div>
+      <div class="m-item" data-src="pc/params.html"><span class="mi">⚙️</span><span class="ml">系统参数</span></div>
+    </nav>
+    <div class="side-foot">📡 WMS服务正常 · v1.5 <span>· 2026-08-23</span></div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <span class="collapse" id="collapse">☰</span>
+      <span class="crumb">WMS / <b id="crumbNow">作业进度看板</b></span>
+      <span class="spacer"></span>
+      <input class="search" id="search" placeholder="🔍 搜索功能 / 单号 / 商品 (Ctrl+K)" readonly>
+      <span class="ic-btn" title="消息" onclick="toast('暂无新消息','ok')">🔔<span class="badge-dot"></span></span>
+      <span class="ic-btn" title="刷新" onclick="document.getElementById('frame').src=document.getElementById('frame').src">🔄</span>
+      <span class="ic-btn" title="全屏" onclick="openFull()">⛶</span>
+      <div class="user"><span class="av">李</span><span>李主管<br><small class="muted">仓库主管</small></span></div>
+    </div>
+    <div class="iframe-wrap">
+      <iframe id="frame" src="pc/dashboard.html"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="quick" id="quick">
+  <div class="qh"><input id="qInput" placeholder="搜索：波次、收货、库存、盘点、异常…"></div>
+  <div class="ql" id="qList"></div>
+</div>
+
+<script src="assets/wms.js"></script>
+<script>
+var items=[].slice.call(document.querySelectorAll('.m-item'));
+var titles={};
+items.forEach(function(it){titles[it.getAttribute('data-src')]=it.querySelector('.ml').textContent;});
+function go(src){
+  items.forEach(function(x){x.classList.toggle('on',x.getAttribute('data-src')===src);});
+  document.getElementById('frame').src=src;
+  document.getElementById('crumbNow').textContent=titles[src]||'';
+}
+document.getElementById('menu').onclick=function(e){var it=e.target.closest('.m-item');if(it)go(it.getAttribute('data-src'));};
+document.getElementById('collapse').onclick=function(){document.getElementById('side').classList.toggle('collapsed');};
+function openFull(){var el=document.documentElement;if(!document.fullscreenElement){el.requestFullscreen&&el.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();}}
+// quick switcher
+var quick=document.getElementById('quick'),qInput=document.getElementById('qInput'),qList=document.getElementById('qList');
+var allItems=items.map(function(it){return{src:it.getAttribute('data-src'),name:it.querySelector('.ml').textContent,icon:it.querySelector('.mi').textContent};});
+function renderQ(kw){
+  qList.innerHTML=allItems.filter(function(x){return !kw||x.name.indexOf(kw)>=0;}).slice(0,12).map(function(x){
+    return '<div class="qi" data-src="'+x.src+'"><span class="mi">'+x.icon+'</span><div><b>'+x.name+'</b><small>'+x.src+'</small></div></div>';
+  }).join('');
+}
+document.getElementById('search').onclick=function(){quick.classList.add('show');qInput.focus();renderQ('');};
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();quick.classList.add('show');qInput.focus();renderQ('');}
+  if(e.key==='Escape')quick.classList.remove('show');
+});
+qInput.oninput=function(){renderQ(qInput.value);};
+qList.onclick=function(e){var qi=e.target.closest('.qi');if(qi){go(qi.getAttribute('data-src'));quick.classList.remove('show');qInput.value='';}};
+quick.onclick=function(e){if(e.target===quick)quick.classList.remove('show');};
+// expose for inner pages to switch
+window.wmsGo=go;
+</script>
+</body></html>

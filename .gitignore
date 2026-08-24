@@ -41,3 +41,8 @@ backend/*.txt
 tms_driver_app/*.txt
 tms_driver_app/*.xml
 tms_driver_app/*.png
+
+# WMS PDA APK 本地构建产物
+*.apk
+wms_pda_app/build/
+

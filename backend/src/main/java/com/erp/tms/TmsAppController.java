@@ -943,7 +943,9 @@ public class TmsAppController {
         String applyNo = TmsUtil.str(body.get("applyNo"));
         String customerSigner = TmsUtil.str(body.get("customerSigner"));
         String remark = TmsUtil.str(body.get("remark"));
-        String signatureUrl = TmsUtil.str(body.get("signatureUrl"));
+        // 签名 URL 协议白名单：拒绝 javascript:/data: 等，防止签收详情页 <img>/<a> 被注入
+        String signatureUrlSanitized = TmsUtil.sanitizeAssetUrl(TmsUtil.str(body.get("signatureUrl")));
+        String signatureUrl = signatureUrlSanitized == null ? "" : signatureUrlSanitized;
         if (applyNo.isEmpty()) return ApiResponse.fail("400", "退货单号不能为空");
         String driverId = TmsUtil.currentDriverId();
 
@@ -1022,8 +1024,9 @@ public class TmsAppController {
                 signatureUrl.isEmpty() ? null : signatureUrl, remark);
 
         // 2.1 保存退货照片（URL 列表）。photoUrls 已在方法入口的张数校验处解析，此处直接复用
-        for (String url : photoUrls) {
-            if (url == null || url.isEmpty()) continue;
+        for (String rawUrl : photoUrls) {
+            String url = TmsUtil.sanitizeAssetUrl(rawUrl);
+            if (url == null) continue;
             String photoId = TmsUtil.uuid("SP");
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)

@@ -1,0 +1,118 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>库区/库位 - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css"></head><body>
+<div class="page">
+  <div class="page-head"><h2>🗺️ 库区 / 库位</h2><span class="sub">库区/巷道/库位三级管理 · 库位热力图 · 容量/占用/冻结可视化</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打印库位条码">🖨️ 打印库位码</button>
+    <button class="btn primary" onclick="newBin()">＋ 新增库位</button>
+  </div>
+
+  <div class="kpis c6">
+    <div class="kpi"><div class="ic">🗺️</div><div class="n">6</div><div class="l">库区</div></div>
+    <div class="kpi"><div class="ic">📍</div><div class="n">286</div><div class="l">库位总数</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">212</div><div class="l">在用</div></div>
+    <div class="kpi"><div class="ic">🔲</div><div class="n">48</div><div class="l">空位</div></div>
+    <div class="kpi"><div class="ic">🔒</div><div class="n purple">6</div><div class="l">冻结</div></div>
+    <div class="kpi"><div class="ic">📦</div><div class="n">74%</div><div class="l">平均占用率</div></div>
+  </div>
+
+  <div class="layout">
+    <aside class="tree">
+      <div class="grp">🏭 仓库</div>
+      <div class="node cnt on">总仓(杭州) <span class="cnt">286</span></div>
+      <div class="grp" style="margin-top:6px">📂 库区</div>
+      <div class="node cnt">A 整箱存储区 <span class="cnt">96</span></div>
+      <div class="node cnt">B 拆零拣货区 <span class="cnt">120</span></div>
+      <div class="node cnt">C 临期待处理 <span class="cnt">24</span></div>
+      <div class="node cnt">D 高值区 <span class="cnt">12</span></div>
+      <div class="node cnt">R 收货/暂存 <span class="cnt">18</span></div>
+      <div class="node cnt">S 集货/发货 <span class="cnt">16</span></div>
+    </aside>
+
+    <div>
+      <div class="panel tight">
+        <div class="tabs" data-tabs>
+          <div class="tab on">库位热力图</div>
+          <div class="tab">库位列表</div>
+          <div class="tab">库区设置</div>
+        </div>
+        <div class="tabpane on" style="padding:16px">
+          <div class="alert tip">💡 颜色表示占用率：<span class="bin b0" style="display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle"></span>空
+            <span class="bin b1" style="display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle"></span>&lt;40%
+            <span class="bin b3" style="display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle"></span>40-80%
+            <span class="bin b5" style="display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle"></span>&gt;80%
+            <span class="bin frozen" style="display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:middle"></span>冻结。点击库位看详情。</div>
+          <h4 style="margin:12px 0 8px">B 区 · 拆零拣货（巷道 B-01 ~ B-03）</h4>
+          <div class="bin-grid" id="binGrid"></div>
+          <div id="binInfo" style="margin-top:14px"></div>
+        </div>
+        <div class="tabpane" style="padding:12px 16px">
+          <div class="query"><input placeholder="库位编码/商品" class="wide"><select><option>全部类型</option><option>整箱存储</option><option>拆零拣货</option><option>集货位</option></select><select><option>全部状态</option></select><span class="spacer"></span><button class="btn">查询</button></div>
+          <table>
+            <thead><tr><th>库位编码</th><th>库区</th><th>类型</th><th>商品/批次</th><th>占用/容量</th><th>利用率</th><th>状态</th><th class="fix">操作</th></tr></thead>
+            <tbody>
+              <tr><td class="link mono">B-03-05</td><td>B拆零区</td><td>拣货位</td><td>康师傅牛肉面/20260601</td><td class="num">0 / 24箱</td><td><div class="bar bad" style="margin:0"><i style="width:0%"></i></div></td><td><span class="badge b-bad">缺货</span></td><td class="fix"><button class="btn sm warn" data-toast="已生成加急补货" data-type="warn">补货</button></td></tr>
+              <tr><td class="link mono">A-01-02</td><td>A存储区</td><td>整箱存储</td><td>农夫山泉/20260801</td><td class="num">300 / 360箱</td><td><div class="bar" style="margin:0"><i style="width:83%"></i></div></td><td><span class="badge b-ok">在用</span></td><td class="fix"><button class="btn sm">详情</button></td></tr>
+              <tr><td class="link mono">B-01-07</td><td>B拆零区</td><td>拣货位</td><td>可口可乐/20260720</td><td class="num">24 / 24箱</td><td><div class="bar ok" style="margin:0"><i style="width:100%"></i></div></td><td><span class="badge b-purple">冻结(盘点)</span></td><td class="fix"><button class="btn sm">解冻</button></td></tr>
+              <tr><td class="link mono">JH-03</td><td>S集货区</td><td>集货位(标记)</td><td class="muted">改派返仓货物(GPRC...005)</td><td class="num">—</td><td class="muted">不记库存</td><td><span class="badge b-info">位置标记</span></td><td class="fix"><button class="btn sm">详情</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="tabpane" style="padding:16px">
+          <div class="form c2">
+            <div class="field"><label>库区编码/名称</label><input value="B / 拆零拣货区"></div>
+            <div class="field"><label>库区类型</label><select><option>拆零拣货区</option><option>整箱存储区</option><option>高值区</option></select></div>
+            <div class="field"><label>温层</label><select><option>常温</option><option>冷藏</option><option>恒温</option></select></div>
+            <div class="field"><label>混放规则</label><select><option>同品类可混放</option><option>一品一位</option><option>禁止混批</option></select></div>
+            <div class="field"><label>拣货优先级</label><input value="高(靠近发货)"></div>
+            <div class="field"><label>容量单位</label><input value="箱位"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+var bins=[
+  ['B-01-01',3,'农夫山泉','20260801'],['B-01-02',1,'农夫山泉','20260801'],['B-01-03',5,'可口可乐','20260720'],['B-01-04',3,'乐事薯片','20260705'],['B-01-05',4,'可口可乐','20260720'],['B-01-06',0,'',''],['B-01-07','frozen','可口可乐','20260720'],['B-01-08',2,'海天酱油','20260510'],
+  ['B-02-01',5,'双汇火腿肠','20260810'],['B-02-02',4,'康师傅牛肉面','20260601'],['B-02-03',3,'乐事薯片','20260705'],['B-02-04',1,'',''],['B-02-05',0,'',''],['B-02-06',5,'五粮液',''],['B-02-07',2,'统一方便面','20260615'],['B-02-08',3,'农夫山泉','20260801'],
+  ['B-03-01',4,'可口可乐','20260720'],['B-03-02',5,'农夫山泉','20260801'],['B-03-03',2,'乐事薯片','20260705'],['B-03-04',3,'可口可乐','20260720'],['B-03-05',0,'康师傅牛肉面','20260601'],['B-03-06',3,'康师傅牛肉面','20260601'],['B-03-07',1,'',''],['B-03-08',0,'','']
+];
+var g=document.getElementById('binGrid');
+bins.forEach(function(b){
+  var lv=b[1]; var cls = lv==='frozen'?'frozen':('b'+lv);
+  var title = lv===0?'空位':(lv==='frozen'?'冻结':('占用'+(lv*20)+'%'));
+  var d=document.createElement('div');
+  d.className='bin '+cls;
+  d.innerHTML='<b>'+b[0]+'</b><span>'+title+'</span>';
+  d.onclick=function(){binInfo(b);};
+  g.appendChild(d);
+});
+function binInfo(b){
+  var lv=b[1], occ = lv==='frozen'?'冻结':(lv===0?'空位':(lv*20+'%'));
+  document.getElementById('binInfo').innerHTML=`
+    <div class="detail" style="position:static">
+      <h4>📍 ${b[0]}</h4>
+      <div class="kv"><span>库区/类型</span><b>B 拆零拣货区 · 拣货位</b></div>
+      <div class="kv"><span>状态</span><b>${lv==='frozen'?'<span class="badge b-purple">冻结(盘点)</span>':lv===0?'<span class="badge b-gray">空位</span>':'<span class="badge b-ok">在用</span>'}</b></div>
+      <div class="kv"><span>占用率</span><b>${occ}</b></div>
+      <div class="kv"><span>商品/批次</span><b>${b[2]?(b[2]+' / '+b[3]):'—'}</b></div>
+      <div class="kv"><span>容量</span><b>24 箱位</b></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn primary sm" onclick="toast('已查看库位库存流水')">库存流水</button>
+        <button class="btn sm" onclick="toast('已打开移库')">移库</button>
+        <button class="btn sm warn" onclick="toast('已冻结库位','warn')">${lv==='frozen'?'解冻':'冻结'}</button>
+      </div>
+    </div>`;
+}
+binInfo(bins[20]);
+function newBin(){openModal({title:'＋ 新增库位',body:`
+  <div class="form c2">
+    <div class="field"><label><span class="req">*</span>库位编码</label><input placeholder="如 B-04-01"></div>
+    <div class="field"><label>所属库区</label><select><option>B 拆零拣货区</option><option>A 整箱存储区</option></select></div>
+    <div class="field"><label>库位类型</label><select><option>拣货位</option><option>存储位</option><option>集货位</option></select></div>
+    <div class="field"><label>容量</label><input placeholder="箱位"></div>
+  </div>`,okText:'保存',onOk:function(){toast('库位已新增','ok');}});}
+</script></body></html>

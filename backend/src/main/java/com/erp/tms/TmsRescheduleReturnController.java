@@ -175,8 +175,8 @@ public class TmsRescheduleReturnController {
         List<Map<String, Object>> photos = body.get("photos") instanceof List<?> pl
                 ? (List<Map<String, Object>>) pl : new ArrayList<>();
         for (Map<String, Object> p : photos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoId = "SP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)
@@ -205,8 +205,8 @@ public class TmsRescheduleReturnController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         int saved = 0;
         for (Map<String, Object> p : photos) {
-            String url = TmsUtil.str(p.get("url"));
-            if (url.isEmpty()) continue;
+            String url = TmsUtil.sanitizeAssetUrl(TmsUtil.str(p.get("url")));
+            if (url == null) continue;
             String photoId = "SP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             jdbcTemplate.update("""
                     INSERT INTO tms_sign_photo(photo_id, sign_id, photo_type, photo_url, photo_path)

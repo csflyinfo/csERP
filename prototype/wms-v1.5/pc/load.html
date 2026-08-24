@@ -1,0 +1,150 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>装车/发运 (WMS-TMS) - WMS</title>
+<link rel="stylesheet" href="../assets/wms.css">
+<style>.veh{display:flex;align-items:center;gap:10px;padding:12px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer}.veh:hover{border-color:var(--primary)}.veh.on{border-color:var(--primary);background:var(--primary-bg)}.veh .truck{font-size:28px}</style></head><body>
+<div class="page">
+  <div class="page-head"><h2>🚚 装车 / 发运（WMS ↔ TMS）</h2><span class="sub">以销售订单号关联 · 仅出库完成可装车 · 预分配/出库后指派 · 未发车可改司机 · 在途改派返仓签收</span>
+    <span class="spacer"></span>
+    <button class="btn" data-toast="已打开派单调度（跳转TMS）" onclick="toast('打开 TMS 调度台（演示）','info')">🧭 调度派单</button>
+    <button class="btn primary" data-toast="已确认装车并通知司机发车" data-type="ok" onclick="confirmLoad()">✅ 确认装车发车</button>
+  </div>
+
+  <div class="kpis c6">
+    <div class="kpi"><div class="ic">📦</div><div class="n blue">6</div><div class="l">待装车单</div></div>
+    <div class="kpi"><div class="ic">🚛</div><div class="n orange">2</div><div class="l">装车中</div></div>
+    <div class="kpi"><div class="ic">🛣️</div><div class="n purple">9</div><div class="l">在途</div></div>
+    <div class="kpi"><div class="ic">↩️</div><div class="n red">1</div><div class="l">改派返仓待签</div></div>
+    <div class="kpi"><div class="ic">✅</div><div class="n green">12</div><div class="l">今日已发运</div></div>
+    <div class="kpi"><div class="ic">🔗</div><div class="n">source_order_no</div><div class="l">关联键=销售订单号</div></div>
+  </div>
+
+  <div class="alert tip">🔑 <b>WMS↔TMS 联动：</b>双方都以<b>销售订单号</b>为关联键。派单可在波次预分配或出库后指派；<b>司机只能对"出库已完成（出库单已审核、发货单已生成）"的订单装车</b>；装车只做实物交接、更新装车任务状态，<b>不扣库存</b>（扣库存发生在出库单审核）。未发车可后台改司机，也可 A 司机扫单据转给 B 司机（同客户退单自动跟随转移）；在途改派返仓需回仓 PDA 签收记集货位。</div>
+
+  <div class="split r34" style="grid-template-columns:240px 1fr">
+    <div>
+      <div class="panel">
+        <div class="panel-h" style="padding:10px 14px;font-size:13px">🚛 车辆 / 司机（今日）</div>
+        <div style="padding:10px">
+          <div class="veh on" onclick="selVeh(this,'张师傅')"><span class="truck">🚚</span><div><b>张师傅 · 京A12345</b><br><small class="muted">朝阳线 · 装车中 3单</small></div></div>
+          <div class="veh" onclick="selVeh(this,'李师傅')"><span class="truck">🚐</span><div><b>李师傅 · 京A88888</b><br><small class="muted">三里屯线 · 待装 2单</small></div></div>
+          <div class="veh" onclick="selVeh(this,'王师傅')"><span class="truck">🚛</span><div><b>王师傅 · 京A66666</b><br><small class="muted">文三线 · 在途 4单</small></div></div>
+          <div class="veh" onclick="selVeh(this,'改派')"><span class="truck">↩️</span><div><b>改派返仓</b><br><small class="red">GPRC...01 待签收</small></div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-h" style="padding:10px 14px;font-size:13px">⏱ 派单时机</div>
+        <div style="padding:12px;font-size:12px;color:var(--text-2)">
+          参数 <code>WMS_DISPATCH_TIMING</code>：<br>
+          <label style="display:block;margin:6px 0"><input type="radio" name="dt" checked> 两者皆可（推荐）</label>
+          <label style="display:block;margin:6px 0"><input type="radio" name="dt"> 仅波次预分配</label>
+          <label style="display:block;margin:6px 0"><input type="radio" name="dt"> 仅出库后指派</label>
+          <div class="alert info" style="margin-top:8px;font-size:11px">预分配后即生成调度单，司机能看到任务，但<b>出库完成前不能装车</b>。</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <div class="tabs" data-tabs>
+          <div class="tab on">待装车 <span class="cnt">6</span></div>
+          <div class="tab">装车中 <span class="cnt">2</span></div>
+          <div class="tab">在途 / 签收 <span class="cnt">9</span></div>
+          <div class="tab">未发车改派(A→B) <span class="cnt">1</span></div>
+          <div class="tab">在途改派返仓(GPRC) <span class="cnt">1</span></div>
+        </div>
+
+        <!-- 待装车 -->
+        <div class="tabpane on" style="padding:12px 16px">
+          <div class="query" style="border:none;padding:0 0 12px">
+            <input placeholder="销售订单号/发货单/客户" class="wide"><select><option>全部线路</option></select><select><option>全部司机</option></select>
+            <label><input type="checkbox" checked> 仅出库完成可装</label><span class="spacer"></span><button class="btn">查询</button>
+          </div>
+          <div class="tbl-wrap"><table id="tblLoad">
+            <thead><tr><th><input type="checkbox" class="ck"></th><th>销售订单号</th><th>出库单</th><th>发货单</th><th>客户</th><th>件数</th><th>出库状态</th><th>司机</th><th>集货位</th><th class="fix">操作</th></tr></thead>
+            <tbody>
+              <tr class="sel"><td><input type="checkbox" class="ck" checked></td><td class="mono">SO...0220</td><td class="mono link">OUT...088</td><td class="mono link">SR...090</td><td>物美(西二旗)</td><td class="num">52</td><td><span class="badge b-ok">已审核出库✓</span></td><td>张师傅</td><td>JH-01</td><td class="fix"><button class="btn sm primary" data-toast="已扫码核对，加入装车清单" data-type="ok">扫码装车</button></td></tr>
+              <tr class="sel"><td><input type="checkbox" class="ck" checked></td><td class="mono">SO...0218</td><td class="mono link">OUT...087</td><td class="mono link">SR...089</td><td>华联(建国路)</td><td class="num">38</td><td><span class="badge b-ok">已审核出库✓</span></td><td>张师傅</td><td>JH-02</td><td class="fix"><button class="btn sm primary">扫码装车</button></td></tr>
+              <tr class="danger"><td><input type="checkbox" class="ck" disabled></td><td class="mono">SO...0241</td><td class="muted">—（未生成）</td><td class="muted">—</td><td>711(三里屯)</td><td class="num">16</td><td><span class="badge b-bad">出库未完成(拣货中)</span></td><td>李师傅</td><td>—</td><td class="fix"><button class="btn sm" disabled>禁止装车</button></td></tr>
+              <tr><td><input type="checkbox" class="ck"></td><td class="mono">SO...0245</td><td class="mono link">OUT...090</td><td class="mono link">SR...092</td><td>全家(文一店)</td><td class="num">24</td><td><span class="badge b-ok">已审核出库✓</span></td><td>出库后指派</td><td>JH-04</td><td class="fix"><button class="btn sm primary">指派+装车</button></td></tr>
+            </tbody>
+          </table></div>
+          <div class="alert bad" style="margin-top:12px">🚫 SO...0241 因出库未完成（拣货中、未生成出库单/发货单）被系统拦截，不可装车。这是硬约束。</div>
+        </div>
+
+        <!-- 装车中 -->
+        <div class="tabpane" style="padding:12px 16px">
+          <div class="loc-card"><div style="font-size:26px">🚚</div><div><div class="lc-name">张师傅 · 京A12345 装车中</div><div class="lc-path">已扫 2 单 / 90 件，预计还需 8 分钟</div></div></div>
+          <div class="bar-row"><div class="top"><span>装车进度</span><span>2/3 单</span></div><div class="bar"><i style="width:66%"></i></div></div>
+          <div class="tbl-wrap"><table><thead><tr><th>销售订单</th><th>客户</th><th>件数</th><th>笼车/箱</th><th>装车状态</th></tr></thead><tbody>
+            <tr><td class="mono">SO...0220</td><td>物美(西二旗)</td><td class="num">52</td><td>L018 ×3</td><td><span class="badge b-ok">已装车✓</span></td></tr>
+            <tr><td class="mono">SO...0218</td><td>华联(建国路)</td><td class="num">38</td><td>L019 ×2</td><td><span class="badge b-ok">已装车✓</span></td></tr>
+            <tr><td class="mono">SO...0238</td><td>物美(海淀)</td><td class="num">68</td><td>—</td><td><span class="badge b-wait">待扫码</span></td></tr>
+          </tbody></table></div>
+          <button class="btn primary" style="width:100%;margin-top:12px" onclick="confirmLoad()">确认装车 → 发车（更新状态，不扣库存）</button>
+        </div>
+
+        <!-- 在途 -->
+        <div class="tabpane" style="padding:12px 16px">
+          <div class="tbl-wrap"><table><thead><tr><th>销售订单</th><th>发货单</th><th>客户</th><th>司机</th><th>派单状态</th><th>签收</th><th>操作</th></tr></thead><tbody>
+            <tr><td class="mono">SO...0220</td><td class="mono">SR...090</td><td>物美(西二旗)</td><td>张师傅</td><td><span class="badge b-info">在途</span></td><td><span class="badge b-gray">未签收</span></td><td><button class="btn sm" data-toast="已定位车辆（演示）">轨迹</button></td></tr>
+            <tr><td class="mono">SO...0205</td><td class="mono">SR...085</td><td>超市发(学院路)</td><td>王师傅</td><td><span class="badge b-ok">已签收</span></td><td><span class="badge b-ok">正常签收</span></td><td><button class="btn sm">回单</button></td></tr>
+          </tbody></table></div>
+        </div>
+
+        <!-- 未发车改派 A→B -->
+        <div class="tabpane" style="padding:16px">
+          <div class="alert info">🚗 <b>未发车改派（不改库存、不生成新单）：</b>后台调度可直接改司机；也可 A 司机把单据交给 B 司机，B 扫单据/箱码接收进自己任务列表。<b>送货单转移后，该客户名下的退单自动跟随转移。</b>已发车/配送中/已结算的不允许改。</div>
+          <div class="tbl-wrap"><table><thead><tr><th>销售订单</th><th>客户</th><th>当前司机(A)</th><th>改派给(B)</th><th>关联退单</th><th>状态</th><th class="fix">操作</th></tr></thead><tbody>
+            <tr><td class="mono">SO...0245</td><td>全家(文一店)</td><td>张师傅</td><td><select style="height:30px;border:1px solid var(--line);border-radius:5px"><option>李师傅</option><option>王师傅</option></select></td><td><span class="chip ok">RT...008 自动跟随</span></td><td><span class="badge b-wait">待B扫码接收</span></td><td class="fix"><button class="btn sm primary" data-toast="后台改派成功，同客户退单已自动转移" data-type="ok">后台改派</button> <button class="btn sm" data-toast="已生成A→B扫码交接码">交接码</button></td></tr>
+          </tbody></table></div>
+          <div class="alert tip" style="margin-top:12px">A→B 扫码交接：B 司机 PDA 扫 A 的发货单/箱码 → 校验订单未发车 → 修改销售订单司机字段为 B → 同客户退单一并转移 → B 任务列表出现该单。全程状态变更，不产生新单据。</div>
+        </div>
+
+        <!-- 在途改派返仓 GPRC -->
+        <div class="tabpane" style="padding:16px">
+          <div class="alert warn">↩️ <b>在途改派返仓（联动现有 TMS tms_reschedule_return）：</b>司机在客户不在/地址错/联系不上时发起，货物随车带回，回仓由仓管 PDA 扫码签收、登记<b>集货位</b>（仅位置标记），回调 TMS 把改派单 PENDING→CHECKED、发货单 dispatch_status=RESCHEDULED。<b>全程不反审核出库单、不生成入库单、不写 wms_bin_stock、不增减库存。</b>调度再 redispatch 重新指派。</div>
+          <div class="tbl-wrap"><table><thead><tr><th>改派单号</th><th>源销售订单</th><th>发货单</th><th>客户</th><th>司机</th><th>原因</th><th>应回/实回</th><th>集货位</th><th>状态</th><th class="fix">操作</th></tr></thead><tbody>
+            <tr class="urgent"><td class="mono link" onclick="gprcDetail()">GPRC20260823-01</td><td class="mono">SO...0156</td><td class="mono">SR...078</td><td>华联(建国路)</td><td>张师傅</td><td>客户不在</td><td class="red">12/11（少1）</td><td><span class="chip warn">JH-03</span></td><td><span class="badge b-wait">PENDING 待签收</span></td><td class="fix"><button class="btn sm primary" onclick="gprcDetail()">仓管签收(PDA)</button></td></tr>
+            <tr><td class="mono">GPRC20260822-03</td><td class="mono">SO...0142</td><td class="mono">SR...070</td><td>711(三里屯)</td><td>李师傅</td><td>地址错误</td><td class="green">8/8</td><td>JH-01</td><td><span class="badge b-ok">CHECKED 待重派</span></td><td class="fix"><button class="btn sm" data-toast="已通知 TMS 重新派车" data-type="ok">重新派车</button></td></tr>
+          </tbody></table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="../assets/wms.js"></script>
+<script>
+bindTableSelect(document.getElementById('tblLoad'));
+function selVeh(el,name){document.querySelectorAll('.veh').forEach(v=>v.classList.remove('on'));el.classList.add('on');toast('已选择：'+name,'info');}
+function confirmLoad(){
+  openModal({title:'确认装车发车',body:`
+    <div class="kv"><span>车辆/司机</span><b>张师傅 · 京A12345</b></div>
+    <div class="kv"><span>本次装车单</span><b>2 单（SO...0220, SO...0218）</b></div>
+    <div class="kv"><span>总件数</span><b>90 件</b></div>
+    <div class="alert info" style="margin-top:10px">装车确认只做实物与责任交接，更新装车任务/发货单状态为"已装车/待发车"，<b>不触发扣库存</b>（出库单审核时已扣）。发车后 dispatch_status 进入在途。</div>
+  `,okText:'确认装车发车',onOk:function(){toast('装车完成，已通知司机发车','ok');}});
+}
+function gprcDetail(){
+  openDrawer({title:'改派返仓签收 · GPRC20260823-01',body:`
+    <div class="alert warn" style="margin-top:0">本操作在仓管 PDA 上完成（扫 GPRC/箱码、选集货位）。此处为后台查看。</div>
+    <div class="kv"><span>源销售订单</span><b class="mono">SO20260823-0156</b></div>
+    <div class="kv"><span>原发货单</span><b class="mono">SR20260823-0078</b></div>
+    <div class="kv"><span>客户/原司机</span><b>华联(建国路) · 张师傅</b></div>
+    <div class="kv"><span>改派原因</span><b>客户不在/联系不上</b></div>
+    <div class="kv"><span>应回/实回</span><b class="red">12 / 11 箱（少 1 箱，差异）</b></div>
+    <div class="kv"><span>集货位（位置标记）</span><b>JH-03 · 3号笼车</b></div>
+    <h4 style="margin:14px 0 8px">签收明细</h4>
+    <div class="tbl-wrap"><table><thead><tr><th>商品</th><th>应回</th><th>实回</th><th>结果</th></tr></thead><tbody>
+      <tr><td>农夫山泉550ml</td><td class="num">6</td><td class="num green">6</td><td class="green">✓</td></tr>
+      <tr><td>可口可乐330ml</td><td class="num">5</td><td class="num green">5</td><td class="green">✓</td></tr>
+      <tr style="background:#fef2f2"><td>康师傅牛肉面105g</td><td class="num">1</td><td class="num red">0</td><td class="red">少1·差异留痕</td></tr>
+    </tbody></table></div>
+    <div class="timeline" style="margin-top:14px">
+      <div class="ev warn"><b>10:05 司机发起改派返仓</b><div class="t">TMS 生成 GPRC(PENDING)，明细置 RESCHEDULED</div></div>
+      <div class="ev cur"><b>10:30 货物回仓</b><div class="t">仓管 PDA 扫码核对、登记集货位 JH-03</div></div>
+      <div class="ev"><b>签收确认（待操作）</b><div class="t">回调 TMS check：PENDING→CHECKED，dispatch_status=RESCHEDULED；不入库、不动库存</div></div>
+      <div class="ev"><b>调度重新派车</b><div class="t">TMS redispatch：UNDISPATCHED，新司机到 JH-03 取货装车</div></div>
+    </div>
+  `,footer:`<button class="btn" data-act="close">关闭</button><button class="btn primary" onclick="toast('已在PDA完成签收（演示），TMS状态已更新','ok');closeDrawer();">确认签收(不入库)</button>`});
+}
+</script></body></html>
