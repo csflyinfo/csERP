@@ -42,6 +42,7 @@ class GoodsSearchResult {
   final String goodsName;
   final String spec;
   final String unitName;
+  final String barcode;
   final num price;
   final num stockQty;
 
@@ -50,6 +51,7 @@ class GoodsSearchResult {
     this.goodsName = '',
     this.spec = '',
     this.unitName = '',
+    this.barcode = '',
     this.price = 0,
     this.stockQty = 0,
   });
@@ -59,8 +61,52 @@ class GoodsSearchResult {
         goodsName: j['goodsName']?.toString() ?? '',
         spec: j['spec']?.toString() ?? '',
         unitName: j['unitName']?.toString() ?? '',
+        barcode: j['barcode']?.toString() ?? '',
         price: j['price'] as num? ?? 0,
         stockQty: j['stockQty'] as num? ?? 0,
+      );
+}
+
+/// 客户下拉搜索结果行（现场退货选客户）。
+class CustomerSearchResult {
+  final String customerCode;
+  final String customerName;
+  final String address;
+
+  /// 距司机当前位置的公里数；关键字搜索或客户无坐标时为 null。
+  final num? distanceKm;
+
+  CustomerSearchResult({
+    this.customerCode = '',
+    this.customerName = '',
+    this.address = '',
+    this.distanceKm,
+  });
+
+  factory CustomerSearchResult.fromJson(Map<String, dynamic> j) => CustomerSearchResult(
+        customerCode: j['customerCode']?.toString() ?? '',
+        customerName: j['customerName']?.toString() ?? '',
+        address: j['address']?.toString() ?? '',
+        distanceKm: j['distanceKm'] as num?,
+      );
+}
+
+/// 收货仓库下拉选项（实物仓）。
+class WarehouseOption {
+  final String warehouseCode;
+  final String warehouseName;
+  final String warehouseType;
+
+  WarehouseOption({
+    this.warehouseCode = '',
+    this.warehouseName = '',
+    this.warehouseType = '',
+  });
+
+  factory WarehouseOption.fromJson(Map<String, dynamic> j) => WarehouseOption(
+        warehouseCode: j['warehouseCode']?.toString() ?? '',
+        warehouseName: j['warehouseName']?.toString() ?? '',
+        warehouseType: j['warehouseType']?.toString() ?? '',
       );
 }
 

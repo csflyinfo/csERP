@@ -18,7 +18,7 @@ final returnTaskListProvider =
   };
 });
 
-/// 商品搜索（按关键字模糊查询）。
+/// 商品搜索（名称/编码/条码/拼音码模糊；条码精确命中排最前）。
 final goodsSearchProvider =
     FutureProvider.autoDispose.family<List<GoodsSearchResult>, String>((ref, keyword) async {
   if (keyword.isEmpty) return [];
@@ -26,6 +26,50 @@ final goodsSearchProvider =
   final list = data as List? ?? [];
   return list
       .map((e) => GoodsSearchResult.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+/// 客户下拉查询参数。
+/// family 靠 == 判重缓存：关键字 + 司机经纬度相同就不重复请求。
+class CustomerSearchArgs {
+  final String keyword;
+  final double? longitude;
+  final double? latitude;
+
+  const CustomerSearchArgs({this.keyword = '', this.longitude, this.latitude});
+
+  @override
+  bool operator ==(Object other) =>
+      other is CustomerSearchArgs &&
+      other.keyword == keyword &&
+      other.longitude == longitude &&
+      other.latitude == latitude;
+
+  @override
+  int get hashCode => Object.hash(keyword, longitude, latitude);
+}
+
+/// 客户下拉：关键字模糊查名称/地址/电话；无关键字时后端按经纬度返回最近 10 个。
+final returnCustomerSearchProvider = FutureProvider.autoDispose
+    .family<List<CustomerSearchResult>, CustomerSearchArgs>((ref, args) async {
+  final data = await ApiService.instance.post('/tms/app/return/customer-search', body: {
+    'keyword': args.keyword,
+    if (args.longitude != null) 'longitude': args.longitude,
+    if (args.latitude != null) 'latitude': args.latitude,
+  });
+  final list = data as List? ?? [];
+  return list
+      .map((e) => CustomerSearchResult.fromJson(e as Map<String, dynamic>))
+      .toList();
+});
+
+/// 收货仓库下拉（正常实物仓）。
+final returnWarehouseListProvider =
+    FutureProvider.autoDispose<List<WarehouseOption>>((ref) async {
+  final data = await ApiService.instance.post('/tms/app/return/warehouse-list');
+  final list = data as List? ?? [];
+  return list
+      .map((e) => WarehouseOption.fromJson(e as Map<String, dynamic>))
       .toList();
 });
 

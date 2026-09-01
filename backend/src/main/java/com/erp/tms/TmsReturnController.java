@@ -27,7 +27,9 @@ import java.util.*;
  *   POST /tms/app/return/list                  司机回收任务列表（待回收 + 已回收待返仓）
  *   POST /tms/app/return/create                司机现场创建退货（无预开单）
  *   POST /tms/app/return/upload-photo          上传退货照片（base64）
- *   POST /tms/app/return/goods-search          商品模糊搜索（现场录入用）
+ *   POST /tms/app/return/goods-search          商品模糊/条码搜索（现场录入用）
+ *   POST /tms/app/return/customer-search       客户下拉（关键字模糊 / GPS 最近10个）
+ *   POST /tms/app/return/warehouse-list        收货仓库下拉（实物仓）
  *   POST /tms/app/warehouse-return/list        本趟待返仓退货清单
  *   POST /tms/app/warehouse-return/confirm     返仓交接确认（生成入库单）
  *
@@ -284,37 +286,134 @@ public class TmsReturnController {
 
     /**
      * 商品模糊搜索（司机现场录入退货商品用）。
-     * 入参：keyword, warehouse?
-     * 返回：[{goodsCode, goodsName, spec, unitName, price, stockQty}]
+     * 入参：keyword（名称/编码/条码/拼音码），扫码场景直接传条码原文。
+     * 返回：[{goodsCode, goodsName, spec, unitName, barcode, price}]
+     * 精确命中条码/编码的排最前，APP 扫码后据此自动选中第一行。
+     *
+     * 注意：本方法曾用文本块（"""）拼 SQL，文本块会裁掉每行尾部空白和开头换行，
+     * 导致 "inv_stock_balance s " + "ON ..." + "WHERE" 被粘成
+     * "inv_stock_balance sON ...WHERE"，H2 语法错误直接 500（现场查询商品报错的根因）。
+     * 这里改为普通字符串拼接，空格全部显式写出。
+     * 不再 JOIN inv_stock_balance：退货在客户门口发生，本店库存无意义，
+     * 且按批次 JOIN 会把同一商品扇出成多行。
      */
     @PostMapping("/tms/app/return/goods-search")
     public ApiResponse<List<Map<String, Object>>> goodsSearch(@RequestBody Map<String, Object> body) {
         String keyword = TmsUtil.str(body.get("keyword"));
-        String warehouse = TmsUtil.str(body.get("warehouse"));
         if (keyword.length() < 1) return ApiResponse.ok(List.of());
 
-        // LEFT JOIN 的 ON 条件包含 warehouse 过滤，保证无库存商品也能返回（stock_qty=0）
-        String joinCondition = warehouse.isEmpty()
-                ? "ON s.goods_code = g.goods_code"
-                : "ON s.goods_code = g.goods_code AND s.warehouse = ?";
-        String sql = """
-                SELECT g.goods_code, g.goods_name, g.spec, g.base_unit AS unit_name,
-                       g.suggested_retail_price AS price,
-                       COALESCE(s.physical_qty, 0) AS stock_qty
-                FROM base_goods g
-                LEFT JOIN inv_stock_balance s """ + joinCondition + """
-                WHERE (g.goods_code LIKE ? OR g.goods_name LIKE ? OR g.barcode LIKE ?)
-                ORDER BY g.goods_name LIMIT 30
-                """;
-        List<Object> args = new ArrayList<>();
-        if (!warehouse.isEmpty()) args.add(warehouse);
+        String sql = "SELECT g.goods_code, g.goods_name, g.spec, g.base_unit AS unit_name, "
+                + "g.barcode, g.suggested_retail_price AS price "
+                + "FROM base_goods g "
+                + "WHERE COALESCE(g.status, 'NORMAL') = 'NORMAL' "
+                + "AND COALESCE(g.can_return, TRUE) = TRUE "
+                + "AND (g.goods_code LIKE ? OR g.goods_name LIKE ? OR g.barcode LIKE ? "
+                + "OR COALESCE(g.simple_code, '') LIKE ?) "
+                + "ORDER BY CASE WHEN g.barcode = ? THEN 0 WHEN g.goods_code = ? THEN 1 ELSE 2 END, "
+                + "g.goods_name LIMIT 30";
         String like = "%" + keyword + "%";
-        args.add(like);
-        args.add(like);
-        args.add(like);
-
-        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, sql, args.toArray());
+        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, sql,
+                like, like, like, like, keyword, keyword);
         return ApiResponse.ok(rows);
+    }
+
+    /**
+     * 客户下拉搜索（现场退货选客户用）。
+     * 入参：keyword?（名称/编码/地址/电话模糊），longitude?/latitude?（司机当前坐标）。
+     * 规则：
+     *   - 有关键字：按名称模糊匹配，最多 30 条；
+     *   - 无关键字：返回距离司机最近的 10 个客户；客户档案没有坐标的排后面（按名称兜底），
+     *     避免 base_customer 经纬度大量为空时下拉空白。
+     * 地址优先取客户默认收货地址（base_customer_address.is_default=1），
+     * 没有则回落到 base_customer.shipping_address 主地址冗余。
+     * 返回：[{customerCode, customerName, address, distanceKm?}]
+     */
+    @PostMapping("/tms/app/return/customer-search")
+    public ApiResponse<List<Map<String, Object>>> customerSearch(@RequestBody(required = false) Map<String, Object> body) {
+        Map<String, Object> b = body == null ? Map.of() : body;
+        String keyword = TmsUtil.str(b.get("keyword"));
+        BigDecimal driverLat = TmsUtil.toBd(b.get("latitude"));
+        BigDecimal driverLng = TmsUtil.toBd(b.get("longitude"));
+        boolean hasLocation = b.get("latitude") != null && b.get("longitude") != null
+                && driverLat.doubleValue() != 0 && driverLng.doubleValue() != 0;
+
+        String sql = "SELECT c.customer_code, c.customer_name, "
+                + "COALESCE(ca.detail_address, COALESCE(c.shipping_address, '')) AS address, "
+                + "COALESCE(ca.longitude, c.longitude) AS lng, "
+                + "COALESCE(ca.latitude, c.latitude) AS lat "
+                + "FROM base_customer c "
+                + "LEFT JOIN base_customer_address ca ON ca.customer_code = c.customer_code "
+                + "AND ca.is_default = 1 AND COALESCE(ca.status, 'NORMAL') = 'NORMAL' "
+                + "WHERE COALESCE(c.status, 'NORMAL') = 'NORMAL' ";
+        List<Object> args = new ArrayList<>();
+        if (!keyword.isEmpty()) {
+            sql += "AND (c.customer_name LIKE ? OR c.customer_code LIKE ? OR c.shipping_address LIKE ? "
+                    + "OR ca.detail_address LIKE ? OR COALESCE(c.mobile, '') LIKE ?) ";
+            String like = "%" + keyword + "%";
+            args.add(like); args.add(like); args.add(like); args.add(like); args.add(like);
+        }
+        // 无关键字时把候选集上限放大，留给 Java 侧按距离排序取前 10
+        sql += "ORDER BY c.customer_name LIMIT " + (keyword.isEmpty() ? "500" : "30");
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, args.toArray());
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("customerCode", TmsUtil.str(r.get("customer_code")));
+            m.put("customerName", TmsUtil.str(r.get("customer_name")));
+            m.put("address", TmsUtil.str(r.get("address")));
+            BigDecimal lat = r.get("lat") == null ? null : TmsUtil.toBd(r.get("lat"));
+            BigDecimal lng = r.get("lng") == null ? null : TmsUtil.toBd(r.get("lng"));
+            if (hasLocation && lat != null && lng != null
+                    && lat.doubleValue() != 0 && lng.doubleValue() != 0) {
+                double km = haversineKm(driverLat.doubleValue(), driverLng.doubleValue(),
+                        lat.doubleValue(), lng.doubleValue());
+                m.put("distanceKm", BigDecimal.valueOf(km).setScale(1, BigDecimal.ROUND_HALF_UP));
+            }
+            out.add(m);
+        }
+
+        if (keyword.isEmpty()) {
+            // 有坐标距离的按距离升序；没坐标的排最后、按名称兜底
+            out.sort((a, c) -> {
+                BigDecimal da = (BigDecimal) a.get("distanceKm");
+                BigDecimal dc = (BigDecimal) c.get("distanceKm");
+                if (da != null && dc != null) return da.compareTo(dc);
+                if (da != null) return -1;
+                if (dc != null) return 1;
+                return TmsUtil.str(a.get("customerName")).compareTo(TmsUtil.str(c.get("customerName")));
+            });
+            if (out.size() > 10) out = new ArrayList<>(out.subList(0, 10));
+        }
+        return ApiResponse.ok(out);
+    }
+
+    /**
+     * 收货仓库下拉：只列正常的实物仓（虚拟仓不参与退货入库），按编码排序。
+     * 历史数据 warehouse_type 可能为 NULL/「正常仓」，COALESCE 成「实物仓」参与比较。
+     * 返回：[{warehouseCode, warehouseName, warehouseType}]，提交时仍用 warehouseName。
+     */
+    @PostMapping("/tms/app/return/warehouse-list")
+    public ApiResponse<List<Map<String, Object>>> warehouseList() {
+        List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate,
+                "SELECT warehouse_code, warehouse_name, warehouse_type "
+                        + "FROM base_warehouse "
+                        + "WHERE COALESCE(status, 'NORMAL') = 'NORMAL' "
+                        + "AND COALESCE(warehouse_type, '实物仓') <> '虚拟仓' "
+                        + "ORDER BY warehouse_code");
+        return ApiResponse.ok(rows);
+    }
+
+    /** 球面距离（Haversine），单位公里。 */
+    private static double haversineKm(double lat1, double lng1, double lat2, double lng2) {
+        double earthRadius = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     /**
