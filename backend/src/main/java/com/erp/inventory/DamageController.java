@@ -34,14 +34,18 @@ public class DamageController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public DamageController(JdbcTemplate jdbcTemplate,
                             InventoryCostService inventoryCostService,
                             com.erp.common.util.BillNoGenerator billNoGen,
-                            com.erp.system.OperationLogService opLog) {
+                            com.erp.system.OperationLogService opLog,
+                            com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ========================================================================
@@ -394,6 +398,8 @@ public class DamageController {
                 WHERE damage_id=?
                 """, totalCostAmount, damageId);
 
+        // 总账钩子：报损事件（大额损失入待处理财产损溢，定额内合理损耗入管理费用）
+        glHooks.onDamageAudited(damageNo);
         log("inventory.damage", "AUDIT", damageNo, "报损单审核 → 扣减库存，成本 " + totalCostAmount);
         return ApiResponse.ok(Map.of(
                 "damageId", damageId, "damageNo", damageNo, "status", "APPROVED",
@@ -441,6 +447,7 @@ public class DamageController {
                 WHERE damage_id=?
                 """, damageId);
 
+        glHooks.onDamageUnaudited(damageNo);
         log("inventory.damage", "REVERSE_AUDIT", damageNo, "报损单反审核 → 恢复库存");
         return ApiResponse.ok(Map.of("damageId", damageId, "status", "PENDING", "effect", "已反审核，库存已恢复"));
     }

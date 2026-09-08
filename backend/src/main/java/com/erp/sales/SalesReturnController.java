@@ -74,16 +74,20 @@ public class SalesReturnController {
     private final WmsInboundService wmsInboundService;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public SalesReturnController(JdbcTemplate jdbcTemplate,
                                  InventoryCostService inventoryCostService,
                                  com.erp.common.util.BillNoGenerator billNoGen,
                                  @Autowired(required = false) @Lazy WmsInboundService wmsInboundService,
-                                 com.erp.system.OperationLogService opLog) {
+                                 com.erp.system.OperationLogService opLog,
+                                 com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.wmsInboundService = wmsInboundService;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ========================================================================
@@ -784,6 +788,9 @@ public class SalesReturnController {
                 WHERE apply_id=?
                 """, auditUser, applyId);
 
+        // 总账钩子：销售退货（应收红冲）事件；人工审核与司机回收自动审核均汇聚于此
+        glHooks.onSalesReturnAudited(applyNo);
+
         return "已审核，按退货金额 " + plain(returnAmount) + " 写入负向应收"
                 + (arNo.isBlank() ? "（应收已存在，未重复写入）" : " " + arNo)
                 + "，其中税额 " + plain(totalTaxAmount) + "，不含税 " + plain(taxExcludedAmount);
@@ -831,6 +838,7 @@ public class SalesReturnController {
         jdbcTemplate.update("UPDATE sales_return_apply SET status='CONFIRMED', " +
                 "audit_user=NULL, audit_time=NULL WHERE apply_id=?", applyId);
 
+        glHooks.onSalesReturnUnaudited(applyNo);
         log("sales.return.order", "REVERSE_AUDIT", applyNo, "销售退货单反审核 → 恢复为已确认，负向应收已撤销");
         return ApiResponse.ok(Map.of("applyId", applyId, "status", "CONFIRMED", "effect", "已反审核，应收冲减已撤销"));
     }
@@ -1214,6 +1222,9 @@ public class SalesReturnController {
         if (!applyNo.isBlank()) {
             applyEffect = writeBackInboundToApply(applyNo, inboundQtyByApplyLine, inboundQtyByGoods, totalInboundAmount);
         }
+
+        // 总账钩子：退货成本红冲事件（借库存商品/贷主营业务成本，红字冲回出库成本）
+        glHooks.onSalesReturnCostAudited(inboundNo);
 
         log("sales.return.inbound", "AUDIT", inboundNo,
                 "退货入库审核 → 回库，成本 " + totalCostAmount + applyEffect + "（操作人：" + op + "）");

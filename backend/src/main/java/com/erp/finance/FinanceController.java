@@ -36,10 +36,15 @@ public class FinanceController {
     private final com.erp.system.OperationLogService opLog;
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen, com.erp.system.OperationLogService opLog) {
+    private final com.erp.finance.gl.GlHookService glHooks;
+
+    public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                             com.erp.system.OperationLogService opLog,
+                             com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     @PostMapping("/ar/page")
@@ -379,7 +384,8 @@ public class FinanceController {
         BigDecimal total = sumDetails(body);
         BigDecimal totalTax = sumDetailField(body, "taxAmount");
         BigDecimal totalExcluding = sumDetailField(body, "excludingTaxAmount");
-        String direction = total.signum() >= 0 ? "IN" : "OUT";
+        // 收支方向以表单选择为准（OUT=费用支出 / IN=其他收入）；前端默认 OUT
+        String direction = "IN".equals(str(body.get("direction"))) ? "IN" : "OUT";
         // 取第一条明细的费用类型回填旧列 expense_type（NOT NULL），其他旧列有 DEFAULT
         String firstExpType = "其他";
         Object rd = body.get("details");
@@ -426,12 +432,14 @@ public class FinanceController {
         BigDecimal totalTax = sumDetailField(body, "taxAmount");
         BigDecimal totalExcluding = sumDetailField(body, "excludingTaxAmount");
         jdbcTemplate.update("""
-                UPDATE fin_expense_bill SET expense_date = ?, counterparty_type = ?,
+                UPDATE fin_expense_bill SET expense_date = ?, direction = ?, counterparty_type = ?,
                     counterparty_code = ?, counterparty_name = ?, handler = ?, department = ?,
                     related_bill_no = ?, external_voucher_no = ?, fund_account = ?,
                     remark = ?, total_amount = ?, total_tax_amount = ?, total_excluding_tax_amount = ?
                 WHERE expense_id = ?
-                """, date(body, "expenseDate"), str(body.get("counterpartyType")),
+                """, date(body, "expenseDate"),
+                "IN".equals(str(body.get("direction"))) ? "IN" : "OUT",
+                str(body.get("counterpartyType")),
                 str(body.get("counterpartyCode")), str(body.get("counterpartyName")),
                 str(body.get("handler")), str(body.get("department")),
                 str(body.get("relatedBillNo")), str(body.get("externalVoucherNo")),
@@ -474,34 +482,56 @@ public class FinanceController {
         String cpName = str(r.get("counterpartyName"));
         String fundAcct = str(r.get("fundAccount"));
         BigDecimal total = toBd(r.get("totalAmount"));
-        String direction = total.signum() >= 0 ? "IN" : "OUT";
+        // 收支方向以单据存档为准（建单/编辑时按表单写入），不能再按金额正负推断
+        String direction = str(r.get("direction"));
+        if (direction.isEmpty()) direction = "OUT";
         jdbcTemplate.update("UPDATE fin_expense_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, direction = ? WHERE expense_id = ?",
                 auditor, java.sql.Timestamp.valueOf(now), direction, id);
 
+        BigDecimal absAmt = total.abs();
         if (!fundAcct.isEmpty()) {
-            // 有收/付账户 → 自动生成收款单/付款单并审核核销
-            String receiptNo = billNoGen.nextNo("SK", "fin_receipt_bill", "receipt_no");
-            String receiptId = "SK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
-            BigDecimal absAmt = total.abs();
-            jdbcTemplate.update("""
-                    INSERT INTO fin_receipt_bill(receipt_id, receipt_no, receipt_date, status,
-                        counterparty_type, counterparty_code, counterparty_name, object_name,
-                        total_amount, verified_amount, fund_account, amount,
-                        business_source, handler, related_bill_no, summary,
-                        creator_name, create_time, auditor_name, audit_time)
-                    VALUES (?, ?, CURRENT_DATE, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
-                    """, receiptId, receiptNo, cpType, cpCode, cpName, cpName,
-                    absAmt, absAmt, fundAcct, absAmt,
-                    str(r.get("handler")), expenseNo, "费用单自动生成",
-                    auditor, java.sql.Timestamp.valueOf(now), auditor, java.sql.Timestamp.valueOf(now));
-            // 写核销记录
-            writeReconcileRecordV2(receiptNo, java.sql.Date.valueOf(LocalDate.now()), expenseNo, expenseNo,
+            // 有收/付账户 → 收入方向自动生成收款单、支出方向自动生成付款单（business_source=EXPENSE，
+            // 总账钩子不再为这些自动单丢收付款事件，费用事件模板自身已按资金账户贷方生成分录）
+            String autoNo;
+            if ("IN".equals(direction)) {
+                autoNo = billNoGen.nextNo("SK", "fin_receipt_bill", "receipt_no");
+                String autoId = "SK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+                jdbcTemplate.update("""
+                        INSERT INTO fin_receipt_bill(receipt_id, receipt_no, receipt_date, status,
+                            counterparty_type, counterparty_code, counterparty_name, object_name,
+                            total_amount, verified_amount, fund_account, amount,
+                            business_source, handler, related_bill_no, summary,
+                            creator_name, create_time, auditor_name, audit_time)
+                        VALUES (?, ?, CURRENT_DATE, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
+                        """, autoId, autoNo, cpType, cpCode, cpName, cpName,
+                        absAmt, absAmt, fundAcct, absAmt,
+                        str(r.get("handler")), expenseNo, "费用单自动生成",
+                        auditor, java.sql.Timestamp.valueOf(now), auditor, java.sql.Timestamp.valueOf(now));
+            } else {
+                autoNo = billNoGen.nextNo("FK", "fin_payment_bill", "payment_no");
+                String autoId = "FK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
+                jdbcTemplate.update("""
+                        INSERT INTO fin_payment_bill(payment_id, payment_no, payment_date, status,
+                            counterparty_type, counterparty_code, counterparty_name, object_name,
+                            total_amount, verified_amount, fund_account, amount,
+                            business_source, handler, related_bill_no, summary,
+                            creator_name, create_time, auditor_name, audit_time)
+                        VALUES (?, ?, CURRENT_DATE, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
+                        """, autoId, autoNo, cpType, cpCode, cpName, cpName,
+                        absAmt, absAmt, fundAcct, absAmt,
+                        str(r.get("handler")), expenseNo, "费用单自动生成",
+                        auditor, java.sql.Timestamp.valueOf(now), auditor, java.sql.Timestamp.valueOf(now));
+            }
+            // 写核销记录（receipt_no 列对付款单同样复用，存付款单号）
+            writeReconcileRecordV2(autoNo, java.sql.Date.valueOf(LocalDate.now()), expenseNo, expenseNo,
                     "EXPENSE", str(r.get("expenseDate")), cpType, cpCode, cpName, absAmt, "", "");
         } else {
             // 无收/付账户 → 生成往来 AR/AP
             writeCounterpartyLedger(cpType, cpCode, cpName, "IN".equals(direction) ? "IN" : "OUT",
                     total.abs(), expenseNo, "EXPENSE", BigDecimal.ZERO, "费用单生成往来");
         }
+        // 总账钩子：费用支出 → EXPENSE 事件；收入方向 → OTHER_INCOME 事件
+        glHooks.onExpenseAudited(expenseNo);
         finLog(com.erp.system.OperationModule.FIN_EXPENSE, com.erp.system.OperationAction.AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_EXPENSE, expenseNo, "审核费用单 " + expenseNo);
         return ApiResponse.ok(GenericResult.row("expenseNo", expenseNo, "status", "APPROVED"));
@@ -835,6 +865,8 @@ public class FinanceController {
                 UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                 WHERE receipt_id = ?
                 """, auditor, java.sql.Timestamp.valueOf(now), id);
+        // 总账钩子：批量审核同样丢收款事件（钩子内按 business_source 过滤自动单）
+        glHooks.onReceiptAudited(receiptNo);
     }
 
     private String trimF(Map<String, Object> filters, String key, String altKey) {
@@ -961,6 +993,8 @@ public class FinanceController {
                 UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                 WHERE receipt_id = ?
                 """, auditor, java.sql.Timestamp.valueOf(now), id);
+        // 总账钩子：收款事件（仅后台手工单，自动单在钩子内按 business_source 过滤）
+        glHooks.onReceiptAudited(receiptNo);
         finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "审核收款单 " + receiptNo);
         return ApiResponse.ok(GenericResult.row("receiptNo", receiptNo, "status", "APPROVED"));
@@ -1024,6 +1058,7 @@ public class FinanceController {
 
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_receipt_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE receipt_id = ?", id);
+        glHooks.onReceiptUnaudited(receiptNo);
         finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.UN_AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "反审核收款单 " + receiptNo);
         return ApiResponse.ok(GenericResult.row("receiptNo", receiptNo, "status", "PENDING"));
@@ -1243,6 +1278,7 @@ public class FinanceController {
                 UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                 WHERE payment_id = ?
                 """, auditor, java.sql.Timestamp.valueOf(now), id);
+        glHooks.onPaymentAudited(paymentNo);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "审核付款单 " + paymentNo);
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "APPROVED"));
@@ -1298,6 +1334,7 @@ public class FinanceController {
 
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_payment_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE payment_id = ?", id);
+        glHooks.onPaymentUnaudited(paymentNo);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.UN_AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "反审核付款单 " + paymentNo);
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "PENDING"));
@@ -1321,6 +1358,7 @@ public class FinanceController {
                     UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                     WHERE payment_id = ?
                     """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
+            glHooks.onPaymentAudited(str(r.get("paymentNo")));
             ok++;
         }
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
@@ -1914,6 +1952,12 @@ public class FinanceController {
             // 查未核销 AP（按 due_date 升序 → 早到期的先核）
             List<Map<String, Object>> rows = queryCamel(
                     "SELECT * FROM fin_ap WHERE supplier = ? AND status <> 'VERIFIED' ORDER BY due_date", cpCode);
+            // 与 AR 同侧的弱引用回落：fin_ap.supplier 采购侧写入的是供应商名称，
+            // 付款单 counterparty_code 存编码，编码查不到时按名称再查一次，否则付款永远核不到应付。
+            if (rows.isEmpty() && !cpName.isBlank() && !cpName.equals(cpCode)) {
+                rows = queryCamel(
+                        "SELECT * FROM fin_ap WHERE supplier = ? AND status <> 'VERIFIED' ORDER BY due_date", cpName);
+            }
             return doReconcileAp(rows, receiptNo, receiptDate, cpType, cpCode, cpName, amount, receiptRemark);
         } else {
             // CUSTOMER / COUNTERPARTY → 查 AR

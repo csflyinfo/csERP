@@ -46,13 +46,16 @@ public class PurchaseReceiptController {
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.finance.gl.GlHookService glHooks;
 
     public PurchaseReceiptController(JdbcTemplate jdbcTemplate,
                                      com.erp.common.util.BillNoGenerator billNoGen,
-                                     com.erp.system.OperationLogService opLog) {
+                                     com.erp.system.OperationLogService opLog,
+                                     com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ============ 列表 & 详情 ============
@@ -155,6 +158,8 @@ public class PurchaseReceiptController {
                 WHERE receipt_id = ?
                 """, "系统管理员", receiptId);
 
+        // 总账钩子：采购收货事件（事务提交后落事件池，失败不影响业务）
+        glHooks.onPurchaseReceiptAudited(receiptNo);
         log("purchase.receipt", "AUDIT", receiptNo, "采购收货单审核 → 生成应付 " + apNo
                 + (priceSyncEffect.isBlank() ? "" : "；" + priceSyncEffect));
         return ApiResponse.ok(Map.of(
@@ -200,6 +205,7 @@ public class PurchaseReceiptController {
                 WHERE receipt_id = ?
                 """, receiptId);
 
+        glHooks.onPurchaseReceiptUnaudited(receiptNo);
         log("purchase.receipt", "REVERSE_AUDIT", receiptNo, "采购收货单反审核 → 撤销应付");
         return ApiResponse.ok(Map.of("receiptId", receiptId, "status", "PENDING", "effect", "已反审核，应付账款已撤销"));
     }

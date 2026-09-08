@@ -41,14 +41,18 @@ public class PurchaseReturnController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public PurchaseReturnController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
                                     com.erp.common.util.BillNoGenerator billNoGen,
-                                    com.erp.system.OperationLogService opLog) {
+                                    com.erp.system.OperationLogService opLog,
+                                    com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ========================================================================
@@ -892,6 +896,7 @@ public class PurchaseReturnController {
             jdbcTemplate.update("UPDATE pur_return_apply SET status='COMPLETED' WHERE apply_no=?", sourceApplyNo);
         }
 
+        glHooks.onPurchaseReturnAudited(returnNo);
         log("purchase.return", "AUDIT", returnNo, "采购退货单审核 → 写入负向应付 " + apNo);
         return ApiResponse.ok(Map.of(
                 "returnId", returnId, "returnNo", returnNo, "status", "APPROVED",
@@ -929,6 +934,7 @@ public class PurchaseReturnController {
                 WHERE return_id=?
                 """, returnId);
 
+        glHooks.onPurchaseReturnUnaudited(returnNo);
         log("purchase.return", "REVERSE_AUDIT", returnNo, "采购退货单反审核 → 撤销应付冲减");
         return ApiResponse.ok(Map.of("returnId", returnId, "status", "PENDING", "effect", "已反审核，应付冲减已撤销"));
     }

@@ -67,14 +67,18 @@ public class SalesReceiptController {
     private final RejectInboundController rejectInboundController;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public SalesReceiptController(JdbcTemplate jdbcTemplate,
                                   com.erp.common.util.BillNoGenerator billNoGen,
                                   RejectInboundController rejectInboundController,
-                                  com.erp.system.OperationLogService opLog) {
+                                  com.erp.system.OperationLogService opLog,
+                                  com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.rejectInboundController = rejectInboundController;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ============ 列表 & 详情 ============
@@ -227,6 +231,8 @@ public class SalesReceiptController {
                     audit_user = ?, audit_time = CURRENT_TIMESTAMP
                 WHERE receipt_id = ?
                 """, "系统管理员", receiptId);
+        // 总账钩子：销售签收事件（人工审核与签收自动审核均汇聚于此；幂等由事件池保证）
+        glHooks.onSalesSignAudited(receiptNo);
         return arNo;
     }
 
@@ -259,6 +265,7 @@ public class SalesReceiptController {
                 WHERE receipt_id = ?
                 """, receiptId);
 
+        glHooks.onSalesSignUnaudited(receiptNo);
         log("sales.receipt", "REVERSE_AUDIT", receiptNo, "销售发货单反审核 → 撤销应收");
         return ApiResponse.ok(Map.of("receiptId", receiptId, "status", "PENDING", "effect", "已反审核，应收账款已撤销"));
     }
@@ -492,6 +499,9 @@ public class SalesReceiptController {
                         + " 已有收款记录，无法撤销签收。请先撤销收款核销。");
             }
         }
+
+        // 总账钩子：撤销签收会把签收金额归 0，必须在清金额之前发反向事件（事件事务提交后才落池）
+        glHooks.onSalesSignUnaudited(receiptNo);
 
         // 2) 先删拒收入库单（内部校验只有 PENDING 才能删，已审核入库的会直接拒绝）
         rejectInboundController.deleteByReceiptNo(receiptNo);

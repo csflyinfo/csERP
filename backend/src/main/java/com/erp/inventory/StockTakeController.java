@@ -35,11 +35,15 @@ public class StockTakeController {
     private final BillNoGenerator billNoGenerator;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public StockTakeController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGenerator,
-                               com.erp.system.OperationLogService opLog) {
+                               com.erp.system.OperationLogService opLog,
+                               com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGenerator = billNoGenerator;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     /** PRD-31 盘点操作日志：统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）。 */
@@ -600,6 +604,9 @@ public class StockTakeController {
                 "UPDATE inv_count_sheet SET status='APPROVED', audit_by='管理员', audit_time=CURRENT_TIMESTAMP WHERE sheet_no=?",
                 sheetNo);
 
+        // 总账钩子：盘点事件（盘亏入待处理/盘盈冲管理费用；无盈亏不丢事件）
+        glHooks.onStockCheckAudited(sheetNo);
+
         stLog(com.erp.system.OperationAction.AUDIT, sheetNo,
                 "审核盘点单 " + sheetNo + "：盘盈 " + surplusCount + " 行，盘亏 " + shortageCount + " 行");
         return ApiResponse.ok(Map.of(
@@ -657,6 +664,7 @@ public class StockTakeController {
         }
 
         jdbcTemplate.update("UPDATE inv_count_sheet SET status='PENDING', audit_by=NULL, audit_time=NULL WHERE sheet_no=?", sheetNo);
+        glHooks.onStockCheckUnaudited(sheetNo);
         stLog(com.erp.system.OperationAction.REVERSE_AUDIT, sheetNo, "反审核盘点单 " + sheetNo);
         return ApiResponse.ok(Map.of("status", "PENDING", "sheetNo", sheetNo));
     }

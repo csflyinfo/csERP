@@ -38,14 +38,18 @@ public class OtherOutboundController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public OtherOutboundController(JdbcTemplate jdbcTemplate,
                                    InventoryCostService inventoryCostService,
                                    com.erp.common.util.BillNoGenerator billNoGen,
-                                   com.erp.system.OperationLogService opLog) {
+                                   com.erp.system.OperationLogService opLog,
+                                   com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ========================================================================
@@ -400,6 +404,8 @@ public class OtherOutboundController {
                 WHERE outbound_id=?
                 """, totalCostAmount, outboundId);
 
+        // 总账钩子：其他出库事件（对方科目按出库类型查业务类型科目映射）
+        glHooks.onOtherOutboundAudited(outboundNo);
         log("inventory.otherOutbound", "AUDIT", outboundNo, "其他出库单审核 → 扣减库存，成本 " + totalCostAmount);
         return ApiResponse.ok(Map.of(
                 "outboundId", outboundId, "outboundNo", outboundNo, "status", "APPROVED",
@@ -437,6 +443,7 @@ public class OtherOutboundController {
                 WHERE outbound_id=?
                 """, outboundId);
 
+        glHooks.onOtherOutboundUnaudited(outboundNo);
         log("inventory.otherOutbound", "REVERSE_AUDIT", outboundNo, "其他出库单取消审核 → 库存回库");
         return ApiResponse.ok(Map.of("outboundId", outboundId, "status", "PENDING",
                 "effect", "已取消审核，库存已回库"));

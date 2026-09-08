@@ -43,14 +43,18 @@ public class OtherInboundController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public OtherInboundController(JdbcTemplate jdbcTemplate,
                                   InventoryCostService inventoryCostService,
                                   com.erp.common.util.BillNoGenerator billNoGen,
-                                  com.erp.system.OperationLogService opLog) {
+                                  com.erp.system.OperationLogService opLog,
+                                  com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ========================================================================
@@ -336,6 +340,8 @@ public class OtherInboundController {
                 WHERE inbound_id=?
                 """, totalCostAmount, inboundId);
 
+        // 总账钩子：其他入库事件（期初库存 inbound_type='0' 在钩子内跳过）
+        glHooks.onOtherInboundAudited(inboundNo);
         log("inventory.otherInbound", "AUDIT", inboundNo, "其他入库单审核 → 增加库存，成本 " + totalCostAmount);
         return ApiResponse.ok(Map.of(
                 "inboundId", inboundId, "inboundNo", inboundNo, "status", "APPROVED",
@@ -374,6 +380,7 @@ public class OtherInboundController {
                 WHERE inbound_id=?
                 """, inboundId);
 
+        glHooks.onOtherInboundUnaudited(inboundNo);
         log("inventory.otherInbound", "REVERSE_AUDIT", inboundNo, "其他入库单反审核 → 扣减库存");
         return ApiResponse.ok(Map.of("inboundId", inboundId, "status", "PENDING",
                 "effect", "已反审核，入库库存已扣回"));

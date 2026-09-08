@@ -48,16 +48,20 @@ public class SalesOutboundController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
 
+    private final com.erp.finance.gl.GlHookService glHooks;
+
     public SalesOutboundController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
                                     SalesReceiptController receiptController,
                                     com.erp.common.util.BillNoGenerator billNoGen,
-                                    com.erp.system.OperationLogService opLog) {
+                                    com.erp.system.OperationLogService opLog,
+                                    com.erp.finance.gl.GlHookService glHooks) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.receiptController = receiptController;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.glHooks = glHooks;
     }
 
     // ============ 列表 & 详情 ============
@@ -743,6 +747,9 @@ public class SalesOutboundController {
         }
 
         log("sales.outbound", "AUDIT", outboundNo, logDetail);
+
+        // 总账钩子：销售出库结转成本事件（成本取库存流水移动加权平均价；事务提交后落事件池）
+        glHooks.onSalesOutboundAudited(outboundNo);
 
         // 自动生成销售发货单（幂等）
         String receiptNo = receiptController.generateFromOutbound(outboundId);

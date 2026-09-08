@@ -6,6 +6,13 @@ import { useAuthStore } from '../stores/auth.js'
 const router = useRouter()
 const auth = useAuthStore()
 
+// 验证环境可通过 VITE_APP_TITLE 注入标识（如总账开发版），默认标题不变
+const appTitle = import.meta.env.VITE_APP_TITLE || '商贸云 ERP V1.0'
+const envBadge = import.meta.env.VITE_APP_BADGE || ''
+if (import.meta.env.VITE_APP_TITLE) {
+  document.title = import.meta.env.VITE_APP_TITLE
+}
+
 const username = ref('admin')
 const password = ref('admin123')
 const loginError = ref('')
@@ -29,7 +36,8 @@ async function doLogin() {
   <div class="login-page">
     <div class="login-card">
       <div class="brand login-brand">
-        <div class="mark"></div>商贸云 ERP V1.0
+        <div class="mark"></div>{{ appTitle }}
+        <span v-if="envBadge" class="env-badge">{{ envBadge }}</span>
       </div>
       <p style="color:var(--muted);margin:0 0 18px">真实应用开发版</p>
       <div class="field" style="margin-bottom:12px">

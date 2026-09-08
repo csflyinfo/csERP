@@ -30,6 +30,12 @@ const auth = useAuthStore()
 const app = useAppStore()
 
 const menus = fallbackMenus
+// 验证环境可通过 VITE_APP_TITLE/VITE_APP_BADGE 注入标识（如总账开发版），默认标题不变
+const appTitle = import.meta.env.VITE_APP_TITLE || '商贸云 ERP V1.0'
+const envBadge = import.meta.env.VITE_APP_BADGE || ''
+if (typeof document !== 'undefined' && import.meta.env.VITE_APP_TITLE) {
+  document.title = import.meta.env.VITE_APP_TITLE
+}
 const menuCollapsed = ref(false)
 const toastText = ref('')
 const todoCount = ref(0)
@@ -316,7 +322,8 @@ const topKeys = computed(() => Object.keys(menus))
     <!-- Header -->
     <header class="top">
       <div class="brand">
-        <div class="mark"></div>商贸云 ERP V1.0
+        <div class="mark"></div>{{ appTitle }}
+        <span v-if="envBadge" class="env-badge">{{ envBadge }}</span>
       </div>
       <button class="hamb" @click="menuCollapsed = !menuCollapsed">☰</button>
       <!-- 打开的模块 Tab（从主内容区提升到顶栏） -->

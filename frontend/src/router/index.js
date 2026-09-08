@@ -9,6 +9,13 @@ const routes = [
     meta: { public: true }
   },
   {
+    // 凭证打印独立页（新窗口打开，无菜单框架；token 在 localStorage 共享，守卫放行）
+    path: '/gl-voucher-print',
+    name: 'GlVoucherPrint',
+    component: () => import('@/views/gl/VoucherPrint.vue'),
+    meta: { title: '凭证打印' }
+  },
+  {
     path: '/',
     name: 'Layout',
     component: () => import('@/layout/AppShell.vue'),
@@ -91,6 +98,24 @@ const routes = [
       { path: 'payment-verify', name: 'PaymentVerify', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '付款核销', module: 'paymentVerify' } },
       { path: 'customer-statement', name: 'CustomerStatement', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '客户对账', module: 'customerStatement' } },
       { path: 'supplier-statement', name: 'SupplierStatement', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '供应商对账', module: 'supplierStatement' } },
+
+      // 总账管理（PRD-31）
+      { path: 'gl-account', name: 'GlAccount', component: () => import('@/views/gl/SubjectMgmt.vue'), meta: { title: '会计科目', module: 'glAccount' } },
+      { path: 'gl-init-balance', name: 'GlInitBalance', component: () => import('@/views/gl/InitBalance.vue'), meta: { title: '总账初始化', module: 'glInitBalance' } },
+      { path: 'gl-aux-project', name: 'GlAuxProject', component: () => import('@/views/gl/AuxProject.vue'), meta: { title: '核算项目', module: 'glAuxProject' } },
+      { path: 'gl-voucher', name: 'GlVoucher', component: () => import('@/views/gl/VoucherList.vue'), meta: { title: '凭证管理', module: 'glVoucher' } },
+      { path: 'gl-event', name: 'GlEvent', component: () => import('@/views/gl/EventWorkbench.vue'), meta: { title: '待生成凭证', module: 'glEvent' } },
+      { path: 'gl-voucher-template', name: 'GlVoucherTemplate', component: () => import('@/views/gl/VoucherTemplate.vue'), meta: { title: '凭证模板', module: 'glVoucherTemplate' } },
+      { path: 'gl-transfer-template', name: 'GlTransferTemplate', component: () => import('@/views/gl/TransferTemplate.vue'), meta: { title: '转账模板', module: 'glTransferTemplate' } },
+      { path: 'gl-biz-subject-map', name: 'GlBizSubjectMap', component: () => import('@/views/gl/BizSubjectMap.vue'), meta: { title: '业务类型映射', module: 'glBizSubjectMap' } },
+      { path: 'gl-archive-mapping', name: 'GlArchiveMapping', component: () => import('@/views/gl/ArchiveMapping.vue'), meta: { title: '档案科目映射', module: 'glArchiveMapping' } },
+      { path: 'gl-ledger', name: 'GlLedger', component: () => import('@/views/gl/LedgerQuery.vue'), meta: { title: '账簿查询', module: 'glLedger' } },
+      { path: 'gl-asset-card', name: 'GlAssetCard', component: () => import('@/views/gl/AssetCard.vue'), meta: { title: '资产卡片', module: 'glAssetCard' } },
+      { path: 'gl-depreciation', name: 'GlDepreciation', component: () => import('@/views/gl/DepreciationWizard.vue'), meta: { title: '折旧计提', module: 'glDepreciation' } },
+      { path: 'gl-asset-check', name: 'GlAssetCheck', component: () => import('@/views/gl/AssetCheck.vue'), meta: { title: '资产盘点', module: 'glAssetCheck' } },
+      { path: 'gl-period-close', name: 'GlPeriodClose', component: () => import('@/views/gl/PeriodClose.vue'), meta: { title: '期末处理', module: 'glPeriodClose' } },
+      { path: 'gl-report', name: 'GlReport', component: () => import('@/views/gl/FinReport.vue'), meta: { title: '总账报表', module: 'glReport' } },
+      { path: 'gl-reconcile', name: 'GlReconcile', component: () => import('@/views/gl/Reconcile.vue'), meta: { title: '业财对账', module: 'glReconcile' } },
 
       // 系统管理
       { path: 'user', name: 'User', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '用户管理', module: 'user' } },

@@ -12,7 +12,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        // 默认指向本地 8080；可用 VITE_API_TARGET 覆盖，便于把 dev server 接到隔离验证后端（如 8090）
+        // 默认连本机 8080 开发后端；隔离验证时可用 VITE_API_TARGET 指向其他端口（如 8082）
         target: process.env.VITE_API_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },
