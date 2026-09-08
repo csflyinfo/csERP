@@ -144,7 +144,12 @@ public class SystemController {
                         menu("salesReport", "销售报表", "/report/sales"),
                         menu("purchaseReport", "采购报表", "/report/purchase"),
                         menu("stockReport", "库存报表", "/report/stock"),
-                        menu("financeReport", "财务报表", "/report/finance")
+                        menu("financeReport", "财务报表", "/report/finance"),
+                        menu("invoiceTrackReport", "采购来票跟踪(按单据)", "/report/invoice-track"),
+                        menu("invoiceTrackGoodsReport", "采购来票跟踪(按商品)", "/report/invoice-track-goods"),
+                        menu("invoiceSupplierReport", "供应商来票统计", "/report/invoice-supplier"),
+                        menu("invoiceUnmatchedReport", "未勾稽发票", "/report/invoice-unmatched"),
+                        menu("invoiceDiffReport", "勾稽差异明细", "/report/invoice-diff")
                 ),
                 menu("system", "系统管理", null,
                         menu("user", "用户管理", "/system/user"),
@@ -733,7 +738,7 @@ public class SystemController {
             return Set.of("dashboard", "sales", "quickOrder", "salesOrder", "salesOutbound", "salesReceipt", "rejectInbound", "salesReturn", "salesInvoice", "inventory", "stockBalance", "stockLedger", "exportCenter", "log");
         }
         if ("PURCHASE".equalsIgnoreCase(roleCode)) {
-            return Set.of("dashboard", "base", "goods", "supplier", "purchase", "purchaseOrder", "purchaseInbound", "purchaseReceipt", "purchaseReturn", "purchaseExpense", "purchaseInvoice", "stockBalance", "exportCenter", "log");
+            return Set.of("dashboard", "base", "goods", "supplier", "purchase", "purchaseOrder", "purchaseInbound", "purchaseReceipt", "purchaseReturn", "purchaseExpense", "purchaseInvoice", "report", "invoiceTrackReport", "invoiceTrackGoodsReport", "invoiceSupplierReport", "invoiceUnmatchedReport", "invoiceDiffReport", "stockBalance", "exportCenter", "log");
         }
         return Set.of("*");
     }

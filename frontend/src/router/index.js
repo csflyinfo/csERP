@@ -21,7 +21,7 @@ const routes = [
     component: () => import('@/layout/AppShell.vue'),
     redirect: '/dashboard',
     children: [
-      { path: 'dashboard', name: 'Dashboard', component: () => import('@/views/DashboardPage.vue'), meta: { title: '经营概览' } },
+      { path: 'dashboard', name: 'Dashboard', component: () => import('@/views/DashboardPage.vue'), meta: { title: '经营概览', module: 'dashboard' } },
 
       // 基础数据
       { path: 'goods', name: 'Goods', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '商品档案', module: 'goods' } },
@@ -144,7 +144,12 @@ const routes = [
       { path: 'purchase-report', name: 'PurchaseReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '采购报表', module: 'purchaseReport' } },
       { path: 'stock-report', name: 'StockReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '库存报表', module: 'stockReport' } },
       { path: 'finance-report', name: 'FinanceReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '财务报表', module: 'financeReport' } },
-      { path: 'chart-report', name: 'ChartReport', component: () => import('@/views/ReportChartPage.vue'), meta: { title: '图表报表' } },
+      { path: 'invoice-track-report', name: 'InvoiceTrackReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '采购来票跟踪(按单据)', module: 'invoiceTrackReport' } },
+      { path: 'invoice-track-goods-report', name: 'InvoiceTrackGoodsReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '采购来票跟踪(按商品)', module: 'invoiceTrackGoodsReport' } },
+      { path: 'invoice-supplier-report', name: 'InvoiceSupplierReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '供应商来票统计', module: 'invoiceSupplierReport' } },
+      { path: 'invoice-unmatched-report', name: 'InvoiceUnmatchedReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '未勾稽发票', module: 'invoiceUnmatchedReport' } },
+      { path: 'invoice-diff-report', name: 'InvoiceDiffReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '勾稽差异明细', module: 'invoiceDiffReport' } },
+      { path: 'chart-report', name: 'ChartReport', component: () => import('@/views/ReportChartPage.vue'), meta: { title: '图表报表', module: 'chartReport' } },
       // 运输管理（TMS）
       { path: 'tms-dispatch-pool', name: 'TmsDispatchPool', component: () => import('@/views/tms/DispatchPool.vue'), meta: { title: '配送任务池', module: 'tms-dispatch-pool' } },
       { path: 'tms-dispatch-list', name: 'TmsDispatchList', component: () => import('@/views/tms/DispatchList.vue'), meta: { title: '调度单管理', module: 'tms-dispatch-list' } },
@@ -186,8 +191,8 @@ const routes = [
       { path: 'wms-stock-query', name: 'WmsStockQuery', component: () => import('@/views/wms/WmsStockQuery.vue'), meta: { title: 'WMS库存查询', module: 'wms-stock-query' } },
       { path: 'wms-exception', name: 'WmsException', component: () => import('@/views/wms/WmsException.vue'), meta: { title: 'WMS异常中心', module: 'wms-exception' } },
 
-      { path: 'notification', name: 'Notification', component: () => import('@/views/NotificationPage.vue'), meta: { title: '消息通知' } },
-      { path: 'todo', name: 'Todo', component: () => import('@/views/TodoPage.vue'), meta: { title: '待办中心' } },
+      { path: 'notification', name: 'Notification', component: () => import('@/views/NotificationPage.vue'), meta: { title: '消息通知', module: 'notification' } },
+      { path: 'todo', name: 'Todo', component: () => import('@/views/TodoPage.vue'), meta: { title: '待办中心', module: 'todo' } },
     ]
   }
 ]

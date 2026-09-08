@@ -627,10 +627,7 @@ public class PurchaseController {
         return ApiResponse.ok(Map.of("expenseId", request.bizId(), "status", "APPROVED", "effect", "费用已分摊"));
     }
 
-    @PostMapping("/invoice/page")
-    public ApiResponse<PageResult<Map<String, Object>>> invoicePage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(List.of(Map.of("invoiceNo", "PINV202606140001", "supplier", "农夫山泉杭州经销", "invoiceCode", "3300****", "invoiceAmount", "3955.00", "matchStatus", "未勾稽", "certStatus", "未认证", "status", "正常")), request));
-    }
+    // 采购发票端点已迁移至 PurchaseInvoiceController（/purchase/invoice/*，PRD-30）
 
     private void log(String moduleCode, String action, String bizNo, String detail) {
         // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）

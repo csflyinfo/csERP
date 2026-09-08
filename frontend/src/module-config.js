@@ -547,11 +547,12 @@ Object.assign(moduleConfigs, {
     actions: ['新建费用单', '费用分摊', '审核', '反审核', '导入', '导出', '打印'], sections: ['费用信息', '关联入库/收货', '分摊明细', '应付影响'],
   },
   purchaseInvoice: {
-    type: 'purchase', mode: 'bill', title: '采购发票', desc: '采购发票登记、应付勾稽与认证状态维护',
-    filters: ['发票日期', '发票号码', '供应商', '发票类型', '勾稽状态', '认证状态', '状态'],
-    columns: ['采购发票单号', '发票号码', '发票代码', '发票类型', '供应商', '开票日期', '不含税金额', '税额', '含税金额', '已勾稽金额', '未勾稽金额', '勾稽状态', '认证状态', '状态', '操作'],
+    type: 'purchase', mode: 'bill', title: '采购发票', desc: '供应商进项发票登记（录入发票金额）、按商品行勾稽核销、来票状态跟踪',
+    filters: [{ label: '开票日期', type: 'dateRange', keyFrom: 'issueDateFrom', keyTo: 'issueDateTo' }, '发票号码', '供应商', { label: '发票类型', type: 'select', options: ['增值税专用发票', '增值税普通发票', '电子发票', '全电发票'] }, { label: '勾稽状态', type: 'select', options: ['未勾稽', '部分勾稽', '已勾稽'] }, { label: '认证状态', type: 'select', options: ['未认证', '已认证', '无需认证'] }, { label: '状态', type: 'select', options: ['草稿', '已审核', '已作废'] }],
+    columns: ['采购发票单号', '发票号码', '发票类型', '供应商', '开票日期', '发票金额', '税额', '已勾稽金额', '未勾稽金额', '勾稽状态', '认证状态', '状态', '操作'],
     row: [],
-    actions: ['新建发票', '发票勾稽', '认证', '审核', '导入', '导出'], sections: ['发票信息', '关联应付', '勾稽明细', '认证信息'],
+    actions: ['新建发票', '导出'], sections: ['发票信息', '勾稽明细', '认证信息', '附件备注'],
+    tips: ['流程：录入发票（填发票金额，可先不勾稽）→ 点「勾稽商品」在弹窗勾选未开票商品 → 勾错点「取消勾稽」移除 → 审核', '勾稽数量不可超过源单据数量与未开票数量，保存/审核时均会校验', '审核后发票主信息锁定，仅可认证、追加备注；审核才回写收货单/应付的来票状态', '一张发票可勾稽多张收货单的商品，一张收货单也可分多次来票', '已认证发票不可反审核/作废，须走红字发票流程'],
   },
   financeExpense: {
     ...moduleConfigs.financeExpense,
@@ -705,4 +706,40 @@ reportExtra.forEach(code => {
     type: 'report', mode: 'readonly', title: names[code], desc: '报表中心：按业务单据与余额汇总，支持查询、导出与来源追溯',
     filters: ['日期范围', '对象', '仓库', '商品', '状态'], columns: columns[code], row: [], actions: ['刷新', '导出'], sections: ['汇总指标', '明细列表', '来源追溯'], tips: ['报表数据来源于已审核业务单据和余额流水', '导出任务进入导出中心'],
   }
+})
+
+// 采购发票来票报表（PRD-30）
+Object.assign(moduleConfigs, {
+  invoiceTrackReport: {
+    type: 'report', mode: 'readonly', title: '采购来票跟踪（按单据）', desc: '按采购收货单跟踪来票情况：哪些货来了票、哪些没来票',
+    filters: ['收货日期', '供应商', '仓库', { label: '来票状态', type: 'select', options: ['未来票', '部分来票', '已来票'] }, '收货单号'],
+    columns: ['收货单号', '收货日期', '采购单号', '供应商', '仓库', '收货金额', '来票金额', '未票金额', '来票率', '来票状态', '账龄天数', '关联发票', '操作'],
+    row: [], actions: ['导出'], sections: ['来票跟踪明细'], tips: ['数据范围为已审核采购收货单', '未票金额为含税口径，账龄自收货日期起算'],
+  },
+  invoiceTrackGoodsReport: {
+    type: 'report', mode: 'readonly', title: '采购来票跟踪（按商品）', desc: '按商品汇总采购收货与来票情况，输出未票商品催票清单',
+    fixedFilters: { dimension: 'goods' },
+    filters: ['商品', { label: '来票状态', type: 'select', options: ['未来票', '部分来票', '已来票'] }],
+    columns: ['商品编码', '商品名称', '单位', '收货数量', '收货金额', '来票数量', '来票金额', '未票金额', '来票率', '操作'],
+    row: [], actions: ['导出'], sections: ['商品来票汇总'], tips: ['收货取已审核收货单明细，来票取已审核发票明细', '按未票金额从大到小排序，优先催票'],
+  },
+  invoiceSupplierReport: {
+    type: 'report', mode: 'readonly', title: '供应商来票统计', desc: '按供应商汇总采购收货、来票、进项税额与认证进度',
+    filters: ['供应商', { label: '来票状态', type: 'select', options: ['未来票', '部分来票', '已来票'] }],
+    columns: ['供应商编码', '供应商名称', '收货金额', '来票金额', '未票金额', '来票率', '发票份数', '进项税额', '已认证税额', '未认证份数', '操作'],
+    row: [], actions: ['导出'], sections: ['供应商来票汇总'], tips: ['未票余额为累计口径（全部已审核收货单）', '付款前重点关注未票余额高的供应商'],
+  },
+  invoiceUnmatchedReport: {
+    type: 'report', mode: 'readonly', title: '未勾稽发票', desc: '已审核但未完全勾稽的发票（票到未对应完货或票多开）',
+    filters: ['开票日期', '供应商', { label: '勾稽状态', type: 'select', options: ['未勾稽', '部分勾稽'] }],
+    columns: ['采购发票单号', '发票号码', '供应商', '开票日期', '含税金额', '已勾稽金额', '未勾稽金额', '勾稽状态', '认证状态', '操作'],
+    row: [], actions: ['导出'], sections: ['未勾稽发票清单'],
+  },
+  invoiceDiffReport: {
+    type: 'report', mode: 'readonly', title: '勾稽差异明细', desc: '发票勾稽收货单时的尾差/价格差异清单',
+    fixedFilters: { dimension: 'diff' },
+    filters: ['供应商', '采购发票单号', '收货单号'],
+    columns: ['采购发票单号', '收货单号', '供应商', '开票日期', '收货金额', '勾稽前已来票', '本次勾稽金额', '差异金额', '差异原因', '操作'],
+    row: [], actions: ['导出'], sections: ['勾稽差异清单'], tips: ['差异为票面来票累计与收货金额的尾差（负=少票/折扣，正=多票）', '差异超 1 元须在勾稽时填写原因'],
+  },
 })

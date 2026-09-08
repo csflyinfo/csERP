@@ -75,6 +75,20 @@ export const useAppStore = defineStore('app', () => {
     receiptDrawer.value = { ...receiptDrawer.value, visible: false }
   }
 
+  // 采购发票抽屉（PRD-30 来票登记与勾稽核销）：空 invoiceId = 新建
+  const invoiceDrawer = ref({
+    visible: false,
+    invoiceId: '',
+    readonly: false,
+  })
+
+  function openInvoiceDrawer(invoiceId = '', readonly = false) {
+    invoiceDrawer.value = { visible: true, invoiceId, readonly }
+  }
+  function closeInvoiceDrawer() {
+    invoiceDrawer.value = { ...invoiceDrawer.value, visible: false }
+  }
+
   // 采购退货申请抽屉：editData 用于编辑/查看已有单据（{ applyId, applyNo }）
   // 商品由抽屉内的【按单添加商品】/【添加商品】两个选择窗口添加，不再从外部预填源单
   // readonly：列表点「查看」时传 true，强制只读（已审核单据抽屉内部也会自行判定）
@@ -299,6 +313,7 @@ export const useAppStore = defineStore('app', () => {
     inboundDrawer, openInboundDrawer, closeInboundDrawer, openInboundFromOrder,
     outboundDrawer, openOutboundDrawer, closeOutboundDrawer, openOutboundFromOrder,
     receiptDrawer, openReceiptDrawer, closeReceiptDrawer,
+    invoiceDrawer, openInvoiceDrawer, closeInvoiceDrawer,
     returnApplyDrawer, openReturnApplyDrawer, closeReturnApplyDrawer,
     returnOutboundDrawer, openReturnOutboundDrawer, closeReturnOutboundDrawer,
     returnDrawer, openReturnDrawer, closeReturnDrawer,

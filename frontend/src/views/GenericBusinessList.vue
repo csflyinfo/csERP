@@ -900,7 +900,9 @@ const {
   onHeaderDragStart, onHeaderDragOver, onHeaderDrop,
   startResize, cellStyle,
 } = useColumnSettings({
-  storageKey: () => `erp-field-setting-v2:module:${moduleCode.value}`,
+  // purchaseInvoice 列按索引位（c0/c1…）存储，改版插入「发票金额/税额」等新列后
+  // 旧本地设置会把新列隐藏，单独升到 v3 让该模块列布局按新配置重置一次
+  storageKey: () => `erp-field-setting-v2:module:${moduleCode.value === 'purchaseInvoice' ? 'purchaseInvoice-v3' : moduleCode.value}`,
   allColumns: permittedColumns,
   // 勾选列（goods / priceGroupItem）占 40px sticky，固定列 stickyLeft 需从 40 起点
   leftBaseOffset: () => (moduleCode.value === 'goods' || moduleCode.value === 'priceGroupItem' || moduleCode.value === 'receiptPayment' || moduleCode.value === 'paymentModule' || moduleCode.value === 'financeExpense' || moduleCode.value === 'flyOrder' || moduleCode.value === 'ar') ? 40 : 0,
@@ -987,7 +989,7 @@ async function loadRows() {
     const usingClientTreeFilter = moduleCode.value === 'employee'
     const reqPageSize = usingClientTreeFilter ? 1000 : pageSize.value
     const reqPageNo = usingClientTreeFilter ? 1 : pageNo.value
-    const data = await post(api.page, { pageNo: reqPageNo, pageSize: reqPageSize, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...queryFilters.value, roleCode: roleCode } })
+    const data = await post(api.page, { pageNo: reqPageNo, pageSize: reqPageSize, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...(config.value.fixedFilters || {}), ...queryFilters.value, roleCode: roleCode } })
     let records = data.records || []
 
     // 价格组商品查询：派生 unitLevelText / statusText
@@ -1968,6 +1970,82 @@ async function handleAction(action, row = null) {
       if (!receiptId) { show('收货单号缺失'); return }
       app.openReceiptDrawer(receiptId, actionStr === '查看'); return
     }
+  }
+
+  // 采购发票（PRD-30 来票登记与勾稽核销）：新建/编辑/查看走专用抽屉；状态操作直调后端
+  if (moduleCode.value === 'purchaseInvoice') {
+    const api = moduleApis.purchaseInvoice
+    const raw = row?._raw || {}
+    const invoiceId = raw.invoiceId || raw.invoiceNo
+    if (/新建/.test(actionStr)) {
+      if (app.invoiceDrawer.visible) { show('采购发票已有正在编辑的草稿，请先保存或关闭'); return }
+      app.openInvoiceDrawer(''); return
+    }
+    if (actionStr === '编辑' || actionStr === '查看') {
+      if (!invoiceId) { show('发票单号缺失'); return }
+      // 已审核发票「查看」即勾稽操作入口：抽屉内可继续勾稽（保存勾稽）/认证/反审核/作废；
+      // 仅已作废强制只读（V1.3 抽屉支持已审核勾稽后，入口只读参数漏改的修复）
+      app.openInvoiceDrawer(invoiceId, actionStr === '查看' && raw.status === '已作废'); return
+    }
+    if (!invoiceId) { show('发票单号缺失'); return }
+    if (actionStr === '审核') {
+      if (!confirm(`确认审核发票【${raw.invoiceNo || ''}】？\n\n审核后将回写收货单与应付账款的来票状态，发票信息锁定。`)) return
+      try {
+        await post(api.audit, { bizId: invoiceId })
+        show('发票已审核，来票状态已回写')
+        await loadRows()
+      } catch (e) { show('审核失败：' + (e.message || '未知错误')) }
+      return
+    }
+    if (actionStr === '反审核') {
+      if (!confirm(`确认反审核发票【${raw.invoiceNo || ''}】？\n\n将回退该发票对收货单/应付的来票勾稽。已认证发票不可反审核。`)) return
+      try {
+        await post(api.reverseAudit, { bizId: invoiceId })
+        show('已反审核，来票勾稽已回退')
+        await loadRows()
+      } catch (e) { show('反审核失败：' + (e.message || '未知错误')) }
+      return
+    }
+    if (actionStr === '作废') {
+      const reason = prompt(`作废发票【${raw.invoiceNo || ''}】，请填写作废原因：\n（已认证发票不可作废，须走红字发票流程）`)
+      if (reason === null) return
+      if (!reason.trim()) { show('作废原因必填'); return }
+      try {
+        await post(api.void, { bizId: invoiceId, remark: reason.trim() })
+        show('发票已作废')
+        await loadRows()
+      } catch (e) { show('作废失败：' + (e.message || '未知错误')) }
+      return
+    }
+    if (actionStr === '认证' || actionStr === '撤销认证') {
+      const target = actionStr === '认证' ? '已认证' : '未认证'
+      if (!confirm(`确认将发票【${raw.invoiceNo || ''}】标记为「${target}」？`)) return
+      try {
+        await post(api.certify, { invoiceId, certStatus: target })
+        show(`认证状态已更新为：${target}`)
+        await loadRows()
+      } catch (e) { show('认证操作失败：' + (e.message || '未知错误')) }
+      return
+    }
+    if (actionStr === '删除') {
+      if (!confirm(`确认删除发票草稿【${raw.invoiceNo || raw.invoiceNumber || ''}】？删除后不可恢复。`)) return
+      try {
+        await post(api.delete, { bizId: invoiceId })
+        show('草稿已删除')
+        await loadRows()
+      } catch (e) { show('删除失败：' + (e.message || '未知错误')) }
+      return
+    }
+  }
+
+  // 未勾稽发票报表：行内「勾稽」按钮直接打开发票抽屉，勾稽操作与采购发票模块完全一致
+  // （报表内均为已审核发票，抽屉内可「+ 勾稽商品」改完点「保存勾稽」增量回写来票状态）
+  if (moduleCode.value === 'invoiceUnmatchedReport' && actionStr === '勾稽') {
+    const raw = row?._raw || {}
+    const invoiceNo = raw.invoiceNo || raw.invoiceId
+    if (!invoiceNo) { show('发票单号缺失'); return }
+    app.openInvoiceDrawer(invoiceNo, false)
+    return
   }
 
   // 采购退货申请：走专用申请抽屉
@@ -3076,6 +3154,30 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
               <template v-else>
                 <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
               </template>
+            </template>
+            <!-- 采购发票（PRD-30）：草稿→编辑/审核/删除；已审核→查看/认证/反审核/作废；已作废→查看 -->
+            <template v-else-if="moduleCode === 'purchaseInvoice'">
+              <template v-if="row._raw?.status === '草稿'">
+                <button class="link link-btn" @click="handleAction('编辑', row)">编辑</button>
+                <button class="link link-btn" @click="handleAction('审核', row)">审核</button>
+                <button class="link link-btn danger-link" @click="handleAction('删除', row)">删除</button>
+              </template>
+              <template v-else-if="row._raw?.status === '已审核'">
+                <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
+                <button v-if="row._raw?.certStatus !== '已认证'" class="link link-btn"
+                        @click="handleAction('认证', row)">认证</button>
+                <button v-else class="link link-btn"
+                        @click="handleAction('撤销认证', row)">撤销认证</button>
+                <button class="link link-btn" @click="handleAction('反审核', row)">反审核</button>
+                <button class="link link-btn danger-link" @click="handleAction('作废', row)">作废</button>
+              </template>
+              <template v-else>
+                <button class="link link-btn" @click="handleAction('查看', row)">查看</button>
+              </template>
+            </template>
+            <!-- 未勾稽发票报表：勾稽按钮直接打开发票抽屉，可继续勾稽并保存回写 -->
+            <template v-else-if="moduleCode === 'invoiceUnmatchedReport'">
+              <button class="link link-btn primary-link" @click="handleAction('勾稽', row)">勾稽</button>
             </template>
             <!-- 盘点单：PENDING 可查看/编辑/审核/删除；APPROVED 可查看/反审核 -->
             <template v-else-if="moduleCode === 'stockTake'">

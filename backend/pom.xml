@@ -20,6 +20,10 @@
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <jwt.version>0.12.6</jwt.version>
+        <!-- 源码/报告一律 UTF-8：不写死时 Windows 本机 mvn 按 GBK 读源码，
+             编译出的中文提示/日志常量全部乱码（Linux 容器构建默认 UTF-8 不受影响） -->
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <dependencies>

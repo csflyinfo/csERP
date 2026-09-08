@@ -67,7 +67,8 @@ public class PurchaseReceiptController {
                        supplier_code, supplier_name, warehouse, receipt_date,
                        goods_amount, tax_amount, expense_amount, final_amount,
                        ap_status, pay_status, status, creator_name,
-                       audit_user, audit_time, create_time, remark
+                       audit_user, audit_time, create_time, remark,
+                       invoiced_amount, invoice_status
                 FROM pur_receipt
                 ORDER BY create_time DESC, receipt_no DESC
                 """);

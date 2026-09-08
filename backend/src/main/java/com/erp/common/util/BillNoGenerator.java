@@ -39,6 +39,7 @@ public class BillNoGenerator {
         public static final String PURCHASE_RETURN_REQ = "CTSQ";
         public static final String PURCHASE_RETURN_OUT = "CTCK";
         public static final String PURCHASE_RETURN = "CGTH";
+        public static final String PURCHASE_INVOICE = "PINV";  // 采购发票（进项来票登记）
         public static final String SALES_ORDER = "XSDD";        // 销售订单
         public static final String SALES_OUTBOUND = "XSCK";     // 销售出库单
         public static final String SALES_RECEIPT = "XSFH";      // 销售发货单
@@ -92,6 +93,7 @@ public class BillNoGenerator {
             Map.entry("pur_return_apply", Set.of("apply_no")),
             Map.entry("pur_return_outbound", Set.of("outbound_no")),
             Map.entry("pur_return", Set.of("return_no")),
+            Map.entry("pur_invoice", Set.of("invoice_no")),
             Map.entry("sales_order", Set.of("order_no")),
             Map.entry("sales_outbound", Set.of("outbound_no")),
             Map.entry("sales_receipt", Set.of("receipt_no")),

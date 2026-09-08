@@ -181,6 +181,7 @@ public class FinanceController {
         return ApiResponse.ok(PageResult.of(queryCamel("""
                 SELECT ap_no, supplier, source_bill,
                        ap_amount, paid_amount, unpaid_amount, due_date,
+                       invoiced_amount, invoice_status,
                        CASE status WHEN 'VERIFIED' THEN '已核销' ELSE '未核销' END status
                 FROM fin_ap
                 ORDER BY ap_no DESC

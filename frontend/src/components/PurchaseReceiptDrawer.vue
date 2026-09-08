@@ -72,6 +72,9 @@ async function loadReceipt(id) {
       qty: Number(d.qty || 0),
       price: Number(d.price || 0),
       taxRate: d.taxRate || '13%',
+      // 行级来票回写（V94：采购发票勾稽审核后回写，仅已审核发票计入）
+      invoicedQty: Number(d.invoicedQty || 0),
+      invoicedAmount: Number(d.invoicedAmount || 0),
       originalPrice: Number(d.price || 0),   // 记录原价，用于高亮改动
     }))
   } catch (e) {
@@ -309,6 +312,14 @@ function closeDrawer() { emit('close') }
               <label>审核信息</label>
               <input readonly :value="head.auditUser ? `${head.auditUser} ${String(head.auditTime || '').slice(0, 19)}` : '未审核'" />
             </div>
+            <div class="field">
+              <label>来票状态</label>
+              <input readonly :value="head.invoiceStatus || '未来票'" />
+            </div>
+            <div class="field">
+              <label>已来票金额（含税）</label>
+              <input readonly :value="'¥ ' + Number(head.invoicedAmount || 0).toFixed(2)" />
+            </div>
           </div>
         </div>
 
@@ -365,6 +376,9 @@ function closeDrawer() { emit('close') }
                   <th style="width:70px">税率</th>
                   <th style="width:100px">税额</th>
                   <th style="width:110px">不含税金额</th>
+                  <th v-if="isApproved" style="width:96px">已开票数量</th>
+                  <th v-if="isApproved" style="width:110px">已开票金额</th>
+                  <th v-if="isApproved" style="width:110px">未开票金额</th>
                   <th v-if="canEdit" style="width:90px">原单价</th>
                 </tr>
               </thead>
@@ -398,6 +412,13 @@ function closeDrawer() { emit('close') }
                   <td class="num-cell">
                     {{ (Number(row.qty || 0) * Number(row.price || 0) - rowTax(row)).toFixed(2) }}
                   </td>
+                  <template v-if="isApproved">
+                    <td class="num-cell">{{ row.invoicedQty }}</td>
+                    <td class="num-cell">{{ row.invoicedAmount.toFixed(2) }}</td>
+                    <td class="num-cell" style="color:var(--danger);font-weight:700">
+                      {{ Math.max(0, Number(row.qty || 0) * Number(row.price || 0) - row.invoicedAmount).toFixed(2) }}
+                    </td>
+                  </template>
                   <td v-if="canEdit" class="num-cell orig">
                     <span v-if="isPriceChanged(row)">{{ Number(row.originalPrice).toFixed(4) }}</span>
                     <span v-else>-</span>

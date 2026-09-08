@@ -11,6 +11,7 @@ import PurchaseInboundDrawer from '../components/PurchaseInboundDrawer.vue'
 import SalesOutboundDrawer from '../components/SalesOutboundDrawer.vue'
 import PurchaseReturnApplyDrawer from '../components/PurchaseReturnApplyDrawer.vue'
 import PurchaseReceiptDrawer from '../components/PurchaseReceiptDrawer.vue'
+import PurchaseInvoiceDrawer from '../components/PurchaseInvoiceDrawer.vue'
 import PurchaseReturnOutboundDrawer from '../components/PurchaseReturnOutboundDrawer.vue'
 import PurchaseReturnDrawer from '../components/PurchaseReturnDrawer.vue'
 import SalesReturnDrawer from '../components/SalesReturnDrawer.vue'
@@ -97,6 +98,12 @@ const outboundDrawerVisibleInCurrentModule = computed(() => {
 // 采购收货单抽屉：仅 purchaseReceipt 页面
 const receiptDrawerVisibleInCurrentModule = computed(() => {
   return app.receiptDrawer.visible && currentModule.value === 'purchaseReceipt'
+})
+
+// 采购发票抽屉：purchaseInvoice 页面；报表中心「未勾稽发票」报表点「勾稽」也在此打开
+const invoiceDrawerVisibleInCurrentModule = computed(() => {
+  return app.invoiceDrawer.visible &&
+    (currentModule.value === 'purchaseInvoice' || currentModule.value === 'invoiceUnmatchedReport')
 })
 
 // 采购退货申请抽屉：仅 purchaseReturnApply 页面（商品从抽屉内的两个选择窗口添加）
@@ -186,6 +193,12 @@ function onOutboundSaved() {
 function onReceiptSaved(result) {
   app.refreshSignal++
   app.showToast(result?.apNo ? `收货单已审核，应付单号 ${result.apNo}` : '采购收货单已保存')
+}
+
+/** 采购发票保存/审核/作废/认证后 */
+function onInvoiceSaved(result) {
+  app.refreshSignal++
+  app.showToast(result?.effect || result?.invoiceNo ? `采购发票 ${result.invoiceNo || ''} 已处理` : '采购发票已保存')
 }
 
 /** 退货申请保存后 */
@@ -428,6 +441,15 @@ const topKeys = computed(() => Object.keys(menus))
       :readonly="app.receiptDrawer.readonly"
       @close="app.closeReceiptDrawer"
       @save="onReceiptSaved"
+    />
+
+    <!-- 全局采购发票抽屉：草稿可编辑，已审核只读（PRD-30 来票登记与勾稽核销） -->
+    <PurchaseInvoiceDrawer
+      :visible="invoiceDrawerVisibleInCurrentModule"
+      :invoice-id="app.invoiceDrawer.invoiceId"
+      :readonly="app.invoiceDrawer.readonly"
+      @close="app.closeInvoiceDrawer"
+      @save="onInvoiceSaved"
     />
 
     <!-- 全局采购退货申请抽屉：仅 purchaseReturnApply 页面（商品由抽屉内两个选择窗口添加） -->

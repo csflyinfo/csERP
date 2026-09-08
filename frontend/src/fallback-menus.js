@@ -102,6 +102,11 @@ export const fallbackMenus = {
     { code: 'purchaseReport', name: '采购报表' },
     { code: 'stockReport', name: '库存报表' },
     { code: 'financeReport', name: '财务报表' },
+    { code: 'invoiceTrackReport', name: '采购来票跟踪(按单据)' },
+    { code: 'invoiceTrackGoodsReport', name: '采购来票跟踪(按商品)' },
+    { code: 'invoiceSupplierReport', name: '供应商来票统计' },
+    { code: 'invoiceUnmatchedReport', name: '未勾稽发票' },
+    { code: 'invoiceDiffReport', name: '勾稽差异明细' },
   ],
   系统管理: [
     { code: 'user', name: '用户管理' },
