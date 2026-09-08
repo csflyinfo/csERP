@@ -36,11 +36,14 @@ public class BaseMasterController {
     private final JdbcTemplate jdbcTemplate;
     private final BaseCustomerService customerService;
     private final BaseSupplierService supplierService;
+    private final com.erp.system.OperationLogService opLog;
 
-    public BaseMasterController(JdbcTemplate jdbcTemplate, BaseCustomerService customerService, BaseSupplierService supplierService) {
+    public BaseMasterController(JdbcTemplate jdbcTemplate, BaseCustomerService customerService,
+                                BaseSupplierService supplierService, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.customerService = customerService;
         this.supplierService = supplierService;
+        this.opLog = opLog;
     }
 
     // ============================================================
@@ -838,10 +841,12 @@ public class BaseMasterController {
     // 工具方法
     // ============================================================
     private void log(String moduleCode, String action, String bizNo, String detail) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), moduleCode, action, bizNo, detail);
+        // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）。
+        // bizType 由模块码派生：base.customer→base_customer（与 BaseController 客户/供应商时间线对齐），
+        // 其余主数据 base.priceGroup→base_priceGroup 等。
+        String rest = moduleCode != null && moduleCode.startsWith("base.") ? moduleCode.substring(5) : moduleCode;
+        String bizType = rest == null ? null : "base_" + rest;
+        opLog.log(moduleCode, action, bizType, null, bizNo, detail);
     }
 
     /** 下划线列名 → 驼峰 key */

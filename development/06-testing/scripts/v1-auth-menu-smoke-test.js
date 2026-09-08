@@ -38,13 +38,15 @@ async function main() {
 
   await request('/auth/logout', { method: 'POST' })
 
-  const logs = await request('/system/operation-log/page', {
+  // PRD-31：登录/登出改写入独立的 sys_login_log（不再双写 operation-log）
+  const loginLogs = await request('/system/login-log/page', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pageNo: 1, pageSize: 20, filters: { keyword: 'auth' } }),
+    body: JSON.stringify({ pageNo: 1, pageSize: 20, filters: { account: 'admin' } }),
   })
-  assert(logs.records.some(record => record.moduleCode === 'auth' && record.action === 'LOGIN'), 'login should write operation log')
-  assert(logs.records.some(record => record.moduleCode === 'auth' && record.action === 'LOGOUT'), 'logout should write operation log')
+  assert(Array.isArray(loginLogs.records), 'login-log page should return records')
+  assert(loginLogs.records.some(record => record.account === 'admin' && record.loginResult === 'SUCCESS'),
+    'successful admin login should write login log')
 
   console.log('V1 auth menu smoke test passed')
 }

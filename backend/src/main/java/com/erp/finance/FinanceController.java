@@ -33,11 +33,13 @@ import java.util.UUID;
 public class FinanceController {
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final com.erp.system.OperationLogService opLog;
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.opLog = opLog;
     }
 
     @PostMapping("/ar/page")
@@ -105,11 +107,13 @@ public class FinanceController {
         java.sql.Date settleDate = java.sql.Date.valueOf(receiptDate.isEmpty() ? LocalDate.now().toString() : receiptDate);
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
         int created = 0;
+        String lastReceiptNo = "";
 
         for (Map.Entry<String, java.util.List<Map<String, Object>>> entry : byCustomer.entrySet()) {
             String custName = entry.getKey();
             // 生成收款单（金额=账户实收合计）
             String receiptNo = billNoGen.nextNo("SK", "fin_receipt_bill", "receipt_no");
+            lastReceiptNo = receiptNo;
             String receiptId = "SK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             String firstAcct = "默认账户";
             if (acctsRaw instanceof List<?> al2 && !al2.isEmpty() && al2.get(0) instanceof Map<?,?> am2) firstAcct = str(am2.get("fundAccount"));
@@ -162,6 +166,8 @@ public class FinanceController {
             }
             created++;
         }
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.WRITE_OFF,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, lastReceiptNo, "核销应收 " + lastReceiptNo);
         return ApiResponse.ok(Map.of("created",created,"receiptAmount",acctTotal));
     }
 
@@ -230,6 +236,8 @@ public class FinanceController {
                 total, cpName, firstFundAcct, total,
                 operator, java.sql.Timestamp.valueOf(now));
         insertDetails(receiptId, body);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "新增收款单 " + receiptNo);
         return ApiResponse.ok(GenericResult.row("receiptId", receiptId, "receiptNo", receiptNo));
     }
 
@@ -261,6 +269,8 @@ public class FinanceController {
                 total, cpName, firstFundAcct, total,
                 operator, java.sql.Timestamp.valueOf(now));
         insertPaymentDetails(paymentId, body);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "新增付款单 " + paymentNo);
         return ApiResponse.ok(GenericResult.row("paymentId", paymentId, "paymentNo", paymentNo));
     }
 
@@ -400,15 +410,18 @@ public class FinanceController {
                 operator, java.sql.Timestamp.valueOf(now),
                 str(body.get("counterpartyName")), firstExpType, total);
         insertExpenseDetails(expenseId, body);
+        finLog(com.erp.system.OperationModule.FIN_EXPENSE, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_FIN_EXPENSE, expenseNo, "新增费用单 " + expenseNo);
         return ApiResponse.ok(GenericResult.row("expenseId", expenseId, "expenseNo", expenseNo));
     }
 
     @PostMapping("/expense/update")
     public ApiResponse<Boolean> updateExpense(@RequestBody Map<String, Object> body) {
         String id = str(body.get("expenseId"));
-        List<Map<String, Object>> exist = queryCamel("SELECT status FROM fin_expense_bill WHERE expense_id = ?", id);
+        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no FROM fin_expense_bill WHERE expense_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核单据可编辑");
+        String expenseNo = str(exist.get(0).get("expenseNo"));
         BigDecimal total = sumDetails(body);
         BigDecimal totalTax = sumDetailField(body, "taxAmount");
         BigDecimal totalExcluding = sumDetailField(body, "excludingTaxAmount");
@@ -426,17 +439,22 @@ public class FinanceController {
                 total, totalTax, totalExcluding, id);
         jdbcTemplate.update("DELETE FROM fin_expense_detail WHERE expense_id = ?", id);
         insertExpenseDetails(id, body);
+        finLog(com.erp.system.OperationModule.FIN_EXPENSE, com.erp.system.OperationAction.UPDATE,
+                com.erp.system.KeyFields.BIZ_FIN_EXPENSE, expenseNo, "修改费用单 " + expenseNo);
         return ApiResponse.ok(true);
     }
 
     @PostMapping("/expense/delete")
     public ApiResponse<Boolean> deleteExpense(@RequestBody Map<String, Object> body) {
         String id = str(body.get("expenseId"));
-        List<Map<String, Object>> exist = queryCamel("SELECT status FROM fin_expense_bill WHERE expense_id = ?", id);
+        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no FROM fin_expense_bill WHERE expense_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核单据可删除");
+        String expenseNo = str(exist.get(0).get("expenseNo"));
         jdbcTemplate.update("DELETE FROM fin_expense_detail WHERE expense_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_expense_bill WHERE expense_id = ?", id);
+        finLog(com.erp.system.OperationModule.FIN_EXPENSE, com.erp.system.OperationAction.DELETE,
+                com.erp.system.KeyFields.BIZ_FIN_EXPENSE, expenseNo, "删除费用单 " + expenseNo);
         return ApiResponse.ok(true);
     }
 
@@ -484,6 +502,8 @@ public class FinanceController {
             writeCounterpartyLedger(cpType, cpCode, cpName, "IN".equals(direction) ? "IN" : "OUT",
                     total.abs(), expenseNo, "EXPENSE", BigDecimal.ZERO, "费用单生成往来");
         }
+        finLog(com.erp.system.OperationModule.FIN_EXPENSE, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_EXPENSE, expenseNo, "审核费用单 " + expenseNo);
         return ApiResponse.ok(GenericResult.row("expenseNo", expenseNo, "status", "APPROVED"));
     }
 
@@ -548,6 +568,8 @@ public class FinanceController {
         BigDecimal newBalance = currentBalance.add(actualVerify);
         insertFundLedger("IN", actualVerify, String.valueOf(ar.get("AR_NO")), newBalance);
 
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.WRITE_OFF,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, String.valueOf(ar.get("AR_NO")), "核销应收 " + ar.get("AR_NO"));
         return ApiResponse.ok(Map.of(
             "success", true,
             "effect", "收款已核销应收并生成资金流水",
@@ -594,6 +616,8 @@ public class FinanceController {
         BigDecimal newBalance = currentBalance.subtract(actualVerify);
         insertFundLedger("OUT", actualVerify, String.valueOf(ap.get("AP_NO")), newBalance);
 
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.WRITE_OFF,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, String.valueOf(ap.get("AP_NO")), "核销应付 " + ap.get("AP_NO"));
         return ApiResponse.ok(Map.of(
             "success", true,
             "effect", "付款已核销应付并生成资金流水",
@@ -771,6 +795,8 @@ public class FinanceController {
         BigDecimal curVerified = toBd(r.get("verifiedAmount"));
         jdbcTemplate.update("UPDATE fin_receipt_bill SET verified_amount = ? WHERE receipt_id = ?",
                 curVerified.add(totalVerified), receiptId);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.WRITE_OFF,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "核销应收 " + receiptNo);
         return ApiResponse.ok(Map.of("receiptNo", receiptNo, "reconciled", totalVerified));
     }
 
@@ -792,6 +818,8 @@ public class FinanceController {
             auditSingleReceipt(r);
             ok++;
         }
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, "", "批量审核收款单 " + ok + " 张");
         return ApiResponse.ok(Map.of("audited", ok, "skipped", skip));
     }
 
@@ -834,10 +862,11 @@ public class FinanceController {
     public ApiResponse<Boolean> updateReceipt(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status FROM fin_receipt_bill WHERE receipt_id = ?", id);
+                "SELECT status, receipt_no FROM fin_receipt_bill WHERE receipt_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         String st = str(exist.get(0).get("status"));
         if (!"PENDING".equals(st)) return ApiResponse.fail("400", "仅待审核单据可编辑");
+        String receiptNo = str(exist.get(0).get("receiptNo"));
 
         BigDecimal total = sumDetails(body);
         jdbcTemplate.update("""
@@ -851,6 +880,8 @@ public class FinanceController {
                 str(body.get("summary")), total, id);
         jdbcTemplate.update("DELETE FROM fin_receipt_detail WHERE receipt_id = ?", id);
         insertDetails(id, body);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.UPDATE,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "修改收款单 " + receiptNo);
         return ApiResponse.ok(true);
     }
 
@@ -858,7 +889,7 @@ public class FinanceController {
     public ApiResponse<Boolean> deleteReceipt(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status, business_source FROM fin_receipt_bill WHERE receipt_id = ?", id);
+                "SELECT status, business_source, receipt_no FROM fin_receipt_bill WHERE receipt_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可删除");
@@ -866,8 +897,11 @@ public class FinanceController {
         // 只能通过司机交账单审核/驳回来推进，后台不允许直接删除。
         if ("DRIVER_SETTLE".equals(str(exist.get(0).get("businessSource"))))
             return ApiResponse.fail("400", "司机现场收款单不允许删除，请通过司机交账单审核处理");
+        String receiptNo = str(exist.get(0).get("receiptNo"));
         jdbcTemplate.update("DELETE FROM fin_receipt_detail WHERE receipt_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_receipt_bill WHERE receipt_id = ?", id);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.DELETE,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "删除收款单 " + receiptNo);
         return ApiResponse.ok(true);
     }
 
@@ -927,6 +961,8 @@ public class FinanceController {
                 UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                 WHERE receipt_id = ?
                 """, auditor, java.sql.Timestamp.valueOf(now), id);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "审核收款单 " + receiptNo);
         return ApiResponse.ok(GenericResult.row("receiptNo", receiptNo, "status", "APPROVED"));
     }
 
@@ -988,6 +1024,8 @@ public class FinanceController {
 
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_receipt_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE receipt_id = ?", id);
+        finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.UN_AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "反审核收款单 " + receiptNo);
         return ApiResponse.ok(GenericResult.row("receiptNo", receiptNo, "status", "PENDING"));
     }
 
@@ -1112,10 +1150,11 @@ public class FinanceController {
     public ApiResponse<Boolean> updatePayment(@RequestBody Map<String, Object> body) {
         String id = str(body.get("paymentId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status FROM fin_payment_bill WHERE payment_id = ?", id);
+                "SELECT status, payment_no FROM fin_payment_bill WHERE payment_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "付款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可编辑");
+        String paymentNo = str(exist.get(0).get("paymentNo"));
         BigDecimal total = sumDetails(body);
         jdbcTemplate.update("""
                 UPDATE fin_payment_bill SET payment_date = ?, counterparty_type = ?,
@@ -1128,6 +1167,8 @@ public class FinanceController {
                 str(body.get("summary")), total, id);
         jdbcTemplate.update("DELETE FROM fin_payment_detail WHERE payment_id = ?", id);
         insertPaymentDetails(id, body);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.UPDATE,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "修改付款单 " + paymentNo);
         return ApiResponse.ok(true);
     }
 
@@ -1135,12 +1176,15 @@ public class FinanceController {
     public ApiResponse<Boolean> deletePayment(@RequestBody Map<String, Object> body) {
         String id = str(body.get("paymentId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status FROM fin_payment_bill WHERE payment_id = ?", id);
+                "SELECT status, payment_no FROM fin_payment_bill WHERE payment_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "付款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可删除");
+        String paymentNo = str(exist.get(0).get("paymentNo"));
         jdbcTemplate.update("DELETE FROM fin_payment_detail WHERE payment_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_payment_bill WHERE payment_id = ?", id);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.DELETE,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "删除付款单 " + paymentNo);
         return ApiResponse.ok(true);
     }
 
@@ -1199,6 +1243,8 @@ public class FinanceController {
                 UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                 WHERE payment_id = ?
                 """, auditor, java.sql.Timestamp.valueOf(now), id);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "审核付款单 " + paymentNo);
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "APPROVED"));
     }
 
@@ -1252,6 +1298,8 @@ public class FinanceController {
 
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_payment_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE payment_id = ?", id);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.UN_AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "反审核付款单 " + paymentNo);
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "PENDING"));
     }
 
@@ -1275,6 +1323,8 @@ public class FinanceController {
                     """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
             ok++;
         }
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, "", "批量审核付款单 " + ok + " 张");
         return ApiResponse.ok(Map.of("audited", ok, "skipped", skip));
     }
 
@@ -2173,6 +2223,11 @@ public class FinanceController {
             out.put(sb.toString(), e.getValue());
         }
         return out;
+    }
+
+    /** PRD-31 财务操作日志：统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）。 */
+    private void finLog(String moduleCode, String action, String bizType, String bizNo, String detail) {
+        opLog.log(moduleCode, action, bizType, null, bizNo, detail);
     }
 
     public record FundBillRequest(@NotBlank String objectId, @NotBlank String fundAccountId, @NotNull @Positive BigDecimal amount, String remark) {}

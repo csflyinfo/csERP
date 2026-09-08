@@ -52,19 +52,22 @@ public class PurchaseController {
     private final InventoryCostService inventoryCostService;
     private final PurchaseReceiptController receiptController;
     private final com.erp.common.util.BillNoGenerator billNoGen;
+    private final com.erp.system.OperationLogService opLog;
 
     public PurchaseController(JdbcTemplate jdbcTemplate,
                               PurchaseInboundService inboundService,
                               PurchaseInboundDetailService inboundDetailService,
                               InventoryCostService inventoryCostService,
                               PurchaseReceiptController receiptController,
-                              com.erp.common.util.BillNoGenerator billNoGen) {
+                              com.erp.common.util.BillNoGenerator billNoGen,
+                              com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.inboundService = inboundService;
         this.inboundDetailService = inboundDetailService;
         this.inventoryCostService = inventoryCostService;
         this.receiptController = receiptController;
         this.billNoGen = billNoGen;
+        this.opLog = opLog;
     }
 
     // ========== 采购入库 ==========
@@ -630,10 +633,8 @@ public class PurchaseController {
     }
 
     private void log(String moduleCode, String action, String bizNo, String detail) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), moduleCode, action, bizNo, detail);
+        // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）
+        opLog.log(moduleCode, action, com.erp.system.KeyFields.BIZ_PURCHASE_RECEIPT, null, bizNo, detail);
     }
 
     // ============ 工具方法 ============

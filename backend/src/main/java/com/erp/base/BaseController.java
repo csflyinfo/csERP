@@ -37,6 +37,7 @@ public class BaseController {
     private final BaseCustomerService customerService;
     private final BaseSupplierService supplierService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final com.erp.system.OperationLogService opLog;
 
     public BaseController(BaseCategoryService categoryService,
                           BaseUnitService unitService,
@@ -45,7 +46,8 @@ public class BaseController {
                           BaseGoodsService goodsService,
                           BaseCustomerService customerService,
                           BaseSupplierService supplierService,
-                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                          com.erp.system.OperationLogService opLog) {
         this.categoryService = categoryService;
         this.unitService = unitService;
         this.brandService = brandService;
@@ -54,6 +56,41 @@ public class BaseController {
         this.customerService = customerService;
         this.supplierService = supplierService;
         this.jdbcTemplate = jdbcTemplate;
+        this.opLog = opLog;
+    }
+
+    /**
+     * PRD-31 操作日志：把基础资料实体转成「蛇形 key」快照，供改前改后字段级 diff。
+     * <p>只含实体真实字段（不会引用不存在的列）；改前改后用同一方法，key 集合一致，
+     * 非关键字段的变化由 OperationLogService 统一标注「非关键字段有修改」。
+     */
+    private java.util.Map<String, Object> masterSnapshot(Object entity) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        if (entity == null) return out;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper m = new com.fasterxml.jackson.databind.ObjectMapper();
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> raw = m.convertValue(entity, java.util.Map.class);
+            raw.forEach((k, v) -> out.put(camelToSnake(k), v == null ? "" : v));
+        } catch (Exception ignore) {
+            // 快照失败不阻塞主业务
+        }
+        return out;
+    }
+
+    private static String camelToSnake(String s) {
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isUpperCase(c)) {
+                if (i > 0) sb.append('_');
+                sb.append(Character.toLowerCase(c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private <T> Page<T> toMpPage(PageRequest request) {
@@ -245,6 +282,9 @@ public class BaseController {
         entity.setManagerName((String) request.getOrDefault("managerName", ""));
         entity.setStatus("NORMAL");
         warehouseService.save(entity);
+        opLog.log(com.erp.system.OperationModule.BASE_WAREHOUSE, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_WAREHOUSE, entity.getWarehouseId(), entity.getWarehouseCode(),
+                "新增仓库：" + entity.getWarehouseCode() + " " + entity.getWarehouseName());
         return ApiResponse.ok(entity);
     }
 
@@ -385,6 +425,9 @@ public class BaseController {
         fillGoodsEntity(entity, request);
         entity.setCurrentStock(java.math.BigDecimal.ZERO);
         goodsService.save(entity);
+        opLog.log(com.erp.system.OperationModule.BASE_GOODS, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_GOODS, entity.getGoodsId(), entity.getGoodsCode(),
+                "新增商品：" + entity.getGoodsCode() + " " + entity.getGoodsName());
         return ApiResponse.ok(entity);
     }
 
@@ -443,10 +486,14 @@ public class BaseController {
         String bizId = String.valueOf(request.getOrDefault("goodsId", request.getOrDefault("goodsCode", request.getOrDefault("bizId", ""))));
         BaseGoods entity = goodsService.getOne(new QueryWrapper<BaseGoods>().eq("goods_id", bizId).or().eq("goods_code", bizId));
         if (entity == null) return ApiResponse.fail("404", "商品不存在");
+        java.util.Map<String, Object> before = masterSnapshot(entity);
         String originalCode = entity.getGoodsCode();
         fillGoodsEntity(entity, request);
         entity.setGoodsCode(originalCode);
         goodsService.updateById(entity);
+        BaseGoods afterEntity = goodsService.getOne(new QueryWrapper<BaseGoods>().eq("goods_id", entity.getGoodsId()));
+        opLog.logUpdate(com.erp.system.OperationModule.BASE_GOODS, com.erp.system.KeyFields.BIZ_GOODS,
+                entity.getGoodsId(), originalCode, before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
     }
 
@@ -560,8 +607,14 @@ public class BaseController {
         String bizId = String.valueOf(request.getOrDefault("goodsId", request.getOrDefault("goodsCode", request.getOrDefault("bizId", ""))));
         BaseGoods entity = goodsService.getOne(new QueryWrapper<BaseGoods>().eq("goods_id", bizId).or().eq("goods_code", bizId));
         if (entity == null) return ApiResponse.fail("404", "商品不存在");
+        java.util.Map<String, Object> before = masterSnapshot(entity);
         entity.setStatus(status);
         goodsService.updateById(entity);
+        BaseGoods afterEntity = goodsService.getOne(new QueryWrapper<BaseGoods>().eq("goods_id", entity.getGoodsId()));
+        // 停用/冻结 → DISABLE；删除（软删，状态置 DELETED）→ DELETE
+        String action = "DELETED".equals(status) ? com.erp.system.OperationAction.DELETE : com.erp.system.OperationAction.DISABLE;
+        opLog.logUpdate(com.erp.system.OperationModule.BASE_GOODS, action, com.erp.system.KeyFields.BIZ_GOODS,
+                entity.getGoodsId(), entity.getGoodsCode(), before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
     }
 
@@ -643,6 +696,9 @@ public class BaseController {
         entity.setStatus("NORMAL");
         customerService.save(entity);
         saveCustomerAddresses(entity.getCustomerCode(), request.get("addresses"));
+        opLog.log(com.erp.system.OperationModule.BASE_CUSTOMER, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_CUSTOMER, entity.getCustomerId(), entity.getCustomerCode(),
+                "新增客户：" + entity.getCustomerCode() + " " + entity.getCustomerName());
         return ApiResponse.ok(entity);
     }
 
@@ -653,12 +709,16 @@ public class BaseController {
         String code = (String) request.get("customerCode");
         BaseCustomer entity = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", code));
         if (entity == null) return ApiResponse.fail("404", "客户不存在");
+        java.util.Map<String, Object> before = masterSnapshot(entity);
         String originalCode = entity.getCustomerCode();
         fillCustomerEntity(entity, request);
         entity.setCustomerCode(originalCode);
         if (request.get("status") != null) entity.setStatus((String) request.get("status"));
         customerService.updateById(entity);
         saveCustomerAddresses(originalCode, request.get("addresses"));
+        BaseCustomer afterEntity = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", originalCode));
+        opLog.logUpdate(com.erp.system.OperationModule.BASE_CUSTOMER, com.erp.system.KeyFields.BIZ_CUSTOMER,
+                entity.getCustomerId(), originalCode, before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
     }
 
@@ -824,6 +884,9 @@ public class BaseController {
         fillSupplierEntity(entity, request);
         supplierService.save(entity);
         saveSupplierBankAccounts(entity.getSupplierCode(), request.get("bankAccounts"));
+        opLog.log(com.erp.system.OperationModule.BASE_SUPPLIER, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_SUPPLIER, entity.getSupplierId(), entity.getSupplierCode(),
+                "新增供应商：" + entity.getSupplierCode() + " " + entity.getSupplierName());
         return ApiResponse.ok(entity);
     }
 
@@ -832,11 +895,15 @@ public class BaseController {
         String code = (String) request.get("supplierCode");
         BaseSupplier entity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", code));
         if (entity == null) return ApiResponse.fail("404", "供应商不存在");
+        java.util.Map<String, Object> before = masterSnapshot(entity);
         String originalCode = entity.getSupplierCode();
         fillSupplierEntity(entity, request);
         entity.setSupplierCode(originalCode);
         supplierService.updateById(entity);
         saveSupplierBankAccounts(originalCode, request.get("bankAccounts"));
+        BaseSupplier afterEntity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", originalCode));
+        opLog.logUpdate(com.erp.system.OperationModule.BASE_SUPPLIER, com.erp.system.KeyFields.BIZ_SUPPLIER,
+                entity.getSupplierId(), originalCode, before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
     }
 
@@ -1010,6 +1077,7 @@ public class BaseController {
         String code = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
         BaseWarehouse entity = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", code).or().eq("warehouse_id", code));
         if (entity == null) return ApiResponse.fail("404", "仓库不存在");
+        java.util.Map<String, Object> before = masterSnapshot(entity);
         if (request.get("warehouseName") != null) entity.setWarehouseName((String) request.get("warehouseName"));
         if (request.get("warehouseType") != null) entity.setWarehouseType((String) request.get("warehouseType"));
         if (request.get("inventoryType") != null) entity.setInventoryType((String) request.get("inventoryType"));
@@ -1017,23 +1085,41 @@ public class BaseController {
         if (request.get("managerName") != null) entity.setManagerName((String) request.get("managerName"));
         if (request.get("status") != null) entity.setStatus((String) request.get("status"));
         warehouseService.updateById(entity);
+        BaseWarehouse afterEntity = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_id", entity.getWarehouseId()));
+        opLog.logUpdate(com.erp.system.OperationModule.BASE_WAREHOUSE, com.erp.system.KeyFields.BIZ_WAREHOUSE,
+                entity.getWarehouseId(), entity.getWarehouseCode(), before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
     }
 
     @PostMapping("/warehouse/delete")
     public ApiResponse<Map<String, Object>> deleteWarehouse(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
+        BaseWarehouse before = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", biz).or().eq("warehouse_id", biz));
         boolean removed = warehouseService.remove(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", biz).or().eq("warehouse_id", biz));
         if (!removed) return ApiResponse.fail("404", "仓库不存在或删除失败");
+        if (before != null) {
+            java.util.Map<String, Object> after = new java.util.LinkedHashMap<>(masterSnapshot(before));
+            after.put("status", "DELETED");
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_WAREHOUSE, com.erp.system.OperationAction.DELETE,
+                    com.erp.system.KeyFields.BIZ_WAREHOUSE, before.getWarehouseId(), before.getWarehouseCode(),
+                    masterSnapshot(before), after);
+        }
         return ApiResponse.ok(GenericResult.operation("warehouse", "DELETE"));
     }
 
     @PostMapping("/warehouse/stop")
     public ApiResponse<Void> stopWarehouse(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
+        BaseWarehouse before = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", biz).or().eq("warehouse_id", biz));
         boolean updated = warehouseService.update(new UpdateWrapper<BaseWarehouse>()
                 .eq("warehouse_code", biz).or().eq("warehouse_id", biz).set("status", "STOPPED"));
         if (!updated) return ApiResponse.fail("404", "仓库不存在");
+        if (before != null) {
+            BaseWarehouse after = warehouseService.getOne(new QueryWrapper<BaseWarehouse>().eq("warehouse_code", biz).or().eq("warehouse_id", biz));
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_WAREHOUSE, com.erp.system.OperationAction.DISABLE,
+                    com.erp.system.KeyFields.BIZ_WAREHOUSE, before.getWarehouseId(), before.getWarehouseCode(),
+                    masterSnapshot(before), masterSnapshot(after));
+        }
         return ApiResponse.ok(null);
     }
 
@@ -1041,17 +1127,32 @@ public class BaseController {
     @PostMapping("/customer/delete")
     public ApiResponse<Map<String, Object>> deleteCustomer(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "customerCode", "customerId", "bizId");
+        BaseCustomer before = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", biz).or().eq("customer_id", biz));
         boolean removed = customerService.remove(new QueryWrapper<BaseCustomer>().eq("customer_code", biz).or().eq("customer_id", biz));
         if (!removed) return ApiResponse.fail("404", "客户不存在或删除失败");
+        if (before != null) {
+            java.util.Map<String, Object> after = new java.util.LinkedHashMap<>(masterSnapshot(before));
+            after.put("status", "DELETED");
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_CUSTOMER, com.erp.system.OperationAction.DELETE,
+                    com.erp.system.KeyFields.BIZ_CUSTOMER, before.getCustomerId(), before.getCustomerCode(),
+                    masterSnapshot(before), after);
+        }
         return ApiResponse.ok(GenericResult.operation("customer", "DELETE"));
     }
 
     @PostMapping("/customer/stop")
     public ApiResponse<Void> stopCustomer(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "customerCode", "customerId", "bizId");
+        BaseCustomer before = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", biz).or().eq("customer_id", biz));
         boolean updated = customerService.update(new UpdateWrapper<BaseCustomer>()
                 .eq("customer_code", biz).or().eq("customer_id", biz).set("status", "STOPPED"));
         if (!updated) return ApiResponse.fail("404", "客户不存在");
+        if (before != null) {
+            BaseCustomer after = customerService.getOne(new QueryWrapper<BaseCustomer>().eq("customer_code", biz).or().eq("customer_id", biz));
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_CUSTOMER, com.erp.system.OperationAction.DISABLE,
+                    com.erp.system.KeyFields.BIZ_CUSTOMER, before.getCustomerId(), before.getCustomerCode(),
+                    masterSnapshot(before), masterSnapshot(after));
+        }
         return ApiResponse.ok(null);
     }
 
@@ -1059,17 +1160,32 @@ public class BaseController {
     @PostMapping("/supplier/delete")
     public ApiResponse<Map<String, Object>> deleteSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
+        BaseSupplier before = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
         boolean removed = supplierService.remove(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
         if (!removed) return ApiResponse.fail("404", "供应商不存在或删除失败");
+        if (before != null) {
+            java.util.Map<String, Object> after = new java.util.LinkedHashMap<>(masterSnapshot(before));
+            after.put("status", "DELETED");
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_SUPPLIER, com.erp.system.OperationAction.DELETE,
+                    com.erp.system.KeyFields.BIZ_SUPPLIER, before.getSupplierId(), before.getSupplierCode(),
+                    masterSnapshot(before), after);
+        }
         return ApiResponse.ok(GenericResult.operation("supplier", "DELETE"));
     }
 
     @PostMapping("/supplier/stop")
     public ApiResponse<Void> stopSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
+        BaseSupplier before = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
         boolean updated = supplierService.update(new UpdateWrapper<BaseSupplier>()
                 .eq("supplier_code", biz).or().eq("supplier_id", biz).set("status", "STOPPED"));
         if (!updated) return ApiResponse.fail("404", "供应商不存在");
+        if (before != null) {
+            BaseSupplier after = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
+            opLog.logUpdate(com.erp.system.OperationModule.BASE_SUPPLIER, com.erp.system.OperationAction.DISABLE,
+                    com.erp.system.KeyFields.BIZ_SUPPLIER, before.getSupplierId(), before.getSupplierCode(),
+                    masterSnapshot(before), masterSnapshot(after));
+        }
         return ApiResponse.ok(null);
     }
 

@@ -23,15 +23,18 @@ public class OrderController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.inventory.service.InventoryCostService inventoryCostService;
     private final com.erp.wms.WmsInboundService wmsInboundService;
+    private final com.erp.system.OperationLogService opLog;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
                            com.erp.inventory.service.InventoryCostService inventoryCostService,
-                           com.erp.wms.WmsInboundService wmsInboundService) {
+                           com.erp.wms.WmsInboundService wmsInboundService,
+                           com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
         this.wmsInboundService = wmsInboundService;
+        this.opLog = opLog;
     }
 
     // ============ 销售订单 ============
@@ -88,10 +91,10 @@ public class OrderController {
         // 生成即占用：逐商品把订单数量锁进 inv_stock_balance.locked_qty
         // （审核不再重复锁定，出库审核时释放并扣实物，关闭/删除时释放）
         Map<String, BigDecimal> locked = lockOrderNeed(warehouse, needOfPayload(details));
-        if (!locked.isEmpty()) {
-            log("SALES_ORDER", "创建", orderNo,
-                    "库存校验通过并锁定 " + locked.size() + " 个商品，仓库：" + warehouse);
-        }
+        opLog.log(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, orderId, orderNo,
+                "创建销售订单，金额 " + plain(totalAmount)
+                        + (locked.isEmpty() ? "（未指定仓库，未占用库存）" : "，锁定 " + locked.size() + " 个商品库存，仓库：" + warehouse));
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", orderId);
         out.put("orderNo", orderNo);
@@ -158,6 +161,9 @@ public class OrderController {
                 SELECT * FROM sales_order_detail WHERE order_id = ? ORDER BY detail_id
                 """, realOrderId);
         head.put("details", details.stream().map(OrderController::camelize).toList());
+        // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；销售订单非敏感模块）
+        opLog.logView(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.KeyFields.BIZ_SALES_ORDER,
+                realOrderId, str(head.get("orderNo")), false);
         return ApiResponse.ok(head);
     }
 
@@ -173,6 +179,9 @@ public class OrderController {
         String status = str(pickCS(rows.get(0), "status"));
         if (!"PENDING".equals(status)) return ApiResponse.fail("400", "仅待审核销售订单允许编辑");
         String oldWarehouse = str(pickCS(rows.get(0), "warehouse"));
+        // 改前留痕：主表 + 明细行（在做任何 UPDATE/DELETE 之前取数）
+        Map<String, Object> beforeMain = orderHeadForLog("sales_order", orderId);
+        List<Map<String, Object>> beforeLines = orderLinesForLog("sales_order_detail", orderId);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> details = req.get("details") instanceof List<?> l
@@ -226,6 +235,15 @@ public class OrderController {
                     str(d.get("salesAttribute"), "正常"),
                     str(d.get("remark")));
         }
+        // 改后留痕：UPDATE 与明细 DELETE+INSERT 已在本事务内执行，同一连接重查即「落库后的真实状态」。
+        // 改前改后走同一组查询（同 pickCS 格式、同字段集），避免手工拼 payload 造成的字段缺失/格式漂移
+        // （例如 amount 一个走 DB 的 "0.00"、一个走内存 BigDecimal 的 "0"，被误判成修改）。
+        String logOrderNo = str(beforeMain.get("order_no"));
+        Map<String, Object> afterMain = orderHeadForLog("sales_order", orderId);
+        List<Map<String, Object>> afterLines = orderLinesForLog("sales_order_detail", orderId);
+        opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.KeyFields.BIZ_SALES_ORDER,
+                orderId, logOrderNo, beforeMain, afterMain, beforeLines, afterLines);
+
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", orderId);
         out.put("amount", totalAmount);
@@ -270,8 +288,9 @@ public class OrderController {
                     outbound_status = '待出库', stock_check = '通过'
                 WHERE order_id = ?
                 """, "系统管理员", realOrderId);
-        log("SALES_ORDER", "审核", orderNo,
-                "库存已于创建时占用，本次审核不重复锁定；仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
+        opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, realOrderId, orderNo,
+                Map.of("status", "待审核"), Map.of("status", "已审核"), null, null);
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
         out.put("orderNo", orderNo);
@@ -344,10 +363,20 @@ public class OrderController {
                     outbound_status = NULL, outbound_amount = 0
                 WHERE order_id = ?
                 """, realOrderId);
-        // ⑤ 写操作日志
-        log("SALES_ORDER", "反审核", orderNo, deleted.isEmpty()
-                ? "订单库存占用保持不变"
-                : "已删除未审核出库单 " + String.join("、", deleted) + " 并释放其批次锁定；订单库存占用保持不变");
+        // ⑤ 写操作日志（状态流转 + 出库单处理说明）
+        Map<String, Object> raBefore = new LinkedHashMap<>();
+        raBefore.put("status", "已审核");
+        raBefore.put("outbound_status", "待出库");
+        Map<String, Object> raAfter = new LinkedHashMap<>();
+        raAfter.put("status", "待审核");
+        raAfter.put("outbound_status", "");
+        opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.UN_AUDIT,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, realOrderId, orderNo, raBefore, raAfter, null, null);
+        if (!deleted.isEmpty()) {
+            opLog.log(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.DELETE,
+                    com.erp.system.KeyFields.BIZ_SALES_ORDER, null, orderNo,
+                    "反审核连带删除未审核出库单 " + String.join("、", deleted));
+        }
 
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
@@ -384,7 +413,9 @@ public class OrderController {
         releaseLocks(warehouse, remainingLockOf(realOrderId, orderNo));
         jdbcTemplate.update(
                 "UPDATE sales_order SET status = 'CLOSED', stock_check = NULL WHERE order_id = ?", realOrderId);
-        log("SALES_ORDER", "关闭", orderNo, "原状态 " + status + "，已释放未出库部分的锁定库存");
+        opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.CLOSE,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, realOrderId, orderNo,
+                Map.of("status", salesStatusText(status)), Map.of("status", "已关闭"), null, null);
         return ApiResponse.ok(Map.of("orderId", realOrderId, "orderNo", orderNo,
                 "status", "CLOSED", "effect", "订单已关闭，未出库部分的库存占用已释放", "success", true));
     }
@@ -407,7 +438,8 @@ public class OrderController {
         releaseLocks(warehouse, remainingLockOf(orderId, orderNo));
         jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id = ?", orderId);
         jdbcTemplate.update("DELETE FROM sales_order WHERE order_id = ?", orderId);
-        log("SALES_ORDER", "删除", orderNo, "已释放本单占用的库存");
+        opLog.log(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.DELETE,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, orderId, orderNo, "删除销售订单，已释放本单占用的库存");
         return ApiResponse.ok(Map.of("orderId", orderId, "effect", "订单已删除，库存占用已释放", "success", true));
     }
 
@@ -432,8 +464,9 @@ public class OrderController {
                     outbound_status = '待出库', stock_check = '通过'
                 WHERE order_id = ?
                 """, "系统管理员（快速开单）", orderId);
-        log("SALES_ORDER", "快速开单审核", String.valueOf(data.get("orderNo")),
-                "库存已于创建时占用，本次审核不重复锁定；仓库：" + (warehouse.isBlank() ? "未指定" : warehouse));
+        opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_SALES_ORDER, orderId, String.valueOf(data.get("orderNo")),
+                Map.of("status", "待审核"), Map.of("status", "已审核"), null, null);
         Map<String, Object> out = new HashMap<>();
         out.put("orderNo", data.get("orderNo"));
         out.put("orderId", orderId);
@@ -633,13 +666,60 @@ public class OrderController {
         }
     }
 
-    /** 业务操作日志，与 SalesOutboundController 同一张表、同一套字段。 */
-    private void log(String moduleCode, String action, String bizNo, String detail) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, 'SUCCESS', ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
-                moduleCode, action, bizNo, detail);
+    // ============ 操作日志：改前/改后快照（PRD-31） ============
+
+    /**
+     * 订单主表改前快照（key 与 {@link com.erp.system.KeyFields} 主表字段对齐，snake_case）。
+     * table 取 sales_order / purchase_order（内部常量，无注入风险）。
+     */
+    private Map<String, Object> orderHeadForLog(String table, String orderId) {
+        boolean sales = "sales_order".equals(table);
+        String sql = sales
+                ? "SELECT order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, " +
+                  "unpaid_amount, outbound_status, sign_status, status FROM sales_order WHERE order_id = ?"
+                : "SELECT order_no, supplier_name, buyer, warehouse, bill_date, amount, paid_amount, " +
+                  "unpaid_amount, inbound_status, payment_status, status FROM purchase_order WHERE order_id = ?";
+        Map<String, Object> snap = new LinkedHashMap<>();
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, orderId);
+        if (rows.isEmpty()) return snap;
+        Map<String, Object> r = rows.get(0);
+        String[] cols = sales
+                ? new String[]{"order_no", "customer", "salesman", "warehouse", "bill_date", "amount",
+                        "paid_amount", "unpaid_amount", "outbound_status", "sign_status", "status"}
+                : new String[]{"order_no", "supplier_name", "buyer", "warehouse", "bill_date", "amount",
+                        "paid_amount", "unpaid_amount", "inbound_status", "payment_status", "status"};
+        for (String c : cols) snap.put(c, pickCS(r, c));
+        return snap;
+    }
+
+    /**
+     * 订单明细改前快照。<b>不放 detail_id</b>——编辑会整单 DELETE+重建明细，detail_id 必变，
+     * 放进去会导致每行都被识别成"删除旧行+新增新行"；改由日志服务按 goods_code 配对识别同一行。
+     */
+    private List<Map<String, Object>> orderLinesForLog(String table, String orderId) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT goods_code, goods_name, unit_name, qty, price, tax_rate, amount FROM "
+                        + table + " WHERE order_id = ? ORDER BY detail_id", orderId);
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            for (String c : new String[]{"goods_code", "goods_name", "unit_name", "qty", "price", "tax_rate", "amount"}) {
+                m.put(c, pickCS(r, c));
+            }
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** 订单状态码 → 中文（供日志改前改后可读性）。 */
+    private static String salesStatusText(String code) {
+        return switch (code) {
+            case "PENDING" -> "待审核";
+            case "AUDITED", "APPROVED" -> "已审核";
+            case "CLOSED" -> "已关闭";
+            case "CANCELLED" -> "已作废";
+            default -> code;
+        };
     }
 
     /** 去掉 DECIMAL(18,2) 带来的多余小数尾巴，让提示文案里的数量好读。 */
@@ -690,6 +770,9 @@ public class OrderController {
                     toBd(d.get("price")), toBd(d.get("amount")),
                     str(d.get("taxRate")), str(d.get("remark")));
         }
+        opLog.log(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.CREATE,
+                com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, orderId, orderNo,
+                "创建采购订单，金额 " + plain(totalAmount) + "，供应商：" + supplierName);
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", orderId);
         out.put("orderNo", orderNo);
@@ -749,6 +832,9 @@ public class OrderController {
                 SELECT * FROM purchase_order_detail WHERE order_id = ? ORDER BY detail_id
                 """, realOrderId);
         head.put("details", details.stream().map(OrderController::camelize).toList());
+        // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；采购订单非敏感模块）
+        opLog.logView(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.KeyFields.BIZ_PURCHASE_ORDER,
+                realOrderId, str(head.get("orderNo")), false);
         return ApiResponse.ok(head);
     }
 
@@ -792,6 +878,15 @@ public class OrderController {
             wmsWarning = "WMS 收货任务自动生成失败：" + wmsErr.getMessage()
                     + "（可稍后在 PDA 端手工拉取/在 WMS 模块补建）";
         }
+        Map<String, Object> audOut = new LinkedHashMap<>();
+        audOut.put("status", "待审核");
+        opLog.logUpdate(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, realOrderId, orderNo,
+                audOut, Map.of("status", "已审核"), null, null);
+        if (wmsWarning != null && wmsWarning.startsWith("已自动生成收货任务")) {
+            opLog.log(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.SUBMIT,
+                    com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, realOrderId, orderNo, wmsWarning);
+        }
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
         out.put("orderNo", orderNo);
@@ -826,6 +921,9 @@ public class OrderController {
                 SET status = 'PENDING', audit_time = NULL, audit_user = NULL, inbound_status = '未入库'
                 WHERE order_id = ?
                 """, realOrderId);
+        opLog.logUpdate(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.UN_AUDIT,
+                com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, realOrderId, orderNo,
+                Map.of("status", "已审核"), Map.of("status", "待审核"), null, null);
         Map<String, Object> out = new HashMap<>();
         out.put("orderId", realOrderId);
         out.put("orderNo", orderNo);
@@ -847,6 +945,8 @@ public class OrderController {
                 WHERE (order_id = ? OR order_no = ?) AND status IN ('PENDING','APPROVED')
                 """, key, key);
         if (updated == 0) return ApiResponse.fail("400", "订单状态不允许终止");
+        opLog.log(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.CLOSE,
+                com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, null, key, "终止采购订单，不再允许生成入库单");
         return ApiResponse.ok(Map.of("orderId", key, "status", "CLOSED", "effect", "订单已终止，不再允许生成入库单", "success", true));
     }
 
@@ -858,13 +958,16 @@ public class OrderController {
         if (key.isBlank()) key = str(req.get("bizId"));
         if (key.isBlank()) return ApiResponse.fail("400", "缺少 orderId");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT order_id, status FROM purchase_order WHERE order_id = ? OR order_no = ?", key, key);
+                "SELECT order_id, order_no, status FROM purchase_order WHERE order_id = ? OR order_no = ?", key, key);
         if (rows.isEmpty()) return ApiResponse.fail("404", "订单不存在");
         String status = str(pickCS(rows.get(0), "status"));
         if (!"PENDING".equals(status)) return ApiResponse.fail("400", "只有待审核订单可删除");
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
+        String delOrderNo = str(pickCS(rows.get(0), "order_no"));
         jdbcTemplate.update("DELETE FROM purchase_order_detail WHERE order_id = ?", realOrderId);
         jdbcTemplate.update("DELETE FROM purchase_order WHERE order_id = ?", realOrderId);
+        opLog.log(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.OperationAction.DELETE,
+                com.erp.system.KeyFields.BIZ_PURCHASE_ORDER, realOrderId, delOrderNo, "删除采购订单");
         return ApiResponse.ok(Map.of("orderId", realOrderId, "success", true));
     }
 

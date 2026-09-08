@@ -98,6 +98,7 @@ export const fallbackMenus = {
     { code: 'importList', name: '导入列表' },
     { code: 'exportCenter', name: '导出中心' },
     { code: 'log', name: '操作日志' },
+    { code: 'loginLog', name: '登录日志' },
   ],
   '仓储作业(WMS)': [
     { code: 'wms-dashboard', name: '作业看板' },

@@ -30,7 +30,7 @@ public class SystemController {
     /** 参数设置页左侧分组的展示顺序；未列出的 param_group 追加在后，NULL/空串落「公共参数」兜底。 */
     private static final List<String> PARAM_GROUP_ORDER = List.of(
             "公共参数", "销售", "销售退货", "库存", "TMS配送",
-            "WMS基础参数", "WMS入库", "WMS出库");
+            "WMS基础参数", "WMS入库", "WMS出库", "日志与安全");
 
     /** 照片张数类参数的合法区间（PRD-26 §3.3）。 */
     private static final Set<String> PHOTO_COUNT_KEYS = Set.of("TMS_SIGN_PHOTO_COUNT", "TMS_RETURN_PHOTO_COUNT");
@@ -38,11 +38,14 @@ public class SystemController {
     private final JdbcTemplate jdbcTemplate;
     private final BCryptPasswordEncoder passwordEncoder;
     private final SysParamService sysParamService;
+    private final OperationLogService opLog;
 
-    public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder, SysParamService sysParamService) {
+    public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder,
+                            SysParamService sysParamService, OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
         this.sysParamService = sysParamService;
+        this.opLog = opLog;
     }
 
     @GetMapping("/menu/user-tree")
@@ -136,7 +139,8 @@ public class SystemController {
                         menu("printTemplate", "打印模板设置", "/system/print-template"),
                         menu("importList", "导入列表", "/system/import-list"),
                         menu("exportCenter", "导出中心", "/system/export-center"),
-                        menu("log", "操作日志", "/system/operation-log")
+                        menu("log", "操作日志", "/system/operation-log"),
+                        menu("loginLog", "登录日志", "/system/login-log")
                 ),
                 menu("tms", "运输管理", null,
                         menu("tms-dispatch-pool", "配送任务池", "/tms/dispatch-pool"),
@@ -585,20 +589,8 @@ public class SystemController {
         ));
     }
 
-    @PostMapping("/operation-log/page")
-    public ApiResponse<PageResult<Map<String, Object>>> operationLogPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT operate_at operateAt,
-                       operator_name operatorName,
-                       module_code moduleCode,
-                       action,
-                       biz_no bizNo,
-                       result,
-                       detail
-                FROM sys_operation_log_runtime
-                ORDER BY operate_at DESC
-                """), request));
-    }
+    // 注：操作日志/登录日志查询页已迁移到 SystemLogController（SQL 级过滤分页 + 改前改后），
+    // 业务单据内的操作记录时间线在 OperationLogController（/operation-log/**，登录即可访问）。
 
     // ========== 消息通知 ==========
     @PostMapping("/notification/page")
@@ -687,11 +679,16 @@ public class SystemController {
         return ApiResponse.ok(GenericResult.row("success", true, "bizNo", bizNo));
     }
 
+    /**
+     * 系统配置类操作日志：统一委托 {@link OperationLogService}（真实操作人、IP、耗时、独立事务）。
+     * 保留原 (module, action, bizNo, result, detail) 签名以最小化改动各调用点。
+     */
     private void log(String module, String action, String bizNo, String result, String detail) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', ?, ?, ?, ?, ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), module, action, bizNo, result, detail);
+        if ("FAIL".equalsIgnoreCase(result)) {
+            opLog.logFail(module, action, bizNo, detail);
+        } else {
+            opLog.log(module, action, bizNo, detail);
+        }
     }
 
     private List<Map<String, Object>> filterMenus(String roleCode, List<Map<String, Object>> source) {

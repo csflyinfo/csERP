@@ -98,6 +98,7 @@ const routes = [
       { path: 'param', name: 'Param', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '系统参数', module: 'param' } },
       { path: 'param-setting', name: 'ParamSetting', component: () => import('@/views/system/ParamSetting.vue'), meta: { title: '参数设置', module: 'paramSetting' } },
       { path: 'log', name: 'Log', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '操作日志', module: 'log' } },
+      { path: 'login-log', name: 'LoginLog', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '登录日志', module: 'loginLog' } },
       { path: 'dictionary', name: 'Dictionary', component: () => import('@/views/DictionaryPage.vue'), meta: { title: '用户数据字典', module: 'dictionary' } },
       { path: 'bill-no', name: 'BillNo', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '单据编号规则', module: 'billNo' } },
       { path: 'precision', name: 'Precision', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '显示精度设置', module: 'precision' } },

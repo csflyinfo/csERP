@@ -23,9 +23,11 @@ import java.util.UUID;
 @RequestMapping("/inventory")
 public class InventoryController {
     private final JdbcTemplate jdbcTemplate;
+    private final com.erp.system.OperationLogService opLog;
 
-    public InventoryController(JdbcTemplate jdbcTemplate) {
+    public InventoryController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
+        this.opLog = opLog;
     }
 
     @PostMapping("/balance/page")
@@ -202,6 +204,9 @@ public class InventoryController {
         insertLedger(goodsCode, goodsName, targetWarehouse, "IN", qty, costPrice, amount, targetBalance,
             String.valueOf(bill.get("BILL_NO")));
 
+        opLog.log(com.erp.system.OperationModule.INV_TRANSFER, com.erp.system.OperationAction.AUDIT,
+                com.erp.system.KeyFields.BIZ_TRANSFER, null, String.valueOf(bill.get("BILL_NO")),
+                "审核调拨单 " + bill.get("BILL_NO") + "：" + sourceWarehouse + " 调出 " + qty + "，" + targetWarehouse + " 调入 " + qty);
         return ApiResponse.ok(Map.of(
             "status", "APPROVED",
             "effect", "调拨已审核：" + sourceWarehouse + " 调出 " + qty + "，" + targetWarehouse + " 调入 " + qty,
@@ -265,6 +270,10 @@ public class InventoryController {
             "UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_id=?",
             bill.get("BILL_ID"));
 
+        // 成本调整改成本单价——敏感操作，整条日志标 sensitive（非管理员脱敏）
+        opLog.logSensitive(com.erp.system.OperationModule.INV_COST_ADJUST, com.erp.system.OperationAction.AUDIT,
+                "cost_adjust", null, String.valueOf(bill.get("BILL_NO")),
+                "审核成本调整单 " + bill.get("BILL_NO") + "：" + goodsCode + " 成本 " + oldCostPrice + " 调整为 " + newCostPrice);
         return ApiResponse.ok(Map.of(
             "status", "APPROVED",
             "effect", "成本调整已审核：" + goodsCode + " 成本从 " + oldCostPrice + " 调整为 " + newCostPrice,

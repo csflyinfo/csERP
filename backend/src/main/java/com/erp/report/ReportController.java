@@ -19,9 +19,11 @@ import java.util.UUID;
 @RequestMapping("/report")
 public class ReportController {
     private final JdbcTemplate jdbcTemplate;
+    private final com.erp.system.OperationLogService opLog;
 
-    public ReportController(JdbcTemplate jdbcTemplate) {
+    public ReportController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
+        this.opLog = opLog;
     }
 
     @GetMapping("/dashboard/summary")
@@ -212,9 +214,7 @@ public class ReportController {
     }
 
     private void logExport(String taskNo, String reportName) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', 'report.export', 'EXPORT', ?, 'SUCCESS', ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), taskNo, "导出报表：" + reportName);
+        // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名）。
+        opLog.log("report.export", com.erp.system.OperationAction.EXPORT, taskNo, "导出报表：" + reportName);
     }
 }

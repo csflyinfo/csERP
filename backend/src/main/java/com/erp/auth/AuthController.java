@@ -2,6 +2,7 @@ package com.erp.auth;
 
 import com.erp.common.api.ApiResponse;
 import com.erp.common.util.JwtUtil;
+import com.erp.common.util.RequestContext;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,10 +32,11 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ApiResponse<Map<String, Object>> login(@Valid @RequestBody LoginRequest request) {
+    public ApiResponse<Map<String, Object>> login(@Valid @RequestBody LoginRequest request,
+                                                  jakarta.servlet.http.HttpServletRequest httpReq) {
         Map<String, Object> user = findUser(request.username());
         if (user == null) {
-            log("LOGIN", request.username(), "FAIL", "账号不存在");
+            writeLoginLog(null, request.username(), "FAIL", "账号不存在", httpReq);
             throw new IllegalArgumentException("账号或密码错误");
         }
         String storedPassword = (String) user.getOrDefault("password", "");
@@ -42,7 +44,7 @@ public class AuthController {
         boolean passwordMatch = storedPassword != null && storedPassword.startsWith("$2a$")
                 && passwordEncoder.matches(request.password(), storedPassword);
         if (!passwordMatch) {
-            log("LOGIN", request.username(), "FAIL", "密码错误");
+            writeLoginLog(user, request.username(), "FAIL", "密码错误", httpReq);
             throw new IllegalArgumentException("账号或密码错误");
         }
 
@@ -52,7 +54,7 @@ public class AuthController {
                 String.valueOf(user.get("displayName")),
                 String.valueOf(user.getOrDefault("roleCode", ""))
         );
-        log("LOGIN", request.username(), "SUCCESS", "用户登录成功");
+        writeLoginLog(user, request.username(), "SUCCESS", null, httpReq);
 
         return ApiResponse.ok(Map.of(
                 "token", token,
@@ -70,8 +72,17 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Boolean> logout() {
-        log("LOGOUT", "admin", "SUCCESS", "用户退出登录");
+    public ApiResponse<Boolean> logout(jakarta.servlet.http.HttpServletRequest httpReq) {
+        // 登出是公开端点（JwtAuthFilter 跳过），这里尽力从 token 解析账号，回填最近一条登录记录的 logout_at
+        String account = accountFromToken(httpReq);
+        if (account != null) {
+            try {
+                jdbcTemplate.update(
+                        "UPDATE sys_login_log SET logout_at = CURRENT_TIMESTAMP WHERE login_log_id = " +
+                        "(SELECT login_log_id FROM sys_login_log WHERE account = ? AND logout_at IS NULL " +
+                        "ORDER BY login_at DESC LIMIT 1)", account);
+            } catch (Exception ignored) {}
+        }
         return ApiResponse.ok(true);
     }
 
@@ -130,11 +141,45 @@ public class AuthController {
         );
     }
 
-    private void log(String action, String bizNo, String result, String detail) {
-        jdbcTemplate.update("""
-                INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
-                VALUES (?, CURRENT_TIMESTAMP, '系统管理员', 'auth', ?, ?, ?, ?)
-                """, "LOG" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(), action, bizNo, result, detail);
+    /**
+     * 登录成功/失败写登录日志表 sys_login_log（PRD-31：与操作日志分表）。
+     * 登录失败也记录（账号不存在时 user 为 null），便于安全审计爆破行为。永不抛异常。
+     */
+    private void writeLoginLog(Map<String, Object> user, String account, String result,
+                              String failReason, jakarta.servlet.http.HttpServletRequest req) {
+        try {
+            String userId = user == null ? null : blankToNull(String.valueOf(user.getOrDefault("userId", "")));
+            String userName = user == null ? null : blankToNull(String.valueOf(user.getOrDefault("displayName", "")));
+            String ua = req.getHeader("User-Agent");
+            jdbcTemplate.update(
+                    "INSERT INTO sys_login_log(login_log_id, user_id, account, user_name, login_at, " +
+                    "login_result, fail_reason, ip, user_agent, app_type) " +
+                    "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 'ERP')",
+                    "LL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
+                    userId, account, userName, result, failReason,
+                    RequestContext.clientIp(req),
+                    ua == null ? null : (ua.length() > 500 ? ua.substring(0, 500) : ua));
+        } catch (Exception ignored) {}
+    }
+
+    /** 公开登出端点拿不到 SecurityContext，尽力从 Authorization 头解析账号。 */
+    private String accountFromToken(jakarta.servlet.http.HttpServletRequest req) {
+        try {
+            String auth = req.getHeader("Authorization");
+            if (auth != null && auth.startsWith("Bearer ")) {
+                String token = auth.substring(7);
+                if (jwtUtil.validateToken(token)) {
+                    return jwtUtil.parseToken(token).getSubject();
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private String blankToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return (t.isEmpty() || "null".equalsIgnoreCase(t)) ? null : t;
     }
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {

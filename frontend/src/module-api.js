@@ -88,7 +88,17 @@ export const moduleApis = {
   printTemplate: { page: '/system/print-template/page', save: '/system/print-template/save' },
   importList: { page: '/system/import-list/page', import: '/system/import-list/create', download: '/system/import-list/download-failures' },
   exportCenter: { page: '/system/export-center/page', download: '/system/export-center/download' },
-  log: { page: '/system/operation-log/page' },
+  // PRD-31：detail 是 GET 路径参数（/{logId}），不走通用 ?id= 详情流程；exportJson 返回 JSON 供前端导 CSV
+  log: {
+    page: '/system/operation-log/page',
+    detail: '/system/operation-log/detail',
+    exportJson: '/system/operation-log/export',
+    manualCleanup: '/system/operation-log/manual-cleanup',
+    timeline: '/operation-log/bill-timeline',
+    print: '/operation-log/print',
+    pingExport: '/operation-log/export',
+  },
+  loginLog: { page: '/system/login-log/page', exportJson: '/system/login-log/export' },
 
   salesReport: { page: '/report/sales/page', export: '/excel/export/salesOrder' },
   purchaseReport: { page: '/report/purchase/page', export: '/excel/export/purchaseOrder' },
@@ -623,16 +633,29 @@ const EXACT_TITLE_MAP = {
   '创建时间': ['createdAt'],
   '完成时间': ['finishedAt'],
   '操作时间': ['operateAt'],
-  '操作人': ['operatorName'],
+  // 操作日志列表：操作人显示操作账号；优先账号，缺账号时回落姓名（不影响其它模块的"操作人"列）
+  '操作人': ['operatorAccount', 'operatorName'],
   '创建人': ['creatorName'],
   '创建人/时间': ['creatorInfo'],
   '审核信息': ['auditInfo'],
   '制单信息': ['creatorInfo'],
-  '模块': ['moduleCode'],
-  '动作': ['action'],
-  '结果': ['result'],
-  '详情': ['detail'],
+  // PRD-31 操作/登录日志：模块/动作优先取中文名，回落编码；结果兼容操作日志 result 与登录日志 loginResult
+  '模块': ['moduleName', 'moduleCode'],
+  '动作': ['actionName', 'action'],
+  '结果': ['result', 'loginResult'],
+  '详情': ['operationContent', 'detail'],
   '业务号': ['bizNo'],
+  '操作内容': ['operationContent', 'detail'],
+  '耗时': ['costTimeMs'],
+  'IP': ['requestIp', 'ip'],
+  '敏感': ['sensitive'],
+  '账号': ['account'],
+  '姓名': ['userName'],
+  '登录时间': ['loginAt'],
+  '登出时间': ['logoutAt'],
+  '失败原因': ['failReason'],
+  '应用': ['appType'],
+  '客户端': ['userAgent'],
 
   // 客户价格
   '有效期': ['validRange'],
@@ -706,6 +729,19 @@ function toDisplayValue(val, title) {
   // 状态字段翻译
   if (/状态/.test(title) && typeof val === 'string' && STATUS_MAP[val]) {
     return STATUS_MAP[val]
+  }
+  // PRD-31 日志字段翻译
+  if (title === '结果' && typeof val === 'string') {
+    if (val === 'SUCCESS') return '成功'
+    if (val === 'FAIL') return '失败'
+  }
+  if (title === '敏感' && typeof val === 'string') {
+    if (val === 'Y') return '敏感'
+    if (val === 'N') return '普通'
+  }
+  if (title === '耗时' && (typeof val === 'number' || /^\d+$/.test(String(val)))) {
+    const n = Number(val)
+    return n >= 1000 ? `${(n / 1000).toFixed(2)}s` : `${n}ms`
   }
   // 布尔 → 是/否
   if (typeof val === 'boolean') return val ? '是' : '否'

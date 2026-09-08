@@ -22,10 +22,12 @@ public class FlyOrderController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final com.erp.system.OperationLogService opLog;
 
-    public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.opLog = opLog;
     }
 
     // ====================== 创建飞单（草稿） ======================
@@ -84,6 +86,7 @@ public class FlyOrderController {
         out.put("flyNo", flyNo);
         out.put("status", "DRAFT");
         out.put("success", true);
+        flyLog(com.erp.system.OperationAction.CREATE, flyNo, "新增快速开单 " + flyNo);
         return ApiResponse.ok(out);
     }
 
@@ -149,6 +152,9 @@ public class FlyOrderController {
         Map<String, Object> out = new HashMap<>();
         out.put("flyId", flyId);
         out.put("success", true);
+        flyLog(com.erp.system.OperationAction.UPDATE,
+                String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
+                "修改快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(out);
     }
 
@@ -491,6 +497,9 @@ public class FlyOrderController {
         out.put("arNo", arNo);
         out.put("success", true);
         out.put("effect", "已生成采购订单(" + poNo + ") + 销售订单(" + soNo + ") + 应付(" + apNo + ") + 应收(" + arNo + ")，未经过仓库");
+        flyLog(com.erp.system.OperationAction.AUDIT,
+                String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
+                "审核快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(out);
     }
 
@@ -561,6 +570,9 @@ public class FlyOrderController {
                 WHERE fly_id = ?
                 """, realFlyId);
 
+        flyLog(com.erp.system.OperationAction.UN_AUDIT,
+                String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
+                "反审核快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(Map.of("flyId", realFlyId, "status", "DRAFT", "success", true,
                 "effect", "已删除关联的采购订单、销售订单、应付和应收单据"));
     }
@@ -582,6 +594,9 @@ public class FlyOrderController {
         String realFlyId = str(pickCS(flyRows.get(0), "fly_id"));
 
         jdbcTemplate.update("UPDATE fly_order SET status = 'CANCELLED' WHERE fly_id = ?", realFlyId);
+        flyLog(com.erp.system.OperationAction.CANCEL,
+                String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
+                "作废快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(Map.of("flyId", realFlyId, "status", "CANCELLED", "success", true));
     }
 
@@ -603,6 +618,9 @@ public class FlyOrderController {
 
         jdbcTemplate.update("DELETE FROM fly_order_detail WHERE fly_id = ?", realFlyId);
         jdbcTemplate.update("DELETE FROM fly_order WHERE fly_id = ?", realFlyId);
+        flyLog(com.erp.system.OperationAction.DELETE,
+                String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
+                "删除快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(Map.of("flyId", realFlyId, "success", true));
     }
 
@@ -621,6 +639,7 @@ public class FlyOrderController {
                 if (r != null && Boolean.TRUE.equals(r.get("success"))) ok++; else fail++;
             } catch (Exception e) { fail++; }
         }
+        flyLog(com.erp.system.OperationAction.AUDIT, "", "批量审核快速开单 " + ids.size() + " 张");
         return ApiResponse.ok(Map.of("success", true, "ok", ok, "fail", fail, "message", "成功审核 " + ok + " 张" + (fail > 0 ? "，失败 " + fail + " 张" : "")));
     }
 
@@ -639,6 +658,7 @@ public class FlyOrderController {
                 if (r != null && Boolean.TRUE.equals(r.get("success"))) ok++; else fail++;
             } catch (Exception e) { fail++; }
         }
+        flyLog(com.erp.system.OperationAction.UN_AUDIT, "", "批量反审核快速开单 " + ids.size() + " 张");
         return ApiResponse.ok(Map.of("success", true, "ok", ok, "fail", fail, "message", "成功取消审核 " + ok + " 张" + (fail > 0 ? "，失败 " + fail + " 张" : "")));
     }
 
@@ -657,6 +677,7 @@ public class FlyOrderController {
                 if (r != null && Boolean.TRUE.equals(r.get("success"))) ok++; else fail++;
             } catch (Exception e) { fail++; }
         }
+        flyLog(com.erp.system.OperationAction.DELETE, "", "批量删除快速开单 " + ids.size() + " 张");
         return ApiResponse.ok(Map.of("success", true, "ok", ok, "fail", fail, "message", "成功删除 " + ok + " 张" + (fail > 0 ? "，失败 " + fail + " 张" : "")));
     }
 
@@ -680,6 +701,7 @@ public class FlyOrderController {
                 case "DRAFT" -> "待审核"; case "APPROVED" -> "已审核"; case "CANCELLED" -> "已作废"; default -> st;
             });
         }
+        flyLog(com.erp.system.OperationAction.EXPORT, "", "导出快速开单");
         return ApiResponse.ok(rows);
     }
 
@@ -705,6 +727,11 @@ public class FlyOrderController {
     }
 
     // ====================== 工具方法 ======================
+
+    /** PRD-31 快速开单操作日志：统一走 OperationLogService。注意：日志文案不得包含采购价/利润等敏感数值。 */
+    private void flyLog(String action, String flyNo, String detail) {
+        opLog.log("sales.flyOrder", action, "fly_order", null, flyNo, detail);
+    }
 
     private static String str(Object o) { return o == null ? "" : String.valueOf(o); }
 

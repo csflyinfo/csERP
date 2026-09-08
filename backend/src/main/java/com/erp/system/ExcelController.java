@@ -19,9 +19,17 @@ import java.util.*;
 public class ExcelController {
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.erp.system.OperationLogService opLog;
 
-    public ExcelController(JdbcTemplate jdbcTemplate) {
+    public ExcelController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
+        this.opLog = opLog;
+    }
+
+    /** PRD-31 导入导出模块码归因：基础资料模块归一到 base.*（有中文名），其余保留原码。 */
+    private static String excelModule(String moduleCode) {
+        if (moduleCode == null) return "system.excel";
+        return "base." + moduleCode;
     }
 
     /**
@@ -37,6 +45,9 @@ public class ExcelController {
 
         List<List<String>> head = buildHead(moduleCode);
         List<List<Object>> body = buildBody(data, moduleCode);
+
+        opLog.log(excelModule(moduleCode), com.erp.system.OperationAction.EXPORT, null,
+                "导出 " + moduleCode + "，共 " + data.size() + " 行");
 
         EasyExcel.write(response.getOutputStream())
                 .sheet(moduleCode)
@@ -90,6 +101,9 @@ public class ExcelController {
             taskNo, moduleCode, taskName != null ? taskName : moduleCode + "导入", file.getOriginalFilename(), success, failed,
             failed > 0 ? "成功" + success + "行，失败" + failed + "行" : "导入完成，共" + success + "行"
         );
+
+        opLog.log(excelModule(moduleCode), com.erp.system.OperationAction.IMPORT, taskNo,
+                "导入 " + moduleCode + "（文件 " + file.getOriginalFilename() + "）：成功 " + success + " 行，失败 " + failed + " 行");
 
         return ApiResponse.ok(Map.of(
             "taskNo", taskNo,

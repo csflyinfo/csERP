@@ -69,6 +69,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         request.setAttribute("currentUsername", username);
         request.setAttribute("currentRoleCode", roleCode);
+        // 供操作日志读取真实操作人 ID 与姓名（RequestContextFilter 消费）
+        request.setAttribute("currentUserId", String.valueOf(claims.getOrDefault("userId", "")));
+        request.setAttribute("currentDisplayName", String.valueOf(claims.getOrDefault("displayName", "")));
 
         // 把角色写入 Spring Security 上下文，供 authorizeHttpRequests 授权规则使用
         List<SimpleGrantedAuthority> authorities = roleCode == null || roleCode.isBlank()

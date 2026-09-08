@@ -19,6 +19,8 @@ import DamageDrawer from '../components/DamageDrawer.vue'
 import BaseInfoDrawer from '../components/BaseInfoDrawer.vue'
 import PriceAdjustDrawer from '../components/PriceAdjustDrawer.vue'
 import BillDetailDrawer from '../components/BillDetailDrawer.vue'
+import OperationLogTimeline from '../components/OperationLogTimeline.vue'
+import OperationLogDetailDrawer from '../components/OperationLogDetailDrawer.vue'
 import ImportDialog from '../components/ImportDialog.vue'
 import { IMPORT_PRESETS, MODULE_DEFAULT_IMPORT, MODULE_IMPORT_MENU } from '../importPresets.js'
 import { get, post, upload, downloadBlob, getBlob, saveBlobFile, saveTextFile } from '../api/client.js'
@@ -1519,6 +1521,160 @@ function closeBillDetail() {
   billDetailDrawer.value = { ...billDetailDrawer.value, visible: false }
 }
 
+// ===== PRD-31 操作日志：单据操作记录时间线 + 日志详情抽屉 + 导出/打印打点 =====
+// 可查看操作记录的单据：前端 moduleCode → 后端 bizType（PRD-31 铺开：采购/销售/库存/财务/基础资料全量）。
+const BIZ_TIMELINE_MAP = {
+  // 采购
+  purchaseOrder: 'purchase_order',
+  purchaseInbound: 'purchase_receipt',
+  purchaseReceipt: 'purchase_receipt',
+  purchaseReturn: 'purchase_return',
+  purchaseReturnApply: 'purchase_return',
+  purchaseReturnOutbound: 'purchase_return',
+  // 销售
+  salesOrder: 'sales_order',
+  salesOutbound: 'sales_outbound',
+  salesReceipt: 'sales_receipt',
+  salesReturn: 'sales_return',
+  salesReturnInbound: 'sales_return',
+  rejectInbound: 'reject_inbound',
+  quickOrder: 'fly_order',
+  // 库存
+  otherInbound: 'other_inbound',
+  otherOutbound: 'other_outbound',
+  damage: 'damage',
+  stockTake: 'stock_take',
+  transferApply: 'transfer',
+  transferOutbound: 'transfer',
+  transferInbound: 'transfer',
+  // 财务
+  receiptPayment: 'fin_receipt',
+  paymentModule: 'fin_payment',
+  financeExpense: 'fin_expense',
+  // 基础资料（按编码留痕）
+  goods: 'base_goods',
+  customer: 'base_customer',
+  supplier: 'base_supplier',
+  warehouse: 'base_warehouse',
+}
+// 前端 moduleCode → 后端点分模块码（打点归因用；未配置的回落 moduleCode）
+const OP_MODULE_CODE = {
+  purchaseOrder: 'purchase.order', purchaseInbound: 'purchase.inbound',
+  purchaseReceipt: 'purchase.receipt',
+  purchaseReturn: 'purchase.return', purchaseReturnApply: 'purchase.return.apply', purchaseReturnOutbound: 'purchase.return.outbound',
+  salesOrder: 'sales.order', salesOutbound: 'sales.outbound',
+  salesReceipt: 'sales.receipt', salesReturn: 'sales.return', salesReturnInbound: 'sales.return.inbound',
+  rejectInbound: 'sales.reject', quickOrder: 'sales.flyOrder',
+  otherInbound: 'inventory.other-in', otherOutbound: 'inventory.other-out',
+  damage: 'inventory.damage', stockTake: 'inventory.stock-take',
+  transferApply: 'transfer.apply', transferOutbound: 'transfer.outbound', transferInbound: 'transfer.inbound',
+  goods: 'base.goods', customer: 'base.customer', supplier: 'base.supplier', warehouse: 'base.warehouse',
+  receiptPayment: 'finance.receipt', paymentModule: 'finance.payment', financeExpense: 'finance.expense',
+}
+// 从列表行取业务单号 / 主键：各单据字段名不一，按候选顺序取，最后回落首列（单据列表首列即单号）。
+function rowBizNo(row) {
+  const raw = row?._raw || {}
+  return raw.orderNo || raw.receiptNo || raw.inboundNo || raw.outboundNo || raw.returnNo
+    || raw.rejectNo || raw.applyNo || raw.damageNo || raw.sheetNo || raw.expenseNo || raw.paymentNo
+    || raw.flyNo || raw.billNo || raw.goodsCode || raw.customerCode || raw.supplierCode || raw.warehouseCode
+    || row?.c0 || ''
+}
+function rowBizId(row) {
+  const raw = row?._raw || {}
+  return raw.orderId || raw.receiptId || raw.inboundId || raw.outboundId || raw.returnId
+    || raw.applyId || raw.damageId || raw.sheetId || raw.expenseId || raw.paymentId || raw.billId
+    || raw.goodsId || raw.customerId || raw.supplierId || raw.warehouseId || ''
+}
+// 单据操作记录时间线
+const timelineDrawer = ref({ visible: false, title: '操作记录', bizType: '', bizNo: '', bizId: '' })
+function openTimeline(row) {
+  const bizType = BIZ_TIMELINE_MAP[moduleCode.value]
+  const bizNo = rowBizNo(row)
+  const bizId = rowBizId(row)
+  if (!bizType || !bizNo) { show('该单据暂无操作记录入口'); return }
+  timelineDrawer.value = {
+    visible: true,
+    title: `${config.value.title}操作记录`,
+    bizType, bizNo: String(bizNo), bizId: bizId ? String(bizId) : '',
+  }
+}
+function closeTimeline() { timelineDrawer.value = { ...timelineDrawer.value, visible: false } }
+
+// 管理端日志详情抽屉
+const logDetailDrawer = ref({ visible: false, logId: '' })
+function openLogDetail(row) {
+  const logId = row?._raw?.logId
+  if (!logId) { show('无法定位日志ID'); return }
+  logDetailDrawer.value = { visible: true, logId: String(logId) }
+}
+function closeLogDetail() { logDetailDrawer.value = { visible: false, logId: '' } }
+
+// 手动清理：二次确认后调后端按保留天数删除
+async function manualCleanup() {
+  if (!confirm('确认按「保留天数」参数立即清理过期操作日志 / 登录日志？\n\n此操作不可恢复。')) return
+  try {
+    const r = await post(moduleApis.log.manualCleanup, {})
+    show(`清理完成：操作日志删除 ${r?.opDeleted ?? 0} 条，登录日志删除 ${r?.loginDeleted ?? 0} 条`)
+    await loadRows()
+  } catch (e) { show('清理失败：' + (e.message || '未知错误')) }
+}
+
+// 操作/登录日志导出：后端按筛选返回 JSON（上限 5000），前端转 CSV 下载
+async function exportLogCsv() {
+  const api = moduleApis[moduleCode.value]
+  if (!api?.exportJson) { show('该日志暂不支持导出'); return }
+  try {
+    const rows = await post(api.exportJson, { pageNo: 1, pageSize: 5000, filters: { ...queryFilters.value } })
+    const list = Array.isArray(rows) ? rows : []
+    if (list.length === 0) { show('无数据可导出'); return }
+    const cols = moduleConfigs[moduleCode.value]?.columns?.filter(t => !/操作/.test(t)) || Object.keys(list[0])
+    const csv = toCsv(list, cols)
+    saveTextFile(`${config.value.title}_导出_${Date.now()}.csv`, '﻿' + csv, 'text/csv;charset=UTF-8')
+    show(`${config.value.title}导出成功：${list.length} 条`)
+  } catch (e) { show('导出失败：' + (e.message || '未知错误')) }
+}
+function toCsv(list, titles) {
+  const head = titles.map(t => csvEscape(t)).join(',')
+  const body = list.map(r => titles.map(t => csvEscape(valueForLogTitle(t, r))).join(',')).join('\r\n')
+  return head + '\r\n' + body
+}
+function csvEscape(v) {
+  if (v == null) return ''
+  const s = String(v)
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s
+}
+// 日志导出按中文列标题取值（复用 EXACT_TITLE_MAP 映射）
+function valueForLogTitle(title, record) {
+  // 直接用映射后的驼峰 key 取值；这里简化：从 record 找 valueForTitle 同源逻辑
+  const map = {
+    '操作时间': r => r.operateAt, '登录时间': r => r.loginAt, '登出时间': r => r.logoutAt,
+    '操作人': r => r.operatorName, '账号': r => r.account, '姓名': r => r.userName,
+    '模块': r => r.moduleName || r.moduleCode, '动作': r => r.actionName || r.action,
+    '业务号': r => r.bizNo, '结果': r => (r.result === 'FAIL' || r.loginResult === 'FAIL' ? '失败' : '成功'),
+    '敏感': r => (r.sensitive === 'Y' ? '敏感' : '普通'), '耗时': r => r.costTimeMs,
+    'IP': r => r.requestIp || r.ip, '操作内容': r => r.operationContent || r.detail,
+    '应用': r => r.appType, '失败原因': r => r.failReason,
+  }
+  const fn = map[title]
+  return fn ? fn(record) ?? '' : ''
+}
+
+// 导出/打印 fire-and-forget 打点（失败静默，不阻塞用户操作；仅业务模块触发）
+function pingExport() {
+  if (moduleCode.value === 'log' || moduleCode.value === 'loginLog') return
+  const f = queryFilters.value || {}
+  const filterText = Object.entries(f).filter(([, v]) => v != null && v !== '').map(([k, v]) => `${k}:${v}`).join('，')
+  post(moduleApis.log.pingExport, { module: OP_MODULE_CODE[moduleCode.value] || moduleCode.value, filterText }).catch(() => {})
+}
+function pingPrint(row) {
+  const bizNo = rowBizNo(row)
+  post(moduleApis.log.print, {
+    module: OP_MODULE_CODE[moduleCode.value] || moduleCode.value,
+    bizType: BIZ_TIMELINE_MAP[moduleCode.value] || null,
+    bizNo: bizNo ? String(bizNo) : null,
+  }).catch(() => {})
+}
+
 const importFile = ref(null)
 
 async function uploadImport() {
@@ -1677,6 +1833,17 @@ function confirmHintOf(action) {
 
 async function handleAction(action, row = null) {
   const actionStr = String(action || '')
+
+  // PRD-31 日志模块：详情 / 立即清理 / 导出（JSON→CSV）/ 刷新 走专用流程（不经过通用 ?id= 详情）
+  if (moduleCode.value === 'log' || moduleCode.value === 'loginLog') {
+    if (actionStr === '详情' || actionStr === '查看') {
+      if (moduleCode.value === 'log' && row) { openLogDetail(row) } else { show('登录日志无详情，仅可查询与导出') }
+      return
+    }
+    if (actionStr === '立即清理') { await manualCleanup(); return }
+    if (/导出/.test(actionStr)) { await exportLogCsv(); return }
+    if (/刷新/.test(actionStr)) { await loadRows(); show(`${config.value.title}已刷新`); return }
+  }
 
   // 商品模块：新增/编辑走大抽屉，批量编辑走批量弹窗
   if (moduleCode.value === 'goods') {
@@ -2266,6 +2433,7 @@ async function handleAction(action, row = null) {
       show(`${config.value.title}文件下载已开始`)
     }
   } else if (/导出/.test(action)) {
+    pingExport()  // PRD-31 导出留痕（fire-and-forget）
     // 飞单导出：主单+明细合并导出
     if (moduleCode.value === 'flyOrder') {
       try {
@@ -2323,6 +2491,7 @@ async function handleAction(action, row = null) {
       }
     }
   } else if (/打印/.test(action)) {
+    pingPrint(row)  // PRD-31 打印留痕（fire-and-forget）
     show(`${config.value.title}打印预览已打开`)
   } else if (/字段设置/.test(action)) {
     openFieldDialog()
@@ -2825,8 +2994,14 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
             <span v-else style="color:#909399">{{ row[col.key] || 0 }}</span>
           </span>
           <span v-else-if="/操作/.test(col.title)">
+            <!-- PRD-31 采购/销售订单：查看本单据操作记录时间线（独立于下方状态化操作，始终可见） -->
+            <button v-if="BIZ_TIMELINE_MAP[moduleCode]" class="link link-btn" @click="openTimeline(row)">记录</button>
+            <!-- PRD-31 操作日志：行内"详情"打开改前改后抽屉 -->
+            <template v-if="moduleCode === 'log'">
+              <button class="link link-btn" @click="openLogDetail(row)">详情</button>
+            </template>
             <!-- 价格组：编辑 + 启用/停用（互斥） -->
-            <template v-if="moduleCode === 'priceGroup'">
+            <template v-else-if="moduleCode === 'priceGroup'">
               <button class="link link-btn" @click="handleAction('编辑', row)">编辑</button>
               <button v-if="!isEnabled(row)" class="link link-btn" @click="togglePriceGroup(row, true)">启用</button>
               <button v-else class="link link-btn danger-link" @click="togglePriceGroup(row, false)">停用</button>
@@ -3461,6 +3636,23 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     :title="billDetailDrawer.title"
     :data="billDetailDrawer.data"
     @close="closeBillDetail"
+  />
+
+  <!-- PRD-31 单据操作记录时间线（订单列表"记录"按钮） -->
+  <OperationLogTimeline
+    :visible="timelineDrawer.visible"
+    :title="timelineDrawer.title"
+    :biz-type="timelineDrawer.bizType"
+    :biz-no="timelineDrawer.bizNo"
+    :biz-id="timelineDrawer.bizId"
+    @close="closeTimeline"
+  />
+
+  <!-- PRD-31 操作日志详情抽屉（日志列表"详情"按钮，仅管理员） -->
+  <OperationLogDetailDrawer
+    :visible="logDetailDrawer.visible"
+    :log-id="logDetailDrawer.logId"
+    @close="closeLogDetail"
   />
 
   <!-- 价格组关联客户弹窗 -->
