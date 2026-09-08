@@ -140,14 +140,46 @@ public final class TmsUtil {
         return "";
     }
 
-    /** 写操作日志（复用 sys_operation_log_runtime）。 */
+    /**
+     * 统一日志服务（PRD-31）。由 {@link TmsLogBridge} 在 Spring 启动时注入；
+     * 为空（极早期启动 / 无容器单测）时回落旧的直写 INSERT，保证不丢日志。
+     */
+    private static volatile com.erp.system.OperationLogService opLogService;
+
+    /** 供 {@link TmsLogBridge} 注入统一日志服务。 */
+    public static void initLogService(com.erp.system.OperationLogService service) {
+        opLogService = service;
+    }
+
+    /**
+     * 写操作日志。TMS/WMS 统一走 {@link com.erp.system.OperationLogService}（真实操作人/IP/耗时/中文名/
+     * 单据时间线聚合），调用点签名保持不变；服务不可用时兜底直写。
+     */
     public static void log(JdbcTemplate jdbc, String moduleCode, String action, String bizNo, String detail) {
+        com.erp.system.OperationLogService svc = opLogService;
+        if (svc != null) {
+            try {
+                svc.log(moduleCode, action, bizTypeOf(moduleCode), null, bizNo, detail);
+                return;
+            } catch (Exception ignored) {
+                // 落到下方兜底直写
+            }
+        }
         try {
             jdbc.update("""
                     INSERT INTO sys_operation_log_runtime(log_id, operate_at, operator_name, module_code, action, biz_no, result, detail)
                     VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, 'SUCCESS', ?)
                     """, uuid("LOG"), currentUser(), moduleCode, action, bizNo, detail);
         } catch (Exception ignored) {}
+    }
+
+    /** 模块码 → 单据类型（点分/连字符归一为下划线，用于按单据聚时间线与管理端过滤），如 tms.app.delivery→tms_app_delivery。 */
+    public static String bizTypeOf(String moduleCode) {
+        if (moduleCode == null) return null;
+        String b = moduleCode.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "_");
+        if (b.startsWith("_")) b = b.substring(1);
+        if (b.endsWith("_")) b = b.substring(0, b.length() - 1);
+        return b.isEmpty() ? null : b;
     }
 
     public static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");

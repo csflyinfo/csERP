@@ -105,6 +105,37 @@ public final class OperationModule {
         NAMES.put("report.export", "报表中心");
         NAMES.put("system.excel", "导入导出");
         NAMES.put("sales.flyOrder", "快速开单");
+
+        // TMS 调度/司机配送（PRD-31：TMS/WMS 日志委托统一服务后补中文名）
+        NAMES.put("tms.dispatch", "调度派车");
+        NAMES.put("tms.app.delivery", "司机配送");
+        NAMES.put("tms.app.arrive", "司机到店");
+        NAMES.put("tms.sign", "签收核验");
+        NAMES.put("tms.customer-reject", "客户拒收");
+        NAMES.put("tms.app.customer-reject", "司机客户拒收");
+        NAMES.put("tms.exception", "异常上报");
+        NAMES.put("tms.app.exception", "司机异常上报");
+        NAMES.put("tms.reschedule-return", "改约退货");
+        NAMES.put("tms.app.reschedule-return", "司机改约退货");
+        NAMES.put("tms.app.return", "司机退货");
+        NAMES.put("tms.app.warehouse-return", "仓库退货确认");
+        NAMES.put("tms.return-dispatch", "退货调度");
+        NAMES.put("tms.settlement", "司机交账");
+        NAMES.put("tms.app.settlement", "司机交账");
+        NAMES.put("tms.store-location", "门店定位");
+        NAMES.put("tms.app.store-location", "门店定位上报");
+        NAMES.put("tms.driverFundAccount", "司机资金账户");
+        NAMES.put("tms.storeSettle", "门店结算");
+
+        // WMS 仓储作业
+        NAMES.put("wms.container", "容器管理");
+        NAMES.put("wms.base", "仓储基础资料");
+        NAMES.put("wms.inbound", "入库作业");
+        NAMES.put("wms.move", "移库作业");
+        NAMES.put("wms.freeze", "库存冻结");
+        NAMES.put("wms.adjust", "库存调整");
+        NAMES.put("wms.damage", "仓储报损");
+        NAMES.put("wms.stocktake", "仓储盘点");
     }
 
     private OperationModule() {}

@@ -83,6 +83,62 @@ public final class OperationAction {
         NAMES.put("WMS_IDEMPOTENT", "仓库幂等回执");
         NAMES.put("DRIVER_COLLECT", "司机提货");
         NAMES.put("CHANGE_RETURN_TYPE", "变更退货类型");
+
+        // TMS 调度/司机配送动作（PRD-31：TMS 日志委托统一服务后补中文名）
+        NAMES.put("ASSIGN", "分配司机");
+        NAMES.put("ACCEPT", "接单");
+        NAMES.put("RETURN_POINT", "退回配送点");
+        NAMES.put("SORT", "分拣");
+        NAMES.put("LOADING_START", "开始装车");
+        NAMES.put("LOADING_CONFIRM", "装车确认");
+        NAMES.put("DEPART", "发车");
+        NAMES.put("ARRIVE", "到达");
+        NAMES.put("VERIFY", "核验");
+        NAMES.put("BATCH_VERIFY", "批量核验");
+        NAMES.put("RECEIVE", "领取/收货");
+        NAMES.put("COMPLETE", "完成");
+        NAMES.put("HANDLE", "接手处理");
+        NAMES.put("CHECK", "清点核对");
+        NAMES.put("REDISPATCH", "重新调度");
+        NAMES.put("PHOTO", "上传照片");
+        NAMES.put("ARRANGE", "安排退货");
+        NAMES.put("CANCEL_ARRANGE", "取消安排");
+        NAMES.put("LINK", "关联单据");
+        NAMES.put("DISPUTE", "异议申诉");
+        NAMES.put("APPROVE", "审批通过");
+        NAMES.put("APPROVE_FAIL", "审批失败");
+        NAMES.put("SETTLE", "结算");
+        NAMES.put("OFFSET_FAIL", "抵扣失败");
+        NAMES.put("RECONCILE_REMAIN", "尾款核销");
+        NAMES.put("RETURN_SKIP", "跳过退货");
+        NAMES.put("AR_PARTIAL", "部分核销应收");
+        NAMES.put("AR_WRITEOFF_FAIL", "应收核销失败");
+
+        // WMS 仓储作业动作
+        NAMES.put("SAVE_ZONE", "保存库区");
+        NAMES.put("TOGGLE_ZONE", "冻结/解冻库区");
+        NAMES.put("DELETE_ZONE", "删除库区");
+        NAMES.put("SAVE_BIN", "保存库位");
+        NAMES.put("IMPORT_BIN", "导入库位");
+        NAMES.put("TOGGLE_BIN", "启用/停用库位");
+        NAMES.put("DELETE_BIN", "删除库位");
+        NAMES.put("SAVE_COLLECT_ZONE", "保存集货区");
+        NAMES.put("TOGGLE_COLLECT_ZONE", "切换集货区");
+        NAMES.put("DELETE_COLLECT_ZONE", "删除集货区");
+        NAMES.put("IMPORT_COLLECT_ZONE", "导入集货区");
+        NAMES.put("SAVE_COLLECT_BIN", "保存集货位");
+        NAMES.put("TOGGLE_COLLECT_BIN", "切换集货位");
+        NAMES.put("LOCK_COLLECT_BIN", "锁定集货位");
+        NAMES.put("RELEASE_COLLECT_BIN", "释放集货位");
+        NAMES.put("DELETE_COLLECT_BIN", "删除集货位");
+        NAMES.put("IMPORT_COLLECT_BIN", "导入集货位");
+        NAMES.put("CREATE_MANUAL", "手工建单");
+        NAMES.put("FINISH_RECEIVE", "完成收货");
+        NAMES.put("RECHECK_OK", "复检合格");
+        NAMES.put("RECHECK_NG", "复检不合格");
+        NAMES.put("PUTAWAY", "上架");
+        NAMES.put("AUTO_AUDIT_SALES_RETURN", "销售退货自动审核");
+        NAMES.put("FREEZE", "冻结");
     }
 
     private OperationAction() {}
