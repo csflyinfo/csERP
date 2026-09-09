@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 public class PermissionService {
 
     private static final String REQUEST_ATTR_FUNC_CODES = "rbac.funcCodes";
+    private static final String REQUEST_ATTR_FIELD_CODES = "rbac.fieldCodes";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -46,6 +47,53 @@ public class PermissionService {
         Set<String> roleCodes = p.roleCodes();
         if (roleCodes == null || roleCodes.isEmpty()) return Set.of();
         return loadFuncCodes(roleCodes);
+    }
+
+    /** 当前用户是否有某敏感字段的查看权限（sys_role_field_rel，SYS_ADMIN 短路）。 */
+    public boolean hasField(String fieldCode) {
+        if (fieldCode == null || fieldCode.isBlank()) return true;
+        CurrentUser.Principal p = CurrentUser.get();
+        if (p == null) return false;
+        if (p.isSuperAdmin()) return true;
+        if (p.roleCodes() == null || p.roleCodes().isEmpty()) return false;
+        return loadFieldCodes(p.roleCodes()).contains(fieldCode);
+    }
+
+    /** 当前用户已授权的敏感字段编码集合（超管返回空集，由 {@link #hasField} 短路，脱敏器同样跳过）。 */
+    public Set<String> currentFieldCodes() {
+        CurrentUser.Principal p = CurrentUser.get();
+        if (p == null) return Set.of();
+        if (p.isSuperAdmin()) return Set.of();
+        if (p.roleCodes() == null || p.roleCodes().isEmpty()) return Set.of();
+        return loadFieldCodes(p.roleCodes());
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> loadFieldCodes(Set<String> roleCodes) {
+        RequestAttributes attrs = RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            Object cached = attrs.getAttribute(REQUEST_ATTR_FIELD_CODES, RequestAttributes.SCOPE_REQUEST);
+            if (cached instanceof Set<?> set) return (Set<String>) set;
+        }
+        String placeholders = roleCodes.stream().map(c -> "?").collect(Collectors.joining(","));
+        Set<String> result;
+        try {
+            result = Set.copyOf(jdbcTemplate.queryForList(
+                    "SELECT DISTINCT f.field_code FROM sys_role_field_rel rf "
+                            + "JOIN sys_role_runtime r ON r.role_id = rf.role_id "
+                            + "JOIN sys_field_meta f ON f.field_id = rf.field_id "
+                            + "WHERE r.status = 'NORMAL' AND f.status = 'NORMAL' AND r.role_code IN ("
+                            + placeholders + ")",
+                    String.class,
+                    roleCodes.toArray()));
+        } catch (Exception e) {
+            // fail-closed：查库失败按无字段权限处理（脱敏置空）
+            return Collections.emptySet();
+        }
+        if (attrs != null) {
+            attrs.setAttribute(REQUEST_ATTR_FIELD_CODES, result, RequestAttributes.SCOPE_REQUEST);
+        }
+        return result;
     }
 
     @SuppressWarnings("unchecked")

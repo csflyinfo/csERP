@@ -11,12 +11,12 @@
 |---|---|---|---|---|---|---|
 | W1 | **M1 权限底座** | rbac-1-schema → rbac-2-auth | V102 | 3d | 1d | 0.5d |
 | W2 | M1 | rbac-3-meta-sync | — | 2d | 1d（菜单管理页前端在 W3 联调） | 0.5d |
-| W3 | **M2 PC 闭环** | rbac-4-data-scope → rbac-5-system-annotate | V103 | 3d | 2d（用户/角色/菜单管理页） | 1.5d |
-| W4 | M2 | rbac-6-sales-purchase | V104 | 2.5d | 1.5d | 1.5d |
-| W5 | M2 | rbac-7-inv-fin-base → rbac-10-frontend | V105 | 2.5d | 1.5d（指令/动态路由收口） | 1d |
-| W6 | **M3 三端闭环** | rbac-8-pda-login → rbac-9-driver-login | V106、V107 | 4d | APP 5d（可与 W4 起并行） | 3d |
+| W3 | **M2 PC 闭环** | rbac-4-data-scope（含 V103 种子修复） → rbac-5-system-annotate | V103、V104 | 3d | 2d（用户/角色/菜单管理页） | 1.5d |
+| W4 | M2 | rbac-6-sales-purchase | V105 | 2.5d | 1.5d | 1.5d |
+| W5 | M2 | rbac-7-inv-fin-base → rbac-10-frontend | V106 | 2.5d | 1.5d（指令/动态路由收口） | 1d |
+| W6 | **M3 三端闭环** | rbac-8-pda-login → rbac-9-driver-login | V107、V108 | 4d | APP 5d（可与 W4 起并行） | 3d |
 | W7 | 缓冲/回归 | 缺陷修复、存量角色授权演练、上线演练 | — | — | — | — |
-| 上线后 ≥2 周 | **M4 清理** | chore/rbac-cleanup-legacy | V108 | 1d | 1d | 1d |
+| 上线后 ≥2 周 | **M4 清理** | chore/rbac-cleanup-legacy | V109 | 1d | 1d | 1d |
 
 > 单人全栈串行时按"后端+前端+测试"列纵向相加，约 7~8 周；后端 1 人 + 前端/APP 1 人并行约 6 周。APP 工程师在 W4 即可介入（先做登录页，不阻塞后端）。
 
@@ -31,7 +31,7 @@ git checkout main && git pull
 ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大迁移号
 ```
 
-1. 本计划版本号基于 **V101**，RBAC 占 **V102–V108**；开工任一带迁移的分支前必须重新确认最大号，被占则顺延并改《方案》+本文件；
+1. 本计划版本号基于 **V101**，RBAC 占 **V102–V109**（V103 为卡片4 种子修复，后续顺延）；开工任一带迁移的分支前必须重新确认最大号，被占则顺延并改《方案》+本文件；
 2. 在 PRD 索引表登记 PRD-28 与占用区段（项目全局串行资源规则）；
 3. 默认串行开发：同一时间只开一个含 Flyway 迁移的分支；
 4. 涉及 H2 验证前备份 `data/erp-v1.mv.db`；冒烟测试会按单号前缀删单据（见仓库记忆）；
@@ -95,7 +95,9 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 **验收**：《方案》MENU-001~012 的后端部分通过；重启两次库里数据稳定；`/perm/health` 全绿。
 
-### 卡片 4 ｜ `feat/rbac-4-data-scope`（M2，无迁移，约 3d）
+### 卡片 4 ｜ `feat/rbac-4-data-scope`（M2，实际新增 V103 修复迁移，约 3d）
+
+> 落地补充（2026-09-09）：实现类为 `DataScopeService`/`FieldMasker`；新增 `V103__rbac_field_grant_fix.sql`——V102 内置角色字段授权种子误用 `f.field_id IN ('VIEW_*')`（VIEW_* 是 field_code）致 10 组授权 0 行，V103 按 field_code 补齐。后续迁移号整体顺延：卡片5→V104、卡片6→V105、卡片7→V106、卡片9→V107、卡片10→V108、卡片12→V109（RBAC 占用 V102–V109）。
 
 **前置**：卡片 2（CurrentUser）。可与卡片 3 后半并行。
 
@@ -109,7 +111,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 **验收**：销售员只见自己+下级单、只见授权仓库；无 VIEW_COST 时响应里 costPrice=null 且导出同样脱敏。
 
-### 卡片 5 ｜ `feat/rbac-5-system-annotate`（M2，V103，约 2.5d）
+### 卡片 5 ｜ `feat/rbac-5-system-annotate`（M2，V104，约 2.5d）
 
 **前置**：卡片 3、4。**目标**：系统管理模块端到端可用。
 
@@ -118,11 +120,11 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 - [ ] 角色管理三栏页（§10.2）：菜单树（用 grant-tree）、全局功能、字段权限、数据范围；内置角色保护
 - [ ] **模块菜单管理页**（§10.3）：端页签 + 拖拽树 + 编辑面板 + 恢复默认；全部 MENU 验收用例
 - [ ] 个人中心、修改密码
-- [ ] V103 仅在需要给内置角色补默认授权时才存在（纯插关联表数据；无则不建）
+- [ ] V104 仅在需要给内置角色补默认授权时才存在（纯插关联表数据；无则不建）
 
 **验收**：MENU-001~012 端到端通过；建一个"销售主管"角色配权后用其登录验证菜单裁剪。
 
-### 卡片 6 ｜ `feat/rbac-6-sales-purchase`（M2，V104，约 4d，最高优先业务卡）
+### 卡片 6 ｜ `feat/rbac-6-sales-purchase`（M2，V105，约 4d，最高优先业务卡）
 
 - [ ] sales/purchase 全部 Controller 补注解（写操作必须，查询补 view）
 - [ ] 列表/详情全部接 DataScopeHelper；价格/成本/毛利/采购价字段脱敏
@@ -133,7 +135,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 **验收**：《方案》GLOBAL-001~004、DATA-007~009 及销售采购相关 40 条用例通过。
 
-### 卡片 7 ｜ `feat/rbac-7-inv-fin-base`（M2，V105，约 3d）
+### 卡片 7 ｜ `feat/rbac-7-inv-fin-base`（M2，V106，约 3d）
 
 - [ ] inventory/finance/base 模块补注解 + 数据权限（库存强制按仓库；财务金额脱敏；基础档案按分类/品牌/供应商）
 - [ ] 前端按钮/列权限收尾
@@ -149,7 +151,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 - [ ] 403/401 拦截分流；权限集 Pinia 缓存与重拉
 - [ ] 合并门槛：grep 无 ADMIN 硬编码残留
 
-### 卡片 9 ｜ `feat/rbac-8-pda-login`（M3，V106，约 5d）
+### 卡片 9 ｜ `feat/rbac-8-pda-login`（M3，V107，约 5d）
 
 - [ ] `POST /wms/app/login`：工号+密码+选仓；JWT 带 `appType=WMS_PDA/warehouseId`；未带该 appType 的旧 token 访问 `/wms/app/*` 返回 401
 - [ ] `WmsAppController` 全部操作改读 CurrentUser，create_by/operator 落到自然人
@@ -158,7 +160,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 - [ ] Flutter 登录页 + 首页按 menus 渲染 + `hasPermission` 包装
 - [ ] PDA 验收 PDA-001~007
 
-### 卡片 10 ｜ `feat/rbac-9-driver-login`（M3，V107，约 5d，与卡片 9 可并行）
+### 卡片 10 ｜ `feat/rbac-9-driver-login`（M3，V108，约 5d，与卡片 9 可并行）
 
 - [ ] 司机登录增强：`base_employee(is_deliveryman=TRUE,status=NORMAL)` 首次登录自动建用户绑 TMS_DRIVER（§5.4）；离职/取消标记拒绝登录
 - [ ] 短信验证码表 `sys_sms_code`（5 分钟有效、5 次失败锁 15 分钟）；**dev 保留 888888 回落，prod 启动强制校验短信配置为空则拒启**
@@ -174,7 +176,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 - [ ] 上线首日：管理员现场按角色矩阵逐角色补授权；公告默认权限变化
 - [ ] prod 短信通道配置确认（否则卡片 10 的启动校验会拦停）
 
-### 卡片 12 ｜ `chore/rbac-cleanup-legacy`（M4，V108，上线观察 ≥2 周后）
+### 卡片 12 ｜ `chore/rbac-cleanup-legacy`（M4，V109，上线观察 ≥2 周后）
 
 - [ ] 删 `SystemController` 硬编码菜单树与分支逻辑、前端 `fallback-menus.js`
 - [ ] 评估并下线 `sys_user_runtime.role_name`、`sys_role_runtime.menu_scope/field_scope/data_scope` 冗余列（**H2 不支持 DROP COLUMN IF EXISTS，先确认两库语法，宁可保留不删**）

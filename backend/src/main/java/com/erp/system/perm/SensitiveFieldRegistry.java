@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 敏感字段注册表（PRD-28 §6.4.4）。
@@ -23,7 +24,9 @@ import java.util.Set;
 public class SensitiveFieldRegistry {
 
     private final Map<String, Set<String>> keysByField = new LinkedHashMap<>();
-    private final Map<String, String> keyToField = new LinkedHashMap<>();
+    // 大小写不敏感：H2 未加引号的列标签会被驱动返回成大写下划线（如 LATEST_PURCHASE_PRICE），
+    // Java 层手工映射的行又是驼峰，按同一套小写绑定两边都要能命中
+    private final Map<String, String> keyToField = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     private final JdbcTemplate jdbcTemplate;
 
     public SensitiveFieldRegistry(JdbcTemplate jdbcTemplate) {
@@ -51,7 +54,8 @@ public class SensitiveFieldRegistry {
 
     /** 注册全部 26 个字段及其响应 key（卡片4 脱敏器消费；新模块出现新 key 在此追加）。 */
     private void register() {
-        bind("VIEW_SALE_PRICE", "salePrice", "sale_price", "salesPrice", "sales_price");
+        bind("VIEW_SALE_PRICE", "salePrice", "sale_price", "salesPrice", "sales_price",
+                "standardPrice", "standard_price");
         bind("VIEW_SALE_AMOUNT", "saleAmount", "sale_amount", "salesAmount", "sales_amount");
         bind("VIEW_PURCHASE_PRICE", "purchasePrice", "purchase_price", "latestPurchasePrice",
                 "latest_purchase_price", "referencePurchasePrice", "reference_purchase_price",
@@ -63,9 +67,11 @@ public class SensitiveFieldRegistry {
         bind("VIEW_PROFIT", "grossProfit", "gross_profit", "grossProfitRate",
                 "gross_profit_rate", "profitRate", "profit_rate");
         bind("VIEW_MIN_PRICE", "minPrice", "min_price", "lowestPrice", "lowest_price",
-                "minimumSalePrice", "minimum_sale_price", "floorPrice", "floor_price");
+                "minimumSalePrice", "minimum_sale_price", "minSalePrice", "min_sale_price",
+                "floorPrice", "floor_price");
         bind("VIEW_SUGGEST_RETAIL_PRICE", "retailPrice", "retail_price", "suggestRetailPrice",
-                "suggest_retail_price", "marketPrice", "market_price");
+                "suggest_retail_price", "suggestedRetailPrice", "suggested_retail_price",
+                "marketPrice", "market_price");
         bind("VIEW_PRICE_GROUP", "groupPrice", "group_price", "priceGroupPrice",
                 "price_group_price", "deliveryPrice", "delivery_price");
         bind("VIEW_CUSTOMER_PRICE", "customerPrice", "customer_price", "agreedPrice", "agreed_price");

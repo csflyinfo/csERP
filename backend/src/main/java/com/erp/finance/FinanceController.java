@@ -38,18 +38,29 @@ public class FinanceController {
 
     private final com.erp.finance.gl.GlHookService glHooks;
 
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
+
     public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                              com.erp.system.OperationLogService opLog,
-                             com.erp.finance.gl.GlHookService glHooks) {
+                             com.erp.finance.gl.GlHookService glHooks,
+                             com.erp.common.security.datascope.DataScopeService dataScope,
+                             com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
     }
 
     @PostMapping("/ar/page")
     public ApiResponse<PageResult<Map<String, Object>>> arPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        // 数据范围（PRD-28 §5.3）：客户 + 业务员（应收表无仓库/建档人列）
+        var scope = dataScope.target()
+                .customer("a.customer").salesman("COALESCE(c.salesman, a.salesman)")
+                .build();
         StringBuilder sql = new StringBuilder("""
                 SELECT a.ar_no, a.customer, COALESCE(c.salesman, a.salesman) AS salesman,
                        a.source_bill, a.ar_amount, a.received_amount, a.unreceived_amount,
@@ -60,6 +71,7 @@ public class FinanceController {
                 WHERE 1=1
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        scope.appendTo(sql, args);
         String customer = trimF(filters, "customer", "客户");
         if (!customer.isEmpty()) { sql.append(" AND (a.customer LIKE ? OR c.customer_code LIKE ?)"); args.add("%"+customer+"%"); args.add("%"+customer+"%"); }
         String status = trimF(filters, "status", "核销状态");
@@ -81,6 +93,7 @@ public class FinanceController {
             r.put("reconcileStatusText", rs == null || rs.isEmpty() || "未对账".equals(rs) ? "未对账"
                     : "对账中".equals(rs) ? "对账中" : "已对账".equals(rs) ? "已对账" : rs);
         }
+        fieldMasker.mask(rows);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 

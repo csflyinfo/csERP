@@ -24,17 +24,30 @@ public class OrderController {
     private final com.erp.inventory.service.InventoryCostService inventoryCostService;
     private final com.erp.wms.WmsInboundService wmsInboundService;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
                            com.erp.inventory.service.InventoryCostService inventoryCostService,
                            com.erp.wms.WmsInboundService wmsInboundService,
-                           com.erp.system.OperationLogService opLog) {
+                           com.erp.system.OperationLogService opLog,
+                           com.erp.common.security.datascope.DataScopeService dataScope,
+                           com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
         this.wmsInboundService = wmsInboundService;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 建档人：当前登录用户姓名（数据范围 OWNER/DEFAULT DENY 依赖），无登录上下文回落系统管理员。 */
+    private static String currentCreator() {
+        var p = com.erp.common.security.CurrentUser.get();
+        if (p != null && p.displayName() != null && !p.displayName().isBlank()) return p.displayName();
+        return "系统管理员";
     }
 
     // ============ 销售订单 ============
@@ -69,7 +82,7 @@ public class OrderController {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
                 """,
                 orderId, orderNo, customerName, customerCode, salesman, warehouse,
-                billDate, expectedDelivery, priceGroup, totalAmount, totalAmount, "系统管理员", remark,
+                billDate, expectedDelivery, priceGroup, totalAmount, totalAmount, currentCreator(), remark,
                 warehouse.isBlank() ? null : "通过");
         for (Map<String, Object> d : details) {
             String detailId = "SOD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -109,7 +122,18 @@ public class OrderController {
         // 走 snake_case AS snake_case，让 camelize 正确转成驼峰
         // outbound_count / outbound_audited_count：供前端收敛行内按钮
         //   已生成出库单 → 不显示【生成出库单】；已有已审核出库单（已出库）→ 不显示【反审核】
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行过滤
+        var scope = dataScope.target()
+                .warehouse("so.warehouse").customer("so.customer").salesman("so.salesman")
+                .creator("so.creator_name")
+                .goodsLines("so.order_id", "sales_order_detail", "order_id")
+                .build();
+        List<Object> whereArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, whereArgs);
+        // SELECT 列里的可见行金额子查询参数必须排在 WHERE 参数前（JDBC 按出现顺序绑定）
+        List<Object> selectArgs = new ArrayList<>();
+        StringBuilder q = new StringBuilder("""
                 SELECT so.order_id, so.order_no, so.customer, so.customer_code,
                        so.salesman, so.warehouse, so.bill_date, so.expected_delivery_date,
                        so.price_group_code, so.amount, so.paid_amount, so.unpaid_amount,
@@ -120,11 +144,27 @@ public class OrderController {
                            AS outbound_count,
                        (SELECT COUNT(*) FROM sales_outbound o WHERE o.source_order = so.order_no AND o.status = 'APPROVED')
                            AS outbound_audited_count
-                FROM sales_order so ORDER BY so.create_time DESC, so.order_no DESC
                 """);
+        // 商品范围受限时，主单金额按可见明细行汇总（方案 §5.3.1）
+        if (scope.isGoodsRestricted()) {
+            q.append(", (SELECT COALESCE(SUM(d.amount),0) FROM sales_order_detail d WHERE d.order_id = so.order_id AND ");
+            List<Object> goodsArgs = new ArrayList<>();
+            scope.appendGoodsCodeCondition("d.goods_code", q, goodsArgs);
+            q.append(") AS scoped_amount");
+            selectArgs.addAll(goodsArgs);
+        }
+        q.append(" FROM sales_order so WHERE 1=1").append(scopeSql)
+                .append(" ORDER BY so.create_time DESC, so.order_no DESC");
+        List<Object> queryArgs = new ArrayList<>(selectArgs);
+        queryArgs.addAll(whereArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(q.toString(), queryArgs.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
+            if (scope.isGoodsRestricted() && row.get("scopedAmount") != null) {
+                row.put("amount", row.get("scopedAmount"));
+            }
+            row.remove("scopedAmount");
             String st = String.valueOf(row.getOrDefault("status", ""));
             row.put("statusText", switch (st) {
                 case "PENDING" -> "待审核";
@@ -141,6 +181,7 @@ public class OrderController {
             row.put("creatorInfo", (creator == null ? "" : creator) + " " + (createdAt == null ? "" : createdAt));
             mapped.add(row);
         }
+        fieldMasker.mask(mapped);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
@@ -161,6 +202,7 @@ public class OrderController {
                 SELECT * FROM sales_order_detail WHERE order_id = ? ORDER BY detail_id
                 """, realOrderId);
         head.put("details", details.stream().map(OrderController::camelize).toList());
+        fieldMasker.mask(head);
         // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；销售订单非敏感模块）
         opLog.logView(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.KeyFields.BIZ_SALES_ORDER,
                 realOrderId, str(head.get("orderNo")), false);
@@ -755,7 +797,7 @@ public class OrderController {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
                 """,
                 orderId, orderNo, supplierCode, supplierName, buyer, warehouse,
-                billDate, totalAmount, totalAmount, "系统管理员", remark);
+                billDate, totalAmount, totalAmount, currentCreator(), remark);
         for (Map<String, Object> d : details) {
             String detailId = "POD" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
             jdbcTemplate.update("""
@@ -832,6 +874,7 @@ public class OrderController {
                 SELECT * FROM purchase_order_detail WHERE order_id = ? ORDER BY detail_id
                 """, realOrderId);
         head.put("details", details.stream().map(OrderController::camelize).toList());
+        fieldMasker.mask(head);
         // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；采购订单非敏感模块）
         opLog.logView(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.KeyFields.BIZ_PURCHASE_ORDER,
                 realOrderId, str(head.get("orderNo")), false);

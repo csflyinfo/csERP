@@ -107,6 +107,13 @@
             <artifactId>easyexcel</artifactId>
             <version>3.3.4</version>
         </dependency>
+        <!-- easyexcel 3.3.4 传递的是 commons-io 2.11.0，但其代码已用 2.12+ 的
+             org.apache.commons.io.build.AbstractStreamBuilder，doWrite 直接 NoClassDefFoundError，显式提升 -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.15.1</version>
+        </dependency>
 
         <!-- MinIO: 图片对象存储（签收照/退货照/门店照/交账照） -->
         <dependency>

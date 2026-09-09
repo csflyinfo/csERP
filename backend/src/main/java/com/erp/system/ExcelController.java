@@ -20,10 +20,13 @@ public class ExcelController {
 
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public ExcelController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
+    public ExcelController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
+                           com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
+        this.fieldMasker = fieldMasker;
     }
 
     /** PRD-31 导入导出模块码归因：基础资料模块归一到 base.*（有中文名），其余保留原码。 */
@@ -38,6 +41,8 @@ public class ExcelController {
     @PostMapping("/export/{moduleCode}")
     public void export(@PathVariable String moduleCode, @RequestBody Map<String, Object> params, HttpServletResponse response) throws IOException {
         List<Map<String, Object>> data = queryData(moduleCode, params);
+        // PRD-28 §19 GLOBAL-002：导出链路与页面列表同一套字段脱敏，成本/价格/联系方式无权限即留空
+        fieldMasker.mask(data);
         String fileName = URLEncoder.encode(moduleCode + "_导出_" + System.currentTimeMillis() + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("utf-8");
@@ -173,12 +178,13 @@ public class ExcelController {
         List<List<Object>> result = new ArrayList<>();
         for (Map<String, Object> row : data) {
             result.add(switch (moduleCode) {
-                case "goods" -> List.of(row.get("goods_code"), row.get("goods_name"), row.get("spec"), row.get("category_name"), row.get("brand_name"), row.get("base_unit"), row.get("barcode"), row.get("standard_price"), row.get("latest_purchase_price"), row.get("min_sale_price"), row.get("goods_type"), row.get("shelf_life_days"), row.get("storage_property"), row.get("suggested_retail_price"), row.get("stock_upper_limit"), row.get("stock_lower_limit"), row.get("default_supplier"), row.get("default_warehouse"), row.get("status"));
-                case "customer" -> List.of(row.get("customer_code"), row.get("customer_name"), row.get("channel_type"), row.get("contact_name"), row.get("mobile"), row.get("territory"), row.get("route_line"), row.get("salesman"), row.get("customer_level"), row.get("account_period_type"), row.get("cutoff_day"), row.get("payment_day"), row.get("credit_limit"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
-                case "supplier" -> List.of(row.get("supplier_code"), row.get("supplier_name"), row.get("short_name"), row.get("supplier_type"), row.get("contact_name"), row.get("phone"), row.get("delivery_days"), row.get("settlement_method"), row.get("account_period_days"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
-                case "warehouse" -> List.of(row.get("warehouse_code"), row.get("warehouse_name"), row.get("warehouse_type"), row.get("inventory_type"), row.get("cost_group"), row.get("manager_name"), row.get("status"));
-                case "purchaseOrder" -> List.of(row.get("order_no"), row.get("supplier"), row.get("buyer"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("inbound_amount"), row.get("payment_status"), row.get("arrival_status"), row.get("status"));
-                case "salesOrder" -> List.of(row.get("order_no"), row.get("customer"), row.get("salesman"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("paid_amount"), row.get("unpaid_amount"), row.get("outbound_status"), row.get("sign_status"), row.get("status"));
+                // 用 Arrays.asList：字段脱敏会把无权限的敏感列置 null，List.of 不允许 null 元素
+                case "goods" -> Arrays.asList(row.get("goods_code"), row.get("goods_name"), row.get("spec"), row.get("category_name"), row.get("brand_name"), row.get("base_unit"), row.get("barcode"), row.get("standard_price"), row.get("latest_purchase_price"), row.get("min_sale_price"), row.get("goods_type"), row.get("shelf_life_days"), row.get("storage_property"), row.get("suggested_retail_price"), row.get("stock_upper_limit"), row.get("stock_lower_limit"), row.get("default_supplier"), row.get("default_warehouse"), row.get("status"));
+                case "customer" -> Arrays.asList(row.get("customer_code"), row.get("customer_name"), row.get("channel_type"), row.get("contact_name"), row.get("mobile"), row.get("territory"), row.get("route_line"), row.get("salesman"), row.get("customer_level"), row.get("account_period_type"), row.get("cutoff_day"), row.get("payment_day"), row.get("credit_limit"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
+                case "supplier" -> Arrays.asList(row.get("supplier_code"), row.get("supplier_name"), row.get("short_name"), row.get("supplier_type"), row.get("contact_name"), row.get("phone"), row.get("delivery_days"), row.get("settlement_method"), row.get("account_period_days"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
+                case "warehouse" -> Arrays.asList(row.get("warehouse_code"), row.get("warehouse_name"), row.get("warehouse_type"), row.get("inventory_type"), row.get("cost_group"), row.get("manager_name"), row.get("status"));
+                case "purchaseOrder" -> Arrays.asList(row.get("order_no"), row.get("supplier"), row.get("buyer"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("inbound_amount"), row.get("payment_status"), row.get("arrival_status"), row.get("status"));
+                case "salesOrder" -> Arrays.asList(row.get("order_no"), row.get("customer"), row.get("salesman"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("paid_amount"), row.get("unpaid_amount"), row.get("outbound_status"), row.get("sign_status"), row.get("status"));
                 case "expenseType" -> {
                     String parentCode = row.get("parent_code") == null ? "" : String.valueOf(row.get("parent_code"));
                     String parentName = parentCode.isEmpty() ? "" : expenseNameMap.getOrDefault(parentCode, parentCode);

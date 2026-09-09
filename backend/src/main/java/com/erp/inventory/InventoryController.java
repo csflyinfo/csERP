@@ -24,16 +24,29 @@ import java.util.UUID;
 public class InventoryController {
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public InventoryController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
+    public InventoryController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
+                               com.erp.common.security.datascope.DataScopeService dataScope,
+                               com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
     }
 
     @PostMapping("/balance/page")
     public ApiResponse<PageResult<Map<String, Object>>> balancePage(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：仓库 + 商品分类/品牌（库存表无建档人列，未配范围角色走 1=0 fail-closed）
+        var scope = dataScope.target()
+                .warehouse("b.warehouse").goodsColumn("b.goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         // 按 goods_code + warehouse 聚合到 goods 维度（跨批次合计）
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        String sql = """
                 SELECT b.goods_code, MIN(b.goods_name) AS goods_name, b.warehouse,
                        SUM(b.physical_qty) AS physical_qty, SUM(b.locked_qty) AS locked_qty,
                        SUM(b.frozen_qty) AS frozen_qty, SUM(b.available_qty) AS available_qty,
@@ -49,13 +62,18 @@ public class InventoryController {
                        MIN(g.unit_config) AS unit_config
                 FROM inv_stock_balance b
                 LEFT JOIN base_goods g ON b.goods_code = g.goods_code
-                GROUP BY b.goods_code, b.warehouse
+                WHERE 1=1
+                """ + scopeSql + """
+                 GROUP BY b.goods_code, b.warehouse
                 ORDER BY b.goods_code, b.warehouse
-                """);
+                """;
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, scopeArgs.toArray());
         List<Map<String, Object>> mapped = rows.stream()
                 .map(InventoryController::camelize)
                 .filter(r -> matchesStockFilters(r, request.filters()))
                 .toList();
+        mapped = new ArrayList<>(mapped);
+        fieldMasker.mask(mapped);
         return ApiResponse.ok(pageWithSummary(mapped, request));
     }
 

@@ -97,3 +97,36 @@
 - dev 工具 `PermInventoryDumper`（@Profile("dev")）：每次启动反射全部 Mapping 生成 docs/perm-inventory.md（750 端点；模块/HTTP/路径/Handler/建议功能点编码/归属菜单/动作/注解状态；非标准动作 biz_ 前缀），生产 profile 不加载。
 - 踩坑：①actuator 引入第二个 RequestMappingHandlerMapping（controllerEndpointHandlerMapping），注入必须 @Qualifier("requestMappingHandlerMapping")；②链式 builder 的 page() 返回父目录，`.page().adminOnly()` 会标到根上——新增显式 adminPage()/statePage() 方法（14 个状态机页、3 个专属页已改），首跑曾把 system 根误标 admin_only，重启强制同步自动纠正；③内置角色 role_id 是缩写（R_SAL_CLERK）而 role_code 是 SALES_CLERK，无外键的关联表插入不报错只产生悬空授权，后续卡片造数据先 SELECT role_id；④H2 文件被运行中后端独占，Shell 直连需先停进程（AUTO_SERVER 对非 AUTO_SERVER 打开的库无效）。
 - 验证：mvn -o package BUILD SUCCESS；连续 6 次启动，同步最终 192 菜单/1560 功能点（1516 模块+20 全局+24 显式状态机）/26 字段，第 2 次重启起 0 新增 0 停用（幂等），改名自定义跨重启保留；admin 全量树含三级总账、grant-tree 不含 system.user/role/menu；造 R_SALES_CLERK 测试用户（3 菜单+目录+3 功能）验证 user-tree 只见工作台/销售、perm/mine 恰返回 3 功能码、6 个管理端点全 403、匿名 401、零授权用户空树；改名同名/空名、移动专属页/到根/到 PAGE 下均 400 中文报错；空目录 confirm=false 返回 needConfirm 不落库、confirm=true 执行并在用户树剪枝；批量排序跨父级拒绝同父级成功；单节点/整树恢复默认均回代码值；sys_operation_log_runtime 审计齐全；验证后测试用户/授权/登录日志/临时文件已清理。
+
+### 2026-09-09 卡片4 落地：七维数据权限引擎 + 字段脱敏 + 4 试点列表（feat/rbac-4-data-scope，V103）
+
+**新增代码**
+
+- `common/security/datascope/DataScopeService.java`：七维数据权限引擎（§5.3）。
+  - 流式声明 `dataScope.target().warehouse("so.warehouse").customer(...).supplier(...).salesman(...).owner(...).creator("so.creator_name").goodsColumn("b.goods_code")/goodsLines(主单表达式, 明细表, 明细外键).build()`，输出 `ScopeClause`（SQL 片段 ` AND (...)` + 有序参数，JdbcTemplate 直拼；采购入库走 MyBatis-Plus QueryWrapper，把 `?` 转 `{n}` 占位用 `qw.apply` 注入）。
+  - 解析（请求级缓存 attr `rbac.dataScope`）：多角色 sys_role_data_scope 同维 UNION；sys_user_data_scope 与角色结果 INTERSECT（只减不增，ALL×ids/SELF×ids/regions 均有交叠规则）；sys_user_warehouse 绑定仓强制收窄 WAREHOUSE；PDA token 内 warehouseId 强制本仓（§5.3.3-7）；SYS_ADMIN/无登录人短路。
+  - 旧表存量列存的是名称/编码不是 ID：仓库/客户/供应商/业务员/商品全部翻译成名称子查询（base_warehouse.warehouse_name、base_customer.customer_name[salesman=当前业务员名 / territory 片区]、base_supplier.supplier_name、base_employee.employee_name 递归 parent_salesman 层级≤5、base_goods 按 category_name 子树（parent_id BFS≤10 层）/brand_name）。
+  - 商品维度：行表直接 `goods_code IN (SELECT ... FROM base_goods)`；主单 EXISTS 明细子查询（全部明细不可见则主单隐藏），销售订单另加关联 SUM 子查询用可见明细重算 amount（注意 JDBC 参数绑定顺序：SELECT 子查询参数先于 WHERE）。
+  - 规则语义（验收中校正）：仅"角色零维度配置（且无绑定仓/PDA 强制仓）"才触发 DEFAULT DENY——有建档人列回落 `creator_name=当前用户姓名`，无建档人列 fail-closed `1=0`；目标声明但角色没配的维度按典型角色表的「—」处理＝不加条件，不参与兜底。配置了但解析为空（SELF 未绑员工等）一律 `1=0` fail-closed。
+- `common/security/FieldMasker.java`：Map/List 递归脱敏，按 SensitiveFieldRegistry 的响应 key→field_code 映射，无权限置 null（键保留）；SYS_ADMIN 短路，查库异常 fail-closed；提供 `mask(payload, allowedCodes)` 供无 ThreadLocal 场景复用。
+- `PermissionService` 增加 `hasField/currentFieldCodes`（sys_role_field_rel×sys_field_meta status=NORMAL，请求级缓存 attr `rbac.fieldCodes`，超管返回空集=不脱敏）。
+
+**4 个试点接线**：销售订单（OrderController.salesPage + 销售/采购订单详情脱敏；顺带把销售/采购订单建档人从硬编码"系统管理员"改为当前登录人）、采购入库（PurchaseController.inboundPage，QueryWrapper apply）、库存查询（InventoryController.balancePage，可变 ArrayList 承载过滤结果后脱敏）、应收列表（FinanceController.arPage，业务员列 `COALESCE(c.salesman,a.salesman)`）。通用导出 `ExcelController.export` 查询后立即过脱敏器（GLOBAL-002 导出与页面同一套）。
+
+**V103__rbac_field_grant_fix.sql（修复 V102 种子缺陷）**：V102 的 10 组内置角色字段授权 WHERE 误写 `f.field_id IN ('VIEW_SALE_PRICE',...)`（VIEW_* 是 field_code，field_id 实为 F_SALE_PRICE 等），INSERT...SELECT 静默 0 行——销售主管/销售员/采购主管/采购员/财务出纳/仓库岗/PDA 5 岗/PDA 主管/调度/司机全部零字段授权（仅 4 个 CROSS JOIN 全字段角色不受影响）。V103 按 `f.field_code IN (...)` 用 NOT EXISTS 防重补齐；已对生产影响评估：升级 V102 的环境这些角色本就看不到金额列，修复只会"放开应有权限"，无收窄风险。后续卡片迁移号顺延（卡片5→V104 … 清理卡→V109）。
+
+**配套修复**
+
+- `SensitiveFieldRegistry`：① key 映射表改 `CASE_INSENSITIVE_ORDER`——H2 未加引号列标签驱动返回大写下划线（LATEST_PURCHASE_PRICE），而 Java 手工映射行是驼峰，小写绑定两边漏一边；② 补绑 standard_price→VIEW_SALE_PRICE、min_sale_price→VIEW_MIN_PRICE、suggested_retail_price→VIEW_SUGGEST_RETAIL_PRICE（商品导出列）。
+- `ExcelController.buildBody`：6 个模块的 `List.of(...)` 改 `Arrays.asList(...)`——脱敏后敏感列是 null，`List.of` 抛 NPE 导致导出 500。
+- `pom.xml`：显式锁 `commons-io:2.15.1`。easyexcel 3.3.4 传递 2.11.0 但其 doWrite 已用 2.12+ 的 `org.apache.commons.io.build.AbstractStreamBuilder`，任何真实导出都 NoClassDefFoundError（此前被上面的 NPE 抢先抛出未暴露）。仅版本提升，无新依赖。
+
+**踩坑**
+
+1. INSERT...SELECT 的 WHERE 不匹配时**静默插入 0 行**，Flyway 成功、启动正常，只有矩阵测试抓到"销售员字段集为空"；种子脚本对拍行数不能只看迁移成功。
+2. DEFAULT DENY 首版误按"目标声明但角色缺失的维度"兜底 creator=self，导致只绑了仓库的仓管员在销售单列表 0 行；《方案》§5.3.3-5 原文是"角色**完全未配置任何**数据范围维度"，典型角色表「—」=不限制。
+3. 商品分类勾选父类含全部子类（§10.2），夹具中"食品"是"饮料"父类，配 食品∩A牌 会同时命中 G1(饮料/A) 与 G3(食品/A)——引擎行为正确，是测试期望写错。
+4. EasyExcel 3.x 字符串默认写 inlineStr 不进 sharedStrings.xml，验导出 xlsx 要解 `xl/worksheets/sheet1.xml`；Windows 解压用 `C:/Windows/System32/tar.exe`（bsdtar 认 zip），PATH 里的 GNU tar 和 Git Bash 都不认 zip。
+5. 原生 Windows node 不认 MSYS `/tmp`，临时文件一律放工程目录。
+
+**验证**：H2 先备份 `erp-v1.mv.db.bak-rbac4`；夹具（11 用户/10 角色/8 销售单/2 入库/4 库存/2 应收/4 商品含父子分类）跑 34 项断言全绿——销售单 9 视角矩阵（admin/老板 8、绑定甲仓仓管 4、SELF 销售员 3、SUB_TREE 两级主管 6、分类∩品牌 3、老板∩用户层乙仓收窄 4、采购岗跨维 3、零维度角色 0）、采购入库/库存/应收同构、scoped_amount 可见行重算、无 VIEW_COST 时 costPrice/stockAmount/availableQty=null 而 physicalQty 保留、销售员应收金额字段（V103 修复点）正常、导出 xlsx 无权限不含 12.34/有权限含/非敏感编码列保留、匿名 401；管理端真实库 admin 四列表与商品导出回归正常。夹具与 10 个测试账号、登录/操作日志按 RBAC4/U_R4_ 前缀全部清理（18 张表 COUNT=0），临时 SQL/脚本/xlsx 已删，备份确认无误后删除；后端日志 0 ERROR。

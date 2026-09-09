@@ -53,6 +53,7 @@ public class PurchaseController {
     private final PurchaseReceiptController receiptController;
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
 
     public PurchaseController(JdbcTemplate jdbcTemplate,
                               PurchaseInboundService inboundService,
@@ -60,7 +61,8 @@ public class PurchaseController {
                               InventoryCostService inventoryCostService,
                               PurchaseReceiptController receiptController,
                               com.erp.common.util.BillNoGenerator billNoGen,
-                              com.erp.system.OperationLogService opLog) {
+                              com.erp.system.OperationLogService opLog,
+                              com.erp.common.security.datascope.DataScopeService dataScope) {
         this.jdbcTemplate = jdbcTemplate;
         this.inboundService = inboundService;
         this.inboundDetailService = inboundDetailService;
@@ -68,6 +70,18 @@ public class PurchaseController {
         this.receiptController = receiptController;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+    }
+
+    /** 把 JdbcTemplate 风格的 {@code ?} 片段转成 MyBatis-QueryWrapper.apply 需要的 {0}{1} 占位。 */
+    private static String toMpPlaceholders(String sql) {
+        StringBuilder out = new StringBuilder(sql.length());
+        int idx = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            out.append(c == '?' ? "{" + (idx++) + "}" : c);
+        }
+        return out.toString();
     }
 
     // ========== 采购入库 ==========
@@ -84,9 +98,22 @@ public class PurchaseController {
      */
     @PostMapping("/inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> inboundPage(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：仓库/供应商 + 商品分类/品牌按明细行过滤（pur_inbound 无建档人列）
+        QueryWrapper<PurchaseInbound> qw = new QueryWrapper<PurchaseInbound>().orderByDesc("inbound_no");
+        var scope = dataScope.target()
+                .warehouse("warehouse").supplier("supplier")
+                .goodsLines("inbound_id", "pur_inbound_detail", "inbound_id")
+                .build();
+        StringBuilder scopeSql = new StringBuilder();
+        List<Object> scopeArgs = new ArrayList<>();
+        scope.appendTo(scopeSql, scopeArgs);
+        String condition = scopeSql.toString().replaceFirst("^\\s*AND\\s+", "");
+        if (!condition.isEmpty()) {
+            qw.apply(toMpPlaceholders(condition), scopeArgs.toArray());
+        }
         var page = inboundService.page(
                 new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(request.safePageNo(), request.safePageSize()),
-                new QueryWrapper<PurchaseInbound>().orderByDesc("inbound_no")
+                qw
         );
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (PurchaseInbound in : page.getRecords()) {
