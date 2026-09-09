@@ -14,6 +14,10 @@ import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
 import { post } from '../api/client.js'
 import { moduleApis } from '../module-api.js'
+import { useRbac } from '../composables/useRbac.js'
+
+// RBAC（PRD-28 卡片7）：标价/现价走 VIEW_CUSTOMER_PRICE 列权限；停用走 biz_stop
+const { actionHidden, guard, canViewColumn } = useRbac('customerPriceQuery')
 
 const loading = ref(false)
 const tableRows = ref([])
@@ -44,6 +48,10 @@ const columns = [
   { key: 'c12', title: '状态' },
   { key: 'c13', title: '操作' },
 ]
+// 标价/现价按 VIEW_CUSTOMER_PRICE 字段权限收列（值后端已脱敏，前端连列头一并收走）
+const visibleColumns = computed(() =>
+  columns.filter(c => /操作/.test(c.title) || canViewColumn('customerPriceQuery', c.title))
+)
 
 // 状态与单位类型给下拉，客户/商品给文本框
 const queryFields = [
@@ -137,6 +145,7 @@ function toggleRow(rowIndex, checked) {
 }
 
 async function stopPrices(ids, label) {
+  if (!guard('停用')) return show('无权限执行该操作')
   if (!ids.length) return show('请选择要停用的价格')
   if (!confirm(`确认停用${label}？\n\n停用后该客户该单位的专属价失效，销售将回退到价格组价格。`)) return
   try {
@@ -173,10 +182,10 @@ function onReset() {
 function handlePageChange(n) { pageNo.value = n; loadRows() }
 function handlePageSizeChange(s) { pageSize.value = s; pageNo.value = 1; loadRows() }
 
-/** 导出当前查询结果（不含「操作」列） */
+/** 导出当前查询结果（不含「操作」列；敏感列随字段权限同步收走） */
 function exportRows() {
   if (tableRows.value.length === 0) return show('没有可导出的记录')
-  const cols = columns.filter(c => !/操作/.test(c.title))
+  const cols = visibleColumns.value.filter(c => !/操作/.test(c.title))
   const titles = cols.map(c => c.title)
   const data = tableRows.value.map(row => {
     const obj = {}
@@ -196,7 +205,7 @@ onMounted(loadRows)
 
 <template>
   <div class="module-body">
-    <div class="page-ops">
+    <div class="page-ops" v-action-perms="actionHidden">
       <button class="btn danger" :disabled="selectedIds.size === 0" @click="stopSelected">
         批量停用<span v-if="selectedIds.size">({{ selectedIds.size }})</span>
       </button>
@@ -207,7 +216,7 @@ onMounted(loadRows)
     <div v-if="loading" class="tips-inline"><span>正在加载...</span></div>
     <ProTable
       title="客户价格查询"
-      :columns="columns"
+      :columns="visibleColumns"
       :rows="tableRows"
       :page-no="pageNo"
       :page-size="pageSize"
@@ -229,7 +238,8 @@ onMounted(loadRows)
         <span class="badge" :class="row.c12 === '生效中' ? 'ok' : 'wait'">{{ row.c12 }}</span>
       </template>
       <template #c13="{ row }">
-        <button v-if="row._active" class="link link-btn danger-link" @click="stopOne(row)">停用</button>
+        <button v-if="row._active" v-permission="'base.customer_price_query.biz_stop'"
+                class="link link-btn danger-link" @click="stopOne(row)">停用</button>
         <span v-else class="muted">—</span>
       </template>
     </ProTable>

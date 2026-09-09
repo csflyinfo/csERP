@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -24,54 +25,63 @@ public class GlPeriodController {
     }
 
     /** 会计期间列表（期间选择器用）。 */
+    @RequirePerm(value = "finance.gl.period_close.view", name = "查看")
     @PostMapping("/list")
     public ApiResponse<?> list() {
         return ApiResponse.ok(initService.periodList());
     }
 
     /** 结账向导总览（8 步状态 + 反结账信息）。body: {period?} */
+    @RequirePerm(value = "finance.gl.period_close.view", name = "查看")
     @PostMapping("/wizard")
     public ApiResponse<?> wizard(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.wizard(body));
     }
 
     /** 自动转账预览（每张模板适用性/分录金额，不写库）。 */
+    @RequirePerm(value = "finance.gl.period_close.view", name = "查看")
     @PostMapping("/transfer-preview")
     public ApiResponse<?> transferPreview(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.transferPreview(str(body.get("period"))));
     }
 
     /** 执行自动转账（零/不平/条件不满足跳过，ZZ 幂等）。body: {period?, transferNos?} */
+    @RequirePerm(value = "finance.gl.period_close.audit", name = "执行自动转账")
     @PostMapping("/transfer-execute")
     public ApiResponse<?> transferExecute(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.transferExecute(body));
     }
 
     /** 结转损益预览（5xxx 净发生分组、收入/费用合计、净利润）。 */
+    @RequirePerm(value = "finance.gl.period_close.view", name = "查看")
     @PostMapping("/profit-preview")
     public ApiResponse<?> profitPreview(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.profitPreview(str(body.get("period"))));
     }
 
     /** 执行结转损益（生成"转"字草稿凭证 JZ{period}，幂等）。 */
+    @RequirePerm(value = "finance.gl.period_close.audit", name = "结转损益")
     @PostMapping("/profit-carry")
     public ApiResponse<?> profitCarry(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.profitCarry(body));
     }
 
     /** 结账四项硬检查（只读）。 */
+    @RequirePerm(value = "finance.gl.period_close.view", name = "查看")
     @PostMapping("/checks")
     public ApiResponse<?> checks(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.checks(str(body.get("period"))));
     }
 
     /** 期末结账（年结 12 期冻结并自动建下年期间）。 */
+    @RequirePerm(value = "finance.gl.period_close.close", name = "结账")
     @PostMapping("/close")
     public ApiResponse<?> close(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.close(body));
     }
 
     /** 反结账（仅最后一个已结账期间、原因必填、JZ/ZZ 凭证回退草稿；冻结期间不可反）。 */
+    @RequirePerm(value = "finance.gl.period_close.unaudit", name = "反结账")
     @PostMapping("/reopen")
     public ApiResponse<?> reopen(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(periodService.reopen(body));

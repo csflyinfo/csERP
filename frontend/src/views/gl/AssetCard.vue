@@ -283,8 +283,8 @@ onMounted(async () => {
         </select>
       </label>
       <button class="btn" @click="load(); loadLedger()">刷新</button>
-      <button class="btn" @click="openMerge">合并卡片</button>
-      <button class="btn btn-primary" @click="openForm">＋ 新建卡片</button>
+      <button class="btn" v-permission="'finance.gl.asset_card.edit'" @click="openMerge">合并卡片</button>
+      <button class="btn btn-primary" v-permission="'finance.gl.asset_card.add'" @click="openForm">＋ 新建卡片</button>
     </div>
     <div v-if="feedback" :class="['feedback', feedback.level]">{{ feedback.msg }}</div>
 
@@ -344,10 +344,10 @@ onMounted(async () => {
           <td><span :class="['tag', statusClass(c.status)]">{{ c.status }}</span></td>
           <td class="ops">
             <template v-if="c.status === '使用中' || c.status === '已停用'">
-              <button class="btn-link" @click="toggle(c)">{{ c.status === '使用中' ? '停用' : '启用' }}</button>
-              <button v-if="c.status === '使用中'" class="btn-link" @click="openChange(c)">变更</button>
-              <button v-if="c.status === '使用中'" class="btn-link" @click="openSplit(c)">拆分</button>
-              <button class="btn-link" @click="openDispose(c)">清理</button>
+              <button class="btn-link" v-permission="'finance.gl.asset_card.edit'" @click="toggle(c)">{{ c.status === '使用中' ? '停用' : '启用' }}</button>
+              <button v-if="c.status === '使用中'" class="btn-link" v-permission="'finance.gl.asset_card.edit'" @click="openChange(c)">变更</button>
+              <button v-if="c.status === '使用中'" class="btn-link" v-permission="'finance.gl.asset_card.edit'" @click="openSplit(c)">拆分</button>
+              <button class="btn-link" v-permission="['finance.gl.asset_card.audit', 'finance.gl.asset_card.view']" @click="openDispose(c)">清理</button>
             </template>
           </td>
         </tr>
@@ -433,7 +433,7 @@ onMounted(async () => {
         </div>
         <div class="drawer-ops">
           <button class="btn" @click="showForm = false">取消</button>
-          <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存建卡' }}</button>
+          <button class="btn btn-primary" v-permission="'finance.gl.asset_card.add'" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存建卡' }}</button>
         </div>
         <div class="hint">规则：当月购入次月起提折旧；末月提足至残值；提满自动停提。原值一经建卡不可变更（变更仅支持部门/费用科目/折旧参数）。</div>
       </div>
@@ -486,7 +486,7 @@ onMounted(async () => {
         <div class="hint">原值、残值不允许变更；折旧参数变更采用未来适用法（已提折旧不追溯）；变更全程留痕。</div>
         <div class="drawer-ops">
           <button class="btn" @click="closeDialog">取消</button>
-          <button class="btn btn-primary" :disabled="busy" @click="submitChange">{{ busy ? '保存中…' : '保存变更' }}</button>
+          <button class="btn btn-primary" v-permission="'finance.gl.asset_card.edit'" :disabled="busy" @click="submitChange">{{ busy ? '保存中…' : '保存变更' }}</button>
         </div>
       </div>
     </div>
@@ -512,7 +512,7 @@ onMounted(async () => {
         </div>
         <div class="drawer-ops">
           <button class="btn" @click="closeDialog">取消</button>
-          <button class="btn btn-primary" :disabled="busy" @click="submitSplit">{{ busy ? '处理中…' : '确认拆分' }}</button>
+          <button class="btn btn-primary" v-permission="'finance.gl.asset_card.edit'" :disabled="busy" @click="submitSplit">{{ busy ? '处理中…' : '确认拆分' }}</button>
         </div>
       </div>
     </div>
@@ -541,7 +541,7 @@ onMounted(async () => {
         </table>
         <div class="drawer-ops">
           <button class="btn" @click="closeDialog">取消</button>
-          <button class="btn btn-primary" :disabled="busy" @click="submitMerge">{{ busy ? '处理中…' : '确认合并' }}</button>
+          <button class="btn btn-primary" v-permission="'finance.gl.asset_card.edit'" :disabled="busy" @click="submitMerge">{{ busy ? '处理中…' : '确认合并' }}</button>
         </div>
       </div>
     </div>
@@ -586,7 +586,7 @@ onMounted(async () => {
         </div>
         <div class="drawer-ops">
           <button class="btn" @click="closeDialog">取消</button>
-          <button class="btn btn-primary" :disabled="busy" @click="submitDispose">{{ busy ? '处理中…' : '确认清理并生成凭证' }}</button>
+          <button class="btn btn-primary" v-permission="'finance.gl.asset_card.audit'" :disabled="busy" @click="submitDispose">{{ busy ? '处理中…' : '确认清理并生成凭证' }}</button>
         </div>
       </div>
     </div>

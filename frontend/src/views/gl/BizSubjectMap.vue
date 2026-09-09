@@ -76,7 +76,7 @@ onMounted(() => { loadMeta(); load() })
     <div class="page-ops">
       <b>业务类型科目映射</b>
       <div class="spacer"></div>
-      <button class="btn" @click="exportCsv">导出对照配置（CSV）</button>
+      <button class="btn" v-permission="'finance.gl.voucher.export'" @click="exportCsv">导出对照配置（CSV）</button>
     </div>
     <div class="card-box tip-box">
       业务类型（其他出/入库类型）仍在「系统管理→数据字典」维护，本页只配置每种类型生成凭证时的<b>对方科目</b>。
@@ -114,7 +114,7 @@ onMounted(() => { loadMeta(); load() })
             </td>
             <td>{{ row.counterSubjectCode ? accountName(row.counterSubjectCode) : '—' }}</td>
             <td>
-              <a class="lk" @click="save(g.eventCode, row)">保存</a>
+              <a class="lk" v-permission="'finance.gl.biz_subject_map.edit'" @click="save(g.eventCode, row)">保存</a>
             </td>
           </tr>
         </tbody>

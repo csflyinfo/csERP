@@ -133,12 +133,12 @@ onMounted(() => { loadMeta(); load() })
             </label>
             <label class="chk"><input type="checkbox" v-model="current.enabled" /> 启用</label>
             <span style="flex:1"></span>
-            <button class="btn primary" @click="save">保存模板</button>
-            <button v-if="!current.isSystem" class="btn" @click="remove(current)">删除</button>
+            <button class="btn primary" v-permission="'finance.gl.voucher_template.add'" @click="save">保存模板</button>
+            <button v-if="!current.isSystem" v-permission="'finance.gl.voucher_template.delete'" class="btn" @click="remove(current)">删除</button>
           </div>
           <div class="tpl-head">
             <label style="flex:1">凭证摘要 <input v-model="current.summaryPattern" placeholder="采购收货 {bill_no}" /></label>
-            <button class="btn" @click="toggle(current)">{{ current.enabled ? '停用' : '启用' }}</button>
+            <button class="btn" v-permission="'finance.gl.voucher_template.edit'" @click="toggle(current)">{{ current.enabled ? '停用' : '启用' }}</button>
           </div>
 
           <table class="data line-table">

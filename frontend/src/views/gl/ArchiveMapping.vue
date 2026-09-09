@@ -79,7 +79,7 @@ onMounted(load)
     <div class="page-ops">
       <b>档案科目映射</b>
       <div class="spacer"></div>
-      <button class="btn" @click="exportCsv">导出对照配置（CSV）</button>
+      <button class="btn" v-permission="'finance.gl.voucher.export'" @click="exportCsv">导出对照配置（CSV）</button>
     </div>
     <div class="card-box tip-box">
       基础档案（资金账户/费用类型/商品分类）仍在各自档案页维护，本页只配置它们生成凭证时对应的<b>总账科目</b>。
@@ -104,7 +104,7 @@ onMounted(load)
               </select>
             </td>
             <td>{{ row.glAccountCode ? accountName(row.glAccountCode) : '—' }}</td>
-            <td><a class="lk" @click="save('fund', row, { glAccountCode: row.glAccountCode || '' })">保存</a></td>
+            <td><a class="lk" v-permission="'finance.gl.archive_mapping.edit'" @click="save('fund', row, { glAccountCode: row.glAccountCode || '' })">保存</a></td>
           </tr>
           <tr v-if="!fundAccounts.length"><td colspan="5" class="empty">暂无资金账户</td></tr>
         </tbody>
@@ -129,7 +129,7 @@ onMounted(load)
               </select>
             </td>
             <td>{{ row.glAccountCode ? accountName(row.glAccountCode) : '—' }}</td>
-            <td><a class="lk" @click="save('expense', row, { glAccountCode: row.glAccountCode || '' })">保存</a></td>
+            <td><a class="lk" v-permission="'finance.gl.archive_mapping.edit'" @click="save('expense', row, { glAccountCode: row.glAccountCode || '' })">保存</a></td>
           </tr>
           <tr v-if="!expenseTypes.length"><td colspan="5" class="empty">暂无费用类型</td></tr>
         </tbody>
@@ -160,7 +160,7 @@ onMounted(load)
               </select>
             </td>
             <td>
-              <a class="lk" @click="save('category', row, {
+              <a class="lk" v-permission="'finance.gl.archive_mapping.edit'" @click="save('category', row, {
                 glIncomeAccountCode: row.glIncomeAccountCode || '',
                 glCostAccountCode: row.glCostAccountCode || '',
               })">保存</a>

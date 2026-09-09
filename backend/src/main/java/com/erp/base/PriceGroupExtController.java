@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,14 +35,19 @@ public class PriceGroupExtController {
 
     private final JdbcTemplate jdbc;
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public PriceGroupExtController(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public PriceGroupExtController(JdbcTemplate jdbc, com.erp.common.security.FieldMasker fieldMasker) {
+        this.jdbc = jdbc;
+        this.fieldMasker = fieldMasker;
+    }
 
     // ============================================================
     // F2 价格组商品查询
     // ============================================================
 
     /** 分页：可按价格组编码 / 商品编码 / 是否启用过滤。 */
+    @RequirePerm(value = "base.price_group_goods.view", name = "查看")
     @PostMapping("/price-group-item/page")
     public ApiResponse<PageResult<Map<String, Object>>> itemPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -85,6 +91,8 @@ public class PriceGroupExtController {
             row.put("standardPrice", std);
             out.add(row);
         }
+        // PRD-28 卡片7：价格组价 VIEW_PRICE_GROUP；标价(standardPrice) 随销售价由注册表自动脱敏
+        fieldMasker.mask(out, Map.of("price", "VIEW_PRICE_GROUP"));
         return ApiResponse.ok(PageResult.of(out, request));
     }
 
@@ -119,6 +127,7 @@ public class PriceGroupExtController {
     }
 
     /** 启用/停用单条价格。 */
+    @RequirePerm(value = "base.price_group_goods.biz_toggle", name = "启用/停用")
     @PostMapping("/price-group-item/toggle")
     public ApiResponse<Map<String, Object>> itemToggle(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("id"));
@@ -131,6 +140,7 @@ public class PriceGroupExtController {
     }
 
     /** 汇总每个价格组已启用商品数（供价格组页 goodsCount 使用）。 */
+    @RequirePerm(value = "base.price_group_goods.biz_goods_count", name = "商品数查询")
     @PostMapping("/price-group-item/goods-count")
     public ApiResponse<Map<String, Integer>> itemGoodsCount() {
         Map<String, Integer> map = new LinkedHashMap<>();
@@ -149,6 +159,7 @@ public class PriceGroupExtController {
     // F3 价格组调价单
     // ============================================================
 
+    @RequirePerm(value = "base.price_adjust.view", name = "查看")
     @PostMapping("/price-adjust-order/page")
     public ApiResponse<PageResult<Map<String, Object>>> orderPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -174,6 +185,7 @@ public class PriceGroupExtController {
         return ApiResponse.ok(PageResult.of(out, request));
     }
 
+    @RequirePerm(value = "base.price_adjust.view", name = "查看")
     @PostMapping("/price-adjust-order/detail")
     public ApiResponse<Map<String, Object>> orderDetail(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -189,11 +201,17 @@ public class PriceGroupExtController {
         List<Map<String, Object>> mappedItems = new ArrayList<>();
         for (Map<String, Object> r : items) mappedItems.add(toCamel(r));
         head.put("items", mappedItems);
+        // 价格组调价单明细三档新价/旧价均为价格组价
+        fieldMasker.mask(head, Map.of(
+                "smallNewPrice", "VIEW_PRICE_GROUP", "mediumNewPrice", "VIEW_PRICE_GROUP",
+                "largeNewPrice", "VIEW_PRICE_GROUP", "smallOldPrice", "VIEW_PRICE_GROUP",
+                "mediumOldPrice", "VIEW_PRICE_GROUP", "largeOldPrice", "VIEW_PRICE_GROUP"));
         return ApiResponse.ok(head);
     }
 
     /** 新建/编辑草稿。审核走独立端点 approve/reject。 */
     @SuppressWarnings("unchecked")
+    @RequirePerm(value = "base.price_adjust.edit", name = "保存")
     @PostMapping("/price-adjust-order/save")
     public ApiResponse<Map<String, Object>> orderSave(@RequestBody Map<String, Object> body) {
         String orderId = trim(body.get("orderId"));
@@ -266,6 +284,7 @@ public class PriceGroupExtController {
     }
 
     /** 草稿 → 待审核。 */
+    @RequirePerm(value = "base.price_adjust.biz_submit", name = "提交")
     @PostMapping("/price-adjust-order/submit")
     public ApiResponse<Map<String, Object>> orderSubmit(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -278,6 +297,7 @@ public class PriceGroupExtController {
 
     /** 待审核 → 已审核：应用价格 + 写日志（支持新旧两种模式）。 */
     @SuppressWarnings("unchecked")
+    @RequirePerm(value = "base.price_adjust.audit", name = "审核")
     @PostMapping("/price-adjust-order/approve")
     public ApiResponse<Map<String, Object>> orderApprove(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -420,6 +440,7 @@ public class PriceGroupExtController {
     }
 
     /** 待审核 → 已驳回。 */
+    @RequirePerm(value = "base.price_adjust.biz_reject", name = "驳回升价")
     @PostMapping("/price-adjust-order/reject")
     public ApiResponse<Map<String, Object>> orderReject(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -432,6 +453,7 @@ public class PriceGroupExtController {
     }
 
     /** 删除草稿。 */
+    @RequirePerm(value = "base.price_adjust.delete", name = "删除")
     @PostMapping("/price-adjust-order/delete")
     public ApiResponse<Map<String, Object>> orderDelete(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -445,6 +467,7 @@ public class PriceGroupExtController {
     // F4 变价日志查询
     // ============================================================
 
+    @RequirePerm(value = "base.price_change_query.view", name = "查看")
     @PostMapping("/price-change-log/page")
     public ApiResponse<PageResult<Map<String, Object>>> logPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -540,6 +563,16 @@ public class PriceGroupExtController {
                 } catch (Exception ignore) {}
             }
             row.put("barcode", bc);
+            // 变价前/后按价格类型脱敏：标准售价/参考进价/最低价/建议零售价，其余视为价格组价
+            String priceTypeName = String.valueOf(row.getOrDefault("priceGroupName", ""));
+            String priceField = switch (priceTypeName) {
+                case "标准售价" -> "VIEW_SALE_PRICE";
+                case "参考进价" -> "VIEW_PURCHASE_PRICE";
+                case "最低价" -> "VIEW_MIN_PRICE";
+                case "建议零售价" -> "VIEW_SUGGEST_RETAIL_PRICE";
+                default -> "VIEW_PRICE_GROUP";
+            };
+            fieldMasker.mask(List.of(row), Map.of("oldPrice", priceField, "newPrice", priceField));
             out.add(row);
         }
         return ApiResponse.ok(PageResult.of(out, request));

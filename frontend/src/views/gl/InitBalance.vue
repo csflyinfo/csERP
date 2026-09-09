@@ -171,8 +171,8 @@ onMounted(async () => {
       <button class="btn" @click="loadAll">刷新</button>
       <template v-if="!status.initialized">
         <button class="btn" @click="openTrial">试算平衡</button>
-        <button class="btn" @click="importBusiness">一键引入业务期初</button>
-        <button class="btn" :disabled="!dirty.size" @click="saveBalances">保存期初（{{ dirty.size }}）</button>
+        <button class="btn" v-permission="'finance.gl.init_balance.import'" @click="importBusiness">一键引入业务期初</button>
+        <button class="btn" v-permission="'finance.gl.init_balance.edit'" :disabled="!dirty.size" @click="saveBalances">保存期初（{{ dirty.size }}）</button>
       </template>
     </div>
     <div v-if="feedback" class="toast-inline" :class="feedback.level">{{ feedback.msg }}</div>
@@ -217,7 +217,7 @@ onMounted(async () => {
         <label class="enable-label">启用期间
           <input type="month" v-model="enablePeriod" />
         </label>
-        <button class="btn primary" @click="enableGl">启用总账</button>
+        <button class="btn primary" v-permission="'finance.gl.init_balance.edit'" @click="enableGl">启用总账</button>
       </div>
     </div>
 
@@ -272,7 +272,7 @@ onMounted(async () => {
         </div>
         <div class="modal-f">
           <button class="btn" @click="auxOpen=false">取消</button>
-          <button class="btn primary" @click="saveAux">保存辅助明细</button>
+          <button class="btn primary" v-permission="'finance.gl.init_balance.edit'" @click="saveAux">保存辅助明细</button>
         </div>
       </div>
     </div>

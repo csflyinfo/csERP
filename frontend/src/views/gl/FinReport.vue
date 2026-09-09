@@ -141,7 +141,7 @@ onMounted(async () => {
                 @click="switchTab(t.code)">{{ t.name }}</button>
       </div>
       <div class="spacer"></div>
-      <button class="btn" @click="openFormula">公式编辑</button>
+      <button class="btn" v-permission="'finance.gl.report.edit'" @click="openFormula">公式编辑</button>
     </div>
     <div v-if="feedback" :class="['toast-inline', feedback.level]">{{ feedback.msg }}</div>
 
@@ -177,7 +177,7 @@ onMounted(async () => {
       <div class="fill-h">
         <b>现金流量项目补录</b>
         <span class="sub">已过账凭证中现金类分录未指定流量项目的，可在此批量补录（仅影响现金流量表列报，不影响余额）</span>
-        <button class="btn primary" :disabled="busy" @click="saveFill">保存补录</button>
+        <button class="btn primary" v-permission="'finance.gl.report.edit'" :disabled="busy" @click="saveFill">保存补录</button>
       </div>
       <table v-if="pending.length" class="data">
         <thead>
@@ -236,7 +236,7 @@ onMounted(async () => {
                 <td><input v-model="r.formula" placeholder="（空=该行不取数）" /></td>
                 <td><input v-model="r.formulaBegin" placeholder="（空=该行不取数）" /></td>
                 <td>
-                  <a v-if="rowDirty(r)" class="save-link" :class="{ disabled: formulaDlg.busy }" @click="saveFormulaRow(r)">保存</a>
+                  <a v-if="rowDirty(r)" v-permission="'finance.gl.report.edit'" class="save-link" :class="{ disabled: formulaDlg.busy }" @click="saveFormulaRow(r)">保存</a>
                 </td>
               </tr>
             </tbody>

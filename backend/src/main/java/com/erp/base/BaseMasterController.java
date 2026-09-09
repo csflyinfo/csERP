@@ -10,6 +10,10 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.PermissionDeniedException;
+import com.erp.common.security.PermissionService;
+import com.erp.common.security.ProgrammaticPerm;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,13 +41,48 @@ public class BaseMasterController {
     private final BaseCustomerService customerService;
     private final BaseSupplierService supplierService;
     private final com.erp.system.OperationLogService opLog;
+    private final PermissionService permissionService;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public BaseMasterController(JdbcTemplate jdbcTemplate, BaseCustomerService customerService,
-                                BaseSupplierService supplierService, com.erp.system.OperationLogService opLog) {
+                                BaseSupplierService supplierService, com.erp.system.OperationLogService opLog,
+                                PermissionService permissionService,
+                                com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.customerService = customerService;
         this.supplierService = supplierService;
         this.opLog = opLog;
+        this.permissionService = permissionService;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /**
+     * 通用主档端点按 moduleCode 分派到对应菜单的功能点做编程式校验（PRD-28 卡片7）。
+     * 一个 HTTP 端点服务多张档案表，无法用单一方法注解表达，故在此映射后手工校验；
+     * 动作只取菜单标准派生动作（停用/冻结/解冻归入 edit），不产生需要额外注册的 biz_* 功能点。
+     */
+    private static final Map<String, String> MASTER_MENU = Map.ofEntries(
+            Map.entry("territory", "base.region"),
+            Map.entry("routeLine", "base.route"),
+            Map.entry("department", "base.department"),
+            Map.entry("expenseType", "base.fee_type"),
+            Map.entry("employee", "base.employee"),
+            Map.entry("owner", "base.owner"),
+            Map.entry("counterparty", "base.other_unit"),
+            Map.entry("counterpartyType", "base.other_unit"),
+            Map.entry("fundAccount", "base.fund_account"),
+            Map.entry("priceGroup", "base.price_group"),
+            Map.entry("customer", "base.customer"),
+            Map.entry("supplier", "base.supplier"));
+
+    private void guardMaster(String moduleCode, String action) {
+        String menu = MASTER_MENU.get(moduleCode);
+        if (menu == null) {
+            throw new PermissionDeniedException("不支持的档案类型：" + moduleCode);
+        }
+        if (!permissionService.hasFunc(menu + "." + action)) {
+            throw new PermissionDeniedException("无操作权限：" + menu + "." + action);
+        }
     }
 
     // ============================================================
@@ -92,6 +131,7 @@ public class BaseMasterController {
     // ============================================================
     // 分页
     // ============================================================
+    @RequirePerm(value = "base.price_group.view", name = "查看")
     @PostMapping("/price-group/page")
     public ApiResponse<PageResult<Map<String, Object>>> priceGroupPage(@RequestBody PageRequest request) {
         MasterSpec spec = SPECS.get("priceGroup");
@@ -134,6 +174,7 @@ public class BaseMasterController {
     }
 
     /** 启用/停用价格组：仅切换 enabled，不改其它字段；停用时清空关联客户 price_group_code。 */
+    @RequirePerm(value = "base.price_group.edit", name = "修改")
     @PostMapping("/price-group/enable")
     public ApiResponse<Map<String, Object>> priceGroupEnable(@RequestBody Map<String, Object> request) {
         String bizId = trimOrEmpty(request.get("bizId"));
@@ -158,6 +199,7 @@ public class BaseMasterController {
     }
 
     /** 关联客户列表：门店编号、名称、业务员、渠道、片区 */
+    @RequirePerm(value = "base.price_group.view", name = "查看")
     @PostMapping("/price-group/customers")
     public ApiResponse<List<Map<String, Object>>> priceGroupCustomers(@RequestBody Map<String, Object> request) {
         String code = trimOrEmpty(request.get("priceGroupCode"));
@@ -176,11 +218,13 @@ public class BaseMasterController {
         return ApiResponse.ok(out);
     }
 
+    @RequirePerm(value = "base.other_unit.view", name = "查看")
     @PostMapping("/counterparty/page")
     public ApiResponse<PageResult<Map<String, Object>>> counterpartyPage(@RequestBody PageRequest request) {
         return counterpartyPaged("counterparty", request);
     }
 
+    @RequirePerm(value = "base.other_unit.view", name = "查看")
     @PostMapping("/counterparty-type/page")
     public ApiResponse<PageResult<Map<String, Object>>> counterpartyTypePage(@RequestBody PageRequest request) {
         return pageOf("counterpartyType", request);
@@ -189,6 +233,7 @@ public class BaseMasterController {
     /**
      * 往来单位树形数据：单位类型 → 往来单位
      */
+    @RequirePerm(value = "base.other_unit.view", name = "查看")
     @PostMapping("/counterparty/tree")
     public ApiResponse<List<Map<String, Object>>> counterpartyTree() {
         List<Map<String, Object>> tree = new ArrayList<>();
@@ -296,24 +341,31 @@ public class BaseMasterController {
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "base.fund_account.view", name = "查看")
     @PostMapping("/fund-account/page")
     public ApiResponse<PageResult<Map<String, Object>>> fundAccountPage(@RequestBody PageRequest request) { return pageOf("fundAccount", request); }
 
+    @RequirePerm(value = "base.fee_type.view", name = "查看")
     @PostMapping("/expense-type/page")
     public ApiResponse<PageResult<Map<String, Object>>> expenseTypePage(@RequestBody PageRequest request) { return pageOf("expenseType", request); }
 
+    @RequirePerm(value = "base.region.view", name = "查看")
     @PostMapping("/territory/page")
     public ApiResponse<PageResult<Map<String, Object>>> territoryPage(@RequestBody PageRequest request) { return pageOf("territory", request); }
 
+    @RequirePerm(value = "base.route.view", name = "查看")
     @PostMapping("/route-line/page")
     public ApiResponse<PageResult<Map<String, Object>>> routeLinePage(@RequestBody PageRequest request) { return pageOf("routeLine", request); }
 
+    @RequirePerm(value = "base.employee.view", name = "查看")
     @PostMapping("/employee/page")
     public ApiResponse<PageResult<Map<String, Object>>> employeePage(@RequestBody PageRequest request) { return pageOf("employee", request); }
 
+    @RequirePerm(value = "base.department.view", name = "查看")
     @PostMapping("/department/page")
     public ApiResponse<PageResult<Map<String, Object>>> departmentPage(@RequestBody PageRequest request) { return pageOf("department", request); }
 
+    @RequirePerm(value = "base.owner.view", name = "查看")
     @PostMapping("/owner/page")
     public ApiResponse<PageResult<Map<String, Object>>> ownerPage(@RequestBody PageRequest request) { return pageOf("owner", request); }
 
@@ -326,6 +378,10 @@ public class BaseMasterController {
                 "SELECT " + cols + " FROM " + spec.table() + " ORDER BY " + spec.codeCol() + " ASC");
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) mapped.add(toCamel(r));
+        // PRD-28 卡片7：资金账户余额按账户余额字段权限脱敏（注册表未绑定裸 key balance，显式映射）
+        if ("fundAccount".equals(moduleCode)) {
+            fieldMasker.mask(mapped, Map.of("balance", "VIEW_FUND_ACCOUNT_BALANCE"));
+        }
         // 前端通用过滤/分页由 PageResult.of 兜底
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
@@ -333,9 +389,12 @@ public class BaseMasterController {
     // ============================================================
     // 保存（新增/更新）
     // ============================================================
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU：add 模式校验 <menu>.add，edit 模式校验 <menu>.edit（guardMaster）")
     @PostMapping("/save")
     public ApiResponse<Map<String, Object>> save(@RequestBody Map<String, Object> request) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
+        // 前端 BaseInfoDrawer 统一显式传 mode=add|edit（见模块 API save 端点约定）
+        guardMaster(moduleCode, "edit".equalsIgnoreCase(trimOrEmpty(request.get("mode"))) ? "edit" : "add");
         if ("customer".equals(moduleCode)) return saveCustomer(request);
         if ("supplier".equals(moduleCode)) return saveSupplier(request);
         MasterSpec spec = SPECS.get(moduleCode);
@@ -504,6 +563,7 @@ public class BaseMasterController {
     }
 
     /** 详情：主档 + 子表 */
+    @RequirePerm(value = "base.other_unit.view", name = "查看")
     @PostMapping("/counterparty/detail")
     public ApiResponse<Map<String, Object>> counterpartyDetail(@RequestBody Map<String, Object> request) {
         String code = trimOrEmpty(request.get("counterpartyCode"));
@@ -534,6 +594,7 @@ public class BaseMasterController {
      * 客户/供应商由各自 controller 自行导入（不在本端点范围内）。
      */
     @SuppressWarnings("unchecked")
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU，guardMaster(moduleCode, import)")
     @PostMapping("/import")
     public ApiResponse<Map<String, Object>> masterImport(@RequestBody Map<String, Object> request) {
         String moduleCode = trimOrEmpty(request.get("moduleCode"));
@@ -541,6 +602,7 @@ public class BaseMasterController {
         if (!(rowsObj instanceof List<?> rows)) return ApiResponse.fail("400", "缺少 rows");
         MasterSpec spec = SPECS.get(moduleCode);
         if (spec == null) return ApiResponse.fail("400", "不支持的模块：" + moduleCode);
+        guardMaster(moduleCode, "import");
         String codeCamel = toCamelCase(spec.codeCol());
         String nameCamel = toCamelCase(spec.allColumns().stream()
                 .filter(c -> c.endsWith("_name")).findFirst().orElse(spec.codeCol()));
@@ -588,8 +650,10 @@ public class BaseMasterController {
      * 返回: { inserted, skipped }
      */
     @SuppressWarnings("unchecked")
+    @ProgrammaticPerm("固定 base.other_unit.import（guardMaster(\"counterparty\", import)）")
     @PostMapping("/counterparty/import")
     public ApiResponse<Map<String, Object>> counterpartyImport(@RequestBody Map<String, Object> request) {
+        guardMaster("counterparty", "import");
         String kind = trimOrEmpty(request.get("kind"));
         Object rowsObj = request.get("rows");
         if (!(rowsObj instanceof List<?> rows)) return ApiResponse.fail("400", "缺少 rows");
@@ -682,26 +746,31 @@ public class BaseMasterController {
     // ============================================================
     // 停用 / 冻结 / 解冻 / 删除
     // ============================================================
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU，停用统一校验 <menu>.edit（updateStatus→guardMaster）")
     @PostMapping("/stop")
     public ApiResponse<Map<String, Object>> stop(@RequestBody Map<String, Object> request) {
         return updateStatus(request, "STOPPED", "STOP", "停用");
     }
 
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU，冻结统一校验 <menu>.edit（updateStatus→guardMaster）")
     @PostMapping("/freeze")
     public ApiResponse<Map<String, Object>> freeze(@RequestBody Map<String, Object> request) {
         return updateStatus(request, "FROZEN", "FREEZE", "冻结");
     }
 
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU，解冻统一校验 <menu>.edit（updateStatus→guardMaster）")
     @PostMapping("/unfreeze")
     public ApiResponse<Map<String, Object>> unfreeze(@RequestBody Map<String, Object> request) {
         return updateStatus(request, "NORMAL", "UNFREEZE", "解冻");
     }
 
+    @ProgrammaticPerm("按 body.moduleCode 分派 MASTER_MENU，guardMaster(moduleCode, delete)")
     @PostMapping("/delete")
     public ApiResponse<Map<String, Object>> delete(@RequestBody Map<String, Object> request) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
         String bizId = String.valueOf(request.getOrDefault("bizId", "")).trim();
         if (bizId.isEmpty()) throw new IllegalArgumentException("缺少 bizId");
+        guardMaster(moduleCode, "delete");
 
         // 系统默认记录不允许删除
         rejectIfSystem(moduleCode, bizId, "删除");
@@ -742,6 +811,8 @@ public class BaseMasterController {
     private ApiResponse<Map<String, Object>> updateStatus(Map<String, Object> request, String status, String action, String detail) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "base.master"));
         String bizId = String.valueOf(request.getOrDefault("bizId", "")).trim();
+        // 停用/冻结/解冻统一要求对应档案菜单的 edit（能改档案才能改状态）
+        guardMaster(moduleCode, "edit");
         // 系统默认记录不允许停用/冻结/解冻
         rejectIfSystem(moduleCode, bizId, detail);
         boolean updated = false;

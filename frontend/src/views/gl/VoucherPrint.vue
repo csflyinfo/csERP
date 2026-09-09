@@ -36,7 +36,7 @@ onMounted(async () => {
     <div v-if="error" class="err-box">{{ error }}</div>
     <template v-if="data">
       <div class="toolbar">
-        <button class="btn primary" @click="doPrint">打印</button>
+        <button class="btn primary" v-permission="'finance.gl.voucher.print'" @click="doPrint">打印</button>
         <button class="btn" @click="doClose">关闭</button>
       </div>
 

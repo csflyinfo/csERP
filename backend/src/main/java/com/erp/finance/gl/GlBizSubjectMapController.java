@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -21,11 +22,13 @@ public class GlBizSubjectMapController {
         this.service = service;
     }
 
+    @RequirePerm(value = "finance.gl.biz_subject_map.view", name = "查看")
     @PostMapping("/list")
     public ApiResponse<?> list() {
         return ApiResponse.ok(service.list());
     }
 
+    @RequirePerm(value = "finance.gl.biz_subject_map.edit", name = "保存")
     @PostMapping("/save")
     public ApiResponse<?> save(@RequestBody Map<String, Object> body) {
         service.save(body);

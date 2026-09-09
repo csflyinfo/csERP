@@ -17,10 +17,15 @@ import { onMounted, ref, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { post, get } from '../api/client.js'
 import CustomerPriceGoodsDialog from '../components/CustomerPriceGoodsDialog.vue'
+import { useRbac } from '../composables/useRbac.js'
+
+// RBAC（PRD-28 卡片7）：新建走 base.customer_price.add，编辑走 edit
+const { guardCode } = useRbac()
 
 const router = useRouter()
 const route = useRoute()
 const isEdit = !!route.params.id
+const savePermCode = isEdit ? 'base.customer_price.edit' : 'base.customer_price.add'
 const adjustId = ref(route.params.id ? decodeURIComponent(String(route.params.id)) : '')
 
 // 单据号与状态（编辑时从后端带出，仅展示）
@@ -199,6 +204,7 @@ async function loadExisting() {
 
 // ==================== 保存 ====================
 async function saveAdjust() {
+  if (!guardCode(savePermCode)) return alert('无权限执行该操作')
   if (!header.value.customerCode) return alert('请选择客户')
   if (!details.value.length) return alert('请至少选择一条商品明细')
 
@@ -259,7 +265,7 @@ onMounted(async () => {
       <span v-if="adjustNo" class="head-no">{{ adjustNo }}</span>
       <span class="badge" :class="statusText === '已审核' ? 'ok' : 'wait'" style="margin-left:10px">{{ statusText }}</span>
       <div style="flex:1"></div>
-      <button class="btn primary" @click="saveAdjust">保存</button>
+      <button class="btn primary" v-permission="savePermCode" @click="saveAdjust">保存</button>
       <button class="btn" @click="goBack">返回列表</button>
     </div>
 
@@ -400,7 +406,7 @@ onMounted(async () => {
       <span>审核后价格生效，旧的有效价自动停用</span>
       <div class="spacer"></div>
       <button class="btn" @click="goBack">取消</button>
-      <button class="btn primary" @click="saveAdjust">保存</button>
+      <button class="btn primary" v-permission="savePermCode" @click="saveAdjust">保存</button>
     </div>
 
     <!-- 添加商品窗口 —— 客户价格调整专用，多选不退出，带出三级单位标价 -->

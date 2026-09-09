@@ -288,6 +288,8 @@ public class PermissionRegistry {
             HandlerMethod hm = e.getValue();
             RequirePerm require = hm.getMethodAnnotation(RequirePerm.class);
             if (require == null) require = hm.getBeanType().getAnnotation(RequirePerm.class);
+            // 编程式鉴权端点（@ProgrammaticPerm + 方法内 hasFunc 逐分支裁决）不计未鉴权清单
+            boolean programmatic = hm.hasMethodAnnotation(com.erp.common.security.ProgrammaticPerm.class);
 
             Set<String> methods = new LinkedHashSet<>();
             info.getMethodsCondition().getMethods().forEach(m -> methods.add(m.name()));
@@ -302,7 +304,7 @@ public class PermissionRegistry {
                             require.global() ? "GLOBAL" : "MODULE",
                             require.type(), httpMethod, path));
                 }
-            } else if (isWriteMethod(httpMethod) && !isExemptPath(path)) {
+            } else if (!programmatic && isWriteMethod(httpMethod) && !isExemptPath(path)) {
                 unguarded.add(new WriteEndpoint(httpMethod, path,
                         hm.getBeanType().getSimpleName() + "#" + hm.getMethod().getName()));
             }

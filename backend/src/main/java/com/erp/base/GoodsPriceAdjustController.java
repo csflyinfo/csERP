@@ -5,6 +5,7 @@ import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,15 +33,18 @@ import java.util.*;
 public class GoodsPriceAdjustController {
 
     private final JdbcTemplate jdbc;
+    private final com.erp.common.security.FieldMasker fieldMasker;
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
-    public GoodsPriceAdjustController(JdbcTemplate jdbc) {
+    public GoodsPriceAdjustController(JdbcTemplate jdbc, com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbc = jdbc;
+        this.fieldMasker = fieldMasker;
     }
 
     // ========== 列表 ==========
 
+    @RequirePerm(value = "base.goods_price_adjust.view", name = "查看")
     @PostMapping("/goods-price-adjust/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
         Map<String, Object> f = request.filters() == null ? Map.of() : request.filters();
@@ -56,6 +60,7 @@ public class GoodsPriceAdjustController {
 
     // ========== 详情 ==========
 
+    @RequirePerm(value = "base.goods_price_adjust.view", name = "查看")
     @PostMapping("/goods-price-adjust/detail")
     public ApiResponse<Map<String, Object>> detail(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -76,12 +81,26 @@ public class GoodsPriceAdjustController {
             mapped.add(row);
         }
         head.put("items", mapped);
+        // PRD-28 卡片7：明细行四类价格的原/新价按各自字段权限脱敏；
+        // 内嵌价格组 JSON（oldPrice/newPrice）走 VIEW_PRICE_GROUP，递归进入 List<Map> 生效
+        fieldMasker.mask(head, Map.ofEntries(
+                Map.entry("standardPriceNew", "VIEW_SALE_PRICE"),
+                Map.entry("standardPriceOld", "VIEW_SALE_PRICE"),
+                Map.entry("purchasePriceNew", "VIEW_PURCHASE_PRICE"),
+                Map.entry("purchasePriceOld", "VIEW_PURCHASE_PRICE"),
+                Map.entry("minPriceNew", "VIEW_MIN_PRICE"),
+                Map.entry("minPriceOld", "VIEW_MIN_PRICE"),
+                Map.entry("suggestRetailPriceNew", "VIEW_SUGGEST_RETAIL_PRICE"),
+                Map.entry("suggestRetailPriceOld", "VIEW_SUGGEST_RETAIL_PRICE"),
+                Map.entry("oldPrice", "VIEW_PRICE_GROUP"),
+                Map.entry("newPrice", "VIEW_PRICE_GROUP")));
         return ApiResponse.ok(head);
     }
 
     // ========== 保存 ==========
 
     @SuppressWarnings("unchecked")
+    @RequirePerm(value = "base.goods_price_adjust.edit", name = "保存")
     @PostMapping("/goods-price-adjust/save")
     @Transactional
     public ApiResponse<Map<String, Object>> save(@RequestBody Map<String, Object> body) {
@@ -142,6 +161,7 @@ public class GoodsPriceAdjustController {
 
     // ========== 提交 ==========
 
+    @RequirePerm(value = "base.goods_price_adjust.biz_submit", name = "提交")
     @PostMapping("/goods-price-adjust/submit")
     public ApiResponse<Map<String, Object>> submit(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -154,6 +174,7 @@ public class GoodsPriceAdjustController {
     // ========== 审核 ==========
 
     @SuppressWarnings("unchecked")
+    @RequirePerm(value = "base.goods_price_adjust.audit", name = "审核")
     @PostMapping("/goods-price-adjust/approve")
     @Transactional
     public ApiResponse<Map<String, Object>> approve(@RequestBody Map<String, Object> body) {
@@ -204,6 +225,7 @@ public class GoodsPriceAdjustController {
 
     /** 快速调价确认：保存明细 → 提交 → 审核一步完成（仅 goodsLocked 订单可用）。 */
     @SuppressWarnings("unchecked")
+    @RequirePerm(value = "base.goods_price_adjust.biz_confirm", name = "确认降价")
     @PostMapping("/goods-price-adjust/confirm")
     @Transactional
     public ApiResponse<Map<String, Object>> confirm(@RequestBody Map<String, Object> body) {
@@ -260,6 +282,7 @@ public class GoodsPriceAdjustController {
 
     // ========== 驳回 / 删除 ==========
 
+    @RequirePerm(value = "base.goods_price_adjust.biz_reject", name = "驳回")
     @PostMapping("/goods-price-adjust/reject")
     public ApiResponse<Map<String, Object>> reject(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));
@@ -270,6 +293,7 @@ public class GoodsPriceAdjustController {
         return ApiResponse.ok(GenericResult.row("orderId", id, "success", true));
     }
 
+    @RequirePerm(value = "base.goods_price_adjust.delete", name = "删除")
     @PostMapping("/goods-price-adjust/delete")
     public ApiResponse<Map<String, Object>> delete(@RequestBody Map<String, Object> body) {
         String id = trim(body.get("orderId"));

@@ -38,6 +38,9 @@ public class ReportController {
         this.fieldMasker = fieldMasker;
     }
 
+    // PRD-28 卡片7：工作台/图表是跨全量数据的聚合屏，不做行级数据范围（有菜单即可见聚合），
+    // 金额/数量一律按字段权限脱敏；库存报表/财务报表明细走对应数据范围。
+    @RequirePerm(value = "dashboard.overview.view", name = "查看")
     @GetMapping("/dashboard/summary")
     public ApiResponse<Map<String, Object>> dashboardSummary() {
         Map<String, Object> sales = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) salesAmount, COALESCE(SUM(unpaid_amount),0) unpaidAmount, COUNT(*) salesOrderCount FROM sales_order");
@@ -50,7 +53,7 @@ public class ReportController {
                        (SELECT COUNT(*) FROM sys_export_task_runtime WHERE status='FINISHED') exportFinishedCount,
                        (SELECT COUNT(*) FROM sys_operation_log_runtime) operationLogCount
                 """);
-        return ApiResponse.ok(GenericResult.row(
+        Map<String, Object> result = GenericResult.row(
                 "salesAmount", sales.get("SALESAMOUNT"),
                 "purchaseAmount", purchase.get("PURCHASEAMOUNT"),
                 "stockAmount", stock.get("STOCKAMOUNT"),
@@ -65,7 +68,11 @@ public class ReportController {
                 "importFinishedCount", tasks.get("IMPORTFINISHEDCOUNT"),
                 "exportFinishedCount", tasks.get("EXPORTFINISHEDCOUNT"),
                 "operationLogCount", tasks.get("OPERATIONLOGCOUNT")
-        ));
+        );
+        // 销售/采购/应收/库存金额按字段权限脱敏（注册表已覆盖 salesAmount/purchaseAmount/
+        // stockAmount/availableQty/arBalance/apBalance；销售未收货款归应收余额字段）
+        fieldMasker.mask(result, Map.of("unpaidAmount", "VIEW_AR_BALANCE"));
+        return ApiResponse.ok(result);
     }
 
     @RequirePerm(value = "report.sales.view", name = "查看")
@@ -163,9 +170,19 @@ public class ReportController {
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "report.inventory.view", name = "查看")
     @PostMapping("/stock/page")
     public ApiResponse<PageResult<Map<String, Object>>> stockReport(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // PRD-28 卡片7：库存报表强制按仓库 + 商品分类/品牌范围（与库存余额列表同口径，
+        // 库存表无建档人列，未配范围角色 1=0 fail-closed）；成本/数量按全局注册表脱敏
+        var scope = dataScope.target()
+                .warehouse("sb.warehouse").goodsColumn("sb.goods_code")
+                .build();
+        if (scope.isDenyAll()) {
+            return ApiResponse.ok(PageResult.of(List.of(), request));
+        }
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("""
                 SELECT goods_code goodsCode,
                        goods_name goodsName,
                        warehouse,
@@ -175,84 +192,135 @@ public class ReportController {
                        cost_price costPrice,
                        stock_amount stockAmount,
                        last_inout_time lastInoutTime
-                FROM inv_stock_balance
-                ORDER BY stock_amount DESC
-                """), request));
+                FROM inv_stock_balance sb
+                WHERE 1=1
+                """);
+        scope.appendTo(sql, args);
+        sql.append(" ORDER BY stock_amount DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        fieldMasker.mask(rows);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "report.finance.view", name = "查看")
     @PostMapping("/finance/page")
     public ApiResponse<PageResult<Map<String, Object>>> financeReport(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT '应收' reportType,
-                       customer objectName,
-                       ar_amount amount,
-                       received_amount verifiedAmount,
-                       unreceived_amount balance,
-                       due_date dueDate,
-                       status
-                FROM fin_ar
-                UNION ALL
-                SELECT '应付' reportType,
-                       supplier objectName,
-                       ap_amount amount,
-                       paid_amount verifiedAmount,
-                       unpaid_amount balance,
-                       due_date dueDate,
-                       status
-                FROM fin_ap
-                """), request));
+        // PRD-28 卡片7：应收行走客户/业务员数据范围，应付行走供应商数据范围（两分支独立门控，
+        // 参照财务收付款合并列表口径）；金额按应收/应付余额字段分别脱敏
+        List<Map<String, Object>> rows = new ArrayList<>();
+        var arScope = dataScope.target().customer("customer").salesman("salesman").build();
+        if (!arScope.isDenyAll()) {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("""
+                    SELECT '应收' reportType,
+                           customer objectName,
+                           ar_amount amount,
+                           received_amount verifiedAmount,
+                           unreceived_amount balance,
+                           due_date dueDate,
+                           status
+                    FROM fin_ar
+                    WHERE 1=1
+                    """);
+            arScope.appendTo(sql, args);
+            List<Map<String, Object>> arRows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+            fieldMasker.mask(arRows, Map.of(
+                    "amount", "VIEW_AR_BALANCE",
+                    "verifiedAmount", "VIEW_AR_BALANCE",
+                    "balance", "VIEW_AR_BALANCE"));
+            rows.addAll(arRows);
+        }
+        var apScope = dataScope.target().supplier("supplier").build();
+        if (!apScope.isDenyAll()) {
+            List<Object> args = new ArrayList<>();
+            StringBuilder sql = new StringBuilder("""
+                    SELECT '应付' reportType,
+                           supplier objectName,
+                           ap_amount amount,
+                           paid_amount verifiedAmount,
+                           unpaid_amount balance,
+                           due_date dueDate,
+                           status
+                    FROM fin_ap
+                    WHERE 1=1
+                    """);
+            apScope.appendTo(sql, args);
+            List<Map<String, Object>> apRows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+            fieldMasker.mask(apRows, Map.of(
+                    "amount", "VIEW_AP_BALANCE",
+                    "verifiedAmount", "VIEW_AP_BALANCE",
+                    "balance", "VIEW_AP_BALANCE"));
+            rows.addAll(apRows);
+        }
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     // ========== 图表数据接口 ==========
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/sales-trend")
     public ApiResponse<List<Map<String, Object>>> salesTrend() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bill_date date, COALESCE(SUM(amount),0) amount, COUNT(*) count
                 FROM sales_order WHERE status <> 'DELETED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
                 """);
+        fieldMasker.mask(rows, Map.of("amount", "VIEW_SALE_AMOUNT"));
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/purchase-trend")
     public ApiResponse<List<Map<String, Object>>> purchaseTrend() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bill_date date, COALESCE(SUM(amount),0) amount, COUNT(*) count
                 FROM pur_order WHERE status <> 'DELETED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
                 """);
+        fieldMasker.mask(rows, Map.of("amount", "VIEW_PURCHASE_AMOUNT"));
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/stock-distribution")
     public ApiResponse<List<Map<String, Object>>> stockDistribution() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT warehouse name, COALESCE(SUM(stock_amount),0) value
                 FROM inv_stock_balance GROUP BY warehouse ORDER BY value DESC
                 """);
+        // 与库存余额列表一致：stock_amount 归库存数量金额字段
+        fieldMasker.mask(rows, Map.of("value", "VIEW_STOCK_AMOUNT"));
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/customer-sales")
     public ApiResponse<List<Map<String, Object>>> customerSales() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT customer name, COALESCE(SUM(amount),0) value
                 FROM sales_order WHERE status <> 'DELETED' GROUP BY customer ORDER BY value DESC LIMIT 10
                 """);
+        fieldMasker.mask(rows, Map.of("value", "VIEW_SALE_AMOUNT"));
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/finance-overview")
     public ApiResponse<Map<String, Object>> financeOverview() {
         Map<String, Object> ar = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(ar_amount),0) total, COALESCE(SUM(received_amount),0) received, COALESCE(SUM(unreceived_amount),0) unreceived FROM fin_ar");
         Map<String, Object> ap = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(ap_amount),0) total, COALESCE(SUM(paid_amount),0) paid, COALESCE(SUM(unpaid_amount),0) unpaid FROM fin_ap");
         Map<String, Object> fund = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(CASE WHEN direction='IN' THEN amount ELSE -amount END),0) balance FROM fin_fund_ledger");
-        return ApiResponse.ok(Map.of(
+        Map<String, Object> result = new LinkedHashMap<>(Map.of(
                 "arTotal", ar.get("TOTAL"), "arReceived", ar.get("RECEIVED"), "arUnreceived", ar.get("UNRECEIVED"),
                 "apTotal", ap.get("TOTAL"), "apPaid", ap.get("PAID"), "apUnpaid", ap.get("UNPAID"),
                 "fundBalance", fund.get("BALANCE")
         ));
+        fieldMasker.mask(result, Map.of(
+                "arTotal", "VIEW_AR_BALANCE", "arReceived", "VIEW_AR_BALANCE", "arUnreceived", "VIEW_AR_BALANCE",
+                "apTotal", "VIEW_AP_BALANCE", "apPaid", "VIEW_AP_BALANCE", "apUnpaid", "VIEW_AP_BALANCE"));
+        // fundBalance 已由注册表绑定 VIEW_FUND_ACCOUNT_BALANCE
+        return ApiResponse.ok(result);
     }
 
+    @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/category-sales")
     public ApiResponse<List<Map<String, Object>>> categorySales() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
@@ -263,6 +331,7 @@ public class ReportController {
                 WHERE o.status <> 'DELETED'
                 GROUP BY g.category_name ORDER BY value DESC LIMIT 10
                 """);
+        fieldMasker.mask(rows, Map.of("value", "VIEW_SALE_AMOUNT"));
         return ApiResponse.ok(rows);
     }
 

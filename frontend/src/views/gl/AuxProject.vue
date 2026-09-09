@@ -75,7 +75,7 @@ onMounted(load)
         <option value="停用">停用</option>
       </select>
       <button class="btn" @click="load">查询</button>
-      <button class="btn primary" @click="onCreate">＋ 新增项目</button>
+      <button class="btn primary" v-permission="'finance.gl.aux_project.add'" @click="onCreate">＋ 新增项目</button>
     </div>
     <div v-if="feedback" class="toast-inline" :class="feedback.level">{{ feedback.msg }}</div>
 
@@ -99,7 +99,7 @@ onMounted(load)
             <td class="muted">{{ r.startDate || '?' }} ~ {{ r.endDate || '?' }}</td>
             <td><span class="tag" :class="r.status === '启用' ? 'ok' : 'warn'">{{ r.status }}</span></td>
             <td class="muted">{{ r.remark || '—' }}</td>
-            <td class="ops"><a @click="onEdit(r)">编辑</a></td>
+            <td class="ops"><a v-permission="'finance.gl.aux_project.edit'" @click="onEdit(r)">编辑</a></td>
           </tr>
           <tr v-if="!list.length"><td colspan="9" class="empty">{{ loading ? '加载中...' : '暂无项目' }}</td></tr>
         </tbody>
@@ -133,7 +133,9 @@ onMounted(load)
         </div>
         <div class="modal-f">
           <button class="btn" @click="dialogOpen=false">取消</button>
-          <button class="btn primary" @click="onSave">保存</button>
+          <button class="btn primary"
+                  v-permission="['finance.gl.aux_project.add', 'finance.gl.aux_project.edit']"
+                  @click="onSave">保存</button>
         </div>
       </div>
     </div>

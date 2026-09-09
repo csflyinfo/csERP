@@ -151,8 +151,8 @@ onMounted(() => { load(); loadPending() })
       <button class="btn" @click="search">查询</button>
       <span style="flex:1"></span>
       <span v-if="pending > 0" class="pending-badge">待处理 {{ pending }} 条</span>
-      <button class="btn primary" @click="generate(null, true)">一键生成全部待处理</button>
-      <button class="btn" @click="generateChecked">生成勾选（{{ checked.size }}）</button>
+      <button class="btn primary" v-permission="'finance.gl.event.generate'" @click="generate(null, true)">一键生成全部待处理</button>
+      <button class="btn" v-permission="'finance.gl.event.generate'" @click="generateChecked">生成勾选（{{ checked.size }}）</button>
     </div>
 
     <div v-if="feedback" :class="['toast-inline', feedback.level]">{{ feedback.msg }}</div>
@@ -193,10 +193,10 @@ onMounted(() => { load(); loadPending() })
               <span v-else class="sub">—</span>
             </td>
             <td>
-              <a v-if="canGenerate(row)" @click="generateOne(row)" class="lk">生成凭证</a>
-              <a v-if="row.status === '已忽略'" @click="unignore(row)" class="lk">取消忽略</a>
-              <a v-if="row.status === '待生成' || row.status === '生成失败'" @click="ignore(row)" class="lk">忽略</a>
-              <a v-if="row.status === '已生成' || row.status === '生成失败'" @click="reset(row)" class="lk">重置</a>
+              <a v-if="canGenerate(row)" v-permission="'finance.gl.event.generate'" @click="generateOne(row)" class="lk">生成凭证</a>
+              <a v-if="row.status === '已忽略'" v-permission="'finance.gl.event.edit'" @click="unignore(row)" class="lk">取消忽略</a>
+              <a v-if="row.status === '待生成' || row.status === '生成失败'" v-permission="'finance.gl.event.close'" @click="ignore(row)" class="lk">忽略</a>
+              <a v-if="row.status === '已生成' || row.status === '生成失败'" v-permission="'finance.gl.event.edit'" @click="reset(row)" class="lk">重置</a>
               <a @click="viewPayload(row)" class="lk">数据</a>
             </td>
           </tr>

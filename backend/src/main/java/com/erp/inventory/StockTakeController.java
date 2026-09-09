@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -36,14 +38,23 @@ public class StockTakeController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
 
     public StockTakeController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGenerator,
                                com.erp.system.OperationLogService opLog,
-                               com.erp.finance.gl.GlHookService glHooks) {
+                               com.erp.finance.gl.GlHookService glHooks,
+                               com.erp.common.security.datascope.DataScopeService dataScope,
+                               com.erp.common.security.FieldMasker fieldMasker,
+                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGenerator = billNoGenerator;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+        this.warehouseGuard = warehouseGuard;
     }
 
     /** PRD-31 盘点操作日志：统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）。 */
@@ -52,10 +63,42 @@ public class StockTakeController {
                 com.erp.system.KeyFields.BIZ_STOCK_TAKE, null, sheetNo, detail);
     }
 
+    /**
+     * 数据范围（PRD-28 §5.3）：盘点写操作统一按单号（或 countSheetId）查仓库，
+     * 校验在当前用户仓库数据范围内，越权抛 PermissionDeniedException（403）。
+     */
+    private void assertSheetScope(Map<String, Object> req) {
+        String sheetNo = String.valueOf(req.getOrDefault("sheetNo", req.getOrDefault("bizId", "")));
+        List<Map<String, Object>> rows;
+        if (!sheetNo.isBlank() && !"null".equals(sheetNo)) {
+            rows = jdbcTemplate.queryForList(
+                    "SELECT warehouse FROM inv_count_sheet WHERE sheet_no = ?", sheetNo);
+        } else {
+            Object id = req.get("countSheetId");
+            if (id == null || String.valueOf(id).isBlank()) {
+                throw new IllegalArgumentException("缺少盘点单号");
+            }
+            rows = jdbcTemplate.queryForList(
+                    "SELECT warehouse FROM inv_count_sheet WHERE count_sheet_id = ?",
+                    id instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(id)));
+        }
+        if (rows.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(rows.get(0).get("WAREHOUSE")));
+    }
+
     // ==================== 列表 ====================
 
+    @RequirePerm(value = "inv.count.view", name = "查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 建档人（create_by），商品维度经盘点明细收窄
+        var scope = dataScope.target()
+                .warehouse("s.warehouse").creator("s.create_by")
+                .goodsLines("s.sheet_no", "inv_count_detail", "sheet_no")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT s.count_sheet_id, s.sheet_no, s.warehouse, s.count_date, s.count_type,
                        s.status, s.remark, s.create_by, s.create_time, s.audit_by, s.audit_time,
@@ -66,8 +109,10 @@ public class StockTakeController {
                        (SELECT COALESCE(SUM(d.diff_qty), 0) FROM inv_count_detail d WHERE d.sheet_no = s.sheet_no AND d.diff_qty > 0) AS surplus_qty,
                        (SELECT COALESCE(SUM(ABS(d.diff_qty)), 0) FROM inv_count_detail d WHERE d.sheet_no = s.sheet_no AND d.diff_qty < 0) AS shortage_qty
                 FROM inv_count_sheet s
-                ORDER BY s.create_time DESC, s.sheet_no DESC
-                """);
+                WHERE 1=1
+                """ + scopeSql + """
+                 ORDER BY s.create_time DESC, s.sheet_no DESC
+                """, scopeArgs.toArray());
 
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> row : rows) {
@@ -108,11 +153,17 @@ public class StockTakeController {
             }).toList();
         }
 
+        // 账面/实盘/差异金额均为库存成本金额，按库存成本字段权限脱敏（盘盈盘亏数量是盘点工作本体，不脱敏）
+        fieldMasker.mask(mapped, Map.of(
+                "bookAmount", "VIEW_STOCK_COST",
+                "realAmount", "VIEW_STOCK_COST",
+                "diffAmount", "VIEW_STOCK_COST"));
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
     // ==================== 详情 ====================
 
+    @RequirePerm(value = "inv.count.view", name = "查看")
     @PostMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(@RequestBody Map<String, Object> req) {
         Object id = req.get("countSheetId");
@@ -125,6 +176,8 @@ public class StockTakeController {
                     id instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(id)));
         }
         if (sheets.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        // 数据范围（PRD-28 §5.3）：他仓盘点单详情直接 403
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(sheets.get(0).get("WAREHOUSE")));
 
         Map<String, Object> master = camelize(sheets.get(0));
         String ct = String.valueOf(master.getOrDefault("countType", "1"));
@@ -139,14 +192,22 @@ public class StockTakeController {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("master", master);
         result.put("details", camelDetails);
+        // 金额/成本脱敏（递归进入 details）
+        fieldMasker.mask(result, Map.of(
+                "bookAmount", "VIEW_STOCK_COST",
+                "realAmount", "VIEW_STOCK_COST",
+                "diffAmount", "VIEW_STOCK_COST"));
         return ApiResponse.ok(result);
     }
 
     // ==================== 导入商品 ====================
 
+    @RequirePerm(value = "inv.count.biz_parse_items", name = "解析盘点项")
     @PostMapping("/parse-items")
     public ApiResponse<Map<String, Object>> parseItems(@RequestBody Map<String, Object> req) {
         String warehouse = String.valueOf(req.getOrDefault("warehouse", ""));
+        // 数据范围（PRD-28 §5.3）：只解析数据范围内仓库的库存/批次
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
         @SuppressWarnings("unchecked")
         List<String> itemCodes = (List<String>) req.get("itemCodes");
         if (itemCodes == null || itemCodes.isEmpty()) {
@@ -213,10 +274,13 @@ public class StockTakeController {
 
     // ==================== Excel 导入商品（抽盘创建阶段） ====================
 
+    @RequirePerm(value = "inv.count.biz_parse_excel", name = "解析盘点 Excel")
     @PostMapping("/parse-excel")
     public ApiResponse<Map<String, Object>> parseExcel(@RequestParam("file") MultipartFile file,
                                                        @RequestParam("warehouse") String warehouse) {
         if (file.isEmpty()) throw new IllegalArgumentException("文件为空");
+        // 数据范围（PRD-28 §5.3）：只解析数据范围内仓库
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
         List<String> itemCodes = new ArrayList<>();
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase() : "";
         try {
@@ -296,14 +360,24 @@ public class StockTakeController {
 
     // ==================== 导出盘点明细 ====================
 
+    @RequirePerm(value = "inv.count.export", name = "导出明细")
     @PostMapping("/export-detail")
     public void exportDetail(@RequestBody Map<String, Object> req, HttpServletResponse response) throws IOException {
         String sheetNo = String.valueOf(req.getOrDefault("sheetNo", req.getOrDefault("bizId", "")));
         if (sheetNo.isBlank()) throw new IllegalArgumentException("缺少盘点单号");
+        // 数据范围（PRD-28 §5.3）：他仓盘点单禁止导出
+        assertSheetScope(req);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_detail WHERE sheet_no = ? ORDER BY line_no, detail_id", sheetNo);
         if (details.isEmpty()) throw new IllegalArgumentException("无明细数据");
+        // 导出脱敏（PRD-28 §6.4.4）：成本/金额列按字段权限 + 敏感导出开关清空
+        List<Map<String, Object>> maskedRows = details.stream().map(StockTakeController::camelize)
+                .collect(Collectors.toCollection(ArrayList::new));
+        fieldMasker.maskExport(maskedRows, Map.of(
+                "bookAmount", "VIEW_STOCK_COST",
+                "realAmount", "VIEW_STOCK_COST",
+                "diffAmount", "VIEW_STOCK_COST"));
 
         String fileName = URLEncoder.encode("盘点明细_" + sheetNo + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -319,22 +393,22 @@ public class StockTakeController {
         );
 
         List<List<Object>> body = new ArrayList<>();
-        for (Map<String, Object> d : details) {
+        for (Map<String, Object> d : maskedRows) {
             body.add(List.of(
-                    d.get("LINE_NO") != null ? ((Number) d.get("LINE_NO")).intValue() : "",
-                    String.valueOf(d.getOrDefault("GOODS_CODE", "")),
-                    String.valueOf(d.getOrDefault("GOODS_NAME", "")),
-                    String.valueOf(d.getOrDefault("SPEC", "")),
-                    String.valueOf(d.getOrDefault("BATCH_NO", "")),
-                    d.get("PRODUCTION_DATE") != null ? String.valueOf(d.get("PRODUCTION_DATE")).substring(0, 10) : "",
-                    toBigDecimal(d.get("BOOK_QTY")).stripTrailingZeros().toPlainString(),
-                    toBigDecimal(d.get("REAL_QTY")).stripTrailingZeros().toPlainString(),
-                    toBigDecimal(d.get("DIFF_QTY")).stripTrailingZeros().toPlainString(),
-                    toBigDecimal(d.get("COST_PRICE")).toPlainString(),
-                    toBigDecimal(d.get("BOOK_AMOUNT")).toPlainString(),
-                    toBigDecimal(d.get("REAL_AMOUNT")).toPlainString(),
-                    toBigDecimal(d.get("DIFF_AMOUNT")).toPlainString(),
-                    String.valueOf(d.getOrDefault("DIFF_REMARK", ""))
+                    d.get("lineNo") != null ? ((Number) d.get("lineNo")).intValue() : "",
+                    String.valueOf(d.getOrDefault("goodsCode", "")),
+                    String.valueOf(d.getOrDefault("goodsName", "")),
+                    String.valueOf(d.getOrDefault("spec", "")),
+                    String.valueOf(d.getOrDefault("batchNo", "")),
+                    d.get("productionDate") != null ? String.valueOf(d.get("productionDate")).substring(0, 10) : "",
+                    toBigDecimal(d.get("bookQty")).stripTrailingZeros().toPlainString(),
+                    toBigDecimal(d.get("realQty")).stripTrailingZeros().toPlainString(),
+                    toBigDecimal(d.get("diffQty")).stripTrailingZeros().toPlainString(),
+                    d.get("costPrice") == null ? "" : toBigDecimal(d.get("costPrice")).toPlainString(),
+                    d.get("bookAmount") == null ? "" : toBigDecimal(d.get("bookAmount")).toPlainString(),
+                    d.get("realAmount") == null ? "" : toBigDecimal(d.get("realAmount")).toPlainString(),
+                    d.get("diffAmount") == null ? "" : toBigDecimal(d.get("diffAmount")).toPlainString(),
+                    String.valueOf(d.getOrDefault("diffRemark", ""))
             ));
         }
 
@@ -343,12 +417,18 @@ public class StockTakeController {
 
     // ==================== 导入实盘数量 ====================
 
+    @RequirePerm(value = "inv.count.import", name = "导入实盘")
     @PostMapping("/import-real")
     @Transactional
     public ApiResponse<Map<String, Object>> importReal(@RequestParam("file") MultipartFile file,
                                                        @RequestParam("sheetNo") String sheetNo) {
         if (file.isEmpty()) throw new IllegalArgumentException("文件为空");
         if (sheetNo.isBlank()) throw new IllegalArgumentException("缺少盘点单号");
+        // 数据范围（PRD-28 §5.3）：禁止导入实盘到他仓盘点单
+        List<Map<String, Object>> sheetRows = jdbcTemplate.queryForList(
+                "SELECT warehouse FROM inv_count_sheet WHERE sheet_no = ?", sheetNo);
+        if (sheetRows.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(sheetRows.get(0).get("WAREHOUSE")));
 
         List<Map<String, Object>> updates = new ArrayList<>();
         try {
@@ -408,11 +488,14 @@ public class StockTakeController {
 
     // ==================== 创建 ====================
 
+    @RequirePerm(value = "inv.count.add", name = "新增")
     @PostMapping("/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> req) {
         String warehouse = String.valueOf(req.getOrDefault("warehouse", ""));
         if (warehouse.isBlank()) throw new IllegalArgumentException("请选择盘点仓库");
+        // 数据范围（PRD-28 §5.3）：禁止在数据范围外仓库建盘点单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         String countType = String.valueOf(req.getOrDefault("countType", "1"));
         String remark = String.valueOf(req.getOrDefault("remark", ""));
@@ -495,11 +578,14 @@ public class StockTakeController {
 
     // ==================== 保存实盘 ====================
 
+    @RequirePerm(value = "inv.count.edit", name = "录入实盘")
     @PostMapping("/update-real")
     @Transactional
     public ApiResponse<Map<String, Object>> updateReal(@RequestBody Map<String, Object> req) {
         String sheetNo = String.valueOf(req.getOrDefault("sheetNo", req.getOrDefault("bizId", "")));
         if (sheetNo.isBlank()) throw new IllegalArgumentException("缺少盘点单号");
+        // 数据范围（PRD-28 §5.3）：禁止录入他仓盘点单的实盘数据
+        assertSheetScope(req);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> details = (List<Map<String, Object>>) req.get("details");
@@ -533,6 +619,7 @@ public class StockTakeController {
 
     // ==================== 审核 ====================
 
+    @RequirePerm(value = "inv.count.audit", name = "审核")
     @PostMapping("/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@RequestBody Map<String, Object> req) {
@@ -553,6 +640,8 @@ public class StockTakeController {
             throw new IllegalArgumentException("盘点单已审核，不能重复审核");
 
         String warehouse = String.valueOf(sheets.get(0).get("WAREHOUSE"));
+        // 数据范围（PRD-28 §5.3）：禁止审核/反审核他仓盘点单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_detail WHERE sheet_no = ? ORDER BY line_no", sheetNo);
@@ -620,6 +709,7 @@ public class StockTakeController {
 
     // ==================== 反审核 ====================
 
+    @RequirePerm(value = "inv.count.unaudit", name = "反审核")
     @PostMapping("/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@RequestBody Map<String, Object> req) {
@@ -633,6 +723,8 @@ public class StockTakeController {
             throw new IllegalArgumentException("盘点单未审核，不能反审核");
 
         String warehouse = String.valueOf(sheets.get(0).get("WAREHOUSE"));
+        // 数据范围（PRD-28 §5.3）：禁止审核/反审核他仓盘点单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_detail WHERE sheet_no = ? ORDER BY line_no", sheetNo);
@@ -671,6 +763,7 @@ public class StockTakeController {
 
     // ==================== 删除 ====================
 
+    @RequirePerm(value = "inv.count.delete", name = "删除")
     @PostMapping("/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> delete(@RequestBody Map<String, Object> req) {
@@ -680,6 +773,8 @@ public class StockTakeController {
         List<Map<String, Object>> sheets = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_sheet WHERE sheet_no = ?", sheetNo);
         if (sheets.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        // 数据范围（PRD-28 §5.3）：禁止删除他仓盘点单
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(sheets.get(0).get("WAREHOUSE")));
         if ("APPROVED".equals(String.valueOf(sheets.get(0).get("STATUS"))))
             throw new IllegalArgumentException("已审核的盘点单不能删除");
 

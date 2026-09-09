@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.erp.common.security.RequirePerm;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -54,6 +55,111 @@ public class FinanceController {
         this.fieldMasker = fieldMasker;
     }
 
+    // ============================================================
+    // PRD-28 卡片7：财务数据范围 / 金额脱敏 / 往来单位写守卫
+    // ============================================================
+
+    /** 应收金额类 key → VIEW_AR_BALANCE（注册表只自动覆盖 arAmount，其余调用点显式映射）。 */
+    private static final Map<String, String> AR_AMOUNT_KEYS = Map.of(
+            "receivedAmount", "VIEW_AR_BALANCE",
+            "unreceivedAmount", "VIEW_AR_BALANCE",
+            "settlementAmount", "VIEW_AR_BALANCE");
+    /** 应付金额类 key → VIEW_AP_BALANCE。 */
+    private static final Map<String, String> AP_AMOUNT_KEYS = Map.of(
+            "paidAmount", "VIEW_AP_BALANCE",
+            "unpaidAmount", "VIEW_AP_BALANCE",
+            "invoicedAmount", "VIEW_AP_BALANCE",
+            "settlementAmount", "VIEW_AP_BALANCE");
+    /** 资金/费用金额类 key → VIEW_FUND_FLOW（收付款单、费用单、资金流水的金额列）。 */
+    private static final Map<String, String> FUND_AMOUNT_KEYS = Map.of(
+            "totalAmount", "VIEW_FUND_FLOW",
+            "verifiedAmount", "VIEW_FUND_FLOW",
+            "amount", "VIEW_FUND_FLOW",
+            "totalTaxAmount", "VIEW_FUND_FLOW",
+            "totalExcludingTaxAmount", "VIEW_FUND_FLOW",
+            "taxAmount", "VIEW_FUND_FLOW",
+            "excludingTaxAmount", "VIEW_FUND_FLOW",
+            "price", "VIEW_FUND_FLOW",
+            "reconcileAmount", "VIEW_FUND_FLOW",
+            "billAmount", "VIEW_FUND_FLOW");
+    /**
+     * 客户对账单（主表 + 明细递归脱敏）：对账金额/未收属应收视角，已收属资金视角，
+     * 核销/抹零（writeOffAmount 注册表自动命中 VIEW_SETTLE_DETAIL）属结算明细视角。
+     */
+    private static final Map<String, String> CS_MASK_KEYS = Map.ofEntries(
+            Map.entry("receivedAmount", "VIEW_AR_BALANCE"),
+            Map.entry("unreceivedAmount", "VIEW_AR_BALANCE"),
+            Map.entry("settlementAmount", "VIEW_AR_BALANCE"),
+            Map.entry("totalAmount", "VIEW_AR_BALANCE"),
+            Map.entry("unpaidAmount", "VIEW_AR_BALANCE"),
+            Map.entry("billAmount", "VIEW_AR_BALANCE"),
+            Map.entry("paidAmount", "VIEW_FUND_FLOW"),
+            Map.entry("reconcileAmount", "VIEW_SETTLE_DETAIL"));
+    /** 供应商对账单：同客户对账单口径，往来金额改应付视角（已付款金额同样是资金视角）。 */
+    private static final Map<String, String> SS_MASK_KEYS = Map.ofEntries(
+            Map.entry("unpaidAmount", "VIEW_AP_BALANCE"),
+            Map.entry("settlementAmount", "VIEW_AP_BALANCE"),
+            Map.entry("totalAmount", "VIEW_AP_BALANCE"),
+            Map.entry("billAmount", "VIEW_AP_BALANCE"),
+            Map.entry("paidAmount", "VIEW_FUND_FLOW"),
+            Map.entry("reconcileAmount", "VIEW_SETTLE_DETAIL"));
+
+    /**
+     * 混合往来单位表（counterparty_type=CUSTOMER/SUPPLIER/COUNTERPARTY）按数据范围收窄：
+     * 客户行走客户维度、供应商行走供应商维度（两分支 OR）；往来单位行无对应数据维度，
+     * 有菜单即可见。角色未配任何维度时退回建档人过滤（creatorCol 为 null 则 fail-closed 1=0）。
+     */
+    private void appendCpScope(StringBuilder sql, List<Object> args,
+                               String typeCol, String nameCol, String creatorCol) {
+        var base = creatorCol == null ? dataScope.target().build()
+                : dataScope.target().creator(creatorCol).build();
+        if (base.isDenyAll()) { sql.append(" AND 1=0"); return; }
+        if (!base.predicateSql().isEmpty()) { base.appendTo(sql, args); return; }
+        var cust = dataScope.target().customer(nameCol).build();
+        var supp = dataScope.target().supplier(nameCol).build();
+        List<String> ors = new ArrayList<>();
+        List<Object> gateArgs = new ArrayList<>();
+        if (!cust.isDenyAll()) {
+            if (cust.predicateSql().isEmpty()) ors.add(typeCol + " = 'CUSTOMER'");
+            else { ors.add("(" + typeCol + " = 'CUSTOMER' AND " + cust.predicateSql() + ")"); gateArgs.addAll(cust.predicateParams()); }
+        }
+        if (!supp.isDenyAll()) {
+            if (supp.predicateSql().isEmpty()) ors.add(typeCol + " = 'SUPPLIER'");
+            else { ors.add("(" + typeCol + " = 'SUPPLIER' AND " + supp.predicateSql() + ")"); gateArgs.addAll(supp.predicateParams()); }
+        }
+        ors.add("(" + typeCol + " IS NULL OR " + typeCol + " NOT IN ('CUSTOMER','SUPPLIER'))");
+        sql.append(" AND (").append(String.join(" OR ", ors)).append(")");
+        args.addAll(gateArgs);
+    }
+
+    /** 写操作往来单位可见性：客户行校客户范围、供应商行校供应商范围；往来单位(COUNTERPARTY)无维度不拦。 */
+    private void assertCpVisible(String type, String name) {
+        if (name == null || name.isBlank() || type == null) return;
+        boolean cust = "CUSTOMER".equals(type);
+        if (!cust && !"SUPPLIER".equals(type)) return;
+        String col = cust ? "customer_name" : "supplier_name";
+        var scope = cust ? dataScope.target().customer(col).build()
+                        : dataScope.target().supplier(col).build();
+        if (scope.isDenyAll()) throw new com.erp.common.security.PermissionDeniedException("无该往来单位的操作权限");
+        if (scope.predicateSql().isEmpty()) return;
+        List<Object> a = new ArrayList<>();
+        a.add(name);
+        a.addAll(scope.predicateParams());
+        Integer cnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM " + (cust ? "base_customer" : "base_supplier")
+                        + " WHERE " + col + " = ? AND " + scope.predicateSql(),
+                Integer.class, a.toArray());
+        if (cnt == null || cnt == 0) {
+            throw new com.erp.common.security.PermissionDeniedException("无该往来单位的操作权限：" + name);
+        }
+    }
+
+    /** 对账单据头/收付款单头加载后校验往来单位可见性（counterparty_type/name 两列）。 */
+    private void assertHeadCpVisible(Map<String, Object> head) {
+        assertCpVisible(str(head.get("counterpartyType")), str(head.get("counterpartyName")));
+    }
+
+    @RequirePerm(value = "fin.ar_detail.view", name = "查看")
     @PostMapping("/ar/page")
     public ApiResponse<PageResult<Map<String, Object>>> arPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -93,11 +199,12 @@ public class FinanceController {
             r.put("reconcileStatusText", rs == null || rs.isEmpty() || "未对账".equals(rs) ? "未对账"
                     : "对账中".equals(rs) ? "对账中" : "已对账".equals(rs) ? "已对账" : rs);
         }
-        fieldMasker.mask(rows);
+        fieldMasker.mask(rows, AR_AMOUNT_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     /** 收款结算：生成收款单并审核，更新 AR 已收金额，抹零生成费用单 */
+    @RequirePerm(value = "fin.ar_settle.settle", name = "结算")
     @PostMapping("/ar/settle")
     @Transactional
     public ApiResponse<Map<String, Object>> arSettle(@RequestBody Map<String, Object> body) {
@@ -122,6 +229,8 @@ public class FinanceController {
             Map<String, Object> ar = ars.get(0);
             byCustomer.computeIfAbsent(str(ar.get("customer")), k -> new java.util.ArrayList<>()).add(ar);
         }
+        // PRD-28：写操作往来单位范围校验，禁止直接构造请求核销不可见客户的应收
+        byCustomer.keySet().forEach(c -> assertCpVisible("CUSTOMER", c));
         java.sql.Date settleDate = java.sql.Date.valueOf(receiptDate.isEmpty() ? LocalDate.now().toString() : receiptDate);
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
         int created = 0;
@@ -189,21 +298,47 @@ public class FinanceController {
         return ApiResponse.ok(Map.of("created",created,"receiptAmount",acctTotal));
     }
 
+    @RequirePerm(value = "fin.ap.view", name = "查看")
     @PostMapping("/ap/page")
     public ApiResponse<PageResult<Map<String, Object>>> apPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(queryCamel("""
+        // 数据范围（PRD-28 §5.3）：供应商维度（AP 表无客户/业务员/建档人列）
+        var scope = dataScope.target().supplier("supplier").build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        StringBuilder sql = new StringBuilder("""
                 SELECT ap_no, supplier, source_bill,
                        ap_amount, paid_amount, unpaid_amount, due_date,
                        invoiced_amount, invoice_status,
                        CASE status WHEN 'VERIFIED' THEN '已核销' ELSE '未核销' END status
                 FROM fin_ap
-                ORDER BY ap_no DESC
-                """), request));
+                WHERE 1=1
+                """);
+        List<Object> args = new java.util.ArrayList<>();
+        scope.appendTo(sql, args);
+        Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        String supplier = trimF(filters, "supplier", "供应商");
+        if (!supplier.isEmpty()) { sql.append(" AND supplier LIKE ?"); args.add("%"+supplier+"%"); }
+        String status = trimF(filters, "status", "核销状态");
+        if (!status.isEmpty()) {
+            if ("已核销".equals(status)) sql.append(" AND status = 'VERIFIED'");
+            else if ("未核销".equals(status)) sql.append(" AND status = 'UNVERIFIED'");
+        }
+        sql.append(" ORDER BY ap_no DESC");
+        List<Map<String, Object>> rows = queryCamel(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, AP_AMOUNT_KEYS);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.receipt.view", name = "查看")
     @PostMapping("/receipt-payment/page")
     public ApiResponse<PageResult<Map<String, Object>>> receiptPaymentPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(queryCamel("""
+        // PRD-28：UNION 两分支分别挂往来单位数据范围（客户行走客户维度/供应商行走供应商维度）
+        StringBuilder gR = new StringBuilder(); List<Object> aR = new java.util.ArrayList<>();
+        appendCpScope(gR, aR, "r.counterparty_type", "r.counterparty_name", "r.creator_name");
+        StringBuilder gP = new StringBuilder(); List<Object> aP = new java.util.ArrayList<>();
+        appendCpScope(gP, aP, "p.counterparty_type", "p.counterparty_name", "p.creator_name");
+        if (gR.toString().contains("1=0") && gP.toString().contains("1=0"))
+            return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        StringBuilder sql = new StringBuilder("""
                 SELECT receipt_no bill_no,
                        '收款单' bill_type,
                        object_name,
@@ -211,7 +346,10 @@ public class FinanceController {
                        amount,
                        verified_amount,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM fin_receipt_bill
+                FROM fin_receipt_bill r
+                WHERE 1=1
+                """);
+        sql.append(gR).append("""
                 UNION ALL
                 SELECT payment_no bill_no,
                        '付款单' bill_type,
@@ -220,12 +358,19 @@ public class FinanceController {
                        amount,
                        verified_amount,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM fin_payment_bill
-                ORDER BY bill_no DESC
-                """), request));
+                FROM fin_payment_bill p
+                WHERE 1=1
+                """);
+        sql.append(gP).append(" ORDER BY bill_no DESC");
+        List<Object> args = new java.util.ArrayList<>();
+        args.addAll(aR); args.addAll(aP);
+        List<Map<String, Object>> rows = queryCamel(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, FUND_AMOUNT_KEYS);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     /** 收款单创建（V32 重构：完整字段 + 明细行） */
+    @RequirePerm(value = "fin.receipt.add", name = "新增")
     @PostMapping("/receipt/create")
     public ApiResponse<Map<String, Object>> createReceipt(@RequestBody Map<String, Object> body) {
         String receiptId = "SK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -234,6 +379,7 @@ public class FinanceController {
         String operator = currentUser();
         BigDecimal total = sumDetails(body);
         String cpName = str(body.get("counterpartyName"));
+        assertCpVisible(str(body.get("counterpartyType")), cpName);
         // 老列 object_name / fund_account / amount 仍有 NOT NULL 约束（V1 schema），
         // 新设计下这些信息存在明细行里，这里取值填上保证写入不报错
         String firstFundAcct = "";
@@ -261,6 +407,7 @@ public class FinanceController {
     }
 
     /** 付款单创建（V32 重构：完整字段 + 明细行） */
+    @RequirePerm(value = "fin.payment.add", name = "新增")
     @PostMapping("/payment/create")
     public ApiResponse<Map<String, Object>> createPayment(@RequestBody Map<String, Object> body) {
         String paymentId = "FK" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -269,6 +416,7 @@ public class FinanceController {
         String operator = currentUser();
         BigDecimal total = sumDetails(body);
         String cpName = str(body.get("counterpartyName"));
+        assertCpVisible(str(body.get("counterpartyType")), cpName);
         String firstFundAcct = "";
         Object raw = body.get("details");
         if (raw instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?> m)
@@ -293,19 +441,44 @@ public class FinanceController {
         return ApiResponse.ok(GenericResult.row("paymentId", paymentId, "paymentNo", paymentNo));
     }
 
+    @RequirePerm(value = "fin.fund_flow.view", name = "查看")
     @PostMapping("/fund-ledger/page")
     public ApiResponse<PageResult<Map<String, Object>>> fundLedgerPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(queryCamel("""
+        // PRD-28：资金流水无往来单位列，按操作人收窄（未配维度仅见本人经手）；金额/账户余额脱敏
+        var scope = dataScope.target().creator("operator_name").build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        StringBuilder sql = new StringBuilder("""
                 SELECT ledger_no, fund_account, direction, amount,
                        source_bill, balance_after, occurred_at, operator_name
                 FROM fin_fund_ledger
-                ORDER BY occurred_at DESC
-                """), request));
+                WHERE 1=1
+                """);
+        List<Object> args = new java.util.ArrayList<>();
+        scope.appendTo(sql, args);
+        Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        String fundAccount = trimF(filters, "fundAccount");
+        if (!fundAccount.isEmpty()) { sql.append(" AND fund_account LIKE ?"); args.add("%"+fundAccount+"%"); }
+        String direction = trimF(filters, "direction");
+        if (!direction.isEmpty()) { sql.append(" AND direction = ?"); args.add(direction); }
+        String dateFrom = trimF(filters, "dateFrom");
+        if (!dateFrom.isEmpty()) { sql.append(" AND occurred_at >= ?"); args.add(dateFrom + " 00:00:00"); }
+        String dateTo = trimF(filters, "dateTo");
+        if (!dateTo.isEmpty()) { sql.append(" AND occurred_at <= ?"); args.add(dateTo + " 23:59:59"); }
+        sql.append(" ORDER BY occurred_at DESC");
+        List<Map<String, Object>> rows = queryCamel(sql.toString(), args.toArray());
+        java.util.Map<String, String> keys = new java.util.HashMap<>(FUND_AMOUNT_KEYS);
+        keys.put("balanceAfter", "VIEW_FUND_ACCOUNT_BALANCE");
+        fieldMasker.mask(rows, keys);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.ar_settle.view", name = "查看")
     @PostMapping("/ar-settlement/page")
     public ApiResponse<PageResult<Map<String, Object>>> arSettlementPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // PRD-28：按客户数据范围收窄；结算金额随应收余额脱敏
+        var scope = dataScope.target().customer("customer").build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        StringBuilder sql = new StringBuilder("""
                 SELECT CONCAT('ARS', DATE_FORMAT(NOW(), '%Y%m%d'), '0001') settlementNo,
                        customer,
                        SUM(unreceived_amount) settlementAmount,
@@ -313,13 +486,22 @@ public class FinanceController {
                        '待审核' status
                 FROM fin_ar
                 WHERE status <> 'VERIFIED'
-                GROUP BY customer
-                """), request));
+                """);
+        List<Object> args = new java.util.ArrayList<>();
+        scope.appendTo(sql, args);
+        sql.append(" GROUP BY customer");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, AR_AMOUNT_KEYS);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.ap_settle.view", name = "查看")
     @PostMapping("/ap-settlement/page")
     public ApiResponse<PageResult<Map<String, Object>>> apSettlementPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // PRD-28：按供应商数据范围收窄；结算金额随应付余额脱敏
+        var scope = dataScope.target().supplier("supplier").build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        StringBuilder sql = new StringBuilder("""
                 SELECT CONCAT('APS', DATE_FORMAT(NOW(), '%Y%m%d'), '0001') settlementNo,
                        supplier,
                        SUM(unpaid_amount) settlementAmount,
@@ -327,14 +509,20 @@ public class FinanceController {
                        '待审核' status
                 FROM fin_ap
                 WHERE status <> 'VERIFIED'
-                GROUP BY supplier
-                """), request));
+                """);
+        List<Object> args = new java.util.ArrayList<>();
+        scope.appendTo(sql, args);
+        sql.append(" GROUP BY supplier");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, AP_AMOUNT_KEYS);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     // ============================================================
     // 费用单 V38 重构
     // ============================================================
 
+    @RequirePerm(value = "fin.fee.view", name = "查看")
     @PostMapping("/expense/page")
     public ApiResponse<PageResult<Map<String, Object>>> expensePage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -348,6 +536,8 @@ public class FinanceController {
                 WHERE 1=1
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        // PRD-28：往来单位多态列按客户/供应商维度收窄，未配维度仅见本人建档
+        appendCpScope(sql, args, "e.counterparty_type", "e.counterparty_name", "e.creator_name");
         String cpType = trimF(filters, "counterpartyType");
         if (!cpType.isEmpty()) { sql.append(" AND e.counterparty_type = ?"); args.add(cpType); }
         String cpName = trimF(filters, "counterparty");
@@ -376,19 +566,24 @@ public class FinanceController {
             String ct = str(r.get("counterpartyType"));
             r.put("counterpartyTypeText", "CUSTOMER".equals(ct) ? "客户" : "SUPPLIER".equals(ct) ? "供应商" : "COUNTERPARTY".equals(ct) ? "往来单位" : ct);
         }
+        fieldMasker.mask(rows, FUND_AMOUNT_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.fee.view", name = "查看")
     @PostMapping("/expense/detail")
     public ApiResponse<Map<String, Object>> expenseDetail(@RequestBody Map<String, Object> body) {
         String id = str(body.get("expenseId"));
         List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_expense_bill WHERE expense_id = ? OR expense_no = ?", id, id);
         if (heads.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         Map<String, Object> head = heads.get(0);
+        assertHeadCpVisible(head);
         head.put("details", queryCamel("SELECT * FROM fin_expense_detail WHERE expense_id = ? ORDER BY sort_order", head.get("expenseId")));
+        fieldMasker.mask(head, FUND_AMOUNT_KEYS);
         return ApiResponse.ok(head);
     }
 
+    @RequirePerm(value = "fin.fee.add", name = "新增")
     @PostMapping("/expense/create")
     public ApiResponse<Map<String, Object>> createExpense(@RequestBody Map<String, Object> body) {
         String expenseId = "FE" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -400,6 +595,7 @@ public class FinanceController {
         BigDecimal totalExcluding = sumDetailField(body, "excludingTaxAmount");
         // 收支方向以表单选择为准（OUT=费用支出 / IN=其他收入）；前端默认 OUT
         String direction = "IN".equals(str(body.get("direction"))) ? "IN" : "OUT";
+        assertCpVisible(str(body.get("counterpartyType")), str(body.get("counterpartyName")));
         // 取第一条明细的费用类型回填旧列 expense_type（NOT NULL），其他旧列有 DEFAULT
         String firstExpType = "其他";
         Object rd = body.get("details");
@@ -435,12 +631,16 @@ public class FinanceController {
         return ApiResponse.ok(GenericResult.row("expenseId", expenseId, "expenseNo", expenseNo));
     }
 
+    @RequirePerm(value = "fin.fee.edit", name = "修改")
     @PostMapping("/expense/update")
     public ApiResponse<Boolean> updateExpense(@RequestBody Map<String, Object> body) {
         String id = str(body.get("expenseId"));
-        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no FROM fin_expense_bill WHERE expense_id = ?", id);
+        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no, counterparty_type, counterparty_name FROM fin_expense_bill WHERE expense_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核单据可编辑");
+        // PRD-28：旧往来单位与改后往来单位都须在数据范围内
+        assertHeadCpVisible(exist.get(0));
+        assertCpVisible(str(body.get("counterpartyType")), str(body.get("counterpartyName")));
         String expenseNo = str(exist.get(0).get("expenseNo"));
         BigDecimal total = sumDetails(body);
         BigDecimal totalTax = sumDetailField(body, "taxAmount");
@@ -466,12 +666,14 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.fee.delete", name = "删除")
     @PostMapping("/expense/delete")
     public ApiResponse<Boolean> deleteExpense(@RequestBody Map<String, Object> body) {
         String id = str(body.get("expenseId"));
-        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no FROM fin_expense_bill WHERE expense_id = ?", id);
+        List<Map<String, Object>> exist = queryCamel("SELECT status, expense_no, counterparty_type, counterparty_name FROM fin_expense_bill WHERE expense_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核单据可删除");
+        assertHeadCpVisible(exist.get(0));
         String expenseNo = str(exist.get(0).get("expenseNo"));
         jdbcTemplate.update("DELETE FROM fin_expense_detail WHERE expense_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_expense_bill WHERE expense_id = ?", id);
@@ -480,6 +682,7 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.fee.audit", name = "审核")
     @PostMapping("/expense/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditExpense(@RequestBody Map<String, Object> body) {
@@ -488,6 +691,7 @@ public class FinanceController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "费用单不存在");
         Map<String, Object> r = heads.get(0);
         if (!"PENDING".equals(str(r.get("status")))) return ApiResponse.fail("400", "仅待审核单据可审核");
+        assertHeadCpVisible(r);
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String expenseNo = str(r.get("expenseNo"));
@@ -572,6 +776,7 @@ public class FinanceController {
         }
     }
 
+    @RequirePerm(value = "fin.receipt_verify.writeoff", name = "核销")
     @PostMapping("/reconcile/receive")
     @Transactional
     public ApiResponse<Map<String, Object>> receiveReconcile(@Valid @RequestBody FundBillRequest request) {
@@ -592,6 +797,7 @@ public class FinanceController {
         }
 
         Map<String, Object> ar = rows.get(0);
+        assertCpVisible("CUSTOMER", String.valueOf(ar.get("CUSTOMER")));
         BigDecimal arAmount = toBigDecimal(ar.get("AR_AMOUNT"));
         BigDecimal receivedAmount = toBigDecimal(ar.get("RECEIVED_AMOUNT"));
         BigDecimal unreceivedAmount = toBigDecimal(ar.get("UNRECEIVED_AMOUNT"));
@@ -614,15 +820,17 @@ public class FinanceController {
 
         finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.WRITE_OFF,
                 com.erp.system.KeyFields.BIZ_FIN_RECEIPT, String.valueOf(ar.get("AR_NO")), "核销应收 " + ar.get("AR_NO"));
-        return ApiResponse.ok(Map.of(
-            "success", true,
-            "effect", "收款已核销应收并生成资金流水",
-            "arNo", ar.get("AR_NO"),
-            "verifiedAmount", actualVerify,
-            "remaining", newUnreceived
-        ));
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("success", true);
+        resp.put("effect", "收款已核销应收并生成资金流水");
+        resp.put("arNo", ar.get("AR_NO"));
+        resp.put("verifiedAmount", actualVerify);
+        resp.put("remaining", newUnreceived);
+        fieldMasker.mask(resp, java.util.Map.of("verifiedAmount", "VIEW_FUND_FLOW", "remaining", "VIEW_AR_BALANCE"));
+        return ApiResponse.ok(resp);
     }
 
+    @RequirePerm(value = "fin.payment_verify.writeoff", name = "核销")
     @PostMapping("/reconcile/pay")
     @Transactional
     public ApiResponse<Map<String, Object>> payReconcile(@Valid @RequestBody FundBillRequest request) {
@@ -642,6 +850,7 @@ public class FinanceController {
         }
 
         Map<String, Object> ap = rows.get(0);
+        assertCpVisible("SUPPLIER", String.valueOf(ap.get("SUPPLIER")));
         BigDecimal apAmount = toBigDecimal(ap.get("AP_AMOUNT"));
         BigDecimal paidAmount = toBigDecimal(ap.get("PAID_AMOUNT"));
         BigDecimal unpaidAmount = toBigDecimal(ap.get("UNPAID_AMOUNT"));
@@ -662,19 +871,21 @@ public class FinanceController {
 
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.WRITE_OFF,
                 com.erp.system.KeyFields.BIZ_FIN_PAYMENT, String.valueOf(ap.get("AP_NO")), "核销应付 " + ap.get("AP_NO"));
-        return ApiResponse.ok(Map.of(
-            "success", true,
-            "effect", "付款已核销应付并生成资金流水",
-            "apNo", ap.get("AP_NO"),
-            "verifiedAmount", actualVerify,
-            "remaining", newUnpaid
-        ));
+        java.util.Map<String, Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("success", true);
+        resp.put("effect", "付款已核销应付并生成资金流水");
+        resp.put("apNo", ap.get("AP_NO"));
+        resp.put("verifiedAmount", actualVerify);
+        resp.put("remaining", newUnpaid);
+        fieldMasker.mask(resp, java.util.Map.of("verifiedAmount", "VIEW_FUND_FLOW", "remaining", "VIEW_AP_BALANCE"));
+        return ApiResponse.ok(resp);
     }
 
     // ============================================================
     // 收款单 CRUD + 审核 + 取消审核（V32 重构）
     // ============================================================
 
+    @RequirePerm(value = "fin.receipt.view", name = "查看")
     @PostMapping("/receipt/page")
     public ApiResponse<PageResult<Map<String, Object>>> receiptPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -688,6 +899,8 @@ public class FinanceController {
                 WHERE 1=1
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        // PRD-28：往来单位多态列按客户/供应商维度收窄
+        appendCpScope(sql, args, "r.counterparty_type", "r.counterparty_name", "r.creator_name");
         String cpType = trimF(filters, "counterpartyType", "counterparty_type");
         if (!cpType.isEmpty()) { sql.append(" AND r.counterparty_type = ?"); args.add(cpType); }
         String cpName = trimF(filters, "counterparty", "counterpartyName");
@@ -734,24 +947,29 @@ public class FinanceController {
             else if (verified.compareTo(total) < 0) r.put("reconcileStatusText", "部分核销");
             else r.put("reconcileStatusText", "已核销");
         }
+        fieldMasker.mask(rows, FUND_AMOUNT_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     /** 查询往来单位的未结算单据（供核销弹窗选择） */
     /** 查询往来单位的未结算单据（核销弹窗数据源） */
+    @RequirePerm(value = "fin.receipt_verify.view", name = "查看")
     @PostMapping("/receipt/unsettled-bills")
     public ApiResponse<Map<String, Object>> unsettledBills(@RequestBody Map<String, Object> body) {
         String cpType = str(body.get("counterpartyType"));
         String cpCode = str(body.get("counterpartyCode"));
         String cpName = str(body.get("counterpartyName"));
         String receiptId = str(body.get("receiptId"));
+        // PRD-28：核销弹窗数据源按往来单位数据范围收窄，禁止枚举不可见客户/供应商的单据
+        assertCpVisible(cpType, cpName);
         // 待核销金额 = total_amount - verified_amount
         BigDecimal pendingAmount = BigDecimal.ZERO;
         if (!receiptId.isEmpty()) {
             List<Map<String, Object>> rr = queryCamel(
-                    "SELECT total_amount, verified_amount FROM fin_receipt_bill WHERE receipt_id = ?", receiptId);
+                    "SELECT * FROM fin_receipt_bill WHERE receipt_id = ?", receiptId);
             if (!rr.isEmpty()) {
                 Map<String, Object> rec = rr.get(0);
+                assertHeadCpVisible(rec);
                 pendingAmount = toBd(rec.get("totalAmount")).subtract(toBd(rec.get("verifiedAmount")));
             }
         }
@@ -781,10 +999,17 @@ public class FinanceController {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("pendingAmount", pendingAmount);
         result.put("bills", bills);
+        java.util.Map<String, String> billKeys = new java.util.HashMap<>();
+        billKeys.putAll(AR_AMOUNT_KEYS);
+        billKeys.putAll(AP_AMOUNT_KEYS);
+        billKeys.put("settleAmount", "VIEW_SETTLE_DETAIL");
+        billKeys.put("pendingAmount", "VIEW_FUND_FLOW");
+        fieldMasker.mask(result, billKeys);
         return ApiResponse.ok(result);
     }
 
     /** 执行核销：勾选未结算单据 → 生成核销记录 + 更新 AR/AP + 更新收款单 verified_amount */
+    @RequirePerm(value = "fin.receipt_verify.writeoff", name = "核销")
     @PostMapping("/receipt/reconcile")
     @Transactional
     public ApiResponse<Map<String, Object>> reconcileReceipt(@RequestBody Map<String, Object> body) {
@@ -793,6 +1018,7 @@ public class FinanceController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         Map<String, Object> r = heads.get(0);
         if (!"APPROVED".equals(str(r.get("status")))) return ApiResponse.fail("400", "仅已审核单据可核销");
+        assertHeadCpVisible(r);
         String receiptNo = str(r.get("receiptNo"));
         java.sql.Date receiptDate = r.get("receiptDate") instanceof java.sql.Date d ? d : java.sql.Date.valueOf(LocalDate.now());
         String cpType = str(r.get("counterpartyType"));
@@ -815,6 +1041,7 @@ public class FinanceController {
                 List<Map<String, Object>> ars = queryCamel("SELECT * FROM fin_ar WHERE ar_no = ?", billNo);
                 if (ars.isEmpty()) continue;
                 Map<String, Object> ar = ars.get(0);
+                assertCpVisible("CUSTOMER", str(ar.get("customer")));
                 BigDecimal newReceived = toBd(ar.get("receivedAmount")).add(amt);
                 BigDecimal newUnreceived = toBd(ar.get("arAmount")).subtract(newReceived);
                 jdbcTemplate.update("UPDATE fin_ar SET received_amount = ?, unreceived_amount = ?, status = ? WHERE ar_no = ?",
@@ -826,6 +1053,7 @@ public class FinanceController {
                 List<Map<String, Object>> aps = queryCamel("SELECT * FROM fin_ap WHERE ap_no = ?", billNo);
                 if (aps.isEmpty()) continue;
                 Map<String, Object> ap = aps.get(0);
+                assertCpVisible("SUPPLIER", str(ap.get("supplier")));
                 BigDecimal newPaid = toBd(ap.get("paidAmount")).add(amt);
                 BigDecimal newUnpaid = toBd(ap.get("apAmount")).subtract(newPaid);
                 jdbcTemplate.update("UPDATE fin_ap SET paid_amount = ?, unpaid_amount = ?, status = ? WHERE ap_no = ?",
@@ -841,10 +1069,139 @@ public class FinanceController {
                 curVerified.add(totalVerified), receiptId);
         finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.WRITE_OFF,
                 com.erp.system.KeyFields.BIZ_FIN_RECEIPT, receiptNo, "核销应收 " + receiptNo);
-        return ApiResponse.ok(Map.of("receiptNo", receiptNo, "reconciled", totalVerified));
+        java.util.Map<String, Object> recResp = new java.util.LinkedHashMap<>();
+        recResp.put("receiptNo", receiptNo);
+        recResp.put("reconciled", totalVerified);
+        fieldMasker.mask(recResp, java.util.Map.of("reconciled", "VIEW_SETTLE_DETAIL"));
+        return ApiResponse.ok(recResp);
+    }
+
+    /** 查询往来单位的未结算单据（付款单核销弹窗数据源，与 /receipt/unsettled-bills 对称） */
+    @RequirePerm(value = "fin.payment_verify.view", name = "查看")
+    @PostMapping("/payment/unsettled-bills")
+    public ApiResponse<Map<String, Object>> paymentUnsettledBills(@RequestBody Map<String, Object> body) {
+        String cpType = str(body.get("counterpartyType"));
+        String cpCode = str(body.get("counterpartyCode"));
+        String cpName = str(body.get("counterpartyName"));
+        String paymentId = str(body.get("paymentId"));
+        // PRD-28：核销弹窗数据源按往来单位数据范围收窄，禁止枚举不可见客户/供应商的单据
+        assertCpVisible(cpType, cpName);
+        // 待核销金额 = total_amount - verified_amount
+        BigDecimal pendingAmount = BigDecimal.ZERO;
+        if (!paymentId.isEmpty()) {
+            List<Map<String, Object>> pp = queryCamel(
+                    "SELECT * FROM fin_payment_bill WHERE payment_id = ?", paymentId);
+            if (!pp.isEmpty()) {
+                Map<String, Object> pay = pp.get(0);
+                assertHeadCpVisible(pay);
+                pendingAmount = toBd(pay.get("totalAmount")).subtract(toBd(pay.get("verifiedAmount")));
+            }
+        }
+        List<Map<String, Object>> bills = new java.util.ArrayList<>();
+        if (!"SUPPLIER".equals(cpType)) {
+            String arSql = cpCode.isEmpty()
+                ? "SELECT ar_no, source_bill, customer AS counterparty_name, ar_amount, received_amount, unreceived_amount, due_date FROM fin_ar WHERE customer = ? AND unreceived_amount <> 0 ORDER BY due_date"
+                : "SELECT ar_no, source_bill, customer AS counterparty_name, ar_amount, received_amount, unreceived_amount, due_date FROM fin_ar WHERE (customer = ? OR customer = ?) AND unreceived_amount <> 0 ORDER BY due_date";
+            List<Map<String, Object>> arList = queryCamel(arSql, cpCode.isEmpty() ? new Object[]{cpName} : new Object[]{cpCode, cpName});
+            for (Map<String, Object> r : arList) {
+                r.put("billType", "应收"); r.put("billTypeKey", "AR");
+                r.put("billNo", r.get("arNo")); r.put("settleAmount", r.get("unreceivedAmount"));
+                bills.add(r);
+            }
+        }
+        if (!"CUSTOMER".equals(cpType)) {
+            String apSql = cpCode.isEmpty()
+                ? "SELECT ap_no, source_bill, supplier AS counterparty_name, ap_amount, paid_amount, unpaid_amount, due_date FROM fin_ap WHERE supplier = ? AND unpaid_amount <> 0 ORDER BY due_date"
+                : "SELECT ap_no, source_bill, supplier AS counterparty_name, ap_amount, paid_amount, unpaid_amount, due_date FROM fin_ap WHERE (supplier = ? OR supplier = ?) AND unpaid_amount <> 0 ORDER BY due_date";
+            List<Map<String, Object>> apList = queryCamel(apSql, cpCode.isEmpty() ? new java.util.ArrayList<>().toArray() : new Object[]{cpCode, cpCode});
+            for (Map<String, Object> r : apList) {
+                r.put("billType", "应付"); r.put("billTypeKey", "AP");
+                r.put("billNo", r.get("apNo")); r.put("settleAmount", r.get("unpaidAmount"));
+                bills.add(r);
+            }
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("pendingAmount", pendingAmount);
+        result.put("bills", bills);
+        java.util.Map<String, String> billKeys = new java.util.HashMap<>();
+        billKeys.putAll(AR_AMOUNT_KEYS);
+        billKeys.putAll(AP_AMOUNT_KEYS);
+        billKeys.put("settleAmount", "VIEW_SETTLE_DETAIL");
+        billKeys.put("pendingAmount", "VIEW_FUND_FLOW");
+        fieldMasker.mask(result, billKeys);
+        return ApiResponse.ok(result);
+    }
+
+    /** 执行核销：勾选未结算单据 → 生成核销记录 + 更新 AR/AP + 更新付款单 verified_amount（与 /receipt/reconcile 对称） */
+    @RequirePerm(value = "fin.payment_verify.writeoff", name = "核销")
+    @PostMapping("/payment/reconcile")
+    @Transactional
+    public ApiResponse<Map<String, Object>> reconcilePayment(@RequestBody Map<String, Object> body) {
+        String paymentId = str(body.get("paymentId"));
+        List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_payment_bill WHERE payment_id = ?", paymentId);
+        if (heads.isEmpty()) return ApiResponse.fail("404", "付款单不存在");
+        Map<String, Object> p = heads.get(0);
+        if (!"APPROVED".equals(str(p.get("status")))) return ApiResponse.fail("400", "仅已审核单据可核销");
+        assertHeadCpVisible(p);
+        String paymentNo = str(p.get("paymentNo"));
+        java.sql.Date paymentDate = p.get("paymentDate") instanceof java.sql.Date d ? d : java.sql.Date.valueOf(LocalDate.now());
+        String cpType = str(p.get("counterpartyType"));
+        String cpCode = str(p.get("counterpartyCode"));
+        String cpName = str(p.get("counterpartyName"));
+        String paymentRemark = str(p.get("summary"));
+
+        Object raw = body.get("bills");
+        if (!(raw instanceof List<?> list) || list.isEmpty()) return ApiResponse.fail("400", "请选择要核销的单据");
+        BigDecimal totalVerified = BigDecimal.ZERO;
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> m)) continue;
+            String billNo = str(m.get("billNo"));
+            String billType = str(m.get("billTypeKey"));
+            BigDecimal amt = toBd(m.get("settleAmount"));  // 前端传本次结算金额
+            if (amt.signum() <= 0) continue;
+            totalVerified = totalVerified.add(amt);
+            String sourceBill = "";
+            if ("AR".equals(billType)) {
+                List<Map<String, Object>> ars = queryCamel("SELECT * FROM fin_ar WHERE ar_no = ?", billNo);
+                if (ars.isEmpty()) continue;
+                Map<String, Object> ar = ars.get(0);
+                assertCpVisible("CUSTOMER", str(ar.get("customer")));
+                BigDecimal newReceived = toBd(ar.get("receivedAmount")).add(amt);
+                BigDecimal newUnreceived = toBd(ar.get("arAmount")).subtract(newReceived);
+                jdbcTemplate.update("UPDATE fin_ar SET received_amount = ?, unreceived_amount = ?, status = ? WHERE ar_no = ?",
+                        newReceived, newUnreceived, newUnreceived.signum() <= 0 ? "VERIFIED" : "UNVERIFIED", billNo);
+                sourceBill = str(ar.get("sourceBill"));
+                writeReconcileRecordV2(paymentNo, paymentDate, billNo, sourceBill, "SALES_PAYMENT",
+                        str(ar.get("dueDate")), cpType, cpCode, cpName, amt, paymentRemark, "");
+            } else {
+                List<Map<String, Object>> aps = queryCamel("SELECT * FROM fin_ap WHERE ap_no = ?", billNo);
+                if (aps.isEmpty()) continue;
+                Map<String, Object> ap = aps.get(0);
+                assertCpVisible("SUPPLIER", str(ap.get("supplier")));
+                BigDecimal newPaid = toBd(ap.get("paidAmount")).add(amt);
+                BigDecimal newUnpaid = toBd(ap.get("apAmount")).subtract(newPaid);
+                jdbcTemplate.update("UPDATE fin_ap SET paid_amount = ?, unpaid_amount = ?, status = ? WHERE ap_no = ?",
+                        newPaid, newUnpaid, newUnpaid.signum() <= 0 ? "VERIFIED" : "UNVERIFIED", billNo);
+                sourceBill = str(ap.get("sourceBill"));
+                writeReconcileRecordV2(paymentNo, paymentDate, billNo, sourceBill, "PURCHASE_PAYMENT",
+                        str(ap.get("dueDate")), cpType, cpCode, cpName, amt, paymentRemark, "");
+            }
+        }
+        // 更新付款单的核销金额
+        BigDecimal curVerified = toBd(p.get("verifiedAmount"));
+        jdbcTemplate.update("UPDATE fin_payment_bill SET verified_amount = ? WHERE payment_id = ?",
+                curVerified.add(totalVerified), paymentId);
+        finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.WRITE_OFF,
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "付款单核销 " + paymentNo);
+        java.util.Map<String, Object> recResp = new java.util.LinkedHashMap<>();
+        recResp.put("paymentNo", paymentNo);
+        recResp.put("reconciled", totalVerified);
+        fieldMasker.mask(recResp, java.util.Map.of("reconciled", "VIEW_SETTLE_DETAIL"));
+        return ApiResponse.ok(recResp);
     }
 
     /** 批量审核收款单 */
+    @RequirePerm(value = "fin.receipt.audit", name = "审核")
     @PostMapping("/receipt/batch-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> batchAuditReceipt(@RequestBody Map<String, Object> body) {
@@ -859,6 +1216,7 @@ public class FinanceController {
             if (heads.isEmpty()) { skip++; continue; }
             Map<String, Object> r = heads.get(0);
             if (!"PENDING".equals(str(r.get("status")))) { skip++; continue; }
+            assertHeadCpVisible(r);
             auditSingleReceipt(r);
             ok++;
         }
@@ -891,6 +1249,7 @@ public class FinanceController {
     private String trimF(Map<String, Object> filters, String key) { return trimF(filters, key, null); }
 
     /** 收款单详情（含明细行） */
+    @RequirePerm(value = "fin.receipt.view", name = "查看")
     @PostMapping("/receipt/detail")
     public ApiResponse<Map<String, Object>> receiptDetail(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
@@ -898,20 +1257,26 @@ public class FinanceController {
                 "SELECT * FROM fin_receipt_bill WHERE receipt_id = ? OR receipt_no = ?", id, id);
         if (heads.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         Map<String, Object> head = heads.get(0);
+        assertHeadCpVisible(head);
         head.put("details", queryCamel(
                 "SELECT * FROM fin_receipt_detail WHERE receipt_id = ? ORDER BY sort_order",
                 head.get("receiptId")));
+        fieldMasker.mask(head, FUND_AMOUNT_KEYS);
         return ApiResponse.ok(head);
     }
 
+    @RequirePerm(value = "fin.receipt.edit", name = "修改")
     @PostMapping("/receipt/update")
     public ApiResponse<Boolean> updateReceipt(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status, receipt_no FROM fin_receipt_bill WHERE receipt_id = ?", id);
+                "SELECT status, receipt_no, counterparty_type, counterparty_name FROM fin_receipt_bill WHERE receipt_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         String st = str(exist.get(0).get("status"));
         if (!"PENDING".equals(st)) return ApiResponse.fail("400", "仅待审核单据可编辑");
+        // PRD-28：旧往来单位与改后往来单位都须在数据范围内
+        assertHeadCpVisible(exist.get(0));
+        assertCpVisible(str(body.get("counterpartyType")), str(body.get("counterpartyName")));
         String receiptNo = str(exist.get(0).get("receiptNo"));
 
         BigDecimal total = sumDetails(body);
@@ -931,14 +1296,16 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.receipt.delete", name = "删除")
     @PostMapping("/receipt/delete")
     public ApiResponse<Boolean> deleteReceipt(@RequestBody Map<String, Object> body) {
         String id = str(body.get("receiptId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status, business_source, receipt_no FROM fin_receipt_bill WHERE receipt_id = ?", id);
+                "SELECT status, business_source, receipt_no, counterparty_type, counterparty_name FROM fin_receipt_bill WHERE receipt_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "收款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可删除");
+        assertHeadCpVisible(exist.get(0));
         // 司机现场收款单代表司机手里真实拿着的钱，删掉就再也对不上交账差异，
         // 只能通过司机交账单审核/驳回来推进，后台不允许直接删除。
         if ("DRIVER_SETTLE".equals(str(exist.get(0).get("businessSource"))))
@@ -952,6 +1319,7 @@ public class FinanceController {
     }
 
     /** 审核收款单：生成核销记录、更新 AR/AP、写资金流水、更新账户余额、写往来流水 */
+    @RequirePerm(value = "fin.receipt.audit", name = "审核")
     @PostMapping("/receipt/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditReceipt(@RequestBody Map<String, Object> body) {
@@ -962,6 +1330,7 @@ public class FinanceController {
         Map<String, Object> r = heads.get(0);
         if (!"PENDING".equals(str(r.get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可审核");
+        assertHeadCpVisible(r);
 
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
@@ -1018,6 +1387,7 @@ public class FinanceController {
      * 取消审核：冲减流水、删除核销记录、回退 AR/AP 已收金额。
      * 取消后可修改后重新审核。
      */
+    @RequirePerm(value = "fin.receipt.unaudit", name = "反审核")
     @PostMapping("/receipt/cancel-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> cancelAuditReceipt(@RequestBody Map<String, Object> body) {
@@ -1028,6 +1398,7 @@ public class FinanceController {
         Map<String, Object> r = heads.get(0);
         if (!"APPROVED".equals(str(r.get("status"))))
             return ApiResponse.fail("400", "仅已审核单据可取消审核");
+        assertHeadCpVisible(r);
 
         String receiptNo = str(r.get("receiptNo"));
         String cpType = str(r.get("counterpartyType"));
@@ -1195,14 +1566,18 @@ public class FinanceController {
     // 付款单 CRUD（对称收款单）
     // ============================================================
 
+    @RequirePerm(value = "fin.payment.edit", name = "修改")
     @PostMapping("/payment/update")
     public ApiResponse<Boolean> updatePayment(@RequestBody Map<String, Object> body) {
         String id = str(body.get("paymentId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status, payment_no FROM fin_payment_bill WHERE payment_id = ?", id);
+                "SELECT status, payment_no, counterparty_type, counterparty_name FROM fin_payment_bill WHERE payment_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "付款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可编辑");
+        // PRD-28：旧往来单位与改后往来单位都须在数据范围内
+        assertHeadCpVisible(exist.get(0));
+        assertCpVisible(str(body.get("counterpartyType")), str(body.get("counterpartyName")));
         String paymentNo = str(exist.get(0).get("paymentNo"));
         BigDecimal total = sumDetails(body);
         jdbcTemplate.update("""
@@ -1221,14 +1596,16 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.payment.delete", name = "删除")
     @PostMapping("/payment/delete")
     public ApiResponse<Boolean> deletePayment(@RequestBody Map<String, Object> body) {
         String id = str(body.get("paymentId"));
         List<Map<String, Object>> exist = queryCamel(
-                "SELECT status, payment_no FROM fin_payment_bill WHERE payment_id = ?", id);
+                "SELECT status, payment_no, counterparty_type, counterparty_name FROM fin_payment_bill WHERE payment_id = ?", id);
         if (exist.isEmpty()) return ApiResponse.fail("404", "付款单不存在");
         if (!"PENDING".equals(str(exist.get(0).get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可删除");
+        assertHeadCpVisible(exist.get(0));
         String paymentNo = str(exist.get(0).get("paymentNo"));
         jdbcTemplate.update("DELETE FROM fin_payment_detail WHERE payment_id = ?", id);
         jdbcTemplate.update("DELETE FROM fin_payment_bill WHERE payment_id = ?", id);
@@ -1237,6 +1614,7 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.payment.audit", name = "审核")
     @PostMapping("/payment/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditPayment(@RequestBody Map<String, Object> body) {
@@ -1247,6 +1625,7 @@ public class FinanceController {
         Map<String, Object> r = heads.get(0);
         if (!"PENDING".equals(str(r.get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可审核");
+        assertHeadCpVisible(r);
 
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
@@ -1299,6 +1678,7 @@ public class FinanceController {
     }
 
     /** 付款单取消审核：回退 AP 核销 + 冲减资金流水(IN) + 冲减往来流水(IN) */
+    @RequirePerm(value = "fin.payment.unaudit", name = "反审核")
     @PostMapping("/payment/cancel-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> cancelAuditPayment(@RequestBody Map<String, Object> body) {
@@ -1309,6 +1689,7 @@ public class FinanceController {
         Map<String, Object> r = heads.get(0);
         if (!"APPROVED".equals(str(r.get("status"))))
             return ApiResponse.fail("400", "仅已审核单据可反审核");
+        assertHeadCpVisible(r);
         String paymentNo = str(r.get("paymentNo"));
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
@@ -1354,6 +1735,7 @@ public class FinanceController {
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "PENDING"));
     }
 
+    @RequirePerm(value = "fin.payment.audit", name = "审核")
     @PostMapping("/payment/batch-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> batchAuditPayment(@RequestBody Map<String, Object> body) {
@@ -1368,6 +1750,7 @@ public class FinanceController {
             if (heads.isEmpty()) { skip++; continue; }
             Map<String, Object> r = heads.get(0);
             if (!"PENDING".equals(str(r.get("status")))) { skip++; continue; }
+            assertHeadCpVisible(r);
             jdbcTemplate.update("""
                     UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
                     WHERE payment_id = ?
@@ -1381,16 +1764,33 @@ public class FinanceController {
     }
 
     /** 收款核销流水表 —— 只读查询 */
+    @RequirePerm(value = "fin.receipt_writeoff.view", name = "查看")
     @PostMapping("/reconcile-record/page")
     public ApiResponse<PageResult<Map<String, Object>>> reconcileRecordPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(queryCamel("""
+        // PRD-28：流水无建档人列，按往来单位维度收窄（未配任何维度 → 1=0，见 appendCpScope）
+        StringBuilder sql = new StringBuilder("""
                 SELECT record_id, receipt_no, receipt_date,
                        business_no, business_type, business_date,
                        counterparty_type, counterparty_code, counterparty_name,
                        reconcile_amount, receipt_remark, business_remark, created_at
                 FROM fin_reconcile_record
-                ORDER BY created_at DESC, receipt_no
-                """), request));
+                WHERE 1=1
+                """);
+        List<Object> args = new java.util.ArrayList<>();
+        appendCpScope(sql, args, "counterparty_type", "counterparty_name", null);
+        Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        String cpName = trimF(filters, "counterparty");
+        if (!cpName.isEmpty()) { sql.append(" AND (counterparty_code LIKE ? OR counterparty_name LIKE ?)"); args.add("%"+cpName+"%"); args.add("%"+cpName+"%"); }
+        String bizType = trimF(filters, "businessType");
+        if (!bizType.isEmpty()) { sql.append(" AND business_type = ?"); args.add(bizType); }
+        String dateFrom = trimF(filters, "dateFrom");
+        if (!dateFrom.isEmpty()) { sql.append(" AND receipt_date >= ?"); args.add(dateFrom); }
+        String dateTo = trimF(filters, "dateTo");
+        if (!dateTo.isEmpty()) { sql.append(" AND receipt_date <= ?"); args.add(dateTo); }
+        sql.append(" ORDER BY created_at DESC, receipt_no");
+        List<Map<String, Object>> rows = queryCamel(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, java.util.Map.of("reconcileAmount", "VIEW_SETTLE_DETAIL"));
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
     // ==================== 内部辅助（V32 新增） ====================
@@ -1426,11 +1826,15 @@ public class FinanceController {
     // 客户对账单 (V42)
     // ============================================================
 
+    @RequirePerm(value = "fin.customer_recon.view", name = "查看")
     @PostMapping("/customer-statement/page")
     public ApiResponse<PageResult<Map<String, Object>>> csPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
         StringBuilder sql = new StringBuilder("SELECT * FROM fin_customer_statement WHERE 1=1");
         List<Object> args = new java.util.ArrayList<>();
+        // PRD-28：客户 + 业务员 + 建档人三维度收窄
+        dataScope.target().customer("customer_name").salesman("salesman").creator("creator_name").build()
+                .appendTo(sql, args);
         String customer = trimF(filters, "customer");
         if (!customer.isEmpty()) { sql.append(" AND (customer_code LIKE ? OR customer_name LIKE ?)"); args.add("%"+customer+"%"); args.add("%"+customer+"%"); }
         String salesman = trimF(filters, "salesman");
@@ -1445,11 +1849,14 @@ public class FinanceController {
         for (Map<String, Object> r : rows) {
             r.put("statusText", "APPROVED".equals(str(r.get("status"))) ? "已审核" : "PENDING".equals(str(r.get("status"))) ? "待审核" : str(r.get("status")));
         }
+        fieldMasker.mask(rows, CS_MASK_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.customer_recon.add", name = "新增")
     @PostMapping("/customer-statement/create")
     public ApiResponse<Map<String, Object>> csCreate(@RequestBody Map<String, Object> body) {
+        assertCpVisible("CUSTOMER", str(body.get("customerName")));
         String id = "CS" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String no = billNoGen.nextNo("CS", "fin_customer_statement", "statement_no");
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
@@ -1475,12 +1882,16 @@ public class FinanceController {
         }
     }
 
+    @RequirePerm(value = "fin.customer_recon.edit", name = "修改")
     @PostMapping("/customer-statement/update")
     public ApiResponse<Boolean> csUpdate(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM fin_customer_statement WHERE statement_id=?", id);
+        List<Map<String, Object>> ex = queryCamel("SELECT status, customer_name FROM fin_customer_statement WHERE statement_id=?", id);
         if (ex.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可编辑");
+        // PRD-28：改前/改后客户都须在数据范围内
+        assertCpVisible("CUSTOMER", str(ex.get(0).get("customerName")));
+        assertCpVisible("CUSTOMER", str(body.get("customerName")));
         BigDecimal total = sumDetailField(body, "reconcileAmount");
         jdbcTemplate.update("UPDATE fin_customer_statement SET customer_code=?,customer_name=?,salesman=?,statement_date=?,expected_pay_date=?,contact_name=?,contact_phone=?,total_amount=?,remark=? WHERE statement_id=?",
                 str(body.get("customerCode")),str(body.get("customerName")),str(body.get("salesman")),date(body,"statementDate"),date(body,"expectedPayDate"),str(body.get("contactName")),str(body.get("contactPhone")),total,str(body.get("remark")),id);
@@ -1489,22 +1900,27 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.customer_recon.view", name = "查看")
     @PostMapping("/customer-statement/detail")
     public ApiResponse<Map<String, Object>> csDetail(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
         List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_customer_statement WHERE statement_id=? OR statement_no=?",id,id);
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         Map<String,Object> h = heads.get(0);
+        assertCpVisible("CUSTOMER", str(h.get("customerName")));
         h.put("details", queryCamel("SELECT * FROM fin_customer_statement_detail WHERE statement_id=? ORDER BY sort_order", h.get("statementId")));
+        fieldMasker.mask(h, CS_MASK_KEYS);
         return ApiResponse.ok(h);
     }
 
+    @RequirePerm(value = "fin.customer_recon.delete", name = "删除")
     @PostMapping("/customer-statement/delete")
     public ApiResponse<Boolean> csDelete(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM fin_customer_statement WHERE statement_id=?",id);
+        List<Map<String, Object>> ex = queryCamel("SELECT status, customer_name FROM fin_customer_statement WHERE statement_id=?",id);
         if (ex.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可删除");
+        assertCpVisible("CUSTOMER", str(ex.get(0).get("customerName")));
         // 还原源单据对账状态
         List<Map<String, Object>> details = queryCamel("SELECT source_bill_no FROM fin_customer_statement_detail WHERE statement_id=?",id);
         for (Map<String, Object> d : details) {
@@ -1517,12 +1933,14 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.customer_recon.audit", name = "审核")
     @PostMapping("/customer-statement/audit")
     public ApiResponse<Map<String, Object>> csAudit(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
         List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_customer_statement WHERE statement_id=?",id);
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(heads.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可审核");
+        assertCpVisible("CUSTOMER", str(heads.get(0).get("customerName")));
         String auditor = currentUser(); LocalDateTime now = LocalDateTime.now();
         jdbcTemplate.update("UPDATE fin_customer_statement SET status='APPROVED',auditor_name=?,audit_time=? WHERE statement_id=?", auditor, java.sql.Timestamp.valueOf(now), id);
         // 更新源单据的对账状态为"已对账"
@@ -1533,6 +1951,7 @@ public class FinanceController {
         return ApiResponse.ok(GenericResult.row("statementNo", str(heads.get(0).get("statementNo")), "status","APPROVED"));
     }
 
+    @RequirePerm(value = "fin.customer_recon.unaudit", name = "反审核")
     @PostMapping("/customer-statement/reverse-audit")
     public ApiResponse<Map<String, Object>> csReverseAudit(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
@@ -1540,6 +1959,7 @@ public class FinanceController {
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         Map<String,Object> h = heads.get(0);
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400","仅已审核可反审核");
+        assertCpVisible("CUSTOMER", str(h.get("customerName")));
         if (toBd(h.get("paidAmount")).signum() > 0) return ApiResponse.fail("400","已有收款，不可反审核");
         jdbcTemplate.update("UPDATE fin_customer_statement SET status='PENDING',auditor_name=NULL,audit_time=NULL WHERE statement_id=?",id);
         // 还原源单据对账状态
@@ -1551,9 +1971,11 @@ public class FinanceController {
     }
 
     /** 查询该客户未生成对账单的单据（添加单据弹窗数据源） */
+    @RequirePerm(value = "fin.customer_recon.view", name = "查看")
     @PostMapping("/customer-statement/available-bills")
     public ApiResponse<List<Map<String, Object>>> csAvailableBills(@RequestBody Map<String, Object> body) {
         String customerName = str(body.get("customerName"));
+        assertCpVisible("CUSTOMER", customerName);
         String dateFrom = str(body.get("dateFrom"));
         String dateTo = str(body.get("dateTo"));
         // 已在对账单中的单据排除
@@ -1568,13 +1990,19 @@ public class FinanceController {
             r.put("billDate",str(r.get("dueDate"))); r.put("billAmount",r.get("arAmount"));
             r.put("unsettledAmount",r.get("unreceivedAmount"));
         }
+        java.util.Map<String,String> csKeys = new java.util.HashMap<>(AR_AMOUNT_KEYS);
+        csKeys.put("billAmount", "VIEW_AR_BALANCE");
+        csKeys.put("unsettledAmount", "VIEW_AR_BALANCE");
+        fieldMasker.mask(rows, csKeys);
         return ApiResponse.ok(rows);
     }
 
     /** 供应商可对账单据（未生成对账单的未付款 AP） */
+    @RequirePerm(value = "fin.supplier_recon.view", name = "查看")
     @PostMapping("/supplier-statement/available-bills")
     public ApiResponse<List<Map<String, Object>>> ssAvailableBills(@RequestBody Map<String, Object> body) {
         String supplierName = str(body.get("supplierName"));
+        assertCpVisible("SUPPLIER", supplierName);
         String dateFrom = str(body.get("dateFrom"));
         String dateTo = str(body.get("dateTo"));
         String sql = "SELECT ap_no, source_bill, supplier, ap_amount, paid_amount, unpaid_amount, due_date FROM fin_ap WHERE supplier = ? AND (unpaid_amount > 0 OR unpaid_amount < 0) AND ap_no NOT IN (SELECT source_bill_no FROM fin_supplier_statement_detail)";
@@ -1588,10 +2016,15 @@ public class FinanceController {
             r.put("billDate",str(r.get("dueDate"))); r.put("billAmount",r.get("apAmount"));
             r.put("unsettledAmount",r.get("unpaidAmount"));
         }
+        java.util.Map<String,String> ssKeys = new java.util.HashMap<>(AP_AMOUNT_KEYS);
+        ssKeys.put("billAmount", "VIEW_AP_BALANCE");
+        ssKeys.put("unsettledAmount", "VIEW_AP_BALANCE");
+        fieldMasker.mask(rows, ssKeys);
         return ApiResponse.ok(rows);
     }
 
     /** 对账单收款结算 */
+    @RequirePerm(value = "fin.customer_recon.settle", name = "结算")
     @PostMapping("/customer-statement/settle")
     @Transactional
     public ApiResponse<Map<String, Object>> csSettle(@RequestBody Map<String, Object> body) {
@@ -1621,6 +2054,8 @@ public class FinanceController {
             statements.add(h);
         }
         if (statements.isEmpty()) return ApiResponse.fail("400","未找到有效对账单");
+        // PRD-28：禁止直接构造请求结算不可见客户的对账单
+        assertCpVisible("CUSTOMER", firstCustName);
 
         BigDecimal settleAmount = totalAmount.subtract(writeOff);
         java.sql.Date settleDateSql = java.sql.Date.valueOf(settleDate.isEmpty()?LocalDate.now().toString():settleDate);
@@ -1694,7 +2129,11 @@ public class FinanceController {
         writeCounterpartyLedger("CUSTOMER", firstCust, firstCustName, "IN", settleAmount.abs(),
             receiptNo, "CUSTOMER_STATEMENT_SETTLE", cpBal, remark);
 
-        return ApiResponse.ok(Map.of("receiptNo",receiptNo,"settleAmount",settleAmount));
+        java.util.Map<String,Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("receiptNo", receiptNo);
+        resp.put("settleAmount", settleAmount);
+        fieldMasker.mask(resp, java.util.Map.of("settleAmount", "VIEW_SETTLE_DETAIL"));
+        return ApiResponse.ok(resp);
     }
 
     private void insertCSDetails(String stmtId, Map<String, Object> body) {
@@ -1712,11 +2151,15 @@ public class FinanceController {
     // 供应商对账单 (V43) — 核心端点参照客户对账单
     // ============================================================
 
+    @RequirePerm(value = "fin.supplier_recon.view", name = "查看")
     @PostMapping("/supplier-statement/page")
     public ApiResponse<PageResult<Map<String, Object>>> ssPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
         StringBuilder sql = new StringBuilder("SELECT * FROM fin_supplier_statement WHERE 1=1");
         List<Object> args = new java.util.ArrayList<>();
+        // PRD-28：供应商 + 采购员（employee 维度）+ 建档人收窄
+        dataScope.target().supplier("supplier_name").salesman("buyer").creator("creator_name").build()
+                .appendTo(sql, args);
         String supplier = trimF(filters, "supplier");
         if (!supplier.isEmpty()) { sql.append(" AND (supplier_code LIKE ? OR supplier_name LIKE ?)"); args.add("%"+supplier+"%"); args.add("%"+supplier+"%"); }
         String buyer = trimF(filters, "buyer");
@@ -1729,11 +2172,15 @@ public class FinanceController {
         for (Map<String, Object> r : rows) {
             r.put("statusText", "APPROVED".equals(str(r.get("status"))) ? "已审核" : "PENDING".equals(str(r.get("status"))) ? "待审核" : str(r.get("status")));
         }
+        fieldMasker.mask(rows, SS_MASK_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "fin.supplier_recon.add", name = "新增")
     @PostMapping("/supplier-statement/create")
     public ApiResponse<Map<String, Object>> ssCreate(@RequestBody Map<String, Object> body) {
+        // 前端对账单表单统一用 customerName 传往来单位名称
+        assertCpVisible("SUPPLIER", str(body.get("customerName")));
         String id = "SS" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String no = billNoGen.nextNo("SS", "fin_supplier_statement", "statement_no");
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
@@ -1744,12 +2191,16 @@ public class FinanceController {
         return ApiResponse.ok(GenericResult.row("statementId", id, "statementNo", no));
     }
 
+    @RequirePerm(value = "fin.supplier_recon.edit", name = "修改")
     @PostMapping("/supplier-statement/update")
     public ApiResponse<Boolean> ssUpdate(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM fin_supplier_statement WHERE statement_id=?", id);
+        List<Map<String, Object>> ex = queryCamel("SELECT status, supplier_name FROM fin_supplier_statement WHERE statement_id=?", id);
         if (ex.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可编辑");
+        // PRD-28：改前/改后供应商都须在数据范围内
+        assertCpVisible("SUPPLIER", str(ex.get(0).get("supplierName")));
+        assertCpVisible("SUPPLIER", str(body.get("customerName")));
         BigDecimal total = sumDetailField(body, "reconcileAmount");
         jdbcTemplate.update("UPDATE fin_supplier_statement SET supplier_code=?,supplier_name=?,buyer=?,statement_date=?,expected_pay_date=?,contact_name=?,contact_phone=?,is_invoiced=?,total_amount=?,remark=? WHERE statement_id=?",
                 str(body.get("customerCode")),str(body.get("customerName")),str(body.get("salesman")),date(body,"statementDate"),date(body,"expectedPayDate"),str(body.get("contactName")),str(body.get("contactPhone")),str(body.get("isInvoiced")),total,str(body.get("remark")),id);
@@ -1758,37 +2209,45 @@ public class FinanceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.supplier_recon.delete", name = "删除")
     @PostMapping("/supplier-statement/delete")
     public ApiResponse<Boolean> ssDelete(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM fin_supplier_statement WHERE statement_id=?",id);
+        List<Map<String, Object>> ex = queryCamel("SELECT status, supplier_name FROM fin_supplier_statement WHERE statement_id=?",id);
         if (ex.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可删除");
+        assertCpVisible("SUPPLIER", str(ex.get(0).get("supplierName")));
         jdbcTemplate.update("DELETE FROM fin_supplier_statement_detail WHERE statement_id=?",id);
         jdbcTemplate.update("DELETE FROM fin_supplier_statement WHERE statement_id=?",id);
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "fin.supplier_recon.view", name = "查看")
     @PostMapping("/supplier-statement/detail")
     public ApiResponse<Map<String, Object>> ssDetail(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
         List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_supplier_statement WHERE statement_id=? OR statement_no=?",id,id);
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         Map<String,Object> h = heads.get(0);
+        assertCpVisible("SUPPLIER", str(h.get("supplierName")));
         h.put("details", queryCamel("SELECT * FROM fin_supplier_statement_detail WHERE statement_id=? ORDER BY sort_order", h.get("statementId")));
+        fieldMasker.mask(h, SS_MASK_KEYS);
         return ApiResponse.ok(h);
     }
 
+    @RequirePerm(value = "fin.supplier_recon.audit", name = "审核")
     @PostMapping("/supplier-statement/audit")
     public ApiResponse<Map<String, Object>> ssAudit(@RequestBody Map<String, Object> body) {
         String id = str(body.get("statementId"));
         List<Map<String, Object>> heads = queryCamel("SELECT * FROM fin_supplier_statement WHERE statement_id=?",id);
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(heads.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可审核");
+        assertCpVisible("SUPPLIER", str(heads.get(0).get("supplierName")));
         jdbcTemplate.update("UPDATE fin_supplier_statement SET status='APPROVED',auditor_name=?,audit_time=? WHERE statement_id=?", currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
         return ApiResponse.ok(GenericResult.row("status","APPROVED"));
     }
 
+    @RequirePerm(value = "fin.supplier_recon.settle", name = "结算")
     @PostMapping("/supplier-statement/settle")
     @Transactional
     public ApiResponse<Map<String, Object>> ssSettle(@RequestBody Map<String, Object> body) {
@@ -1818,6 +2277,8 @@ public class FinanceController {
             statements.add(h);
         }
         if (statements.isEmpty()) return ApiResponse.fail("400","未找到有效对账单");
+        // PRD-28：禁止直接构造请求结算不可见供应商的对账单
+        assertCpVisible("SUPPLIER", firstSuppName);
 
         BigDecimal settleAmount = totalAmount.subtract(writeOff);
         java.sql.Date settleDateSql = java.sql.Date.valueOf(settleDate.isEmpty()?LocalDate.now().toString():settleDate);
@@ -1891,7 +2352,11 @@ public class FinanceController {
         writeCounterpartyLedger("SUPPLIER", firstSupp, firstSuppName, "OUT", settleAmount.abs(),
             paymentNo, "SUPPLIER_STATEMENT_SETTLE", cpBal, remark);
 
-        return ApiResponse.ok(Map.of("paymentNo",paymentNo,"amount",settleAmount.abs()));
+        java.util.Map<String,Object> resp = new java.util.LinkedHashMap<>();
+        resp.put("paymentNo", paymentNo);
+        resp.put("amount", settleAmount.abs());
+        fieldMasker.mask(resp, java.util.Map.of("amount", "VIEW_SETTLE_DETAIL"));
+        return ApiResponse.ok(resp);
     }
 
     private void insertSSDetails(String stmtId, Map<String, Object> body) {
@@ -2164,6 +2629,7 @@ public class FinanceController {
     // 付款单（参照收款单对称实现，阶段一仅 page，后续补 CRUD+审核）
     // ============================================================
 
+    @RequirePerm(value = "fin.payment.view", name = "查看")
     @PostMapping("/payment/page")
     public ApiResponse<PageResult<Map<String, Object>>> paymentPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -2177,6 +2643,8 @@ public class FinanceController {
                 WHERE 1=1
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        // PRD-28：往来单位多态列按客户/供应商维度收窄
+        appendCpScope(sql, args, "p.counterparty_type", "p.counterparty_name", "p.creator_name");
         String cpType = trimF(filters, "counterpartyType");
         if (!cpType.isEmpty()) { sql.append(" AND p.counterparty_type = ?"); args.add(cpType); }
         String cpName = trimF(filters, "counterparty");
@@ -2218,6 +2686,7 @@ public class FinanceController {
             else if (verified.compareTo(total) < 0) r.put("reconcileStatusText", "部分核销");
             else r.put("reconcileStatusText", "已核销");
         }
+        fieldMasker.mask(rows, FUND_AMOUNT_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 

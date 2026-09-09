@@ -122,7 +122,7 @@ onMounted(() => { load(); loadMeta() })
       <b>自动转账模板</b>
       <span class="muted small">期末处理 → 自动转账按启用模板生成「转」字凭证（零金额/借贷不平自动跳过）</span>
       <div class="spacer"></div>
-      <button class="btn primary" @click="openCreate">＋ 新增模板</button>
+      <button class="btn primary" v-permission="'finance.gl.transfer_template.add'" @click="openCreate">＋ 新增模板</button>
     </div>
     <div v-if="feedback" class="toast-inline" :class="feedback.level">{{ feedback.msg }}</div>
 
@@ -142,9 +142,9 @@ onMounted(() => { load(); loadMeta() })
             <td><span class="tag" :class="r.enabled ? 'ok' : 'info'">{{ r.enabled ? '启用中' : '已停用' }}</span></td>
             <td><span v-if="r.isSystem" class="tag sys">系统</span></td>
             <td class="ops">
-              <a @click="openEdit(r)">编辑</a>
-              <a @click="onToggle(r)">{{ r.enabled ? '停用' : '启用' }}</a>
-              <a v-if="!r.isSystem" class="danger" @click="onDelete(r)">删除</a>
+              <a v-permission="'finance.gl.transfer_template.add'" @click="openEdit(r)">编辑</a>
+              <a v-permission="'finance.gl.transfer_template.edit'" @click="onToggle(r)">{{ r.enabled ? '停用' : '启用' }}</a>
+              <a v-if="!r.isSystem" v-permission="'finance.gl.transfer_template.delete'" class="danger" @click="onDelete(r)">删除</a>
             </td>
           </tr>
           <tr v-if="!list.length"><td colspan="7" class="empty">{{ loading ? '加载中...' : '暂无转账模板' }}</td></tr>
@@ -213,7 +213,7 @@ onMounted(() => { load(); loadMeta() })
         </div>
         <div class="drawer-f">
           <button class="btn" @click="drawer.open=false">取消</button>
-          <button class="btn primary" @click="onSave">保存模板</button>
+          <button class="btn primary" v-permission="'finance.gl.transfer_template.add'" @click="onSave">保存模板</button>
         </div>
       </div>
     </div>

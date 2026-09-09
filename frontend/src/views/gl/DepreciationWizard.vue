@@ -78,7 +78,8 @@ onMounted(async () => {
         </select>
       </label>
       <button class="btn" @click="loadPreview">刷新预览</button>
-      <button class="btn btn-primary" :disabled="executing || !preview || preview.voucherExists"
+      <button class="btn btn-primary" v-permission="'finance.gl.depreciation.audit'"
+              :disabled="executing || !preview || preview.voucherExists"
               @click="execute">{{ executing ? '计提中…' : '执行本期折旧' }}</button>
     </div>
     <div v-if="feedback" :class="['feedback', feedback.level]">{{ feedback.msg }}</div>

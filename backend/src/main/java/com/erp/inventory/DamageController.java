@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.erp.common.security.RequirePerm;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -35,38 +36,60 @@ public class DamageController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
 
     public DamageController(JdbcTemplate jdbcTemplate,
                             InventoryCostService inventoryCostService,
                             com.erp.common.util.BillNoGenerator billNoGen,
                             com.erp.system.OperationLogService opLog,
-                            com.erp.finance.gl.GlHookService glHooks) {
+                            com.erp.finance.gl.GlHookService glHooks,
+                            com.erp.common.security.datascope.DataScopeService dataScope,
+                            com.erp.common.security.FieldMasker fieldMasker,
+                            com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+        this.warehouseGuard = warehouseGuard;
     }
 
     // ========================================================================
     //  报损单列表
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.view", name = "查看")
     @PostMapping("/damage/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 建档人，商品分类/品牌经明细表收窄
+        var scope = dataScope.target()
+                .warehouse("warehouse").creator("creator_name")
+                .goodsLines("damage_id", "inv_damage_detail", "damage_id")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT damage_id, damage_no, warehouse, bill_date,
                        qty, amount, cost_amount, status,
                        creator_name, audit_user, audit_time, create_time, remark
                 FROM inv_damage
-                ORDER BY create_time DESC, damage_no DESC
-                """);
+                WHERE 1=1
+                """ + scopeSql + """
+                 ORDER BY create_time DESC, damage_no DESC
+                """, scopeArgs.toArray());
         List<Map<String, Object>> mapped = rows.stream().map(r -> {
             Map<String, Object> row = camelize(r);
             String st = str(pick(r, "status"));
             row.put("statusText", statusText(st));
             return row;
         }).collect(Collectors.toList());
+        // 报损金额/成本金额按成本金额字段权限脱敏（costAmount 注册表默认命中，amount 调用点显式归属）
+        fieldMasker.mask(mapped, Map.of("amount", "VIEW_COST_AMOUNT"));
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
@@ -74,6 +97,7 @@ public class DamageController {
     //  报损单详情
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.view", name = "查看")
     @GetMapping("/damage/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String damageId,
@@ -83,11 +107,15 @@ public class DamageController {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_damage WHERE damage_id = ? OR damage_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "报损单不存在");
+        // 数据范围（PRD-28 §5.3）：他仓单据详情直接 403
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(heads.get(0), "warehouse")));
         Map<String, Object> head = camelize(heads.get(0));
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_damage_detail WHERE damage_id = ? ORDER BY detail_id",
                 head.get("damageId"));
         head.put("details", details.stream().map(DamageController::camelize).toList());
+        // 金额/成本脱敏（walk 递归进入 details 列表，同名 key 统一归属）
+        fieldMasker.mask(head, Map.of("amount", "VIEW_COST_AMOUNT", "price", "VIEW_COST"));
         return ApiResponse.ok(head);
     }
 
@@ -95,12 +123,19 @@ public class DamageController {
     //  商品查询（用于手工添加商品，带成本单价和可用库存）
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.view", name = "查看")
     @GetMapping("/damage/goods-options")
     public ApiResponse<List<Map<String, Object>>> goodsOptions(
             @RequestParam String warehouse,
             @RequestParam(required = false) String keyword) {
         String kw = (keyword == null || keyword.isBlank())
                 ? null : "%" + keyword.trim().toLowerCase() + "%";
+        // 数据范围（PRD-28 §5.3）：选项查询同样强制仓库 + 商品分类/品牌范围，不可见仓返回空
+        var scope = dataScope.target()
+                .warehouse("sb.warehouse").goodsColumn("g.goods_code").build();
+        List<Object> args = new ArrayList<>(List.of(warehouse, warehouse, kw, kw, kw, kw));
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT g.goods_code, g.goods_name, g.spec, g.base_unit,
                        COALESCE(sb.cost_price, 0) AS cost_price,
@@ -112,8 +147,9 @@ public class DamageController {
                 WHERE COALESCE(g.status, 'NORMAL') <> 'STOPPED'
                   AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                        OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
-                ORDER BY g.goods_code
-                """, warehouse, warehouse, kw, kw, kw, kw);
+                """ + scopeSql + """
+                 ORDER BY g.goods_code
+                """, args.toArray());
         return ApiResponse.ok(rows.stream().map(DamageController::camelize).toList());
     }
 
@@ -125,12 +161,19 @@ public class DamageController {
      * 一行 = 一条批次库存记录（goods_code + warehouse + batch_no）。
      * 仅返回可用库存 > 0 且商品未停用的批次；到期日期缺失时按 生产日期 + 保质期天数 推算。
      */
+    @RequirePerm(value = "inv.damage.view", name = "查看")
     @GetMapping("/damage/batch-stock-options")
     public ApiResponse<List<Map<String, Object>>> batchStockOptions(
             @RequestParam String warehouse,
             @RequestParam(required = false) String keyword) {
         String kw = (keyword == null || keyword.isBlank())
                 ? null : "%" + keyword.trim().toLowerCase() + "%";
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 商品分类/品牌范围
+        var scope = dataScope.target()
+                .warehouse("bs.warehouse").goodsColumn("bs.goods_code").build();
+        List<Object> args = new ArrayList<>(List.of(warehouse, kw, kw, kw, kw, kw));
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bs.goods_code,
                        COALESCE(g.goods_name, bs.goods_name) AS goods_name,
@@ -155,8 +198,9 @@ public class DamageController {
                        OR LOWER(COALESCE(g.goods_name, bs.goods_name)) LIKE ?
                        OR LOWER(COALESCE(g.barcode, '')) LIKE ?
                        OR LOWER(bs.batch_no) LIKE ?)
-                ORDER BY bs.goods_code, bs.expiry_date NULLS LAST, bs.batch_no
-                """, warehouse, kw, kw, kw, kw, kw);
+                """ + scopeSql + """
+                 ORDER BY bs.goods_code, bs.expiry_date NULLS LAST, bs.batch_no
+                """, args.toArray());
 
         LocalDate today = LocalDate.now();
         List<Map<String, Object>> result = new ArrayList<>();
@@ -182,10 +226,17 @@ public class DamageController {
     //  批次下拉（指定仓库+商品的可用批次）
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.view", name = "查看")
     @GetMapping("/damage/batch-options")
     public ApiResponse<List<Map<String, Object>>> batchOptions(
             @RequestParam String goodsCode,
             @RequestParam String warehouse) {
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 商品分类/品牌范围
+        var scope = dataScope.target()
+                .warehouse("bs.warehouse").goodsColumn("bs.goods_code").build();
+        List<Object> args = new ArrayList<>(List.of(goodsCode, warehouse));
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bs.batch_no,
                        bs.production_date,
@@ -195,8 +246,9 @@ public class DamageController {
                        bs.cost_price
                 FROM inv_batch_stock bs
                 WHERE bs.goods_code = ? AND bs.warehouse = ? AND bs.qty > 0
-                ORDER BY bs.production_date, bs.batch_no
-                """, goodsCode, warehouse);
+                """ + scopeSql + """
+                 ORDER BY bs.production_date, bs.batch_no
+                """, args.toArray());
         return ApiResponse.ok(rows.stream().map(DamageController::camelize).toList());
     }
 
@@ -204,11 +256,14 @@ public class DamageController {
     //  新建报损单
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.add", name = "新增")
     @PostMapping("/damage/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> request) {
         String warehouse = str(request.get("warehouse"));
         if (warehouse.isBlank()) throw new IllegalArgumentException("请选择仓库");
+        // 数据范围（PRD-28 §5.3）：禁止向数据范围外仓库报损
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
         LocalDate billDate = parseDate(request.get("billDate"), LocalDate.now());
         // 报损单不设草稿：保存后直接进入待审核（未审核）状态
         String status = "PENDING";
@@ -262,6 +317,7 @@ public class DamageController {
     //  编辑报损单
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.edit", name = "修改")
     @PostMapping("/damage/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> request) {
@@ -275,6 +331,9 @@ public class DamageController {
         }
 
         String warehouse = strOrDefault(request.get("warehouse"), str(pick(existing, "warehouse")));
+        // 数据范围（PRD-28 §5.3）：原单仓库与改后仓库都须在范围内
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(existing, "warehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
         LocalDate billDate = parseDate(request.get("billDate"), parseDate(pick(existing, "bill_date"), LocalDate.now()));
         String remark = strOrDefault(request.get("remark"), str(pick(existing, "remark")));
 
@@ -333,6 +392,7 @@ public class DamageController {
      * 审核报损单：PENDING → APPROVED。
      * 按当前库存成本单价计价，扣减库存，写流水。
      */
+    @RequirePerm(value = "inv.damage.audit", name = "审核")
     @PostMapping("/damage/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
@@ -344,6 +404,8 @@ public class DamageController {
         String damageId = str(pick(damage, "damage_id"));
         String damageNo = str(pick(damage, "damage_no"));
         String warehouse = str(pick(damage, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止审核他仓报损单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_damage_detail WHERE damage_id = ?", damageId);
@@ -414,6 +476,7 @@ public class DamageController {
     /**
      * 反审核：APPROVED → PENDING，回库恢复库存。
      */
+    @RequirePerm(value = "inv.damage.unaudit", name = "反审核")
     @PostMapping("/damage/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
@@ -425,6 +488,8 @@ public class DamageController {
         String damageId = str(pick(damage, "damage_id"));
         String damageNo = str(pick(damage, "damage_no"));
         String warehouse = str(pick(damage, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止反审核他仓报损单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_damage_detail WHERE damage_id = ?", damageId);
@@ -456,6 +521,7 @@ public class DamageController {
     //  删除报损单
     // ========================================================================
 
+    @RequirePerm(value = "inv.damage.delete", name = "删除")
     @PostMapping("/damage/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> delete(@Valid @RequestBody AuditRequest request) {
@@ -466,6 +532,8 @@ public class DamageController {
         }
         String damageId = str(pick(damage, "damage_id"));
         String damageNo = str(pick(damage, "damage_no"));
+        // 数据范围（PRD-28 §5.3）：禁止删除他仓报损单
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(damage, "warehouse")));
         jdbcTemplate.update("DELETE FROM inv_damage_detail WHERE damage_id = ?", damageId);
         jdbcTemplate.update("DELETE FROM inv_damage WHERE damage_id = ?", damageId);
         log("inventory.damage", "DELETE", damageNo, "删除未审核报损单");
@@ -480,6 +548,7 @@ public class DamageController {
      * 作废：任意非 CANCELLED 状态 → CANCELLED。
      * 已审核的单据先反审核回滚库存再作废。
      */
+    @RequirePerm(value = "inv.damage.close", name = "作废")
     @PostMapping("/damage/cancel")
     @Transactional
     public ApiResponse<Map<String, Object>> cancel(@Valid @RequestBody AuditRequest request) {
@@ -491,6 +560,8 @@ public class DamageController {
         String damageId = str(pick(damage, "damage_id"));
         String damageNo = str(pick(damage, "damage_no"));
         String warehouse = str(pick(damage, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止作废他仓报损单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         // 已审核的需先回滚库存
         if ("APPROVED".equals(status)) {
@@ -527,6 +598,7 @@ public class DamageController {
      * 每行字段：warehouse（仓库名称或编码，必填，需系统存在）、goodsCode、batchNo、productionDate、qty。
      * 按仓库分组，每组生成一张报损单（状态 PENDING）。
      */
+    @RequirePerm(value = "inv.damage.import", name = "导入")
     @PostMapping("/damage/import")
     @Transactional
     public ApiResponse<Map<String, Object>> importDamage(@RequestBody Map<String, Object> request) {
@@ -604,6 +676,8 @@ public class DamageController {
         for (Map.Entry<String, List<Map<String, Object>>> entry : grouped.entrySet()) {
             String whName = entry.getKey();
             List<Map<String, Object>> lines = entry.getValue();
+            // 数据范围（PRD-28 §5.3）：导入建单同样禁止落向数据范围外仓库
+            warehouseGuard.assertVisible(jdbcTemplate, whName);
 
             // 补全商品信息 + 成本
             List<Map<String, Object>> detailRows = new ArrayList<>();

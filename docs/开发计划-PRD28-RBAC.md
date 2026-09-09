@@ -139,11 +139,13 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 7 ｜ `feat/rbac-7-inv-fin-base`（M2，V106，约 3d）
 
-- [ ] inventory/finance/base 模块补注解 + 数据权限（库存强制按仓库；财务金额脱敏；基础档案按分类/品牌/供应商）
-- [ ] 前端按钮/列权限收尾
-- [ ] 全模块越权扫描：`/perm/health` 未鉴权写接口清零（或登记白名单）
+- [x] inventory/finance/base 模块补注解 + 数据权限（库存强制按仓库；财务金额脱敏；基础档案按分类/品牌/供应商）
+- [x] 前端按钮/列权限收尾
+- [x] 全模块越权扫描：`/perm/health` 未鉴权写接口清零（或登记白名单）
 
 **验收**：40 条 PC 验收用例全过；低权限账号扫全接口无越权。
+
+> 落地（2026-09-10）：**零迁移**（V105/V106 均未消耗）。509 个 @RequirePerm 端点零权账号实扫 0 越权；卡片7 范围写端点清零，余 155（WMS 117/TMS 38）登记卡片9/10；功能点契约 7/7、脱敏与数据范围负向实证、双构建绿，详见《优化记录-PRD28-RBAC.md》卡片7 节。顺带补齐付款单侧核销端点（/finance/payment/unsettled-bills、/finance/payment/reconcile，fin.payment_verify.view/writeoff），方案同步见《系统用户及权限管理方案.md》付款核销补遗。
 
 ### 卡片 8 ｜ `feat/rbac-10-frontend`（M2，无迁移，约 2d，可与 6/7 穿插收尾）
 

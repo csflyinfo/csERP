@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.erp.common.security.RequirePerm;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,32 +45,53 @@ public class OtherInboundController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
 
     public OtherInboundController(JdbcTemplate jdbcTemplate,
                                   InventoryCostService inventoryCostService,
                                   com.erp.common.util.BillNoGenerator billNoGen,
                                   com.erp.system.OperationLogService opLog,
-                                  com.erp.finance.gl.GlHookService glHooks) {
+                                  com.erp.finance.gl.GlHookService glHooks,
+                                  com.erp.common.security.datascope.DataScopeService dataScope,
+                                  com.erp.common.security.FieldMasker fieldMasker,
+                                  com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+        this.warehouseGuard = warehouseGuard;
     }
 
     // ========================================================================
     //  其他入库单列表
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.view", name = "查看")
     @PostMapping("/other-inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 建档人，商品维度经明细收窄。
+        // 注：本表 customer/supplier 二选一有值，两维度 AND 会误伤 NULL 列，故往来单位维度暂不接（库存单据以仓库为界）
+        var scope = dataScope.target()
+                .warehouse("warehouse").creator("creator_name")
+                .goodsLines("inbound_id", "inv_other_inbound_detail", "inbound_id")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT inbound_id, inbound_no, bill_date, customer, supplier, inbound_type,
                        warehouse, qty, amount, cost_amount, status,
                        creator_name, audit_user, audit_time, create_time, remark
                 FROM inv_other_inbound
-                ORDER BY create_time DESC, inbound_no DESC
-                """);
+                WHERE 1=1
+                """ + scopeSql + """
+                 ORDER BY create_time DESC, inbound_no DESC
+                """, scopeArgs.toArray());
         List<Map<String, Object>> mapped = rows.stream().map(r -> {
             Map<String, Object> row = camelize(r);
             String st = str(pick(r, "status"));
@@ -80,6 +102,8 @@ public class OtherInboundController {
             row.put("counterpartyName", !customer.isBlank() ? customer : supplier);
             return row;
         }).collect(Collectors.toList());
+        // 入库金额即成本金额，按成本金额字段权限脱敏
+        fieldMasker.mask(mapped, Map.of("amount", "VIEW_COST_AMOUNT"));
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
@@ -87,6 +111,7 @@ public class OtherInboundController {
     //  其他入库单详情
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.view", name = "查看")
     @GetMapping("/other-inbound/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String inboundId,
@@ -96,11 +121,14 @@ public class OtherInboundController {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound WHERE inbound_id = ? OR inbound_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "其他入库单不存在");
+        // 数据范围（PRD-28 §5.3）：他仓单据详情直接 403
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(heads.get(0), "warehouse")));
         Map<String, Object> head = camelize(heads.get(0));
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ? ORDER BY detail_id",
                 head.get("inboundId"));
         head.put("details", details.stream().map(OtherInboundController::camelize).toList());
+        fieldMasker.mask(head, Map.of("amount", "VIEW_COST_AMOUNT", "price", "VIEW_COST"));
         return ApiResponse.ok(head);
     }
 
@@ -108,12 +136,19 @@ public class OtherInboundController {
     //  商品查询（用于手工添加商品，带标准售价、成本单价和可用库存）
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.view", name = "查看")
     @GetMapping("/other-inbound/goods-options")
     public ApiResponse<List<Map<String, Object>>> goodsOptions(
             @RequestParam String warehouse,
             @RequestParam(required = false) String keyword) {
         String kw = (keyword == null || keyword.isBlank())
                 ? null : "%" + keyword.trim().toLowerCase() + "%";
+        // 数据范围（PRD-28 §5.3）：选项查询强制仓库 + 商品分类/品牌范围
+        var scope = dataScope.target()
+                .warehouse("sb.warehouse").goodsColumn("g.goods_code").build();
+        List<Object> args = new ArrayList<>(List.of(warehouse, warehouse, kw, kw, kw, kw));
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT g.goods_code, g.goods_name, g.spec, g.base_unit,
                        COALESCE(g.standard_price, 0) AS standard_price,
@@ -126,8 +161,9 @@ public class OtherInboundController {
                 WHERE COALESCE(g.status, 'NORMAL') <> 'STOPPED'
                   AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                        OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
-                ORDER BY g.goods_code
-                """, warehouse, warehouse, kw, kw, kw, kw);
+                """ + scopeSql + """
+                 ORDER BY g.goods_code
+                """, args.toArray());
         return ApiResponse.ok(rows.stream().map(OtherInboundController::camelize).toList());
     }
 
@@ -135,10 +171,17 @@ public class OtherInboundController {
     //  批次下拉（指定仓库+商品的现有批次，供入库沿用已有批次）
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.view", name = "查看")
     @GetMapping("/other-inbound/batch-options")
     public ApiResponse<List<Map<String, Object>>> batchOptions(
             @RequestParam String goodsCode,
             @RequestParam String warehouse) {
+        // 数据范围（PRD-28 §5.3）：强制仓库 + 商品分类/品牌范围
+        var scope = dataScope.target()
+                .warehouse("bs.warehouse").goodsColumn("bs.goods_code").build();
+        List<Object> args = new ArrayList<>(List.of(goodsCode, warehouse));
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, args);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bs.batch_no,
                        bs.production_date,
@@ -148,8 +191,9 @@ public class OtherInboundController {
                        bs.cost_price
                 FROM inv_batch_stock bs
                 WHERE bs.goods_code = ? AND bs.warehouse = ?
-                ORDER BY bs.production_date, bs.batch_no
-                """, goodsCode, warehouse);
+                """ + scopeSql + """
+                 ORDER BY bs.production_date, bs.batch_no
+                """, args.toArray());
         return ApiResponse.ok(rows.stream().map(OtherInboundController::camelize).toList());
     }
 
@@ -157,11 +201,14 @@ public class OtherInboundController {
     //  新建其他入库单
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.add", name = "新增")
     @PostMapping("/other-inbound/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> request) {
         String warehouse = str(request.get("warehouse"));
         if (warehouse.isBlank()) throw new IllegalArgumentException("请选择仓库");
+        // 数据范围（PRD-28 §5.3）：禁止向数据范围外仓库入库
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         String customer = str(request.get("customer")).trim();
         String supplier = str(request.get("supplier")).trim();
@@ -212,6 +259,7 @@ public class OtherInboundController {
     //  编辑其他入库单
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.edit", name = "修改")
     @PostMapping("/other-inbound/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> request) {
@@ -227,6 +275,9 @@ public class OtherInboundController {
         inboundId = str(pick(existing, "inbound_id"));
 
         String warehouse = strOrDefault(request.get("warehouse"), str(pick(existing, "warehouse")));
+        // 数据范围（PRD-28 §5.3）：原单仓库与改后仓库都须在范围内
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(existing, "warehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
         LocalDate billDate = parseDate(request.get("billDate"), parseDate(pick(existing, "bill_date"), LocalDate.now()));
         String remark = strOrDefault(request.get("remark"), str(pick(existing, "remark")));
         String inboundType = strOrDefault(request.get("inboundType"), str(pick(existing, "inbound_type")));
@@ -292,6 +343,7 @@ public class OtherInboundController {
      * <p>该商品在此仓库尚无成本（首次入库）时没有「当前成本」可取，依次回落：
      * 建单时记录的成本单价 → 入库单价，用于建立初始成本（建账，非重算）。
      */
+    @RequirePerm(value = "inv.other_in.audit", name = "审核")
     @PostMapping("/other-inbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
@@ -303,6 +355,8 @@ public class OtherInboundController {
         String inboundId = str(pick(head, "inbound_id"));
         String inboundNo = str(pick(head, "inbound_no"));
         String warehouse = str(pick(head, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止审核/反审核/作废他仓入库单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
@@ -357,6 +411,7 @@ public class OtherInboundController {
      * 反审核：APPROVED → PENDING，扣减此前入库的库存。
      * 入库后若商品已被出库导致库存不足，则拒绝反审核。
      */
+    @RequirePerm(value = "inv.other_in.unaudit", name = "反审核")
     @PostMapping("/other-inbound/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
@@ -368,6 +423,8 @@ public class OtherInboundController {
         String inboundId = str(pick(head, "inbound_id"));
         String inboundNo = str(pick(head, "inbound_no"));
         String warehouse = str(pick(head, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止审核/反审核/作废他仓入库单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
@@ -390,6 +447,7 @@ public class OtherInboundController {
     //  删除其他入库单
     // ========================================================================
 
+    @RequirePerm(value = "inv.other_in.delete", name = "删除")
     @PostMapping("/other-inbound/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> delete(@Valid @RequestBody AuditRequest request) {
@@ -400,6 +458,8 @@ public class OtherInboundController {
         }
         String inboundId = str(pick(head, "inbound_id"));
         String inboundNo = str(pick(head, "inbound_no"));
+        // 数据范围（PRD-28 §5.3）：禁止删除他仓入库单
+        warehouseGuard.assertVisible(jdbcTemplate, str(pick(head, "warehouse")));
         jdbcTemplate.update("DELETE FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
         jdbcTemplate.update("DELETE FROM inv_other_inbound WHERE inbound_id = ?", inboundId);
         log("inventory.otherInbound", "DELETE", inboundNo, "删除其他入库单");
@@ -414,6 +474,7 @@ public class OtherInboundController {
      * 作废：任意非 CANCELLED 状态 → CANCELLED。
      * 已审核的单据先扣回库存再作废。
      */
+    @RequirePerm(value = "inv.other_in.close", name = "作废")
     @PostMapping("/other-inbound/cancel")
     @Transactional
     public ApiResponse<Map<String, Object>> cancel(@Valid @RequestBody AuditRequest request) {
@@ -425,6 +486,8 @@ public class OtherInboundController {
         String inboundId = str(pick(head, "inbound_id"));
         String inboundNo = str(pick(head, "inbound_no"));
         String warehouse = str(pick(head, "warehouse"));
+        // 数据范围（PRD-28 §5.3）：禁止审核/反审核/作废他仓入库单
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         if ("APPROVED".equals(status)) {
             List<Map<String, Object>> details = jdbcTemplate.queryForList(
@@ -454,6 +517,7 @@ public class OtherInboundController {
      * goodsCode、batchNo、productionDate、qty。
      * <p>按「仓库 + 单据日期 + 客户/供应商」分组，每组生成一张其他入库单（状态 PENDING）。
      */
+    @RequirePerm(value = "inv.other_in.import", name = "导入")
     @PostMapping("/other-inbound/import")
     @Transactional
     public ApiResponse<Map<String, Object>> importOtherInbound(@RequestBody Map<String, Object> request) {
@@ -541,6 +605,8 @@ public class OtherInboundController {
         List<String> createdNos = new ArrayList<>();
         for (Map.Entry<String, List<Map<String, Object>>> entry : grouped.entrySet()) {
             GroupMeta meta = groupMeta.get(entry.getKey());
+            // 数据范围（PRD-28 §5.3）：导入建单禁止落向数据范围外仓库
+            warehouseGuard.assertVisible(jdbcTemplate, meta.warehouse());
             List<Map<String, Object>> detailRows = new ArrayList<>();
 
             for (Map<String, Object> line : entry.getValue()) {

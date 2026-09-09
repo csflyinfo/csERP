@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,12 +47,31 @@ public class CustomerPriceController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public CustomerPriceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    /** 客户专属价格类 key → VIEW_CUSTOMER_PRICE（最新进价/成本价走注册表自动脱敏）。 */
+    private static final Map<String, String> CUSTOMER_PRICE_KEYS = Map.ofEntries(
+            Map.entry("standardPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("price", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("oldPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("newPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("originalPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("currentPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("smallStandardPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("mediumStandardPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("largeStandardPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("smallCurrentPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("mediumCurrentPrice", "VIEW_CUSTOMER_PRICE"),
+            Map.entry("largeCurrentPrice", "VIEW_CUSTOMER_PRICE"));
+
+    public CustomerPriceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                   com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.fieldMasker = fieldMasker;
     }
 
+    @RequirePerm(value = "base.customer_price.view", name = "查看")
     @PostMapping("/customer-price-adjust/page")
     public ApiResponse<PageResult<Map<String, Object>>> adjustPage(@RequestBody PageRequest request) {
         // 不加列别名：H2 开了 CASE_INSENSITIVE_IDENTIFIERS，别名会被大写成 ADJUSTID，
@@ -108,6 +128,7 @@ public class CustomerPriceController {
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "base.customer_price.view", name = "查看")
     @GetMapping("/customer-price-adjust/detail")
     public ApiResponse<Map<String, Object>> adjustDetail(@RequestParam String adjustId) {
         // 同 page：不用列别名，避免 H2 大写化导致前端取不到字段
@@ -195,9 +216,12 @@ public class CustomerPriceController {
         List<Map<String, Object>> details = new java.util.ArrayList<>(rawDetails.size());
         for (Map<String, Object> d : rawDetails) details.add(toCamel(d));
         head.put("details", details);
+        // PRD-28 卡片7：客户专属价按 VIEW_CUSTOMER_PRICE 脱敏；明细里的最新进价/成本价由注册表自动脱敏
+        fieldMasker.mask(head, CUSTOMER_PRICE_KEYS);
         return ApiResponse.ok(head);
     }
 
+    @RequirePerm(value = "base.customer_price.add", name = "新增")
     @PostMapping("/customer-price-adjust/create")
     public ApiResponse<Map<String, Object>> createAdjust(@Valid @RequestBody CustomerPriceAdjustRequest request) {
         String adjustId = "CPA" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -240,6 +264,7 @@ public class CustomerPriceController {
      * 编辑调整单：仅待审核（PENDING）单据可改。
      * 明细采取「整体替换」策略 —— 先删后插，避免逐行 diff 的复杂度。
      */
+    @RequirePerm(value = "base.customer_price.edit", name = "修改")
     @PostMapping("/customer-price-adjust/update")
     public ApiResponse<Boolean> updateAdjust(@Valid @RequestBody CustomerPriceAdjustUpdateRequest request) {
         String adjustId = request.adjustId();
@@ -266,6 +291,7 @@ public class CustomerPriceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "base.customer_price.audit", name = "审核")
     @PostMapping("/customer-price-adjust/audit")
     public ApiResponse<Map<String, Object>> auditAdjust(@Valid @RequestBody AuditRequest request) {
         String adjustId = request.bizId();
@@ -356,6 +382,7 @@ public class CustomerPriceController {
      * 仍会展示一张已作废单据带来的价格，销售按错价出单。
      * 变价日志不删：它是历史流水，作废本身也是历史的一部分。
      */
+    @RequirePerm(value = "base.customer_price.close", name = "作废")
     @PostMapping("/customer-price-adjust/cancel")
     public ApiResponse<Boolean> cancelAdjust(@Valid @RequestBody AuditRequest request) {
         String adjustId = request.bizId();
@@ -383,6 +410,7 @@ public class CustomerPriceController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "base.customer_price.import", name = "导入")
     @PostMapping("/customer-price-adjust/import")
     public ApiResponse<Map<String, Object>> importAdjust() {
         return ApiResponse.ok(Map.of("createdAdjustCount", 2, "successRows", 120, "failedRows", 0,
@@ -393,6 +421,7 @@ public class CustomerPriceController {
      * 客户价格查询 —— 客户指定商品的当前专属价格（按单位拆行）。
      * 对照【价格组商品查询】，支持按客户、商品、状态、单位类型过滤，可停用生效中的价格。
      */
+    @RequirePerm(value = "base.customer_price_query.view", name = "查看")
     @PostMapping("/customer-price/query")
     public ApiResponse<PageResult<Map<String, Object>>> queryCustomerPrice(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -454,6 +483,8 @@ public class CustomerPriceController {
             r.put("customer", (str(r.get("customerCode")) + " " + str(r.get("customerName"))).trim());
             rows.add(r);
         }
+        // 客户专属价（标价/现价）按 VIEW_CUSTOMER_PRICE 脱敏
+        fieldMasker.mask(rows, CUSTOMER_PRICE_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
@@ -461,6 +492,7 @@ public class CustomerPriceController {
      * 客户商品变价查询 —— 客户商品的历史调价记录（只读，不可操作）。
      * 每条记录对应一次单位级别的价格变动，含变价前/变价后。
      */
+    @RequirePerm(value = "base.customer_price_change.view", name = "查看")
     @PostMapping("/customer-price-change-log/page")
     public ApiResponse<PageResult<Map<String, Object>>> customerPriceChangeLogPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
@@ -523,6 +555,8 @@ public class CustomerPriceController {
             r.put("createdAtText", formatDateTime(r.get("createdAt")));
             rows.add(r);
         }
+        // 变价前/后均为客户专属价
+        fieldMasker.mask(rows, CUSTOMER_PRICE_KEYS);
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
@@ -530,6 +564,7 @@ public class CustomerPriceController {
      * 停用客户价格（按 base_customer_price_item.id）。
      * 兼容老调用：传进来的若是 base_customer_price.price_id 也一并处理。
      */
+    @RequirePerm(value = "base.customer_price_query.biz_stop", name = "停用客户价格")
     @PostMapping("/customer-price/stop")
     public ApiResponse<Map<String, Object>> stopCustomerPrice(@Valid @RequestBody StopPriceRequest request) {
         int stopped = 0;

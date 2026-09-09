@@ -6,6 +6,10 @@
  */
 import { ref, watch, computed, onMounted } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+// RBAC（PRD-28 卡片7）：收款单 fin.receipt.add/edit，付款单 fin.payment.add/edit
+const { guardCode } = useRbac()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -20,6 +24,9 @@ const title = computed(() => {
   const prefix = isReceipt.value ? '收款单' : '付款单'
   return props.mode === 'edit' ? `编辑${prefix}` : `新建${prefix}`
 })
+// 保存所需功能点：收款 fin.receipt.add/edit，付款 fin.payment.add/edit
+const savePermCode = computed(() =>
+  `${isReceipt.value ? 'fin.receipt' : 'fin.payment'}.${props.mode === 'edit' ? 'edit' : 'add'}`)
 
 // ==================== 下拉选项 ====================
 const fundAccounts = ref([])          // 资金账户（从 base_fund_account 加载）
@@ -167,6 +174,7 @@ function validate() {
 
 // ==================== 保存 ====================
 async function save() {
+  if (!guardCode(savePermCode.value)) return alert('无权限执行该操作')
   if (!validate()) { alert(Object.values(formErrors.value)[0]); return }
   loading.value = true
   try {
@@ -226,7 +234,8 @@ watch(() => props.visible, async (v) => {
         </span>
         <div style="flex:1"></div>
         <button class="btn" @click="close" :disabled="loading">关闭</button>
-        <button v-if="header.status === 'PENDING'" class="btn primary" @click="save" :disabled="loading">保存</button>
+        <button v-if="header.status === 'PENDING'" v-permission="savePermCode"
+                class="btn primary" @click="save" :disabled="loading">保存</button>
       </div>
 
       <div class="bill-drawer-body" style="gap:8px">

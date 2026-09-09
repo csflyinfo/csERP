@@ -5,12 +5,16 @@
  * 数据来自 base_customer_price_change_log：调整单审核时每个单位写一条。
  * 本页只做查询，不提供停用等任何操作（停用请到【客户价格查询】）。
  */
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import * as XLSX from 'xlsx'
 import QueryBar from '../components/QueryBar.vue'
 import ProTable from '../components/ProTable.vue'
 import { post } from '../api/client.js'
 import { moduleApis } from '../module-api.js'
+import { useRbac } from '../composables/useRbac.js'
+
+// RBAC（PRD-28 卡片7）：变价前/后走 VIEW_CUSTOMER_PRICE 列权限；导出走 global.export
+const { canViewColumn, guardCode } = useRbac('customerPriceChangeLog')
 
 const loading = ref(false)
 const tableRows = ref([])
@@ -38,6 +42,10 @@ const columns = [
   { key: 'c13', title: '价格有效期' },
   { key: 'c14', title: '备注' },
 ]
+// 变价前/后按 VIEW_CUSTOMER_PRICE 收列（值后端已脱敏）
+const visibleColumns = computed(() =>
+  columns.filter(c => canViewColumn('customerPriceChangeLog', c.title))
+)
 
 // 查询条件与后端 filters 字段的映射（QueryBar 用中文标签做 key）
 const queryFields = ['客户', '商品', '调价单号', '单位类型']
@@ -114,13 +122,15 @@ function onReset() {
 function handlePageChange(n) { pageNo.value = n; loadRows() }
 function handlePageSizeChange(s) { pageSize.value = s; pageNo.value = 1; loadRows() }
 
-/** 导出当前查询结果（按列表列顺序），单页导出即所见即所得 */
+/** 导出当前查询结果（按列表列顺序），单页导出即所见即所得；敏感列随权限收走 */
 function exportRows() {
+  if (!guardCode('global.export')) return show('无权限执行该操作')
   if (tableRows.value.length === 0) return show('没有可导出的记录')
-  const titles = columns.map(c => c.title)
+  const cols = visibleColumns.value
+  const titles = cols.map(c => c.title)
   const data = tableRows.value.map(row => {
     const obj = {}
-    columns.forEach(c => { obj[c.title] = row[c.key] })
+    cols.forEach(c => { obj[c.title] = row[c.key] })
     return obj
   })
   const ws = XLSX.utils.json_to_sheet(data, { header: titles })
@@ -138,13 +148,13 @@ onMounted(loadRows)
   <div class="module-body">
     <div class="page-ops">
       <button class="btn" @click="loadRows">刷新</button>
-      <button class="btn" @click="exportRows">导出</button>
+      <button class="btn" v-permission="'global.export'" @click="exportRows">导出</button>
     </div>
     <QueryBar :fields="queryFields" @query="onQuery" @reset="onReset" />
     <div v-if="loading" class="tips-inline"><span>正在加载...</span></div>
     <ProTable
       title="客户商品变价查询"
-      :columns="columns"
+      :columns="visibleColumns"
       :rows="tableRows"
       :page-no="pageNo"
       :page-size="pageSize"

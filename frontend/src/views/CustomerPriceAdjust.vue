@@ -14,6 +14,10 @@ import ProTable from '../components/ProTable.vue'
 import CustomerPriceViewDialog from '../components/CustomerPriceViewDialog.vue'
 import { post } from '../api/client.js'
 import { moduleApis } from '../module-api.js'
+import { useRbac } from '../composables/useRbac.js'
+
+// RBAC（PRD-28 卡片7）：base.customer_price 的 add/edit/audit/close/import
+const { actionHidden, guard, guardCode } = useRbac('customerPrice')
 
 const router = useRouter()
 const loading = ref(false)
@@ -87,7 +91,10 @@ async function loadRows() {
 
 function rowKeyOf(row) { return row._raw?.adjustId || row.c0 }
 
-function goNew() { router.push('/customer-price/new') }
+function goNew() {
+  if (!guardCode('base.customer_price.add')) return show('无权限执行该操作')
+  router.push('/customer-price/new')
+}
 function goEdit(row) { router.push(`/customer-price/edit/${encodeURIComponent(rowKeyOf(row))}`) }
 
 function openView(row) {
@@ -96,6 +103,8 @@ function openView(row) {
 }
 
 async function handleAction(action, row) {
+  // 功能点闸门（按钮已隐藏，此处兜底防绕过；最终以后端 403 为准）
+  if (!guard(action)) return show('无权限执行该操作')
   if (action === '查看') { openView(row); return }
   if (action === '编辑') { goEdit(row); return }
   if (/审核/.test(action)) {
@@ -150,7 +159,7 @@ onMounted(() => { loadRows() })
 
 <template>
   <div class="module-body">
-    <div class="page-ops">
+    <div class="page-ops" v-action-perms="actionHidden">
       <button class="btn primary" @click="goNew">新建调整单</button>
       <button class="btn" @click="loadRows">刷新</button>
       <button class="btn" @click="handleAction('导入价格')">导入价格</button>
@@ -172,7 +181,9 @@ onMounted(() => { loadRows() })
         <span class="badge" :class="row.c10 === '已审核' ? 'ok' : 'wait'">{{ row.c10 }}</span>
       </template>
       <template #c11="{ row }">
-        <button v-for="a in row.c11.split(' ')" :key="a" class="link link-btn" @click="handleAction(a, row)">{{ a }}</button>
+        <span v-action-perms="actionHidden">
+          <button v-for="a in row.c11.split(' ')" :key="a" class="link link-btn" @click="handleAction(a, row)">{{ a }}</button>
+        </span>
       </template>
     </ProTable>
 

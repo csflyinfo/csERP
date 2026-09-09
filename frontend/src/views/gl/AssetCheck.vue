@@ -84,7 +84,7 @@ onMounted(async () => {
         </select>
       </label>
       <button class="btn" @click="loadCards(); loadHistory()">刷新</button>
-      <button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存盘点单' }}</button>
+      <button class="btn btn-primary" v-permission="'finance.gl.asset_check.edit'" :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存盘点单' }}</button>
     </div>
     <div v-if="feedback" :class="['feedback', feedback.level]">{{ feedback.msg }}</div>
 

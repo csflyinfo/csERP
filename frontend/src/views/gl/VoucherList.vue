@@ -290,9 +290,9 @@ onMounted(() => { loadMeta(); load() })
       <button class="btn" @click="search">查询</button>
       <div class="spacer"></div>
       <button class="btn" @click="load">刷新</button>
-      <button class="btn" @click="openExport">导出 CSV</button>
+      <button class="btn" v-permission="'finance.gl.voucher.export'" @click="openExport">导出 CSV</button>
       <button class="btn" @click="openLogs">导出日志</button>
-      <button class="btn primary" @click="openCreate">＋ 新增凭证</button>
+      <button class="btn primary" v-permission="'finance.gl.voucher.add'" @click="openCreate">＋ 新增凭证</button>
     </div>
     <div v-if="feedback" class="toast-inline" :class="feedback.level">{{ feedback.msg }}</div>
 
@@ -323,14 +323,14 @@ onMounted(() => { loadMeta(); load() })
             <td><span class="tag" :class="statusClass(v.status)">{{ v.status }}</span></td>
             <td class="muted small">{{ v.makerName || '—' }}<br />{{ v.auditorName || '' }}</td>
             <td class="ops">
-              <a v-if="v.status === '草稿'" @click="openEdit(v, false)">编辑</a>
+              <a v-if="v.status === '草稿'" v-permission="'finance.gl.voucher.add'" @click="openEdit(v, false)">编辑</a>
               <a v-if="v.status !== '草稿'" @click="openEdit(v, true)">查看</a>
-              <a @click="printVoucher(v)">打印</a>
-              <a v-if="v.status === '草稿'" @click="onAudit(v)">审核</a>
-              <a v-if="v.status === '已审核'" @click="onUnaudit(v)">反审核</a>
-              <a v-if="v.status === '已审核'" @click="onPost(v)">过账</a>
-              <a v-if="v.status === '草稿' || v.status === '已审核'" class="danger" @click="onVoid(v)">作废</a>
-              <a v-if="v.status === '已过账' && !v.isRed" class="danger" @click="onRedReverse(v)">红冲</a>
+              <a v-permission="'finance.gl.voucher.print'" @click="printVoucher(v)">打印</a>
+              <a v-if="v.status === '草稿'" v-permission="'finance.gl.voucher.audit'" @click="onAudit(v)">审核</a>
+              <a v-if="v.status === '已审核'" v-permission="'finance.gl.voucher.unaudit'" @click="onUnaudit(v)">反审核</a>
+              <a v-if="v.status === '已审核'" v-permission="'finance.gl.voucher.post'" @click="onPost(v)">过账</a>
+              <a v-if="v.status === '草稿' || v.status === '已审核'" v-permission="'finance.gl.voucher.close'" class="danger" @click="onVoid(v)">作废</a>
+              <a v-if="v.status === '已过账' && !v.isRed" v-permission="'finance.gl.voucher.red'" class="danger" @click="onRedReverse(v)">红冲</a>
             </td>
           </tr>
           <tr v-if="!list.length"><td colspan="11" class="empty">{{ loading ? '加载中...' : '暂无凭证' }}</td></tr>
@@ -450,7 +450,7 @@ onMounted(() => { loadMeta(); load() })
         </div>
         <div class="modal-f">
           <button class="btn" @click="drawer.open=false">{{ drawer.readonly ? '关闭' : '取消' }}</button>
-          <button v-if="!drawer.readonly" class="btn primary" @click="onSave">保存草稿</button>
+          <button v-if="!drawer.readonly" v-permission="'finance.gl.voucher.add'" class="btn primary" @click="onSave">保存草稿</button>
         </div>
       </div>
     </div>
@@ -487,7 +487,7 @@ onMounted(() => { loadMeta(); load() })
         </div>
         <div class="modal-f">
           <button class="btn" @click="expDlg.open=false">取消</button>
-          <button class="btn primary" :disabled="expDlg.busy" @click="doExport">{{ expDlg.busy ? '导出中...' : '导出下载' }}</button>
+          <button class="btn primary" v-permission="'finance.gl.voucher.export'" :disabled="expDlg.busy" @click="doExport">{{ expDlg.busy ? '导出中...' : '导出下载' }}</button>
         </div>
       </div>
     </div>

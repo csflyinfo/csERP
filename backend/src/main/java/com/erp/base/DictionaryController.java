@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +28,7 @@ public class DictionaryController {
 
     // ================ 字典类型 ================
 
+    @RequirePerm(value = "system.dictionary.view", name = "查看")
     @PostMapping("/type/page")
     public ApiResponse<PageResult<Map<String, Object>>> typePage(@RequestBody PageRequest request) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -37,6 +39,7 @@ public class DictionaryController {
         return ApiResponse.ok(PageResult.of(out, request));
     }
 
+    @RequirePerm(value = "system.dictionary.edit", name = "修改")
     @PostMapping("/type/save")
     public ApiResponse<Map<String, Object>> typeSave(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -73,6 +76,7 @@ public class DictionaryController {
         return ApiResponse.ok(GenericResult.row("id", id, "success", true));
     }
 
+    @RequirePerm(value = "system.dictionary.delete", name = "删除")
     @PostMapping("/type/delete")
     public ApiResponse<Map<String, Object>> typeDelete(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -94,6 +98,7 @@ public class DictionaryController {
 
     // ================ 字典值 ================
 
+    @RequirePerm(value = "system.dictionary.view", name = "查看")
     @PostMapping("/value/page")
     public ApiResponse<PageResult<Map<String, Object>>> valuePage(@RequestBody Map<String, Object> req) {
         String dictType = trim(req.get("dictType"));
@@ -108,6 +113,7 @@ public class DictionaryController {
         return ApiResponse.ok(new PageResult<>(out, 1, Math.max(out.size(), 100), out.size(), Map.of()));
     }
 
+    @RequirePerm(value = "system.dictionary.edit", name = "修改")
     @PostMapping("/value/save")
     public ApiResponse<Map<String, Object>> valueSave(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -148,6 +154,7 @@ public class DictionaryController {
         return ApiResponse.ok(GenericResult.row("id", id, "success", true));
     }
 
+    @RequirePerm(value = "system.dictionary.delete", name = "删除")
     @PostMapping("/value/delete")
     public ApiResponse<Map<String, Object>> valueDelete(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -162,6 +169,7 @@ public class DictionaryController {
         return ApiResponse.ok(GenericResult.row("id", id, "success", true));
     }
 
+    @RequirePerm(value = "system.dictionary.edit", name = "停用/启用")
     @PostMapping("/value/stop")
     public ApiResponse<Map<String, Object>> valueStop(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -173,6 +181,7 @@ public class DictionaryController {
     }
 
     /** 查询单个字典值被业务记录引用的数量。 */
+    @RequirePerm(value = "system.dictionary.view", name = "查看")
     @PostMapping("/value/usage")
     public ApiResponse<Map<String, Object>> valueUsage(@RequestBody Map<String, Object> req) {
         String id = trim(req.get("id"));
@@ -216,6 +225,7 @@ public class DictionaryController {
         return total;
     }
 
+    @RequirePerm(value = "system.dictionary.import", name = "导入")
     @PostMapping("/import")
     @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> importValues(@RequestBody Map<String, Object> req) {

@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
@@ -24,13 +25,17 @@ public class GlVoucherController {
 
     private final GlVoucherService voucherService;
     private final JdbcTemplate jdbc;
+    private final com.erp.common.security.PermissionService permissionService;
 
-    public GlVoucherController(GlVoucherService voucherService, JdbcTemplate jdbc) {
+    public GlVoucherController(GlVoucherService voucherService, JdbcTemplate jdbc,
+                               com.erp.common.security.PermissionService permissionService) {
         this.voucherService = voucherService;
         this.jdbc = jdbc;
+        this.permissionService = permissionService;
     }
 
     /** 分页查询。body: {pageNo,pageSize,period,voucherWord,status,source,dateFrom,dateTo,keyword} */
+    @RequirePerm(value = "finance.gl.voucher.view", name = "查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody Map<String, Object> body) {
         // 过滤条件已在 SQL 中完成；PageRequest.filters 必须为空，
@@ -43,35 +48,44 @@ public class GlVoucherController {
     }
 
     /** 凭证详情（含分录）。body: {id} */
+    @RequirePerm(value = "finance.gl.voucher.view", name = "查看")
     @PostMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(voucherService.detail(TmsUtil.str(body.get("id"))));
     }
 
     /** 凭证打印数据（头 + 分录 + 合计 + 金额大写）。body: {id} */
+    @RequirePerm(value = "finance.gl.voucher.print", name = "打印")
     @PostMapping("/print-data")
     public ApiResponse<Map<String, Object>> printData(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(voucherService.printData(TmsUtil.str(body.get("id"))));
     }
 
     /** 保存/更新草稿（含全部校验）。body: 凭证头 + entries[]。 */
+    @RequirePerm(value = "finance.gl.voucher.add", name = "新增")
     @PostMapping("/save")
     public ApiResponse<Map<String, Object>> save(@RequestBody Map<String, Object> body) {
+        // PRD-28：/save 是新增/修改合一入口，带 id 时额外要求修改功能点
+        if (!TmsUtil.str(body.get("id")).isEmpty() && !permissionService.hasFunc("finance.gl.voucher.edit"))
+            throw new com.erp.common.security.PermissionDeniedException("无凭证修改权限");
         return ApiResponse.ok(voucherService.saveDraft(body));
     }
 
+    @RequirePerm(value = "finance.gl.voucher.audit", name = "审核")
     @PostMapping("/audit")
     public ApiResponse<Void> audit(@RequestBody Map<String, Object> body) {
         voucherService.audit(TmsUtil.str(body.get("id")));
         return ApiResponse.ok(null);
     }
 
+    @RequirePerm(value = "finance.gl.voucher.unaudit", name = "反审核")
     @PostMapping("/unaudit")
     public ApiResponse<Void> unaudit(@RequestBody Map<String, Object> body) {
         voucherService.unaudit(TmsUtil.str(body.get("id")));
         return ApiResponse.ok(null);
     }
 
+    @RequirePerm(value = "finance.gl.voucher.post", name = "过账")
     @PostMapping("/post")
     public ApiResponse<Void> post(@RequestBody Map<String, Object> body) {
         voucherService.post(TmsUtil.str(body.get("id")));
@@ -79,6 +93,7 @@ public class GlVoucherController {
     }
 
     /** 作废。body: {id, reason} */
+    @RequirePerm(value = "finance.gl.voucher.close", name = "作废")
     @PostMapping("/void")
     public ApiResponse<Void> voidVoucher(@RequestBody Map<String, Object> body) {
         voucherService.voidVoucher(TmsUtil.str(body.get("id")), TmsUtil.str(body.get("reason")));
@@ -86,6 +101,7 @@ public class GlVoucherController {
     }
 
     /** 红冲（已过账凭证）。body: {id} → 返回红字凭证号。 */
+    @RequirePerm(value = "finance.gl.voucher.red", name = "红冲")
     @PostMapping("/red-reverse")
     public ApiResponse<Map<String, Object>> redReverse(@RequestBody Map<String, Object> body) {
         String no = voucherService.redReverse(TmsUtil.str(body.get("id")));
@@ -95,6 +111,7 @@ public class GlVoucherController {
     /**
      * 单据联查凭证：按来源单据类型+单号查凭证（业务单据列表"凭证"列用）。
      */
+    @RequirePerm(value = "finance.gl.voucher.view", name = "查看")
     @PostMapping("/by-bill")
     public ApiResponse<List<Map<String, Object>>> byBill(@RequestBody Map<String, Object> body) {
         String billType = TmsUtil.str(body.get("billType"));
@@ -113,6 +130,7 @@ public class GlVoucherController {
      * 凭证录入辅助下拉：客户/供应商/部门/员工/商品/项目/现金流量项目，一次取齐。
      * 基础档案表存在才查（防御缺表环境），查不到返回空数组。
      */
+    @RequirePerm(value = "finance.gl.voucher.view", name = "查看")
     @PostMapping("/aux-options")
     public ApiResponse<Map<String, Object>> auxOptions() {
         Map<String, Object> result = new LinkedHashMap<>();

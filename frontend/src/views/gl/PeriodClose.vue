@@ -168,7 +168,7 @@ onMounted(async () => { await loadPeriods(); await load() })
         <b>④ 自动转账</b>
         <span class="step-detail">{{ step(4)?.detail }}</span>
         <span style="flex:1"></span>
-        <button class="btn primary" :disabled="busy" @click="runTransfer">执行自动转账</button>
+        <button class="btn primary" v-permission="'finance.gl.period_close.audit'" :disabled="busy" @click="runTransfer">执行自动转账</button>
       </div>
       <table class="data">
         <thead><tr><th>模板</th><th>名称</th><th>状态</th><th>说明</th><th class="num">借方合计</th><th class="num">贷方合计</th></tr></thead>
@@ -205,7 +205,7 @@ onMounted(async () => { await loadPeriods(); await load() })
         <b>⑤ 结转损益</b>
         <span class="step-detail">{{ step(5)?.detail }}</span>
         <span style="flex:1"></span>
-        <button v-if="step(5)?.status === 'todo'" class="btn primary" :disabled="busy" @click="carryProfit">
+        <button v-if="step(5)?.status === 'todo'" v-permission="'finance.gl.period_close.audit'" class="btn primary" :disabled="busy" @click="carryProfit">
           生成结转损益凭证（草稿）
         </button>
       </div>
@@ -269,7 +269,7 @@ onMounted(async () => { await loadPeriods(); await load() })
         <b>⑦ 期末结账</b>
         <span class="step-detail">{{ step(7)?.detail }}</span>
         <span style="flex:1"></span>
-        <button class="btn primary" :disabled="busy || step(7)?.status !== 'ready'" @click="closePeriod">
+        <button class="btn primary" v-permission="'finance.gl.period_close.close'" :disabled="busy || step(7)?.status !== 'ready'" @click="closePeriod">
           {{ period.endsWith('12') ? '年度结账（冻结）' : '期末结账' }}
         </button>
       </div>
@@ -294,7 +294,7 @@ onMounted(async () => { await loadPeriods(); await load() })
           <span class="sub">结账人 {{ wizard.lastClosed.settleName || '—' }}</span>
         </span>
         <span style="flex:1"></span>
-        <button class="btn" :disabled="busy || wizard.lastClosed.status === '已冻结'" @click="openReopen">反结账</button>
+        <button class="btn" v-permission="'finance.gl.period_close.unaudit'" :disabled="busy || wizard.lastClosed.status === '已冻结'" @click="openReopen">反结账</button>
       </div>
       <p v-if="wizard.lastClosed.status === '已冻结'" class="tip">年度结账已冻结，不能反结账。</p>
       <p v-else class="tip">反结账后该期间恢复为「进行中」，本期结转损益/自动转账凭证回退为草稿（可修改或删除后重新结转）；操作人、时间与原因全部留痕。</p>
@@ -309,7 +309,7 @@ onMounted(async () => { await loadPeriods(); await load() })
           <textarea v-model="reopenModal.reason" rows="4" style="width:100%" placeholder="例如：发现 6 月有一张费用凭证漏记，需补录后重新结账"></textarea>
           <div style="text-align:right;margin-top:12px">
             <button class="btn" @click="reopenModal.open = false">取消</button>
-            <button class="btn primary" :disabled="busy" @click="submitReopen">确认反结账</button>
+            <button class="btn primary" v-permission="'finance.gl.period_close.unaudit'" :disabled="busy" @click="submitReopen">确认反结账</button>
           </div>
         </div>
       </div>

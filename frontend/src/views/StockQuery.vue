@@ -17,7 +17,11 @@ import { computed, defineComponent, h, onMounted, onBeforeUnmount, ref, watch } 
 import { post } from '../api/client.js'
 import { getDict } from '../utils/dictionary.js'
 import { useColumnSettings } from '../composables/useColumnSettings.js'
+import { useRbac } from '../composables/useRbac.js'
 import FieldSettingDialog from '../components/FieldSettingDialog.vue'
+
+// RBAC（PRD-28 卡片7）：成本/金额/锁定/主供应商等敏感列按字段权限收走；锁批/解锁走功能点
+const { canViewColumn, guardCode } = useRbac()
 
 // 递归树节点组件（用于分类多选下拉的树形展示）
 const TreeNode = defineComponent({
@@ -246,6 +250,9 @@ function openLockDialog(row, mode) {
 async function confirmLock() {
   const d = lockDialog.value
   if (!d) return
+  // 功能点闸门（按钮已隐藏，此处兜底防绕过；最终以后端 403 为准）
+  const needCode = d.mode === 'unlock' ? 'inv.balance.biz_batch_unlock' : 'inv.balance.biz_batch_lock'
+  if (!guardCode(needCode)) return alert('无权限执行该操作')
   const qty = Number(d.qty)
   if (!qty || qty <= 0) return alert('数量必须大于 0')
   if (qty > d.maxQty) return alert(`数量不能超过 ${d.maxQty}`)
@@ -296,7 +303,11 @@ const batchColumns = [
   ...balanceColumns.slice(7),
   { key: 'action', title: '操作', width: 160, action: true },
 ]
-const allColumns = computed(() => tab.value === 'batch' ? batchColumns : balanceColumns)
+// 操作列恒保留；其余列按字段权限过滤（后端按 VIEW_* 脱敏值，前端无权限连列头一并收走）
+const allColumns = computed(() => {
+  const cols = tab.value === 'batch' ? batchColumns : balanceColumns
+  return cols.filter(col => col.action || canViewColumn('stockBalance', col.title))
+})
 
 // ==================== 字段设置（使用通用 composable） ====================
 const {
@@ -549,8 +560,10 @@ function selectionCategoryLabel() {
                   :class="{ 'num': col.num, 'td-fixed': col.fixed, 'td-fixed-last': col.isLastFixed }"
                   :style="cellStyle(col, 'td')">
                 <template v-if="col.action">
-                  <button v-if="Number(row.availableQty) > 0" class="link link-btn" @click="openLockDialog(row, 'lock')">锁定</button>
-                  <button v-if="Number(row.lockedQty) > 0" class="link link-btn danger-link" @click="openLockDialog(row, 'unlock')">取消锁定</button>
+                  <button v-if="Number(row.availableQty) > 0" v-permission="'inv.balance.biz_batch_lock'"
+                          class="link link-btn" @click="openLockDialog(row, 'lock')">锁定</button>
+                  <button v-if="Number(row.lockedQty) > 0" v-permission="'inv.balance.biz_batch_unlock'"
+                          class="link link-btn danger-link" @click="openLockDialog(row, 'unlock')">取消锁定</button>
                 </template>
                 <template v-else>{{ fmtCell(row, col) }}</template>
               </td>

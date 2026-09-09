@@ -5,6 +5,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,16 +27,20 @@ public class InventoryController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
 
     public InventoryController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
                                com.erp.common.security.datascope.DataScopeService dataScope,
-                               com.erp.common.security.FieldMasker fieldMasker) {
+                               com.erp.common.security.FieldMasker fieldMasker,
+                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.warehouseGuard = warehouseGuard;
     }
 
+    @RequirePerm(value = "inv.balance.view", name = "查看")
     @PostMapping("/balance/page")
     public ApiResponse<PageResult<Map<String, Object>>> balancePage(@RequestBody PageRequest request) {
         // 数据范围（PRD-28 §5.3）：仓库 + 商品分类/品牌（库存表无建档人列，未配范围角色走 1=0 fail-closed）
@@ -77,14 +82,24 @@ public class InventoryController {
         return ApiResponse.ok(pageWithSummary(mapped, request));
     }
 
+    @RequirePerm(value = "inv.flow.view", name = "查看")
     @PostMapping("/ledger/page")
     public ApiResponse<PageResult<Map<String, Object>>> ledgerPage(@RequestBody PageRequest request) {
+        // 数据范围（PRD-28 §5.3）：库存流水强制按仓库 + 商品分类/品牌过滤，未配范围角色 1=0 fail-closed
+        var scope = dataScope.target()
+                .warehouse("warehouse").goodsColumn("goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT ledger_no, occurred_at, source_bill, goods_code, goods_name, warehouse,
                        batch_no, direction, qty, cost_price, amount, balance_qty, operator_name
                 FROM inv_stock_ledger
-                ORDER BY occurred_at DESC, ledger_no DESC
-                """);
+                WHERE 1=1
+                """ + scopeSql + """
+                 ORDER BY occurred_at DESC, ledger_no DESC
+                """, scopeArgs.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -95,12 +110,22 @@ public class InventoryController {
             row.put("operator", row.get("operatorName"));
             mapped.add(row);
         }
+        // 成本单价注册默认脱敏；流水金额按库存成本金额字段权限脱敏
+        fieldMasker.mask(mapped, Map.of("amount", "VIEW_STOCK_COST"));
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "inv.balance.view", name = "查看")
     @PostMapping("/lock/page")
     public ApiResponse<PageResult<Map<String, Object>>> lockPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：锁定记录强制按仓库 + 商品分类/品牌过滤
+        var scope = dataScope.target()
+                .warehouse("warehouse").goodsColumn("goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT balance_id lockNo,
                        goods_code goodsCode,
                        goods_name goodsName,
@@ -109,15 +134,26 @@ public class InventoryController {
                        '锁定中' status
                 FROM inv_stock_balance
                 WHERE locked_qty > 0
-                ORDER BY goods_code, warehouse
-                """), request));
+                """ + scopeSql + """
+                 ORDER BY goods_code, warehouse
+                """, scopeArgs.toArray());
+        fieldMasker.mask(rows);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.balance.view", name = "查看")
     @PostMapping("/batch/page")
     public ApiResponse<PageResult<Map<String, Object>>> batchPage(@RequestBody PageRequest request) {
         // 走 inv_batch_stock 拿真实批次层数据；JOIN base_goods 补商品扩展字段
         // 锁定/冻结/可用数量：批次表没有单独维护，用商品仓库维度的比例分摊估算（简化：直接用 batch.qty 作为 physical，其它按 balance 分摊）
         // V1.0 简化：批次层的 locked/frozen/available 直接从 inv_stock_balance 取对应 warehouse+goods 的值（不区分批次；后续增强）
+        // 数据范围（PRD-28 §5.3）：批次库存强制按仓库 + 商品分类/品牌过滤
+        var scope = dataScope.target()
+                .warehouse("bs.warehouse").goodsColumn("bs.goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bs.batch_stock_id, bs.goods_code, bs.goods_name, bs.warehouse, bs.batch_no,
                        bs.production_date, bs.expiry_date,
@@ -133,19 +169,30 @@ public class InventoryController {
                 FROM inv_batch_stock bs
                 LEFT JOIN base_goods g ON bs.goods_code = g.goods_code
                 WHERE bs.batch_no IS NOT NULL
-                ORDER BY bs.goods_code, bs.warehouse, bs.production_date, bs.batch_no
-                """);
+                """ + scopeSql + """
+                 ORDER BY bs.goods_code, bs.warehouse, bs.production_date, bs.batch_no
+                """, scopeArgs.toArray());
         List<Map<String, Object>> mapped = rows.stream()
                 .map(InventoryController::camelize)
                 .filter(r -> matchesStockFilters(r, request.filters()))
                 .filter(r -> matchesBatchFilters(r, request.filters()))
                 .toList();
+        // 成本单价/库存金额/锁定量/默认供应商按字段权限脱敏
+        fieldMasker.mask(mapped);
         return ApiResponse.ok(pageWithSummary(mapped, request));
     }
 
+    @RequirePerm(value = "inv.warning.view", name = "查看")
     @PostMapping("/warning/page")
     public ApiResponse<PageResult<Map<String, Object>>> warningPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：库存预警强制按仓库 + 商品分类/品牌过滤
+        var scope = dataScope.target()
+                .warehouse("b.warehouse").goodsColumn("b.goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT b.goods_code goodsCode,
                        b.goods_name goodsName,
                        b.warehouse,
@@ -158,21 +205,38 @@ public class InventoryController {
                        '待处理' status
                 FROM inv_stock_balance b
                 JOIN base_goods g ON b.goods_code = g.goods_code
-                WHERE b.available_qty < g.stock_lower_limit OR b.available_qty > g.stock_upper_limit
-                ORDER BY b.goods_code, b.warehouse
-                """), request));
+                WHERE (b.available_qty < g.stock_lower_limit OR b.available_qty > g.stock_upper_limit)
+                """ + scopeSql + """
+                 ORDER BY b.goods_code, b.warehouse
+                """, scopeArgs.toArray());
+        // 当前库存量按库存数量字段权限脱敏（上下限来自商品档案，不脱敏）
+        fieldMasker.mask(rows, Map.of("currentQty", "VIEW_STOCK_AMOUNT"));
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.transfer_apply.view", name = "查看")
     @PostMapping("/transfer/page")
     public ApiResponse<PageResult<Map<String, Object>>> transferPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：遗留调拨单列表按仓库 + 商品范围过滤
+        var scope = dataScope.target()
+                .warehouse("warehouse").goodsColumn("goods_code")
+                .build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bill_no transferNo, object_name objectName, warehouse, reason, qty, amount,
                        goods_code goodsCode, goods_name goodsName,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM biz_simple_bill WHERE bill_type='TRANSFER' ORDER BY bill_no DESC
-                """), request));
+                FROM biz_simple_bill WHERE bill_type='TRANSFER'
+                """ + scopeSql + """
+                 ORDER BY bill_no DESC
+                """, scopeArgs.toArray());
+        fieldMasker.mask(rows, Map.of("amount", "VIEW_STOCK_COST"));
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.transfer_apply.audit", name = "审核")
     @PostMapping("/transfer/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditTransfer(@RequestBody Map<String, Object> request) {
@@ -199,6 +263,9 @@ public class InventoryController {
             }
         }
 
+        // 数据范围（PRD-28 §5.3）：调出/调入仓库都必须在当前用户仓库范围内
+        warehouseGuard.assertVisible(jdbcTemplate, sourceWarehouse);
+        warehouseGuard.assertVisible(jdbcTemplate, targetWarehouse);
         // 获取当前成本单价
         BigDecimal costPrice = getCostPrice(goodsCode, sourceWarehouse);
         BigDecimal amount = qty.multiply(costPrice);
@@ -235,16 +302,27 @@ public class InventoryController {
         ));
     }
 
+    @RequirePerm(value = "inv.cost_adjust.view", name = "查看")
     @PostMapping("/cost-adjust/page")
     public ApiResponse<PageResult<Map<String, Object>>> costAdjustPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：成本调整单列表按仓库范围过滤；差异金额按成本金额字段权限脱敏
+        var scope = dataScope.target().warehouse("warehouse").build();
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bill_no adjustNo, warehouse, object_name goodsCode, amount diffAmount, reason,
                        goods_name goodsName,
                        CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM biz_simple_bill WHERE bill_type='COST_ADJUST' ORDER BY bill_no DESC
-                """), request));
+                FROM biz_simple_bill WHERE bill_type='COST_ADJUST'
+                """ + scopeSql + """
+                 ORDER BY bill_no DESC
+                """, scopeArgs.toArray());
+        fieldMasker.mask(rows, Map.of("diffAmount", "VIEW_COST_AMOUNT"));
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.cost_adjust.audit", name = "审核")
     @PostMapping("/cost-adjust/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditCostAdjust(@RequestBody Map<String, Object> request) {
@@ -258,6 +336,8 @@ public class InventoryController {
         String goodsCode = String.valueOf(bill.getOrDefault("OBJECT_NAME", "SP001"));
         String warehouse = String.valueOf(bill.getOrDefault("WAREHOUSE", "总仓"));
         BigDecimal diffAmount = toBigDecimal(bill.get("AMOUNT"));
+        // 数据范围（PRD-28 §5.3）：禁止调整数据范围外仓库的成本
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         // 查询当前库存
         List<Map<String, Object>> balances = jdbcTemplate.queryForList(
@@ -513,6 +593,7 @@ public class InventoryController {
      * 传了 {@code orderId} 时额外返回 {@code ownLockedQty = min(本单该商品数量, 该商品当前锁定量)}，
      * 前端展示与校验用 {@code availableQty + ownLockedQty}。不传时该值恒为 0，其它调用方行为不变。
      */
+    @RequirePerm(value = "inv.balance.view", name = "查看")
     @PostMapping("/available-stock")
     public ApiResponse<List<Map<String, Object>>> availableStock(@RequestBody Map<String, Object> req) {
         String warehouse = req.get("warehouse") == null ? "" : String.valueOf(req.get("warehouse")).trim();
@@ -528,10 +609,22 @@ public class InventoryController {
         // 仓库或商品为空都查不出有意义的结果，直接返回空列表（不报错，前端按 0 展示「-」）
         if (warehouse.isEmpty() || codes.isEmpty()) return ApiResponse.ok(List.of());
 
+        // 数据范围（PRD-28 §5.3）：开单可用量查询同样强制仓库 + 商品分类/品牌范围；
+        // 不可见仓库直接按无库存处理（返回空，不暴露该仓库存是否存在）。
+        // 本接口数值供开单程序计算，不做字段脱敏，可见性由功能点 + 数据范围把关。
+        var scope = dataScope.target()
+                .warehouse("warehouse").goodsColumn("goods_code")
+                .build();
+        if (scope.isDenyAll()) return ApiResponse.ok(List.of());
+        List<Object> scopeArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, scopeArgs);
+
         String inClause = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
-        Object[] args = new Object[codes.size() + 1];
-        args[0] = warehouse;
-        for (int i = 0; i < codes.size(); i++) args[i + 1] = codes.get(i);
+        List<Object> args = new ArrayList<>();
+        args.add(warehouse);
+        args.addAll(codes);
+        args.addAll(scopeArgs);
 
         // 同一 goods_code + warehouse 理论上只有一行，但历史数据可能因批次拆出多行，统一 SUM 兜底
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
@@ -542,8 +635,9 @@ public class InventoryController {
                        COALESCE(SUM(COALESCE(available_qty, 0)), 0) AS available_qty
                 FROM inv_stock_balance
                 WHERE warehouse = ? AND goods_code IN (%s)
-                GROUP BY goods_code
-                """.formatted(inClause), args);
+                """.formatted(inClause) + scopeSql + """
+                 GROUP BY goods_code
+                """, args.toArray());
 
         // 本单已占用量：同商品多行（正常品 + 赠品）按商品汇总
         Map<String, BigDecimal> ownQty = new LinkedHashMap<>();
@@ -576,6 +670,7 @@ public class InventoryController {
      * 锁定批次库存的指定数量。
      * 同步更新 inv_stock_balance.locked_qty / available_qty 供「库存查询」显示。
      */
+    @RequirePerm(value = "inv.balance.biz_batch_lock", name = "批次锁定")
     @PostMapping("/batch/lock")
     @Transactional
     public ApiResponse<Map<String, Object>> batchLock(@RequestBody Map<String, Object> req) {
@@ -592,6 +687,8 @@ public class InventoryController {
                 batchStockId);
         if (rows.isEmpty()) throw new IllegalArgumentException("批次不存在：" + batchStockId);
         Map<String, Object> r = camelize(rows.get(0));
+        // 数据范围（PRD-28 §5.3）：禁止锁定数据范围外仓库的批次
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(r.get("warehouse")));
         BigDecimal batchQty = toBd(r.get("qty"));
         BigDecimal locked = toBd(r.get("lockedQty"));
         BigDecimal available = batchQty.subtract(locked);
@@ -618,6 +715,7 @@ public class InventoryController {
         ));
     }
 
+    @RequirePerm(value = "inv.balance.biz_batch_unlock", name = "批次解锁")
     @PostMapping("/batch/unlock")
     @Transactional
     public ApiResponse<Map<String, Object>> batchUnlock(@RequestBody Map<String, Object> req) {
@@ -634,6 +732,8 @@ public class InventoryController {
                 batchStockId);
         if (rows.isEmpty()) throw new IllegalArgumentException("批次不存在");
         Map<String, Object> r = camelize(rows.get(0));
+        // 数据范围（PRD-28 §5.3）：禁止解锁数据范围外仓库的批次
+        warehouseGuard.assertVisible(jdbcTemplate, String.valueOf(r.get("warehouse")));
         BigDecimal locked = toBd(r.get("lockedQty"));
         if (qty.compareTo(locked) > 0) {
             throw new IllegalArgumentException("取消锁定数量超过已锁定：已锁 " + locked);

@@ -1,5 +1,6 @@
 package com.erp.base;
 
+import com.erp.common.security.datascope.DataScopeService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -10,6 +11,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -38,6 +40,8 @@ public class BaseController {
     private final BaseSupplierService supplierService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public BaseController(BaseCategoryService categoryService,
                           BaseUnitService unitService,
@@ -47,7 +51,9 @@ public class BaseController {
                           BaseCustomerService customerService,
                           BaseSupplierService supplierService,
                           org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-                          com.erp.system.OperationLogService opLog) {
+                          com.erp.system.OperationLogService opLog,
+                          com.erp.common.security.datascope.DataScopeService dataScope,
+                          com.erp.common.security.FieldMasker fieldMasker) {
         this.categoryService = categoryService;
         this.unitService = unitService;
         this.brandService = brandService;
@@ -57,6 +63,20 @@ public class BaseController {
         this.supplierService = supplierService;
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /**
+     * 把档案数据范围条件接到 MyBatis-Plus QueryWrapper（PRD-28 卡片7）。
+     * 档案模式：未配任何维度＝全可见；配了分类/品牌/客户/供应商等维度才收窄；收窄为空集→1=0。
+     */
+    private void applyArchiveScope(QueryWrapper<?> qw, DataScopeService.ScopeClause scope) {
+        if (scope.isDenyAll()) {
+            qw.apply("1=0");
+        } else if (!scope.predicateSql().isEmpty()) {
+            qw.apply(scope.predicateSql(), scope.predicateParams().toArray());
+        }
     }
 
     /**
@@ -108,6 +128,7 @@ public class BaseController {
     }
 
     // ========== 商品分类 ==========
+    @RequirePerm(value = "base.category.view", name = "查看")
     @PostMapping("/category/page")
     public ApiResponse<PageResult<Map<String, Object>>> categoryPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseCategory> qw = new QueryWrapper<>();
@@ -137,6 +158,7 @@ public class BaseController {
         return ApiResponse.ok(new PageResult<>(records, (int) page.getCurrent(), (int) page.getSize(), page.getTotal(), Map.of()));
     }
 
+    @RequirePerm(value = "base.category.add", name = "新增")
     @PostMapping("/category/create")
     public ApiResponse<BaseCategory> createCategory(@RequestBody Map<String, Object> request) {
         BaseCategory entity = new BaseCategory();
@@ -181,6 +203,7 @@ public class BaseController {
         return ApiResponse.ok(entity);
     }
 
+    @RequirePerm(value = "base.category.edit", name = "修改")
     @PostMapping("/category/update")
     public ApiResponse<Void> updateCategory(@RequestBody Map<String, Object> request) {
         String code = (String) request.get("categoryCode");
@@ -215,6 +238,7 @@ public class BaseController {
     }
 
     // ========== 计量单位 ==========
+    @RequirePerm(value = "base.unit.view", name = "查看")
     @PostMapping("/unit/page")
     public ApiResponse<PageResult<BaseUnit>> unitPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseUnit> qw = new QueryWrapper<>();
@@ -223,6 +247,7 @@ public class BaseController {
         return ApiResponse.ok(toPageResult(page));
     }
 
+    @RequirePerm(value = "base.unit.add", name = "新增")
     @PostMapping("/unit/create")
     public ApiResponse<BaseUnit> createUnit(@RequestBody Map<String, Object> request) {
         BaseUnit entity = new BaseUnit();
@@ -240,6 +265,7 @@ public class BaseController {
     }
 
     // ========== 品牌 ==========
+    @RequirePerm(value = "base.brand.view", name = "查看")
     @PostMapping("/brand/page")
     public ApiResponse<PageResult<BaseBrand>> brandPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseBrand> qw = new QueryWrapper<>();
@@ -248,6 +274,7 @@ public class BaseController {
         return ApiResponse.ok(toPageResult(page));
     }
 
+    @RequirePerm(value = "base.brand.add", name = "新增")
     @PostMapping("/brand/create")
     public ApiResponse<BaseBrand> createBrand(@RequestBody Map<String, Object> request) {
         BaseBrand entity = new BaseBrand();
@@ -262,6 +289,7 @@ public class BaseController {
     }
 
     // ========== 仓库 ==========
+    @RequirePerm(value = "base.warehouse.view", name = "查看")
     @PostMapping("/warehouse/page")
     public ApiResponse<PageResult<BaseWarehouse>> warehousePage(@RequestBody PageRequest request) {
         QueryWrapper<BaseWarehouse> qw = new QueryWrapper<>();
@@ -270,6 +298,7 @@ public class BaseController {
         return ApiResponse.ok(toPageResult(page));
     }
 
+    @RequirePerm(value = "base.warehouse.add", name = "新增")
     @PostMapping("/warehouse/create")
     public ApiResponse<BaseWarehouse> createWarehouse(@RequestBody Map<String, Object> request) {
         BaseWarehouse entity = new BaseWarehouse();
@@ -289,8 +318,9 @@ public class BaseController {
     }
 
     // ========== 商品档案 ==========
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @PostMapping("/goods/page")
-    public ApiResponse<PageResult<BaseGoods>> goodsPage(@RequestBody PageRequest request) {
+    public ApiResponse<PageResult<Map<String, Object>>> goodsPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseGoods> qw = new QueryWrapper<>();
         String keyword = request.keyword();
         if (keyword != null && !keyword.isBlank()) {
@@ -302,9 +332,21 @@ public class BaseController {
                     .or().apply("UPPER(barcode) LIKE {0}", "%" + upper + "%")
                     .or().apply("UPPER(simple_code) LIKE {0}", "%" + upper + "%"));
         }
+        // 数据范围：商品档案按商品分类/品牌收窄（档案模式，未配维度全可见）
+        applyArchiveScope(qw, dataScope.target().goodsColumn("goods_code").archiveMode().build());
         qw.orderByDesc("goods_code");
         IPage<BaseGoods> page = goodsService.page(toMpPage(request), qw);
-        return ApiResponse.ok(toPageResult(page));
+        // 转 Map 后做字段脱敏：采购价/成本/最低价/标准售价/默认供应商等按字段权限置 null（PRD-28 卡片7）
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.util.List<Map<String, Object>> mapped = new java.util.ArrayList<>();
+        for (BaseGoods g : page.getRecords()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = mapper.convertValue(g, Map.class);
+            mapped.add(row);
+        }
+        fieldMasker.mask(mapped);
+        return ApiResponse.ok(new PageResult<>(mapped, (int) page.getCurrent(),
+                (int) page.getSize(), page.getTotal(), Map.of()));
     }
 
     /**
@@ -329,6 +371,7 @@ public class BaseController {
      *
      * @param body customerCode / keyword / limit
      */
+    @RequirePerm(value = "base.goods.biz_sale_ranking", name = "销售排行")
     @PostMapping("/goods/sale-ranking")
     public ApiResponse<List<Map<String, Object>>> goodsSaleRanking(@RequestBody Map<String, Object> body) {
         String customerCode = trimStr(body.get("customerCode"));
@@ -418,6 +461,7 @@ public class BaseController {
         return out;
     }
 
+    @RequirePerm(value = "base.goods.add", name = "新增")
     @PostMapping("/goods/create")
     public ApiResponse<BaseGoods> createGoods(@RequestBody Map<String, Object> request) {
         BaseGoods entity = new BaseGoods();
@@ -431,11 +475,23 @@ public class BaseController {
         return ApiResponse.ok(entity);
     }
 
+    @RequirePerm(value = "base.goods.biz_selector", name = "商品选择器")
     @PostMapping("/goods/selector")
-    public ApiResponse<java.util.List<BaseGoods>> goodsSelector() {
+    public ApiResponse<java.util.List<Map<String, Object>>> goodsSelector() {
         QueryWrapper<BaseGoods> qw = new QueryWrapper<>();
+        // 数据范围：选择器同样受分类/品牌收窄（档案模式，未配维度全可见），避免越权枚举全公司商品
+        applyArchiveScope(qw, dataScope.target().goodsColumn("goods_code").archiveMode().build());
         qw.eq("status", "NORMAL").orderByAsc("goods_code");
-        return ApiResponse.ok(goodsService.list(qw));
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        java.util.List<Map<String, Object>> mapped = new java.util.ArrayList<>();
+        for (BaseGoods g : goodsService.list(qw)) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = mapper.convertValue(g, Map.class);
+            mapped.add(row);
+        }
+        // 采购价/默认供应商等敏感字段按字段权限脱敏（销售员选择器里不应看到采购价）
+        fieldMasker.mask(mapped);
+        return ApiResponse.ok(mapped);
     }
 
     /**
@@ -446,6 +502,7 @@ public class BaseController {
      *
      * @param goodsCode 可选；传了则带出该商品在各价格组的价格，不传则仅返回价格组列表
      */
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @GetMapping("/goods/price-groups")
     public ApiResponse<java.util.List<Map<String, Object>>> goodsPriceGroups(
             @RequestParam(required = false) String goodsCode) {
@@ -481,6 +538,7 @@ public class BaseController {
     }
 
 
+    @RequirePerm(value = "base.goods.edit", name = "修改")
     @PostMapping("/goods/update")
     public ApiResponse<Void> updateGoods(@RequestBody Map<String, Object> request) {
         String bizId = String.valueOf(request.getOrDefault("goodsId", request.getOrDefault("goodsCode", request.getOrDefault("bizId", ""))));
@@ -588,16 +646,19 @@ public class BaseController {
         return fallback;
     }
 
+    @RequirePerm(value = "base.goods.biz_stop", name = "停用")
     @PostMapping("/goods/stop")
     public ApiResponse<Void> stopGoods(@RequestBody Map<String, Object> request) {
         return updateGoodsStatus(request, "STOPPED");
     }
 
+    @RequirePerm(value = "base.goods.biz_freeze", name = "冻结")
     @PostMapping("/goods/freeze")
     public ApiResponse<Void> freezeGoods(@RequestBody Map<String, Object> request) {
         return updateGoodsStatus(request, "FROZEN");
     }
 
+    @RequirePerm(value = "base.goods.delete", name = "删除")
     @PostMapping("/goods/delete")
     public ApiResponse<Void> deleteGoods(@RequestBody Map<String, Object> request) {
         return updateGoodsStatus(request, "DELETED");
@@ -619,6 +680,7 @@ public class BaseController {
     }
 
     // ========== 客户资料 ==========
+    @RequirePerm(value = "base.customer.view", name = "查看")
     @PostMapping("/customer/page")
     public ApiResponse<PageResult<Map<String, Object>>> customerPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseCustomer> qw = new QueryWrapper<>();
@@ -626,6 +688,8 @@ public class BaseController {
         if (keyword != null && !keyword.isBlank()) {
             qw.and(w -> w.like("customer_code", keyword).or().like("customer_name", keyword).or().like("mobile", keyword));
         }
+        // 数据范围：客户档案按客户维度收窄（指定客户/SELF 归属业务员/片区；档案模式未配维度全可见）
+        applyArchiveScope(qw, dataScope.target().customer("customer_name").archiveMode().build());
         qw.orderByDesc("customer_code");
         IPage<BaseCustomer> page = customerService.page(toMpPage(request), qw);
         // 一次拉全量价格组 code→name 索引，避免 N+1
@@ -651,6 +715,8 @@ public class BaseController {
             row.put("priceGroupName", pgCode == null || pgCode.isBlank() ? "" : priceGroupName.getOrDefault(pgCode, pgCode));
             mapped.add(row);
         }
+        // 字段脱敏：应收余额/信用额度按字段权限置 null（电话属客户档案本身，有菜单查看权即可见）
+        fieldMasker.mask(mapped);
         PageResult<Map<String, Object>> result = new PageResult<>(mapped, (int) page.getCurrent(),
                 (int) page.getSize(), page.getTotal(), Map.of());
         return ApiResponse.ok(result);
@@ -686,6 +752,7 @@ public class BaseController {
         return s.isEmpty() ? fallback : s;
     }
 
+    @RequirePerm(value = "base.customer.add", name = "新增")
     @PostMapping("/customer/create")
     public ApiResponse<BaseCustomer> createCustomer(@RequestBody Map<String, Object> request) {
         String validationError = validateCustomerPriceGroup(request);
@@ -702,6 +769,7 @@ public class BaseController {
         return ApiResponse.ok(entity);
     }
 
+    @RequirePerm(value = "base.customer.edit", name = "修改")
     @PostMapping("/customer/update")
     public ApiResponse<Void> updateCustomer(@RequestBody Map<String, Object> request) {
         String validationError = validateCustomerPriceGroup(request);
@@ -787,6 +855,7 @@ public class BaseController {
     }
 
     /** 查询客户全部地址（含冗余的主地址，若子表为空则从主表回退） */
+    @RequirePerm(value = "base.customer.view", name = "查看")
     @PostMapping("/customer/addresses")
     public ApiResponse<java.util.List<Map<String, Object>>> customerAddresses(@RequestBody Map<String, Object> request) {
         String code = String.valueOf(request.getOrDefault("customerCode", "")).trim();
@@ -854,6 +923,7 @@ public class BaseController {
     }
 
     // ========== 供应商资料 ==========
+    @RequirePerm(value = "base.supplier.view", name = "查看")
     @PostMapping("/supplier/page")
     public ApiResponse<PageResult<Map<String, Object>>> supplierPage(@RequestBody PageRequest request) {
         QueryWrapper<BaseSupplier> qw = new QueryWrapper<>();
@@ -861,6 +931,8 @@ public class BaseController {
         if (keyword != null && !keyword.isBlank()) {
             qw.and(w -> w.like("supplier_code", keyword).or().like("supplier_name", keyword).or().like("contact_name", keyword));
         }
+        // 数据范围：供应商档案按供应商维度收窄（档案模式，未配维度全可见）
+        applyArchiveScope(qw, dataScope.target().supplier("supplier_name").archiveMode().build());
         qw.orderByDesc("supplier_code");
         IPage<BaseSupplier> page = supplierService.page(toMpPage(request), qw);
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -872,11 +944,14 @@ public class BaseController {
                     s.getTermDays(), s.getCutoffDay(), s.getPaymentMode(), s.getTermMonths(), s.getPaymentDay()));
             mapped.add(row);
         }
+        // 字段脱敏：应付余额按字段权限置 null
+        fieldMasker.mask(mapped);
         PageResult<Map<String, Object>> result = new PageResult<>(mapped, (int) page.getCurrent(),
                 (int) page.getSize(), page.getTotal(), Map.of());
         return ApiResponse.ok(result);
     }
 
+    @RequirePerm(value = "base.supplier.add", name = "新增")
     @PostMapping("/supplier/create")
     public ApiResponse<BaseSupplier> createSupplier(@RequestBody Map<String, Object> request) {
         BaseSupplier entity = new BaseSupplier();
@@ -890,6 +965,7 @@ public class BaseController {
         return ApiResponse.ok(entity);
     }
 
+    @RequirePerm(value = "base.supplier.edit", name = "修改")
     @PostMapping("/supplier/update")
     public ApiResponse<Void> updateSupplier(@RequestBody Map<String, Object> request) {
         String code = (String) request.get("supplierCode");
@@ -992,6 +1068,7 @@ public class BaseController {
     }
 
     // ---------- category ----------
+    @RequirePerm(value = "base.category.delete", name = "删除")
     @PostMapping("/category/delete")
     public ApiResponse<Map<String, Object>> deleteCategory(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "categoryCode", "categoryId", "bizId");
@@ -1000,6 +1077,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("category", "DELETE"));
     }
 
+    @RequirePerm(value = "base.category.biz_stop", name = "停用")
     @PostMapping("/category/stop")
     public ApiResponse<Void> stopCategory(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "categoryCode", "categoryId", "bizId");
@@ -1011,6 +1089,7 @@ public class BaseController {
     }
 
     // ---------- unit ----------
+    @RequirePerm(value = "base.unit.edit", name = "修改")
     @PostMapping("/unit/update")
     public ApiResponse<Void> updateUnit(@RequestBody Map<String, Object> request) {
         String code = pickBizKey(request, "unitCode", "unitId", "bizId");
@@ -1024,6 +1103,7 @@ public class BaseController {
         return ApiResponse.ok(null);
     }
 
+    @RequirePerm(value = "base.unit.delete", name = "删除")
     @PostMapping("/unit/delete")
     public ApiResponse<Map<String, Object>> deleteUnit(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "unitCode", "unitId", "bizId");
@@ -1032,6 +1112,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("unit", "DELETE"));
     }
 
+    @RequirePerm(value = "base.unit.biz_stop", name = "停用")
     @PostMapping("/unit/stop")
     public ApiResponse<Void> stopUnit(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "unitCode", "unitId", "bizId");
@@ -1042,6 +1123,7 @@ public class BaseController {
     }
 
     // ---------- brand ----------
+    @RequirePerm(value = "base.brand.edit", name = "修改")
     @PostMapping("/brand/update")
     public ApiResponse<Void> updateBrand(@RequestBody Map<String, Object> request) {
         String code = pickBizKey(request, "brandCode", "brandId", "bizId");
@@ -1054,6 +1136,7 @@ public class BaseController {
         return ApiResponse.ok(null);
     }
 
+    @RequirePerm(value = "base.brand.delete", name = "删除")
     @PostMapping("/brand/delete")
     public ApiResponse<Map<String, Object>> deleteBrand(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "brandCode", "brandId", "bizId");
@@ -1062,6 +1145,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("brand", "DELETE"));
     }
 
+    @RequirePerm(value = "base.brand.biz_stop", name = "停用")
     @PostMapping("/brand/stop")
     public ApiResponse<Void> stopBrand(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "brandCode", "brandId", "bizId");
@@ -1072,6 +1156,7 @@ public class BaseController {
     }
 
     // ---------- warehouse ----------
+    @RequirePerm(value = "base.warehouse.edit", name = "修改")
     @PostMapping("/warehouse/update")
     public ApiResponse<Void> updateWarehouse(@RequestBody Map<String, Object> request) {
         String code = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
@@ -1091,6 +1176,7 @@ public class BaseController {
         return ApiResponse.ok(null);
     }
 
+    @RequirePerm(value = "base.warehouse.delete", name = "删除")
     @PostMapping("/warehouse/delete")
     public ApiResponse<Map<String, Object>> deleteWarehouse(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
@@ -1107,6 +1193,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("warehouse", "DELETE"));
     }
 
+    @RequirePerm(value = "base.warehouse.biz_stop", name = "停用")
     @PostMapping("/warehouse/stop")
     public ApiResponse<Void> stopWarehouse(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "warehouseCode", "warehouseId", "bizId");
@@ -1124,6 +1211,7 @@ public class BaseController {
     }
 
     // ---------- customer ----------
+    @RequirePerm(value = "base.customer.delete", name = "删除")
     @PostMapping("/customer/delete")
     public ApiResponse<Map<String, Object>> deleteCustomer(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "customerCode", "customerId", "bizId");
@@ -1140,6 +1228,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("customer", "DELETE"));
     }
 
+    @RequirePerm(value = "base.customer.biz_stop", name = "停用")
     @PostMapping("/customer/stop")
     public ApiResponse<Void> stopCustomer(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "customerCode", "customerId", "bizId");
@@ -1157,6 +1246,7 @@ public class BaseController {
     }
 
     // ---------- supplier ----------
+    @RequirePerm(value = "base.supplier.delete", name = "删除")
     @PostMapping("/supplier/delete")
     public ApiResponse<Map<String, Object>> deleteSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
@@ -1173,6 +1263,7 @@ public class BaseController {
         return ApiResponse.ok(GenericResult.operation("supplier", "DELETE"));
     }
 
+    @RequirePerm(value = "base.supplier.biz_stop", name = "停用")
     @PostMapping("/supplier/stop")
     public ApiResponse<Void> stopSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
@@ -1194,6 +1285,7 @@ public class BaseController {
     // ============================================================
 
     /** 查询单个供应商详情（用于选择供应商后回填默认采购员等字段）。 */
+    @RequirePerm(value = "base.supplier.view", name = "查看")
     @GetMapping("/supplier/detail")
     public ApiResponse<Map<String, Object>> supplierDetail(@RequestParam String code) {
         BaseSupplier entity = supplierService.getOne(new QueryWrapper<BaseSupplier>()
@@ -1235,12 +1327,14 @@ public class BaseController {
      * 采购员下拉：所有 status=NORMAL 且 is_buyer=true 的人员姓名。
      * 兼容 base_employee 未升级到含 is_buyer 列的场景（返回空列表）。
      */
+    @RequirePerm(value = "base.employee.biz_buyers", name = "采购员选择")
     @PostMapping("/employee/buyers")
     public ApiResponse<java.util.List<Map<String, Object>>> buyers() {
         return employeeRoleList("is_buyer");
     }
 
     /** 业务员下拉：所有 status=NORMAL 且 is_salesman=true 的人员姓名。 */
+    @RequirePerm(value = "base.employee.biz_salesmen", name = "业务员选择")
     @PostMapping("/employee/salesmen")
     public ApiResponse<java.util.List<Map<String, Object>>> salesmen() {
         return employeeRoleList("is_salesman");
@@ -1271,6 +1365,7 @@ public class BaseController {
      * 商品最近采购价：V1.0 无采购单表，两个字段都兜底 base_goods.latest_purchase_price。
      * 引入 purchase_order_detail 后再按 supplier_code 查真实最近价。
      */
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @GetMapping("/goods/latest-purchase-price")
     public ApiResponse<Map<String, Object>> latestPurchasePrice(
             @RequestParam String goodsCode,
@@ -1284,6 +1379,10 @@ public class BaseController {
         out.put("supplierCode", supplierCode);
         out.put("supplierLatestPrice", p);
         out.put("systemLatestPrice", p);
+        // 采购价按 VIEW_PURCHASE_PRICE 字段权限脱敏（无权限返回 null，前端按未设价处理）
+        fieldMasker.mask(out, java.util.Map.of(
+                "supplierLatestPrice", "VIEW_PURCHASE_PRICE",
+                "systemLatestPrice", "VIEW_PURCHASE_PRICE"));
         return ApiResponse.ok(out);
     }
 
@@ -1292,6 +1391,7 @@ public class BaseController {
      * - customerLatestPrice：该客户最近一次销售单价（剔除 0）；无历史返回 0
      * - systemLatestPrice：系统全局最近一次销售单价（剔除 0）；无历史回退到商品建议零售价 / 标准售价
      */
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @GetMapping("/goods/latest-sales-price")
     public ApiResponse<Map<String, Object>> latestSalesPrice(
             @RequestParam String goodsCode,
@@ -1348,6 +1448,10 @@ public class BaseController {
 
         out.put("customerLatestPrice", customerLatest);
         out.put("systemLatestPrice", systemLatest);
+        // 销售价按 VIEW_SALE_PRICE 字段权限脱敏
+        fieldMasker.mask(out, java.util.Map.of(
+                "customerLatestPrice", "VIEW_SALE_PRICE",
+                "systemLatestPrice", "VIEW_SALE_PRICE"));
         return ApiResponse.ok(out);
     }
 
@@ -1370,6 +1474,7 @@ public class BaseController {
      * @param customerCode 客户编码；为空时跳过前两级，直接取商品标价
      * @param unitLevel    单位级别 1/2/3，缺省 1（小单位）
      */
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @GetMapping("/goods/sale-price")
     public ApiResponse<Map<String, Object>> salePrice(
             @RequestParam String goodsCode,
@@ -1413,6 +1518,12 @@ public class BaseController {
         out.put("price", finalPrice);
         out.put("priceSource", source);
         out.put("priceSourceText", sourceText);
+        // 客户价/价格组价/标准价均按销售价相关字段权限脱敏；最终取价 price 随 VIEW_SALE_PRICE
+        fieldMasker.mask(out, java.util.Map.of("price", "VIEW_SALE_PRICE"));
+        // 脱敏后最终价也要与可见性对齐：三级价都不可见时 price 置 null
+        boolean anyVisible = out.get("customerPrice") != null || out.get("priceGroupPrice") != null
+                || out.get("standardPrice") != null;
+        if (!anyVisible) out.put("price", null);
         return ApiResponse.ok(out);
     }
 
@@ -1524,6 +1635,7 @@ public class BaseController {
     }
 
     /** 单个商品的库存汇总。V1.0 无锁定库存表，可用库存 = 当前库存。 */
+    @RequirePerm(value = "base.goods.view", name = "查看")
     @GetMapping("/goods/stock-summary")
     public ApiResponse<Map<String, Object>> stockSummary(@RequestParam String goodsCode) {
         // 走 inv_stock_balance 聚合真实库存（跨仓库合计），而不是 base_goods.current_stock（历史字段，不再维护）
@@ -1541,6 +1653,10 @@ public class BaseController {
         out.put("goodsCode", goodsCode);
         out.put("currentStock", phy != null ? phy : java.math.BigDecimal.ZERO);
         out.put("availableStock", avail != null ? avail : java.math.BigDecimal.ZERO);
+        // 库存数量按 VIEW_STOCK_AMOUNT 字段权限脱敏
+        fieldMasker.mask(out, java.util.Map.of(
+                "currentStock", "VIEW_STOCK_AMOUNT",
+                "availableStock", "VIEW_STOCK_AMOUNT"));
         return ApiResponse.ok(out);
     }
 
@@ -1550,6 +1666,7 @@ public class BaseController {
     // 返回：{ inserted, skipped }
     // ============================================================
 
+    @RequirePerm(value = "base.category.import", name = "导入")
     @PostMapping("/category/import")
     @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> importCategory(@RequestBody Map<String, Object> request) {
@@ -1580,6 +1697,7 @@ public class BaseController {
         return ApiResponse.ok(java.util.Map.of("inserted", inserted, "skipped", skipped));
     }
 
+    @RequirePerm(value = "base.brand.import", name = "导入")
     @PostMapping("/brand/import")
     @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> importBrand(@RequestBody Map<String, Object> request) {
@@ -1606,6 +1724,7 @@ public class BaseController {
         return ApiResponse.ok(java.util.Map.of("inserted", inserted, "skipped", skipped));
     }
 
+    @RequirePerm(value = "base.unit.import", name = "导入")
     @PostMapping("/unit/import")
     @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> importUnit(@RequestBody Map<String, Object> request) {
@@ -1635,6 +1754,7 @@ public class BaseController {
         return ApiResponse.ok(java.util.Map.of("inserted", inserted, "skipped", skipped));
     }
 
+    @RequirePerm(value = "base.warehouse.import", name = "导入")
     @PostMapping("/warehouse/import")
     @SuppressWarnings("unchecked")
     public ApiResponse<Map<String, Object>> importWarehouse(@RequestBody Map<String, Object> request) {

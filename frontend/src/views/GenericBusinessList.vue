@@ -403,6 +403,9 @@ function onSettleCheck(key) {
   }
 }
 
+/** 付款单核销走 /finance/payment/* 对称端点，收款单走 /finance/receipt/* */
+const isPaymentReconcile = computed(() => moduleCode.value === 'paymentModule')
+
 async function openReconcileDialog(row) {
   const raw = row?._raw || {}
   reconcileRow.value = raw
@@ -412,11 +415,12 @@ async function openReconcileDialog(row) {
   showReconcileDialog.value = true
   reconcileLoading.value = true
   try {
-    const res = await post('/finance/receipt/unsettled-bills', {
+    // PRD-28：付款单侧端点 /payment/unsettled-bills（fin.payment_verify.view），收款单侧 /receipt/unsettled-bills
+    const res = await post(isPaymentReconcile.value ? '/finance/payment/unsettled-bills' : '/finance/receipt/unsettled-bills', {
       counterpartyType: raw.counterpartyType || '',
       counterpartyCode: raw.counterpartyCode || '',
       counterpartyName: raw.counterpartyName || '',
-      receiptId: raw.receiptId || '',
+      [isPaymentReconcile.value ? 'paymentId' : 'receiptId']: isPaymentReconcile.value ? (raw.paymentId || '') : (raw.receiptId || ''),
     })
     reconcilePendingAmount.value = Number(res?.pendingAmount) || 0
     const bills = (res?.bills || []).map(b => {
@@ -461,8 +465,11 @@ async function confirmReconcile() {
   }
   if (!confirm(`确认核销 ${bills.length} 笔单据，合计 ￥${total.toFixed(2)}？`)) return
   try {
-    await post('/finance/receipt/reconcile', {
-      receiptId: reconcileRow.value?.receiptId || '',
+    // PRD-28：付款单侧走 /payment/reconcile（fin.payment_verify.writeoff）
+    await post(isPaymentReconcile.value ? '/finance/payment/reconcile' : '/finance/receipt/reconcile', {
+      [isPaymentReconcile.value ? 'paymentId' : 'receiptId']: isPaymentReconcile.value
+        ? (reconcileRow.value?.paymentId || '')
+        : (reconcileRow.value?.receiptId || ''),
       bills: bills.map(b => ({
         billNo: b.billNo, billTypeKey: b.billTypeKey,
         settleAmount: reconcileSettleAmounts.value[b._key],
@@ -532,11 +539,11 @@ async function confirmQuickExpense() {
     // 刷新核销列表
     reconcileLoading.value = true
     try {
-      const res = await post('/finance/receipt/unsettled-bills', {
+      const res = await post(isPaymentReconcile.value ? '/finance/payment/unsettled-bills' : '/finance/receipt/unsettled-bills', {
         counterpartyType: r.counterpartyType || '',
         counterpartyCode: r.counterpartyCode || '',
         counterpartyName: r.counterpartyName || '',
-        receiptId: r.receiptId || '',
+        [isPaymentReconcile.value ? 'paymentId' : 'receiptId']: isPaymentReconcile.value ? (r.paymentId || '') : (r.receiptId || ''),
       })
       reconcilePendingAmount.value = Number(res?.pendingAmount) || 0
       reconcileBills.value = (res?.bills || []).map(b => {
@@ -3481,7 +3488,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       <div v-if="showReconcileDialog" class="modal-lite" @click.self="showReconcileDialog = false">
         <div class="modal-lite-box" style="width:min(900px,96vw);max-height:85vh">
           <div class="modal-lite-head">
-            <b>核销结算 — {{ reconcileRow?.receiptNo || '' }} | {{ reconcileRow?.counterpartyName || '' }}</b>
+            <b>核销结算 — {{ reconcileRow?.receiptNo || reconcileRow?.paymentNo || '' }} | {{ reconcileRow?.counterpartyName || '' }}</b>
             <div class="actions">
               <button class="btn" @click="quickCreateExpense">创建费用单</button>
               <button class="btn" @click="showReconcileDialog = false">取消</button>

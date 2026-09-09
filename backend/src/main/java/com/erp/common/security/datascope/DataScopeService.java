@@ -60,6 +60,8 @@ public class DataScopeService {
     /** 业务列表与七维的列映射；所有列表达式都应带表别名（H2 MODE=MySQL JOIN 同名列必须限定）。 */
     public static class ScopeTarget {
         String warehouse;
+        /** 多仓列「任一命中」（调拨源仓/目标仓 OR），与 {@link #warehouse(String)} 二选一。 */
+        String[] warehouseAny;
         String customer;
         String supplier;
         String salesman;
@@ -68,6 +70,8 @@ public class DataScopeService {
         String creator;
         /** 直接挂在商品编码列上的过滤（库存/商品档案列表），如 b.goods_code。 */
         String goodsColumn;
+        /** 档案模式开关，见 {@link #archiveMode()}。 */
+        boolean archiveMode;
         /** 单据主表 ID 表达式 + 明细表名/明细主单外键（按明细行商品范围过滤主单）。 */
         String masterExpr;
         String detailTable;
@@ -80,12 +84,26 @@ public class DataScopeService {
         }
 
         public ScopeTarget warehouse(String column) { this.warehouse = column; return this; }
+
+        /**
+         * 多仓列「任一命中即可见」（PRD-28 卡片7）：调拨单据有源仓/目标仓两列，
+         * 仓管应能看到与自己仓相关的调拨——任一列命中仓库范围即可（列间 OR，维度内仍是范围 IN）。
+         */
+        public ScopeTarget warehouseAny(String... columns) { this.warehouseAny = columns; return this; }
         public ScopeTarget customer(String column) { this.customer = column; return this; }
         public ScopeTarget supplier(String column) { this.supplier = column; return this; }
         public ScopeTarget salesman(String column) { this.salesman = column; return this; }
         public ScopeTarget owner(String column) { this.owner = column; return this; }
         public ScopeTarget creator(String column) { this.creator = column; return this; }
         public ScopeTarget goodsColumn(String column) { this.goodsColumn = column; return this; }
+
+        /**
+         * 档案模式（商品/客户/供应商等基础档案列表）：档案是全公司公共基础数据，
+         * 可见性由菜单 view 功能点把关；角色未配任何数据范围维度时不做 DEFAULT DENY
+         * （不加条件＝全可见），只有显式配置了分类/品牌/客户/供应商等维度时才收窄。
+         * 注意：显式配置的维度收窄到空集仍照常 1=0（如配了某个已删除分类）。
+         */
+        public ScopeTarget archiveMode() { this.archiveMode = true; return this; }
 
         public ScopeTarget goodsLines(String masterExpr, String detailTable, String detailMasterColumn) {
             this.masterExpr = masterExpr;
@@ -137,6 +155,19 @@ public class DataScopeService {
         }
 
         /**
+         * 裸谓词（不带前导 " AND "），供 MyBatis-Plus QueryWrapper#apply 等自带 AND 拼接的场景使用。
+         * 无限制返回 ""；调用方需先判 {@link #isDenyAll()} 与空串。
+         */
+        public String predicateSql() {
+            if (whereSql.isEmpty()) return "";
+            return whereSql.startsWith(" AND ") ? whereSql.substring(5) : whereSql;
+        }
+
+        public List<Object> predicateParams() {
+            return whereParams;
+        }
+
+        /**
          * 追加「商品编码在可见范围内」条件：{@code expr IN (SELECT goods_code FROM base_goods WHERE ...)}。
          * 仅在 {@link #isGoodsRestricted()} 为 true 时调用；用于明细行过滤与可见行金额汇总。
          */
@@ -168,15 +199,34 @@ public class DataScopeService {
         List<Object> params = new ArrayList<>();
         boolean pdaForcedWarehouse = false;
 
-        if (t.warehouse != null) {
+        String[] whCols = t.warehouse != null ? new String[] {t.warehouse} : t.warehouseAny;
+        if (whCols != null) {
             // PDA 登录仓强制（§5.3.3-7）
             if (p.isPda() && p.warehouseId() != null && !p.warehouseId().isBlank()) {
-                predicates.add(t.warehouse + " IN (SELECT warehouse_name FROM base_warehouse WHERE warehouse_id = ?)");
-                params.add(p.warehouseId());
+                List<String> ors = new ArrayList<>();
+                for (String col : whCols) {
+                    ors.add(col + " IN (SELECT warehouse_name FROM base_warehouse WHERE warehouse_id = ?)");
+                    params.add(p.warehouseId());
+                }
+                predicates.add(ors.size() == 1 ? ors.get(0) : "(" + String.join(" OR ", ors) + ")");
                 pdaForcedWarehouse = true;
             } else {
-                appendIdNameDim(t.warehouse, "base_warehouse", "warehouse_id", "warehouse_name",
-                        r.dims.get("WAREHOUSE"), predicates, params);
+                // 多列各自渲染同一仓库范围，列间 OR（调拨源仓/目标仓任一命中即可见）
+                DimValues whDim = r.dims.get("WAREHOUSE");
+                List<String> colPreds = new ArrayList<>();
+                List<Object> colParams = new ArrayList<>();
+                for (String col : whCols) {
+                    // ALL/未配置不产出谓词（全放行）；空集产出 1=0；正常产出 IN 子查询
+                    List<String> one = new ArrayList<>();
+                    appendIdNameDim(col, "base_warehouse", "warehouse_id", "warehouse_name",
+                            whDim, one, colParams);
+                    if (!one.isEmpty()) colPreds.add(one.get(0));
+                }
+                if (!colPreds.isEmpty()) {
+                    predicates.add(colPreds.size() == 1 ? colPreds.get(0)
+                            : "(" + String.join(" OR ", colPreds) + ")");
+                    params.addAll(colParams);
+                }
             }
         }
         if (t.customer != null) {
@@ -234,10 +284,11 @@ public class DataScopeService {
                 String creator = p.displayName() == null || p.displayName().isBlank() ? p.username() : p.displayName();
                 predicates.add(t.creator + " = ?");
                 params.add(creator);
-            } else {
+            } else if (!t.archiveMode) {
                 // 完全没配范围、表头又没有建档人列：fail-closed，一条都看不到
                 return new ScopeClause(" AND 1=0", List.of(), goodsRestricted, categoryNames, brandNames, true);
             }
+            // 档案模式（archiveMode）：未配任何维度＝公共档案全可见，直接落到下方空条件分支
         }
 
         if (predicates.isEmpty()) {

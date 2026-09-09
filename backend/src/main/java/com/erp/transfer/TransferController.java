@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import com.erp.common.security.RequirePerm;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -42,26 +43,45 @@ public class TransferController {
     private final BillNoGenerator billNoGen;
     private final InventoryCostService inventoryCostService;
     private final com.erp.system.OperationLogService opLog;
+    /** PRD-28 卡片7：调拨列表强制按仓库（源仓/目标仓任一命中），成本金额脱敏。 */
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
 
     public TransferController(JdbcTemplate jdbcTemplate,
                               BillNoGenerator billNoGen,
                               InventoryCostService inventoryCostService,
-                              com.erp.system.OperationLogService opLog) {
+                              com.erp.system.OperationLogService opLog,
+                              com.erp.common.security.datascope.DataScopeService dataScope,
+                              com.erp.common.security.FieldMasker fieldMasker,
+                              com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+        this.warehouseGuard = warehouseGuard;
     }
 
     // ============================================================
     // 一、调拨申请单
     // ============================================================
 
+    @RequirePerm(value = "inv.transfer_apply.view", name = "查看")
     @PostMapping("/apply/page")
     public ApiResponse<PageResult<Map<String, Object>>> applyPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        // PRD-28 卡片7：调拨申请单强制按仓库——源仓/目标仓任一命中即可见（库存单据 fail-closed）
+        var scope = dataScope.target()
+                .warehouseAny("source_warehouse", "target_warehouse")
+                .creator("creator_name")
+                .goodsLines("apply_id", "transfer_apply_detail", "apply_id")
+                .build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(List.of(), request));
         StringBuilder sql = new StringBuilder("SELECT * FROM transfer_apply WHERE 1=1");
         List<Object> args = new ArrayList<>();
+        scope.appendTo(sql, args);
         String no = trimF(filters, "applyNo");
         if (!no.isEmpty()) { sql.append(" AND apply_no LIKE ?"); args.add("%" + no + "%"); }
         String sourceWh = trimF(filters, "sourceWarehouse");
@@ -84,6 +104,7 @@ public class TransferController {
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.transfer_apply.view", name = "查看")
     @PostMapping("/apply/detail")
     public ApiResponse<Map<String, Object>> applyDetail(@RequestBody Map<String, Object> body) {
         String key = str(body.get("applyId"));
@@ -91,6 +112,9 @@ public class TransferController {
                 "SELECT * FROM transfer_apply WHERE apply_id = ? OR apply_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         Map<String, Object> h = heads.get(0);
+        // 详情查看与列表同口径：源仓/目标仓任一可见即可
+        warehouseGuard.assertAnyVisible(jdbcTemplate,
+                str(h.get("sourceWarehouse")), str(h.get("targetWarehouse")));
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM transfer_apply_detail WHERE apply_id = ? ORDER BY sort_order", h.get("applyId"));
         // 聚合已调出/已调入数量
@@ -116,12 +140,16 @@ public class TransferController {
         return ApiResponse.ok(h);
     }
 
+    @RequirePerm(value = "inv.transfer_apply.add", name = "新增")
     @PostMapping("/apply/create")
     public ApiResponse<Map<String, Object>> applyCreate(@RequestBody Map<String, Object> body) {
         String sourceWh = str(body.get("sourceWarehouse"));
         String targetWh = str(body.get("targetWarehouse"));
         if (sourceWh.isBlank() || targetWh.isBlank()) return ApiResponse.fail("400", "请选择转出仓和转入仓");
         if (sourceWh.equals(targetWh)) return ApiResponse.fail("400", "转出仓与转入仓不能相同");
+        // 开申请单意味着对两个仓的调拨计划负责，源仓/目标仓都须在数据范围内
+        warehouseGuard.assertVisible(jdbcTemplate, sourceWh);
+        warehouseGuard.assertVisible(jdbcTemplate, targetWh);
         BigDecimal qty = sumDetailField(body, "qty");
         if (qty.signum() <= 0) return ApiResponse.fail("400", "请至少添加一条申请明细");
 
@@ -138,15 +166,22 @@ public class TransferController {
         return ApiResponse.ok(Map.of("applyId", id, "applyNo", no));
     }
 
+    @RequirePerm(value = "inv.transfer_apply.edit", name = "修改")
     @PostMapping("/apply/update")
     public ApiResponse<Boolean> applyUpdate(@RequestBody Map<String, Object> body) {
         String id = str(body.get("applyId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM transfer_apply WHERE apply_id = ?", id);
+        List<Map<String, Object>> ex = queryCamel(
+                "SELECT status, source_warehouse, target_warehouse FROM transfer_apply WHERE apply_id = ?", id);
         if (ex.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核可编辑");
         String sourceWh = str(body.get("sourceWarehouse"));
         String targetWh = str(body.get("targetWarehouse"));
         if (sourceWh.equals(targetWh)) return ApiResponse.fail("400", "转出仓与转入仓不能相同");
+        // 旧仓与新仓都须可见，防止借改单把调拨关系挂到不可见仓
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("sourceWarehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("targetWarehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, sourceWh);
+        warehouseGuard.assertVisible(jdbcTemplate, targetWh);
         BigDecimal qty = sumDetailField(body, "qty");
         jdbcTemplate.update("""
                 UPDATE transfer_apply SET source_warehouse = ?, target_warehouse = ?,
@@ -158,17 +193,22 @@ public class TransferController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "inv.transfer_apply.delete", name = "删除")
     @PostMapping("/apply/delete")
     public ApiResponse<Boolean> applyDelete(@RequestBody Map<String, Object> body) {
         String id = str(body.get("applyId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM transfer_apply WHERE apply_id = ?", id);
+        List<Map<String, Object>> ex = queryCamel(
+                "SELECT status, source_warehouse, target_warehouse FROM transfer_apply WHERE apply_id = ?", id);
         if (ex.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核可删除");
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("sourceWarehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("targetWarehouse")));
         jdbcTemplate.update("DELETE FROM transfer_apply_detail WHERE apply_id = ?", id);
         jdbcTemplate.update("DELETE FROM transfer_apply WHERE apply_id = ?", id);
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "inv.transfer_apply.audit", name = "审核")
     @PostMapping("/apply/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> applyAudit(@RequestBody Map<String, Object> body) {
@@ -177,6 +217,9 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"PENDING".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅待审核可审核");
+        // 审核会自动生成出库单，源仓/目标仓均须可见
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("sourceWarehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("targetWarehouse")));
         if (toBd(h.get("qty")).signum() <= 0) return ApiResponse.fail("400", "申请数量为 0，无法审核");
         String applyId = str(h.get("applyId"));
         String applyNo = str(h.get("applyNo"));
@@ -265,6 +308,7 @@ public class TransferController {
         return outboundNo;
     }
 
+    @RequirePerm(value = "inv.transfer_apply.unaudit", name = "反审核")
     @PostMapping("/apply/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> applyReverseAudit(@RequestBody Map<String, Object> body) {
@@ -273,6 +317,8 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅已审核可反审核");
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("sourceWarehouse")));
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("targetWarehouse")));
         String applyNo = str(h.get("applyNo"));
         // 有已审核出库单时不允许反审核
         List<Map<String, Object>> approvedOb = queryCamel(
@@ -310,11 +356,20 @@ public class TransferController {
     // 二、调拨出库单
     // ============================================================
 
+    @RequirePerm(value = "inv.transfer_out.view", name = "查看")
     @PostMapping("/outbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> outboundPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        // PRD-28 卡片7：出库单强制按仓库（源仓/目标仓 OR），fail-closed
+        var scope = dataScope.target()
+                .warehouseAny("to2.source_warehouse", "to2.target_warehouse")
+                .creator("to2.creator_name")
+                .goodsLines("to2.outbound_id", "transfer_outbound_detail", "outbound_id")
+                .build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(List.of(), request));
         StringBuilder sql = new StringBuilder("SELECT to2.*, ta.transfer_status FROM transfer_outbound to2 LEFT JOIN transfer_apply ta ON to2.source_apply_no = ta.apply_no WHERE 1=1");
         List<Object> args = new ArrayList<>();
+        scope.appendTo(sql, args);
         String no = trimF(filters, "outboundNo");
         if (!no.isEmpty()) { sql.append(" AND to2.outbound_no LIKE ?"); args.add("%" + no + "%"); }
         String applyNo = trimF(filters, "sourceApplyNo");
@@ -338,9 +393,11 @@ public class TransferController {
                 case "未执行" -> "待调出"; case "已调出" -> "待调入"; case "已完成" -> "已完成"; default -> ts.isEmpty() ? "待调出" : ts;
             });
         }
+        fieldMasker.mask(rows); // costAmount/costPrice 注册表自动脱敏（VIEW_COST_AMOUNT/VIEW_COST）
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.transfer_out.view", name = "查看")
     @PostMapping("/outbound/detail")
     public ApiResponse<Map<String, Object>> outboundDetail(@RequestBody Map<String, Object> body) {
         String key = str(body.get("outboundId"));
@@ -348,12 +405,16 @@ public class TransferController {
                 "SELECT * FROM transfer_outbound WHERE outbound_id = ? OR outbound_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨出库单不存在");
         Map<String, Object> h = heads.get(0);
+        warehouseGuard.assertAnyVisible(jdbcTemplate,
+                str(h.get("sourceWarehouse")), str(h.get("targetWarehouse")));
         h.put("details", queryCamel(
                 "SELECT * FROM transfer_outbound_detail WHERE outbound_id = ? ORDER BY sort_order", h.get("outboundId")));
+        fieldMasker.mask(h); // 递归脱敏明细 costPrice/costAmount
         return ApiResponse.ok(h);
     }
 
     /** 从已审核调拨申请单生成出库单数据（预填，不落库） */
+    @RequirePerm(value = "inv.transfer_out.add", name = "由申请生成")
     @PostMapping("/outbound/from-apply")
     public ApiResponse<Map<String, Object>> outboundFromApply(@RequestBody Map<String, Object> body) {
         String applyNo = str(body.get("applyNo"));
@@ -362,6 +423,8 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨申请单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅已审核的调拨申请单可生成出库单");
+        // 出库作业发生在转出仓，源仓可见才可预填
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("sourceWarehouse")));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("applyNo", h.get("applyNo"));
         out.put("sourceWarehouse", h.get("sourceWarehouse"));
@@ -373,22 +436,30 @@ public class TransferController {
     }
 
     /** 出库可用批次（转出仓 qty>0 的批次） */
+    @RequirePerm(value = "inv.transfer_out.view", name = "查看")
     @GetMapping("/outbound/available-batches")
     public ApiResponse<List<Map<String, Object>>> availableBatches(
             @RequestParam String goodsCode, @RequestParam String warehouse) {
-        return ApiResponse.ok(queryCamel("""
+        // 直接按入参仓库查批次，强校验该仓在数据范围内
+        warehouseGuard.assertVisible(jdbcTemplate, warehouse);
+        List<Map<String, Object>> rows = queryCamel("""
                 SELECT batch_no, qty, cost_price, production_date, expiry_date
                 FROM inv_batch_stock
                 WHERE goods_code = ? AND warehouse = ? AND qty > 0
                 ORDER BY production_date ASC, batch_no ASC
-                """, goodsCode, warehouse));
+                """, goodsCode, warehouse);
+        fieldMasker.mask(rows); // 批次成本 costPrice 随 VIEW_COST 脱敏，数量供开单不脱敏
+        return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "inv.transfer_out.add", name = "新增")
     @PostMapping("/outbound/create")
     public ApiResponse<Map<String, Object>> outboundCreate(@RequestBody Map<String, Object> body) {
         String sourceWh = str(body.get("sourceWarehouse"));
         String targetWh = str(body.get("targetWarehouse"));
         if (sourceWh.isBlank() || targetWh.isBlank()) return ApiResponse.fail("400", "缺少转出仓/转入仓");
+        // 出库单作业在转出仓：源仓强校验；目标仓在后续自动入库时由入库权限链路负责
+        warehouseGuard.assertVisible(jdbcTemplate, sourceWh);
         BigDecimal qty = sumDetailField(body, "qty");
         if (qty.signum() <= 0) return ApiResponse.fail("400", "请至少添加一条出库明细");
 
@@ -405,12 +476,15 @@ public class TransferController {
         return ApiResponse.ok(Map.of("outboundId", id, "outboundNo", no));
     }
 
+    @RequirePerm(value = "inv.transfer_out.edit", name = "修改")
     @PostMapping("/outbound/update")
     public ApiResponse<Boolean> outboundUpdate(@RequestBody Map<String, Object> body) {
         String id = str(body.get("outboundId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status FROM transfer_outbound WHERE outbound_id = ?", id);
+        List<Map<String, Object>> ex = queryCamel(
+                "SELECT status, source_warehouse FROM transfer_outbound WHERE outbound_id = ?", id);
         if (ex.isEmpty()) return ApiResponse.fail("404", "调拨出库单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核可编辑");
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("sourceWarehouse")));
         BigDecimal qty = sumDetailField(body, "qty");
         jdbcTemplate.update("""
                 UPDATE transfer_outbound SET bill_date = ?, qty = ?, remark = ? WHERE outbound_id = ?
@@ -420,6 +494,7 @@ public class TransferController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "inv.transfer_out.audit", name = "审核")
     @PostMapping("/outbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> outboundAudit(@RequestBody Map<String, Object> body) {
@@ -429,6 +504,8 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨出库单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"PENDING".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅待审核可审核");
+        // 审核实际扣减转出仓库存，源仓强校验
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("sourceWarehouse")));
 
         String outboundId = str(h.get("outboundId"));
         String outboundNo = str(h.get("outboundNo"));
@@ -504,6 +581,7 @@ public class TransferController {
                 "effect", "已扣减转出仓库存并自动生成调拨入库单 " + inboundNo));
     }
 
+    @RequirePerm(value = "inv.transfer_out.unaudit", name = "反审核")
     @PostMapping("/outbound/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> outboundReverseAudit(@RequestBody Map<String, Object> body) {
@@ -513,6 +591,7 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨出库单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅已审核可反审核");
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("sourceWarehouse")));
 
         // 关联调拨入库单必须未审核（含差异退回单）
         List<Map<String, Object>> ins = queryCamel(
@@ -570,11 +649,20 @@ public class TransferController {
     // 三、调拨入库单（含差异退回）
     // ============================================================
 
+    @RequirePerm(value = "inv.transfer_in.view", name = "查看")
     @PostMapping("/inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> inboundPage(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? Map.of() : request.filters();
+        // PRD-28 卡片7：入库单强制按仓库（源仓/目标仓 OR；差异退回单两列同为调出仓），fail-closed
+        var scope = dataScope.target()
+                .warehouseAny("ti.source_warehouse", "ti.target_warehouse")
+                .creator("ti.creator_name")
+                .goodsLines("ti.inbound_id", "transfer_inbound_detail", "inbound_id")
+                .build();
+        if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(List.of(), request));
         StringBuilder sql = new StringBuilder("SELECT ti.*, ta.transfer_status FROM transfer_inbound ti LEFT JOIN transfer_apply ta ON ti.source_apply_no = ta.apply_no WHERE 1=1");
         List<Object> args = new ArrayList<>();
+        scope.appendTo(sql, args);
         String no = trimF(filters, "inboundNo");
         if (!no.isEmpty()) { sql.append(" AND ti.inbound_no LIKE ?"); args.add("%" + no + "%"); }
         String outNo = trimF(filters, "sourceOutboundNo");
@@ -596,9 +684,11 @@ public class TransferController {
                 case "未执行" -> "待调出"; case "已调出" -> "待调入"; case "已完成" -> "已完成"; default -> ts.isEmpty() ? "待调出" : ts;
             });
         }
+        fieldMasker.mask(rows); // costAmount 随 VIEW_COST_AMOUNT 脱敏
         return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value = "inv.transfer_in.view", name = "查看")
     @PostMapping("/inbound/detail")
     public ApiResponse<Map<String, Object>> inboundDetail(@RequestBody Map<String, Object> body) {
         String key = str(body.get("inboundId"));
@@ -606,18 +696,25 @@ public class TransferController {
                 "SELECT * FROM transfer_inbound WHERE inbound_id = ? OR inbound_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨入库单不存在");
         Map<String, Object> h = heads.get(0);
+        warehouseGuard.assertAnyVisible(jdbcTemplate,
+                str(h.get("sourceWarehouse")), str(h.get("targetWarehouse")));
         h.put("details", queryCamel(
                 "SELECT * FROM transfer_inbound_detail WHERE inbound_id = ? ORDER BY sort_order", h.get("inboundId")));
+        fieldMasker.mask(h); // 递归脱敏明细 costPrice/costAmount
         return ApiResponse.ok(h);
     }
 
     /** 调拨入库单只可修改数量（仅 PENDING 正常单；差异退回单明细不可修改） */
+    @RequirePerm(value = "inv.transfer_in.edit", name = "修改")
     @PostMapping("/inbound/update")
     public ApiResponse<Boolean> inboundUpdate(@RequestBody Map<String, Object> body) {
         String id = str(body.get("inboundId"));
-        List<Map<String, Object>> ex = queryCamel("SELECT status, inbound_type FROM transfer_inbound WHERE inbound_id = ? OR inbound_no = ?", id, id);
+        List<Map<String, Object>> ex = queryCamel(
+                "SELECT status, inbound_type, target_warehouse FROM transfer_inbound WHERE inbound_id = ? OR inbound_no = ?", id, id);
         if (ex.isEmpty()) return ApiResponse.fail("404", "调拨入库单不存在");
         if (!"PENDING".equals(str(ex.get(0).get("status")))) return ApiResponse.fail("400", "仅待审核可修改数量");
+        // 入库作业发生在转入仓（差异退回单 target=源仓，同样成立）
+        warehouseGuard.assertVisible(jdbcTemplate, str(ex.get(0).get("targetWarehouse")));
         if (TYPE_DIFF_RETURN.equals(str(ex.get(0).get("inboundType")))) {
             return ApiResponse.fail("400", "差异退回单明细不可修改，只能按单据详情入库");
         }
@@ -650,6 +747,7 @@ public class TransferController {
         return ApiResponse.ok(true);
     }
 
+    @RequirePerm(value = "inv.transfer_in.audit", name = "审核")
     @PostMapping("/inbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> inboundAudit(@RequestBody Map<String, Object> body) {
@@ -659,6 +757,8 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨入库单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"PENDING".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅待审核可审核");
+        // 审核实际增加转入仓库存，目标仓强校验
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("targetWarehouse")));
 
         String inboundId = str(h.get("inboundId"));
         String inboundNo = str(h.get("inboundNo"));
@@ -732,6 +832,7 @@ public class TransferController {
         return ApiResponse.ok(result);
     }
 
+    @RequirePerm(value = "inv.transfer_in.unaudit", name = "反审核")
     @PostMapping("/inbound/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> inboundReverseAudit(@RequestBody Map<String, Object> body) {
@@ -741,6 +842,7 @@ public class TransferController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "调拨入库单不存在");
         Map<String, Object> h = heads.get(0);
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400", "仅已审核可反审核");
+        warehouseGuard.assertVisible(jdbcTemplate, str(h.get("targetWarehouse")));
 
         String inboundNo = str(h.get("inboundNo"));
         String targetWh = str(h.get("targetWarehouse"));

@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import com.erp.common.security.RequirePerm;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -28,6 +29,7 @@ public class GlExportController {
     }
 
     /** 导出 CSV：直接写文件流；写导出日志并给凭证打 export_flag。 */
+    @RequirePerm(value = "finance.gl.voucher.export", name = "导出")
     @PostMapping("/csv")
     public void exportCsv(@RequestBody Map<String, Object> body, HttpServletResponse response) throws IOException {
         String format = TmsUtil.str(body.get("format"));
@@ -46,6 +48,7 @@ public class GlExportController {
     }
 
     /** 导出日志列表。 */
+    @RequirePerm(value = "finance.gl.voucher.view", name = "查看")
     @PostMapping("/logs")
     public ApiResponse<List<Map<String, Object>>> logs() {
         return ApiResponse.ok(exportService.logs());

@@ -6,7 +6,8 @@ import { ref, watch, computed } from 'vue'
 import { post } from '../api/client.js'
 import { useRbac } from '../composables/useRbac.js'
 
-const { canView } = useRbac('purchaseExpense')
+// 本抽屉仅被财务费用单（financeExpense → fin.fee）使用；金额/税额/不含税走资金视角字段权限
+const { canView, guardCode } = useRbac('financeExpense')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -14,6 +15,8 @@ const props = defineProps({
   editData: { type: Object, default: null },
 })
 const emit = defineEmits(['close', 'save'])
+// 保存功能点：新建 fin.fee.add，编辑 fin.fee.edit
+const savePermCode = computed(() => `fin.fee.${props.mode === 'edit' ? 'edit' : 'add'}`)
 
 const loading = ref(false)
 const formErrors = ref({})
@@ -137,6 +140,7 @@ function validate() {
 }
 
 async function save() {
+  if (!guardCode(savePermCode.value)) return alert('无权限执行该操作')
   if (!validate()) { alert(Object.values(formErrors.value)[0]); return }
   loading.value = true
   try {
@@ -208,7 +212,8 @@ watch(() => props.visible, async (v) => {
         </span>
         <div style="flex:1"></div>
         <button class="btn" @click="close" :disabled="loading">关闭</button>
-        <button v-if="header.status === 'PENDING'" class="btn primary" @click="save" :disabled="loading">保存</button>
+        <button v-if="header.status === 'PENDING'" v-permission="savePermCode"
+                class="btn primary" @click="save" :disabled="loading">保存</button>
       </div>
 
       <div class="bill-drawer-body">

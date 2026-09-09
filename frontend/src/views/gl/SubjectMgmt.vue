@@ -124,7 +124,7 @@ onMounted(load)
       <span class="tip">共 {{ stats.total }} 个科目（末级 {{ stats.leaf }}，停用 {{ stats.disabled }}）；编码规则 4-2-2-2，末级科目才能录凭证</span>
       <div class="spacer"></div>
       <button class="btn" @click="load">刷新</button>
-      <button class="btn primary" @click="onCreateTop">＋ 新增一级科目</button>
+      <button class="btn primary" v-permission="'finance.gl.account.add'" @click="onCreateTop">＋ 新增一级科目</button>
     </div>
     <div v-if="feedback" class="toast-inline" :class="feedback.level">{{ feedback.msg }}</div>
 
@@ -158,9 +158,9 @@ onMounted(load)
             </td>
             <td><span class="tag" :class="a.status === '启用' ? 'ok' : 'warn'">{{ a.status }}</span></td>
             <td class="ops">
-              <a v-if="a.accountLevel < 4" @click="onCreateChild(a)">新增下级</a>
-              <a @click="onEdit(a)">编辑</a>
-              <a :class="{ danger: a.status === '启用' }" @click="onToggle(a)">{{ a.status === '启用' ? '停用' : '启用' }}</a>
+              <a v-if="a.accountLevel < 4" v-permission="'finance.gl.account.add'" @click="onCreateChild(a)">新增下级</a>
+              <a v-permission="'finance.gl.account.edit'" @click="onEdit(a)">编辑</a>
+              <a v-permission="'finance.gl.account.edit'" :class="{ danger: a.status === '启用' }" @click="onToggle(a)">{{ a.status === '启用' ? '停用' : '启用' }}</a>
             </td>
           </tr>
           <tr v-if="!accounts.length"><td colspan="8" class="empty">{{ loading ? '加载中...' : '暂无科目' }}</td></tr>
@@ -217,7 +217,9 @@ onMounted(load)
         </div>
         <div class="modal-f">
           <button class="btn" @click="dialogOpen=false">取消</button>
-          <button class="btn primary" @click="onSave">保存</button>
+          <button class="btn primary"
+                  v-permission="['finance.gl.account.add', 'finance.gl.account.edit']"
+                  @click="onSave">保存</button>
         </div>
       </div>
     </div>
