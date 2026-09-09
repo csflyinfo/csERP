@@ -251,3 +251,34 @@
 - 字段脱敏实证：无任何字段授权的账号查 /base/master/fund-account/page，balance 键保留值置 null；admin 同参看到数值。数据范围负向实证：inv.balance.view/fin.ar_detail.view 零维度 → 列表 total=0；授 WAREHOUSE:ALL / CUSTOMER:ALL 后查询与 admin 同口径（本开发库业务行本就 0，正向仅做同口径对比，机制与卡片4~6 同一套 DataScopeService）。
 - 双构建：后端 mvn -o compile RC=0；前端 npm run build ✓ built（GenericBusinessList/useRbac chunk 正常产出）；合并前停服再跑 mvn package（见提交说明）。
 - 数据安全：操作前备份 backend/data/backups/erp-v1.pre-rbac7-verify-20260910-041949.mv.db；夹具 RBAC7SCAN/rbac7scan 验收后停服 H2 Shell 精确删除（sys_user_runtime/sys_role_runtime 及 user_role/data_scope/warehouse/pwd_history/role 四 rel/登录日志/操作日志按 ID 与编码精确命中），H2 直查 after-user=0、after-role=0、orphan-rel=0；本次全部空参请求，无任何业务单据写入；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；tmp-rbac7/ 验收后整目录删除。
+
+### 2026-09-10 卡片8 落地：前端动态三级菜单/路由裁剪 + 403/401 分流 + ADMIN 硬编码清零（feat/rbac-10-frontend，零后端改动）
+
+> 本卡**无 Flyway、无后端源码改动**（启动权限同步日志「菜单 192 / 功能点 1620 新增0」）；仅前端 13 改 + 3 新增 + 4 删除。前端权限收口卡：菜单从静态 fallback 改为用户授权树驱动，侧边栏支持三级。
+
+**新增 3 文件**
+
+- `router/menu-map.js`：后端菜单码（base.goods / finance.gl.voucher 域.模块命名）↔ 前端历史扁平路径（/goods、/gl-voucher）唯一双向映射表 **147 条**（MENU_PATH + 反向 PATH_MENU）。新增页面三处同改约束写在文件头：router 注册 + MenuConfig.java 声明 + 本表一行。
+- `stores/menu-tree.js`：树纯函数（无 Vue 依赖可 node 单测）——collectCodes 全层收码、firstPageCode 深度优先首叶（点一级目录跳转）、rootOfCode 反查根、findNode 名称/编码模糊搜、buildFallbackTree 把 fallback-menus.js 转成与服务端同构节点（adminOnly 标记保留交侧边栏按超管过滤）。
+- `stores/menu.js`（Pinia）：GET /system/menu/user-tree（**不带 roleCode**，后端只返回本人树）；source 三态 server/fallback/empty——server 时守卫按授权码 fail-closed 裁页面；接口失败（非 401）降级本地菜单仅保侧边栏可用、**不做前端拦截**（后端 403 兜底，降级态不越权给访问权只放宽 UI 提示）；ensure 并发复用 + force 重拉，reset 联动登出/换账号。
+
+**改造**
+
+- `router/index.js` 守卫：登录态并行 ensure perm+menu；PATH_MENU 反查当前页菜单码，server 来源且不在授权集 → 回首页；`/dashboard` 是登录落点与零菜单用户兜底页永不拦；未入映射表的子页面（customer-price/new、edit/:id、/counterparty-type、/wms-order-pool 同组件别名、/gl-voucher-print 独立打印页）不拦；system-menu 维持 meta.superAdmin 硬守卫（与菜单裁剪双保险）。
+- `AppShell.vue`：侧边栏删除 fallbackMenus 直引，按授权树渲染——一级根 / 二级页面或子目录（财务管理 > 总账 展开箭头）/ 三级叶子；进入三级页自动展开父目录；快捷搜索走树；顶栏「导出中心」按 system.export_center 菜单授权显隐；降级态显示「菜单服务不可用，已使用本地菜单」提示；activeRoot 按路由反查、子页面保持手动展开项。
+- `api/client.js` 403/401 分流（notifyAuthOutcome 收口 4 个 fetch 出口）：401 清 token + erp-auth-expired（App.vue 跳登录，已在登录页不重复跳）；403 **保留会话**不清 token，广播 erp-perm-denied 但不全局 toast（ApiError 已带「无操作权限：xxx」抛给触发操作的页面 catch，避免双弹；后台静默请求的 403 不打扰用户）；下载链路 403 改抛 ApiError 而非泛化「下载失败」。
+- `main.js` 注册全局模板属性 $hasFunc/$hasAnyFunc/$canViewField；`usePerm.js` 新增 useFieldPerm()（canViewField + canViewAnyField 数组并集，空数组不校验）；v-permission/v-action-perms 维持全局指令。
+- `stores/auth.js`：clearToken/login 同步 reset 菜单 store，杜绝换账号沿用旧树。
+
+**删除死代码 4 文件 + 1 处历史字样**
+
+- composables/useNavigation.js（loadUserMenus 默认参 roleCode='ADMIN'、拼 roleCode query 的旧调用，全仓零引用）、composables/usePermission.js（/system/field-scope 旧字段范围，被 perm store 取代，零引用）、layout/AppSidebar.vue / AppHeader.vue / AppTabBar.vue（AppShell 内联实现后零引用的旧三件）。
+- GenericBusinessList.vue:39 历史注释含 roleCode='ADMIN' 字样会永久触发 grep 门槛，改写注释。门槛 `grep -rnE "roleCode\s*=\s*['\"]ADMIN" frontend/src/` 清零；auth.js 保留 includes('ADMIN') 是 V102 前老令牌角色码的**向后兼容判定**（有注释，非硬编码假设），不属于本门槛。
+
+**验收（2 个 node 测试文件 + 17 条真实后端 e2e 断言，全绿）**
+
+- menu-map 双向完整性（node 解析 router/index.js 全部 path + MenuConfig.java 全部 .page/.statePage/.adminPage 声明）：147 条映射路径全部在 router 注册且无重复；router 未映射路径仅 5 个白名单（/login、/gl-voucher-print、customer-price/new、edit/:id、/wms-order-pool、/counterparty-type——后两者经源码核实为同组件别名与往来单位页的子页面）；MenuConfig 的 ERP 页面码 100% 有映射（PDA/DRIVER 端不适用）。
+- 树纯函数 17 断言：三级 collectCodes、firstPageCode 各级取值、rootOfCode/findNode 二三级命中、kebab 转换、降级树根/叶结构与 adminOnly 保留。
+- 真实后端 e2e（夹具 RBAC8LOW 零菜单角色 + rbac8low 用户）：admin user-tree 三级实证（finance > finance.gl(DIR) > 16 个 PAGE 含 voucher）且 147 映射码全覆盖、admin_only 的 system.menu 超管可见；零菜单用户树为空、按守卫同构规则除 /dashboard 外 146 路径全拦截、/system/perm/mine 自助可取、业务接口 HTTP 403（无操作权限：sales.order.view）；授「sales 根+sales.order」后树仅 2 码、/sales-order 放行而 /ar、/gl-voucher、/wms-pick、/user 全拦、非超管树无 system.menu；**菜单可见但零功能点时数据接口仍 403**（菜单裁剪≠功能授权的关键边界）。
+- 门槛：roleCode ADMIN grep 清零；新增文件无 console.log；`npm run build` ✓ built；后端本卡零改动，fat jar 复跑启动权限同步新增0、fail-fast 通过。
+- 数据安全：操作前备份 backend/data/backups/erp-v1.pre-rbac8-verify-20260910-051043.mv.db；夹具验收后停服 H2 Shell 精确清理（user/role + user_role/user_data_scope/user_warehouse/pwd_history/role 四 rel/login_log），H2 直查 after-user=0、after-role=0、双 orphan-rel=0；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；tmp-rbac8/ 验收后整目录删除。

@@ -14,10 +14,17 @@ import '@fontsource/fira-code/500.css'
 
 import './styles/app.css'
 import { permissionDirective, actionPermsDirective } from './directives/permission.js'
+import { usePermStore } from './stores/perm.js'
 
 const app = createApp(App)
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
 app.directive('permission', permissionDirective)
 app.directive('action-perms', actionPermsDirective)
+// PRD-28 卡片8：权限判定注册为全局模板属性（脚本里优先用 usePerm()/useFieldPerm() 组合式）
+const permStore = usePermStore()
+app.config.globalProperties.$hasFunc = (code) => permStore.hasFunc(code)
+app.config.globalProperties.$hasAnyFunc = (codes) => permStore.hasAnyFunc(codes)
+app.config.globalProperties.$canViewField = (code) => permStore.canViewField(code)
 app.mount('#app')

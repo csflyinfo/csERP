@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { get, post } from '../api/client.js'
 import { usePermStore } from './perm.js'
+import { useMenuStore } from './menu.js'
 
 const TOKEN_KEY = 'erp-token'
 
@@ -30,8 +31,9 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     profilePromise = null
     localStorage.removeItem(TOKEN_KEY)
-    // 一并清空功能点/字段权限，避免登出后残留或下个账号沿用
+    // 一并清空功能点/字段权限与授权菜单，避免登出后残留或下个账号沿用
     usePermStore().reset()
+    useMenuStore().reset()
   }
 
   /** 直接替换 user（登录时用登录返回值，改密后用于清 mustChangePwd 标记） */
@@ -69,8 +71,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (data?.token) {
       setToken(data.token)
       user.value = data.user
-      // 新账号登录：丢弃旧权限缓存，由路由守卫按新用户重拉
+      // 新账号登录：丢弃旧权限与菜单缓存，由路由守卫按新用户重拉
       usePermStore().reset()
+      useMenuStore().reset()
       return true
     }
     throw new Error('登录失败')

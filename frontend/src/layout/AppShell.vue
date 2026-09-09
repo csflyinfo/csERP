@@ -3,7 +3,9 @@ import { computed, ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth.js'
 import { useAppStore } from '../stores/app.js'
-import { fallbackMenus } from '../fallback-menus.js'
+import { useMenuStore } from '../stores/menu.js'
+import { MENU_PATH, PATH_MENU } from '../router/menu-map.js'
+import { firstPageCode, findNode, moduleCodeToPath, rootOfCode } from '../stores/menu-tree.js'
 import { moduleConfigs } from '../module-config.js'
 import { post } from '../api/client.js'
 import BillDrawer from '../components/BillDrawer.vue'
@@ -31,8 +33,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const app = useAppStore()
-
-const menus = fallbackMenus
+// PRD-28 卡片8：侧边栏改由 /system/menu/user-tree 授权菜单驱动（三级），本地菜单仅在接口失败时降级
+const menuStore = useMenuStore()
 // 验证环境可通过 VITE_APP_TITLE/VITE_APP_BADGE 注入标识（如总账开发版），默认标题不变
 const appTitle = import.meta.env.VITE_APP_TITLE || '商贸云 ERP V1.0'
 const envBadge = import.meta.env.VITE_APP_BADGE || ''
@@ -70,6 +72,8 @@ onMounted(() => {
   if (auth.token && !auth.user) {
     auth.fetchProfile().catch(() => {})
   }
+  // 菜单树通常已由路由守卫预拉；此处兜底（如从旧标签页恢复时）
+  if (auth.token) menuStore.ensure().catch(() => {})
   return () => clearInterval(timer)
 })
 
@@ -84,24 +88,41 @@ function onProfilePwdChanged() {
   toast('密码修改成功')
 }
 
-// module code → 路由 path（camelCase → kebab-case）
-function codeToPath(code) {
-  return '/' + code.replace(/([a-z0-9]|(?=[A-Z]))([A-Z])/g, '$1-$2').toLowerCase()
-}
-
-// 预计算可用路由集合，用于判断菜单是否可导航
+// 预计算可用路由集合，用于判断菜单是否可导航（后端配了菜单但前端尚未实现页面时给提示）
 const availableRoutes = new Set(router.getRoutes().map(r => r.path))
 
-// module code → 菜单分类
-const moduleToCategory = {}
-for (const [cat, items] of Object.entries(menus)) {
-  for (const item of items) {
-    moduleToCategory[item.code] = cat
-  }
+/**
+ * 菜单编码 → 前端路由路径：
+ * 服务端菜单码（base.goods / finance.gl.voucher）走 MENU_PATH；
+ * 降级菜单的 moduleCode（goodsPriceAdjust）走 camelCase→kebab 兜底。
+ */
+function menuCodeToPath(code) {
+  return MENU_PATH[code] || moduleCodeToPath(code)
 }
 
 const currentModule = computed(() => route.meta?.module || '')
 const currentName = computed(() => route.meta?.title || '经营概览')
+// 当前路由对应的菜单编码（PATH_MENU 命中才是菜单页，子页面/独立页为空）
+const currentMenuCode = computed(() => PATH_MENU[route.path] || '')
+
+// 当前展开的一级根目录：优先按路由反查，未命中（子页面/降级异常）保持手动展开项
+const manualRoot = ref('')
+const activeRoot = computed(() => {
+  if (currentMenuCode.value) {
+    const root = rootOfCode(menuStore.tree, currentMenuCode.value)
+    if (root) return root.code
+  }
+  return manualRoot.value || menuStore.tree[0]?.code || ''
+})
+
+// 二级目录（财务管理 > 总账）展开状态；进入三级页面时自动展开对应目录
+const expandedDirs = ref(new Set())
+watch(currentMenuCode, (code) => {
+  if (!code) return
+  const root = rootOfCode(menuStore.tree, code)
+  const dir = (root?.children || []).find(n => n.menuType === 'DIR' && (n.children || []).some(c => c.code === code))
+  if (dir) expandedDirs.value = new Set([...expandedDirs.value, dir.code])
+}, { immediate: true })
 
 // 抽屉只在其模块页面渲染；状态在 store 保留，切换到其它模块时抽屉隐藏，回来时恢复
 const billDrawerVisibleInCurrentModule = computed(() => {
@@ -301,7 +322,6 @@ function onGoodsPriceAdjustSaved() {
 }
 const currentDesc = computed(() => moduleConfigs[currentModule.value]?.desc || '企业经销数据、排行与待办')
 const currentUser = computed(() => auth.user || { displayName: '系统管理员' })
-const activeTop = computed(() => moduleToCategory[currentModule.value] || '首页')
 
 // 路由变化时自动添加 tab
 watch(() => route.path, () => {
@@ -311,12 +331,32 @@ watch(() => route.path, () => {
 }, { immediate: true })
 
 function navigate(code) {
-  const path = codeToPath(code)
+  if (!code) return
+  const path = menuCodeToPath(code)
   if (!availableRoutes.has(path)) {
     toast('该功能正在开发中')
     return
   }
   router.push(path)
+}
+
+/** 点一级目录：展开并跳到其第一个页面；同时记录手动展开项（菜单页反查失败时也能高亮） */
+function onRootClick(root) {
+  manualRoot.value = root.code
+  navigate(firstPageCode(root))
+}
+
+/** 点二级目录：仅展开/折叠三级页面 */
+function toggleDir(dirCode) {
+  const next = new Set(expandedDirs.value)
+  if (next.has(dirCode)) next.delete(dirCode)
+  else next.add(dirCode)
+  expandedDirs.value = next
+}
+
+/** 叶子是否对当前用户可见：服务端树已按授权裁剪；降级树 adminOnly 项仅超管可见 */
+function leafVisible(leaf) {
+  return !leaf.adminOnly || auth.isSuperAdmin
 }
 
 function doLogout() {
@@ -342,17 +382,16 @@ function toast(msg) {
 }
 
 function quickLocate(keyword) {
-  for (const [top, items] of Object.entries(menus)) {
-    const found = items.find(i => i.name.includes(keyword) || i.code.includes(keyword))
-    if (found) {
-      navigate(found.code)
-      return
-    }
+  const found = findNode(menuStore.tree, keyword)
+  if (!found) {
+    toast('未找到匹配菜单')
+    return
   }
-  toast('未找到匹配菜单')
+  manualRoot.value = rootOfCode(menuStore.tree, found.code)?.code || manualRoot.value
+  navigate(firstPageCode(found))
 }
 
-const topKeys = computed(() => Object.keys(menus))
+const topKeys = computed(() => menuStore.tree.map(r => r.code))
 </script>
 
 <template>
@@ -379,7 +418,7 @@ const topKeys = computed(() => Object.keys(menus))
       </div>
       <!-- 没有 tab 时用 spacer 把右侧按钮推到边 -->
       <div v-else class="spacer"></div>
-      <button class="topbtn" @click="navigate('exportCenter')">导出中心</button>
+      <button v-if="menuStore.hasMenu('system.export_center')" class="topbtn" @click="navigate('system.export_center')">导出中心</button>
       <div class="user-menu-wrap">
         <div class="user" :class="{ on: userMenuOpen }" style="cursor:pointer" title="账户菜单"
              @click="userMenuOpen = !userMenuOpen">
@@ -397,7 +436,7 @@ const topKeys = computed(() => Object.keys(menus))
       <div v-if="userMenuOpen" class="dropdown-mask" @click="userMenuOpen = false"></div>
     </header>
 
-    <!-- Sidebar -->
+    <!-- Sidebar：PRD-28 卡片8 起按用户授权菜单树渲染（支持三级：一级目录/二级页面或子目录/三级页面） -->
     <aside v-show="!menuCollapsed" class="side">
       <div class="side-search">
         <input
@@ -405,25 +444,45 @@ const topKeys = computed(() => Object.keys(menus))
           placeholder="模块快捷搜索：客户、商品、供应商、单据号"
           @keydown.enter="quickLocate($event.target.value)"
         />
+        <div v-if="menuStore.source === 'fallback'" class="menu-fallback-tip">菜单服务不可用，已使用本地菜单</div>
       </div>
-      <template v-for="items in topKeys" :key="items">
+      <template v-for="rootCode in topKeys" :key="rootCode">
         <div
           class="lvl1"
-          :class="{ on: activeTop === items }"
-          @click="navigate(menus[items][0].code)"
+          :class="{ on: activeRoot === rootCode }"
+          @click="onRootClick(menuStore.tree.find(r => r.code === rootCode))"
         >
-          <span class="dot"></span>{{ items }}
+          <span class="dot"></span>{{ menuStore.tree.find(r => r.code === rootCode)?.name }}
         </div>
-        <div v-if="activeTop === items" class="submenu">
-          <template v-for="item in menus[items]" :key="item.code">
-            <!-- adminOnly 项（模块菜单管理）仅超管可见，MENU-001 -->
+        <div v-if="activeRoot === rootCode" class="submenu">
+          <template v-for="node in menuStore.tree.find(r => r.code === rootCode)?.children || []" :key="node.code">
+            <!-- 二级目录（如 财务管理 > 总账）：点击展开三级页面 -->
+            <template v-if="node.menuType === 'DIR' && (node.children || []).length">
+              <div class="lvl2 lvl2-dir" :class="{ on: expandedDirs.has(node.code) }" @click.stop="toggleDir(node.code)">
+                <span>{{ node.name }}</span>
+                <span class="dir-arrow">{{ expandedDirs.has(node.code) ? '▾' : '▸' }}</span>
+              </div>
+              <div v-if="expandedDirs.has(node.code)" class="lvl3-wrap">
+                <div
+                  v-for="leaf in node.children"
+                  :key="leaf.code"
+                  v-show="leafVisible(leaf)"
+                  class="lvl3"
+                  :class="{ on: currentMenuCode === leaf.code }"
+                  @click.stop="navigate(leaf.code)"
+                >
+                  {{ leaf.name }}
+                </div>
+              </div>
+            </template>
+            <!-- 二级页面（降级树 adminOnly 项仅超管可见，MENU-001；服务端树本身已裁剪） -->
             <div
-              v-if="!item.adminOnly || auth.isSuperAdmin"
+              v-else-if="leafVisible(node)"
               class="lvl2"
-              :class="{ on: currentModule === item.code }"
-              @click.stop="navigate(item.code)"
+              :class="{ on: currentMenuCode === node.code }"
+              @click.stop="navigate(node.code)"
             >
-              {{ item.name }}
+              {{ node.name }}
             </div>
           </template>
         </div>
@@ -621,6 +680,17 @@ const topKeys = computed(() => Object.keys(menus))
 </template>
 
 <style scoped>
+/* PRD-28 卡片8 三级菜单（财务管理 > 总账 > 页面）与降级提示 */
+.menu-fallback-tip { font-size: 11px; color: #b8860b; padding: 4px 10px 0; }
+.lvl2-dir { justify-content: space-between; font-weight: 700; }
+.dir-arrow { font-size: 11px; color: #7c93ad; }
+.lvl3-wrap { padding: 2px 0 2px 10px; }
+.lvl3 {
+  height: 27px; border-radius: 7px; display: flex; align-items: center;
+  padding: 0 12px; color: #4a6480; font-size: 12.5px; cursor: pointer; margin: 2px 0;
+}
+.lvl3.on { background: #fff; border: 1px solid #93c5fd; color: var(--primary); font-weight: 700; }
+
 /* PRD-28 头像账户下拉 */
 .user-menu-wrap { position: relative; z-index: 60; }
 .user .caret { font-size: 10px; color: #909ba7; margin-left: 2px; }

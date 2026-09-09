@@ -1,0 +1,185 @@
+/**
+ * 后端菜单编码 → 前端路由路径唯一映射表（PRD-28 卡片8）。
+ *
+ * 后端 sys_menu_meta.menu_code 采用「域.模块」编码（见 MenuConfig.java，如 base.goods、
+ * finance.gl.voucher），前端历史路由是扁平路径（/goods、/gl-voucher）。本表是两者的唯一
+ * 对照：侧边栏点击菜单按 code 查路径跳转，路由守卫按当前路径反查 code 校验菜单授权。
+ *
+ * 新增页面三处同改：① router/index.js 注册路由；② MenuConfig.java 声明 .page(...)；
+ * ③ 本表加一行。只在 ERP 端生效（PDA/司机端在各自 Flutter 工程内裁剪）。
+ */
+export const MENU_PATH = {
+  // 工作台
+  'dashboard.overview': '/dashboard',
+  'dashboard.todo': '/todo',
+  'dashboard.notification': '/notification',
+
+  // 基础资料
+  'base.goods': '/goods',
+  'base.category': '/category',
+  'base.brand': '/brand',
+  'base.unit': '/unit',
+  'base.customer': '/customer',
+  'base.supplier': '/supplier',
+  'base.warehouse': '/warehouse',
+  'base.price_group': '/price-group',
+  'base.price_group_goods': '/price-group-item',
+  'base.price_adjust': '/price-adjust-order',
+  'base.goods_price_adjust': '/goods-price-adjust',
+  'base.price_change_query': '/price-change-log',
+  'base.customer_price': '/customer-price',
+  'base.customer_price_query': '/customer-price-query',
+  'base.customer_price_change': '/customer-price-change',
+  'base.region': '/territory',
+  'base.route': '/route-line',
+  'base.employee': '/employee',
+  'base.department': '/department',
+  'base.owner': '/owner',
+  'base.fee_type': '/expense-type',
+  'base.other_unit': '/counterparty',
+  'base.fund_account': '/fund-account',
+
+  // 采购管理
+  'purchase.order': '/purchase-order',
+  'purchase.inbound': '/purchase-inbound',
+  'purchase.receipt': '/purchase-receipt',
+  'purchase.return_apply': '/purchase-return-apply',
+  'purchase.return_outbound': '/purchase-return-outbound',
+  'purchase.return_bill': '/purchase-return',
+  'purchase.fee': '/purchase-expense',
+  'purchase.invoice': '/purchase-invoice',
+
+  // 销售管理
+  'sales.quick': '/quick-order',
+  'sales.order': '/sales-order',
+  'sales.outbound': '/sales-outbound',
+  'sales.receipt': '/sales-receipt',
+  'sales.reject_inbound': '/reject-inbound',
+  'sales.return': '/sales-return',
+  'sales.return_inbound': '/sales-return-inbound',
+  'sales.invoice': '/sales-invoice',
+  'sales.flying': '/fly-order',
+  'sales.empty_adjust': '/empty-adjust',
+
+  // 库存管理
+  'inv.balance': '/stock-balance',
+  'inv.flow': '/stock-ledger',
+  'inv.warning': '/stock-warning',
+  'inv.transfer_apply': '/transfer-apply',
+  'inv.transfer_out': '/transfer-outbound',
+  'inv.transfer_in': '/transfer-inbound',
+  'inv.damage': '/damage',
+  'inv.cost_adjust': '/cost-adjust',
+  'inv.adjust': '/stock-adjust',
+  'inv.other_in': '/other-inbound',
+  'inv.other_out': '/other-outbound',
+  'inv.count': '/stock-take',
+
+  // 财务-出纳/往来
+  'fin.ar_detail': '/ar',
+  'fin.ap': '/ap',
+  'fin.receipt': '/receipt-payment',
+  'fin.payment': '/payment-module',
+  'fin.receipt_writeoff': '/reconcile-record',
+  'fin.ar_settle': '/ar-settlement',
+  'fin.ap_settle': '/ap-settlement',
+  'fin.fee': '/finance-expense',
+  'fin.fund_flow': '/fund-ledger',
+  'fin.other_ar': '/counterparty-ar',
+  'fin.other_ap': '/counterparty-ap',
+  'fin.receipt_verify': '/receipt-verify',
+  'fin.payment_verify': '/payment-verify',
+  'fin.customer_recon': '/customer-statement',
+  'fin.supplier_recon': '/supplier-statement',
+
+  // 财务-总账（三级菜单：财务管理 > 总账 > 页面）
+  'finance.gl.account': '/gl-account',
+  'finance.gl.init_balance': '/gl-init-balance',
+  'finance.gl.aux_project': '/gl-aux-project',
+  'finance.gl.voucher': '/gl-voucher',
+  'finance.gl.event': '/gl-event',
+  'finance.gl.voucher_template': '/gl-voucher-template',
+  'finance.gl.transfer_template': '/gl-transfer-template',
+  'finance.gl.biz_subject_map': '/gl-biz-subject-map',
+  'finance.gl.archive_mapping': '/gl-archive-mapping',
+  'finance.gl.book': '/gl-ledger',
+  'finance.gl.asset_card': '/gl-asset-card',
+  'finance.gl.depreciation': '/gl-depreciation',
+  'finance.gl.asset_check': '/gl-asset-check',
+  'finance.gl.period_close': '/gl-period-close',
+  'finance.gl.report': '/gl-report',
+  'finance.gl.reconcile': '/gl-reconcile',
+
+  // 报表中心
+  'report.chart': '/chart-report',
+  'report.sales': '/sales-report',
+  'report.purchase': '/purchase-report',
+  'report.inventory': '/stock-report',
+  'report.finance': '/finance-report',
+  'report.invoice_track': '/invoice-track-report',
+  'report.invoice_track_goods': '/invoice-track-goods-report',
+  'report.invoice_supplier': '/invoice-supplier-report',
+  'report.invoice_unmatched': '/invoice-unmatched-report',
+  'report.invoice_diff': '/invoice-diff-report',
+
+  // 系统管理
+  'system.user': '/user',
+  'system.role': '/role',
+  'system.menu': '/system-menu',
+  'system.param': '/param',
+  'system.param_setting': '/param-setting',
+  'system.bill_no_rule': '/bill-no',
+  'system.precision': '/precision',
+  'system.dictionary': '/dictionary',
+  'system.workflow': '/workflow',
+  'system.print_template': '/print-template',
+  'system.import_list': '/import-list',
+  'system.export_center': '/export-center',
+  'system.log': '/log',
+  'system.login_log': '/login-log',
+
+  // 仓储作业 WMS
+  'wms.dashboard': '/wms-dashboard',
+  'wms.prealloc': '/wms-preallocation',
+  'wms.wave': '/wms-wave',
+  'wms.pick': '/wms-pick',
+  'wms.sort_instruction': '/wms-sort-instruction',
+  'wms.check': '/wms-check',
+  'wms.load': '/wms-load',
+  'wms.inbound': '/wms-inbound',
+  'wms.putaway': '/wms-putaway',
+  'wms.replenish': '/wms-replenish',
+  'wms.move': '/wms-move',
+  'wms.adjust': '/wms-adjust',
+  'wms.damage': '/wms-damage',
+  'wms.freeze': '/wms-freeze',
+  'wms.assembly': '/wms-assembly',
+  'wms.count': '/wms-stocktake',
+  'wms.expiry': '/wms-expiry',
+  'wms.zone': '/wms-zone',
+  'wms.bin': '/wms-bin',
+  'wms.collect_zone': '/wms-collect-zone',
+  'wms.pick_binding': '/wms-pick-binding',
+  'wms.bin_stock': '/wms-bin-stock',
+  'wms.stock_query': '/wms-stock-query',
+  'wms.exception': '/wms-exception',
+
+  // 运输管理 TMS
+  'tms.pool': '/tms-dispatch-pool',
+  'tms.dispatch': '/tms-dispatch-list',
+  'tms.return_dispatch': '/tms-return-dispatch',
+  'tms.monitor': '/tms-delivery-monitor',
+  'tms.sign_verify': '/tms-sign-verify',
+  'tms.driver_return': '/tms-driver-return',
+  'tms.reschedule': '/tms-reschedule-return',
+  'tms.customer_reject': '/tms-customer-reject',
+  'tms.exception': '/tms-exception-report',
+  'tms.handover': '/tms-settlement',
+  'tms.store_location': '/tms-store-location',
+  'tms.board': '/tms-dashboard',
+}
+
+/** 路由路径 → 菜单编码（MENU_PATH 反向表，路由守卫用）。 */
+export const PATH_MENU = Object.fromEntries(
+  Object.entries(MENU_PATH).map(([code, path]) => [path, code]),
+)

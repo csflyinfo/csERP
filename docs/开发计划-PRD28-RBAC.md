@@ -149,11 +149,13 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 8 ｜ `feat/rbac-10-frontend`（M2，无迁移，约 2d，可与 6/7 穿插收尾）
 
-- [ ] 删 `GenericBusinessList.vue` 的 `const roleCode = 'ADMIN'`（全局搜 `roleCode\s*=\s*['"]ADMIN`）
-- [ ] AppShell 改用 `/system/menu/user-tree` 渲染，**侧边栏支持三级**；动态路由按树生成；`fallback-menus.js` 仅作降级
-- [ ] `v-permission` 指令、`usePerm()/useFieldPerm()` 注册为全局；`/system/menu` 路由守卫仅放 SYS_ADMIN
-- [ ] 403/401 拦截分流；权限集 Pinia 缓存与重拉
-- [ ] 合并门槛：grep 无 ADMIN 硬编码残留
+- [x] 删 `GenericBusinessList.vue` 的 `const roleCode = 'ADMIN'`（全局搜 `roleCode\s*=\s*['"]ADMIN`）
+- [x] AppShell 改用 `/system/menu/user-tree` 渲染，**侧边栏支持三级**；动态路由按树生成；`fallback-menus.js` 仅作降级
+- [x] `v-permission` 指令、`usePerm()/useFieldPerm()` 注册为全局；`/system/menu` 路由守卫仅放 SYS_ADMIN
+- [x] 403/401 拦截分流；权限集 Pinia 缓存与重拉
+- [x] 合并门槛：grep 无 ADMIN 硬编码残留
+
+> 落地（2026-09-10）：**零后端改动、零迁移**。新增 router/menu-map.js（菜单码↔路由 147 条双向映射）、stores/menu.js（user-tree 三态 server/fallback/empty）、stores/menu-tree.js（纯函数）；AppShell 侧边栏按授权树三级渲染，路由守卫按 PATH_MENU 反查裁剪（/dashboard 兜底永不拦）；fallback 仅接口失败时渲染降级、不做前端放行；401 清会话跳登录、403 留会话不双弹；删死文件 useNavigation/usePermission/layout 旧三件。真实后端 e2e 17 断言 + 映射完整性/树函数单测全绿（含「菜单可见≠功能授权，数据接口仍 403」边界），详见《优化记录-PRD28-RBAC.md》卡片8 节。
 
 ### 卡片 9 ｜ `feat/rbac-8-pda-login`（M3，V107，约 5d）
 

@@ -21,16 +21,30 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
 }
 
+/**
+ * 认证/鉴权响应分流（PRD-28 卡片8）：
+ *  - 401 未认证（含令牌失效）：清 token + 广播 erp-auth-expired，App.vue 跳登录页；
+ *  - 403 已认证但无权限：会话保留不登出，广播 erp-perm-denied；错误仍抛给调用方，
+ *    由触发操作的页面 toast 后端 message（无操作权限：xxx），避免与页面内 catch 双重弹窗。
+ */
+function notifyAuthOutcome(status, result) {
+  if (status === 401 || (status === 200 && String(result?.code) === '401')) {
+    localStorage.removeItem(TOKEN_KEY)
+    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
+  } else if (status === 403 || (status === 200 && String(result?.code) === '403')) {
+    window.dispatchEvent(new CustomEvent('erp-perm-denied', {
+      detail: { code: result?.code || '403', message: result?.message || '无操作权限' },
+    }))
+  }
+}
+
 async function rawFetch(path, options) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: authHeaders(options.headers || {}),
   })
   const result = await response.json().catch(() => ({ code: String(response.status), message: '服务响应异常' }))
-  if (response.status === 401) {
-    localStorage.removeItem(TOKEN_KEY)
-    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
-  }
+  notifyAuthOutcome(response.status, result)
   return { response, result }
 }
 
@@ -93,10 +107,7 @@ export async function upload(path, formData) {
     body: formData,
   })
   const result = await response.json().catch(() => ({ code: String(response.status), message: '上传失败' }))
-  if (response.status === 401) {
-    localStorage.removeItem(TOKEN_KEY)
-    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
-  }
+  notifyAuthOutcome(response.status, result)
   if (!response.ok || result.code !== '0') throw new Error(result.message || '上传失败')
   return result.data
 }
@@ -110,11 +121,9 @@ export async function downloadBlob(path, body = {}) {
     headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   })
-  if (response.status === 401) {
-    localStorage.removeItem(TOKEN_KEY)
-    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
-    throw new Error('登录已过期')
-  }
+  notifyAuthOutcome(response.status, null)
+  if (response.status === 401) throw new Error('登录已过期')
+  if (response.status === 403) throw new ApiError('403', '无操作权限')
   if (!response.ok) throw new Error('下载失败')
   return response.blob()
 }
@@ -127,11 +136,9 @@ export async function getBlob(path) {
     method: 'GET',
     headers: authHeaders(),
   })
-  if (response.status === 401) {
-    localStorage.removeItem(TOKEN_KEY)
-    window.dispatchEvent(new CustomEvent('erp-auth-expired'))
-    throw new Error('登录已过期')
-  }
+  notifyAuthOutcome(response.status, null)
+  if (response.status === 401) throw new Error('登录已过期')
+  if (response.status === 403) throw new ApiError('403', '无操作权限')
   if (!response.ok) throw new Error('下载失败')
   return response.blob()
 }

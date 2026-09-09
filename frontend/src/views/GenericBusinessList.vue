@@ -36,7 +36,7 @@ const route = useRoute()
 const router = useRouter()
 const moduleCode = computed(() => route.meta?.module || '')
 const config = computed(() => moduleConfigs[moduleCode.value] || {})
-// PRD-28 卡片6：功能点/敏感字段权限改由登录用户真实权限集驱动（stores/perm.js），不再用 roleCode='ADMIN' 兜底。
+// PRD-28 卡片6：功能点/敏感字段权限由登录用户真实权限集驱动（stores/perm.js），超管仅在服务端短路。
 // 绑定当前路由模块：actionHidden 供 v-action-perms 容器指令，guard 供写操作函数入口闸门。
 const { canViewColumn, actionHidden, guard } = useRbac(moduleCode)
 

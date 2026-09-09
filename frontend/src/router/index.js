@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth.js'
 import { usePermStore } from '@/stores/perm.js'
+import { useMenuStore } from '@/stores/menu.js'
+import { PATH_MENU } from './menu-map.js'
 
 const routes = [
   {
@@ -217,11 +219,21 @@ router.beforeEach(async (to, from, next) => {
   }
   // PRD-28 卡片6：进入业务页面前确保功能点/字段权限集就绪（v-permission、canViewField 依赖）。
   // 失败按空集 fail-closed（按钮隐、敏感列脱敏、后端再拦），不阻断页面渲染。
+  // PRD-28 卡片8：菜单树同步就绪——侧边栏按树渲染、页面可达性按授权菜单裁剪。
   if (!to.meta.public && auth.token) {
+    const perm = usePermStore()
+    const menu = useMenuStore()
     try {
-      await usePermStore().ensure()
+      await Promise.all([perm.ensure(), menu.ensure()])
     } catch (e) {
-      // 权限集拉取失败：保持空集，交由各接口 403/脱敏兜底
+      // 401 由 client.js 全局事件跳登录；其余失败：perm 空集 fail-closed、menu 降级本地菜单
+    }
+    // 菜单授权页面级裁剪：服务端菜单里没有的页面编码直接回首页（后端同样 403，双保险）。
+    // /dashboard 是登录落点与零菜单用户的兜底页，永不拦截；降级来源(fallback)不做前端拦截。
+    const menuCode = PATH_MENU[to.path]
+    if (menuCode && menu.source === 'server' && !menu.codes.has(menuCode) && to.path !== '/dashboard') {
+      next('/')
+      return
     }
   }
   // MENU-001：模块菜单管理仅超管可进入；刷新后 user 可能为 null，先补拉 /auth/profile
