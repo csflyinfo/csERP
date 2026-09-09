@@ -3,6 +3,7 @@ package com.erp.system.perm;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.security.CurrentUser;
 import com.erp.common.security.PermissionDeniedException;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,24 +42,28 @@ public class PermissionQueryController {
 
     /** 全量菜单树（含 admin_only、STOPPED、自定义标志），菜单管理页用。 */
     @GetMapping("/menu/tree")
+    @RequirePerm("system.menu.view")
     public ApiResponse<List<Map<String, Object>>> menuTree(@RequestParam(defaultValue = "ERP") String appType) {
         return ApiResponse.ok(menuMetaService.managementTree(appType));
     }
 
     /** 角色授权用树：排除 admin_only 与 STOPPED，自动剪掉空目录。 */
     @GetMapping("/menu/grant-tree")
+    @RequirePerm("system.role.view")
     public ApiResponse<List<Map<String, Object>>> grantTree(@RequestParam(defaultValue = "ERP") String appType) {
         return ApiResponse.ok(menuMetaService.grantTree(appType));
     }
 
     /** 某菜单下的功能点（角色配置页勾选）。 */
     @GetMapping("/func/list")
+    @RequirePerm("system.role.view")
     public ApiResponse<List<Map<String, Object>>> funcList(@RequestParam String menuId) {
         return ApiResponse.ok(menuMetaService.funcsByMenu(menuId));
     }
 
     /** 全部敏感字段定义（角色配置页勾选可见字段）。 */
     @GetMapping("/field/list")
+    @RequirePerm("system.role.view")
     public ApiResponse<List<Map<String, Object>>> fieldList() {
         return ApiResponse.ok(menuMetaService.fieldList());
     }
@@ -71,6 +76,7 @@ public class PermissionQueryController {
 
     /** 手动触发一次元数据同步（发布后不重启刷新）。SYS_ADMIN 硬校验双保险。 */
     @PostMapping("/perm/refresh")
+    @RequirePerm(value = "system.menu.edit", name = "刷新权限元数据", type = "ACTION")
     public ApiResponse<Map<String, Object>> refresh() {
         if (!CurrentUser.isSuperAdmin()) {
             throw new PermissionDeniedException("仅系统管理员可刷新权限元数据");
@@ -83,6 +89,7 @@ public class PermissionQueryController {
      * 未挂 @RequirePerm 的写接口清单（卡片 5~7 逐步清零）。
      */
     @GetMapping("/perm/health")
+    @RequirePerm("system.menu.view")
     public ApiResponse<Map<String, Object>> health() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("lastSync", registry.getLastSyncStats());

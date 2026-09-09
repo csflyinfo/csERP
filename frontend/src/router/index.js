@@ -117,9 +117,11 @@ const routes = [
       { path: 'gl-report', name: 'GlReport', component: () => import('@/views/gl/FinReport.vue'), meta: { title: '总账报表', module: 'glReport' } },
       { path: 'gl-reconcile', name: 'GlReconcile', component: () => import('@/views/gl/Reconcile.vue'), meta: { title: '业财对账', module: 'glReconcile' } },
 
-      // 系统管理
-      { path: 'user', name: 'User', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '用户管理', module: 'user' } },
-      { path: 'role', name: 'Role', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '权限组管理', module: 'role' } },
+      // 系统管理（PRD-28 RBAC：用户/角色/模块菜单管理）
+      { path: 'user', name: 'User', component: () => import('@/views/system/UserManage.vue'), meta: { title: '用户管理', module: 'user' } },
+      { path: 'role', name: 'Role', component: () => import('@/views/system/RoleManage.vue'), meta: { title: '角色管理', module: 'role' } },
+      // 模块菜单管理仅 SYS_ADMIN 可见（MENU-001），后端 /system/** 已硬限，前端守卫再拦一层
+      { path: 'system-menu', name: 'SystemMenu', component: () => import('@/views/system/MenuManage.vue'), meta: { title: '模块菜单管理', module: 'systemMenu', superAdmin: true } },
       { path: 'param', name: 'Param', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '系统参数', module: 'param' } },
       { path: 'param-setting', name: 'ParamSetting', component: () => import('@/views/system/ParamSetting.vue'), meta: { title: '参数设置', module: 'paramSetting' } },
       { path: 'log', name: 'Log', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '操作日志', module: 'log' } },
@@ -202,15 +204,29 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const auth = useAuthStore()
   if (!to.meta.public && !auth.token) {
     next('/login')
-  } else if (to.meta.public && auth.token) {
-    next('/')
-  } else {
-    next()
+    return
   }
+  if (to.meta.public && auth.token) {
+    next('/')
+    return
+  }
+  // MENU-001：模块菜单管理仅超管可进入；刷新后 user 可能为 null，先补拉 /auth/profile
+  if (to.meta.superAdmin) {
+    try {
+      if (!auth.user) await auth.fetchProfile()
+    } catch (e) {
+      // 补拉失败（令牌失效等）交给后续请求/登录页处理，这里不阻断渲染
+    }
+    if (!auth.isSuperAdmin) {
+      next('/')
+      return
+    }
+  }
+  next()
 })
 
 export default router

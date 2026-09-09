@@ -320,6 +320,9 @@ public class PermissionRegistry {
                 || path.startsWith("/testing/")
                 || path.startsWith("/flow/")
                 || path.startsWith("/system/menu-manage/")
+                // 通知/待办是每个登录用户的自助操作（已读/完成），不属于任何可授权菜单
+                || path.startsWith("/system/notification/")
+                || path.startsWith("/system/todo/")
                 || path.startsWith("/actuator/")
                 || path.startsWith("/tms/app/")
                 || path.startsWith("/operation-log/")

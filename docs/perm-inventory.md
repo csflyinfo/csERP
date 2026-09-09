@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-09 16:57:08
+> 生成时间：2026-09-09 20:48:04
 
-- 端点总数：750
-- 已挂 @RequirePerm：0
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：666
+- 端点总数：768
+- 已挂 @RequirePerm：54
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：637
 
 ## base
 
@@ -496,56 +496,74 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/system/bill-no-rule/page` | SystemController#billNoRulePage | system.bill_no_rule.view | system.bill_no_rule | view | ❌ |
-| POST | `/system/bill-no-rule/update` | SystemController#updateBillNoRule | system.bill_no_rule.edit | system.bill_no_rule | edit | ❌ |
-| POST | `/system/dictionary/page` | SystemController#dictionaryPage | system.dictionary.view | system.dictionary | view | ❌ |
-| POST | `/system/dictionary/save` | SystemController#saveDictionary | system.dictionary.edit | system.dictionary | edit | ❌ |
-| POST | `/system/export-center/download` | SystemController#downloadExport | system.export_center.export | system.export_center | export | ❌ |
-| POST | `/system/export-center/page` | SystemController#exportCenterPage | system.export_center.view | system.export_center | view | ❌ |
-| POST | `/system/field-scope` | SystemController#fieldScope | — | — | — | ❌ |
-| GET | `/system/field/list` | PermissionQueryController#fieldList | — | — | — | ❌ |
-| GET | `/system/func/list` | PermissionQueryController#funcList | — | — | — | ❌ |
-| POST | `/system/import-list/create` | SystemController#createImportTask | system.import_list.add | system.import_list | add | ❌ |
-| POST | `/system/import-list/download-failures` | SystemController#downloadImportFailures | system.import_list.export | system.import_list | export | ❌ |
-| POST | `/system/import-list/page` | SystemController#importListPage | system.import_list.view | system.import_list | view | ❌ |
-| POST | `/system/login-log/export` | SystemLogController#loginLogExport | system.login_log.export | system.login_log | export | ❌ |
-| POST | `/system/login-log/page` | SystemLogController#loginLogPage | system.login_log.view | system.login_log | view | ❌ |
+| POST | `/system/bill-no-rule/page` | SystemController#billNoRulePage | system.bill_no_rule.view | system.bill_no_rule | view | 方法：system.bill_no_rule.view |
+| POST | `/system/bill-no-rule/update` | SystemController#updateBillNoRule | system.bill_no_rule.edit | system.bill_no_rule | edit | 方法：system.bill_no_rule.edit |
+| POST | `/system/dictionary/page` | SystemController#dictionaryPage | system.dictionary.view | system.dictionary | view | 方法：system.dictionary.view |
+| POST | `/system/dictionary/save` | SystemController#saveDictionary | system.dictionary.edit | system.dictionary | edit | 方法：system.dictionary.edit |
+| POST | `/system/export-center/download` | SystemController#downloadExport | system.export_center.export | system.export_center | export | 方法：system.export_center.export |
+| POST | `/system/export-center/page` | SystemController#exportCenterPage | system.export_center.view | system.export_center | view | 方法：system.export_center.view |
+| POST | `/system/field-scope` | SystemController#fieldScope | system.role.view | system.role | view | 方法：system.role.view |
+| GET | `/system/field/list` | PermissionQueryController#fieldList | system.role.view | system.role | view | 方法：system.role.view |
+| GET | `/system/func/list` | PermissionQueryController#funcList | system.role.view | system.role | view | 方法：system.role.view |
+| POST | `/system/import-list/create` | SystemController#createImportTask | system.import_list.add | system.import_list | add | 方法：system.import_list.add |
+| POST | `/system/import-list/download-failures` | SystemController#downloadImportFailures | system.import_list.export | system.import_list | export | 方法：system.import_list.export |
+| POST | `/system/import-list/page` | SystemController#importListPage | system.import_list.view | system.import_list | view | 方法：system.import_list.view |
+| POST | `/system/login-log/export` | SystemLogController#loginLogExport | system.login_log.export | system.login_log | export | 方法：system.login_log.export |
+| POST | `/system/login-log/page` | SystemLogController#loginLogPage | system.login_log.view | system.login_log | view | 方法：system.login_log.view |
 | POST | `/system/menu-manage/reset-all` | MenuManageController#resetAll | — | — | — | ❌ |
 | PUT | `/system/menu-manage/sort` | MenuManageController#sort | — | — | — | ❌ |
 | PUT | `/system/menu-manage/{menuId}/name` | MenuManageController#rename | — | — | — | ❌ |
 | PUT | `/system/menu-manage/{menuId}/parent` | MenuManageController#move | — | — | — | ❌ |
 | POST | `/system/menu-manage/{menuId}/reset` | MenuManageController#resetOne | — | — | — | ❌ |
-| GET | `/system/menu/grant-tree` | PermissionQueryController#grantTree | system.menu.view | system.menu | view | ❌ |
-| GET | `/system/menu/tree` | PermissionQueryController#menuTree | system.menu.view | system.menu | view | ❌ |
+| GET | `/system/menu/grant-tree` | PermissionQueryController#grantTree | system.role.view | system.role | view | 方法：system.role.view |
+| GET | `/system/menu/tree` | PermissionQueryController#menuTree | system.menu.view | system.menu | view | 方法：system.menu.view |
 | GET | `/system/menu/user-tree` | SystemController#userMenuTree | system.menu.view | system.menu | view | ❌ |
 | POST | `/system/notification/page` | SystemController#notificationPage | — | — | — | ❌ |
 | POST | `/system/notification/read` | SystemController#readNotification | — | — | — | ❌ |
 | GET | `/system/notification/unread-count` | SystemController#unreadCount | — | — | — | ❌ |
-| GET | `/system/operation-log/detail/{logId}` | SystemLogController#operationLogDetail | system.log.view | system.log | view | ❌ |
-| POST | `/system/operation-log/export` | SystemLogController#operationLogExport | system.log.export | system.log | export | ❌ |
-| POST | `/system/operation-log/manual-cleanup` | SystemLogController#manualCleanup | system.log.biz_manual_cleanup | system.log | biz_manual_cleanup | ❌ |
-| POST | `/system/operation-log/page` | SystemLogController#operationLogPage | system.log.view | system.log | view | ❌ |
-| POST | `/system/param/batch-update` | SystemController#batchUpdateParam | system.param.biz_batch_update | system.param | biz_batch_update | ❌ |
-| POST | `/system/param/page` | SystemController#paramPage | system.param.view | system.param | view | ❌ |
-| GET | `/system/param/setting` | SystemController#paramSetting | system.param.view | system.param | view | ❌ |
-| POST | `/system/param/update` | SystemController#updateParam | system.param.edit | system.param | edit | ❌ |
-| GET | `/system/perm/health` | PermissionQueryController#health | — | — | — | ❌ |
+| GET | `/system/operation-log/detail/{logId}` | SystemLogController#operationLogDetail | system.log.view | system.log | view | 方法：system.log.view |
+| POST | `/system/operation-log/export` | SystemLogController#operationLogExport | system.log.export | system.log | export | 方法：system.log.export |
+| POST | `/system/operation-log/manual-cleanup` | SystemLogController#manualCleanup | system.log.biz_manual_cleanup | system.log | biz_manual_cleanup | 方法：system.log.biz_manual_cleanup |
+| POST | `/system/operation-log/page` | SystemLogController#operationLogPage | system.log.view | system.log | view | 方法：system.log.view |
+| POST | `/system/param/batch-update` | SystemController#batchUpdateParam | system.param.biz_batch_update | system.param | biz_batch_update | 方法：system.param.biz_batch_update |
+| POST | `/system/param/page` | SystemController#paramPage | system.param.view | system.param | view | 方法：system.param.view |
+| GET | `/system/param/setting` | SystemController#paramSetting | system.param.view | system.param | view | 方法：system.param.view |
+| POST | `/system/param/update` | SystemController#updateParam | system.param.edit | system.param | edit | 方法：system.param.edit |
+| GET | `/system/perm/health` | PermissionQueryController#health | system.menu.view | system.menu | view | 方法：system.menu.view |
 | GET | `/system/perm/mine` | PermissionQueryController#mine | — | — | — | ❌ |
-| POST | `/system/perm/refresh` | PermissionQueryController#refresh | — | — | — | ❌ |
-| POST | `/system/precision/page` | SystemController#precisionPage | system.precision.view | system.precision | view | ❌ |
-| POST | `/system/precision/save` | SystemController#savePrecision | system.precision.edit | system.precision | edit | ❌ |
-| POST | `/system/print-template/page` | SystemController#printTemplatePage | system.print_template.view | system.print_template | view | ❌ |
-| POST | `/system/print-template/save` | SystemController#savePrintTemplate | system.print_template.edit | system.print_template | edit | ❌ |
-| POST | `/system/role/page` | SystemController#rolePage | system.role.view | system.role | view | ❌ |
-| POST | `/system/role/save` | SystemController#saveRole | system.role.edit | system.role | edit | ❌ |
+| POST | `/system/perm/refresh` | PermissionQueryController#refresh | system.menu.edit | system.menu | edit | 方法：system.menu.edit |
+| POST | `/system/precision/page` | SystemController#precisionPage | system.precision.view | system.precision | view | 方法：system.precision.view |
+| POST | `/system/precision/save` | SystemController#savePrecision | system.precision.edit | system.precision | edit | 方法：system.precision.edit |
+| POST | `/system/print-template/page` | SystemController#printTemplatePage | system.print_template.view | system.print_template | view | 方法：system.print_template.view |
+| POST | `/system/print-template/save` | SystemController#savePrintTemplate | system.print_template.edit | system.print_template | edit | 方法：system.print_template.edit |
+| POST | `/system/rbac/role/copy` | RbacRoleAdminController#copy | system.role.copy | system.role | copy | 方法：system.role.copy |
+| POST | `/system/rbac/role/create` | RbacRoleAdminController#create | system.role.add | system.role | add | 方法：system.role.add |
+| POST | `/system/rbac/role/delete` | RbacRoleAdminController#delete | system.role.delete | system.role | delete | 方法：system.role.delete |
+| POST | `/system/rbac/role/grants` | RbacRoleAdminController#grants | system.role.grant | system.role | grant | 方法：system.role.grant |
+| POST | `/system/rbac/role/page` | RbacRoleAdminController#page | system.role.view | system.role | view | 方法：system.role.view |
+| POST | `/system/rbac/role/update` | RbacRoleAdminController#update | system.role.edit | system.role | edit | 方法：system.role.edit |
+| GET | `/system/rbac/role/{roleId}` | RbacRoleAdminController#detail | system.role.view | system.role | view | 方法：system.role.view |
+| POST | `/system/rbac/user/create` | RbacUserAdminController#create | system.user.add | system.user | add | 方法：system.user.add |
+| POST | `/system/rbac/user/disable` | RbacUserAdminController#disable | system.user.disable | system.user | disable | 方法：system.user.disable |
+| GET | `/system/rbac/user/employees` | RbacUserAdminController#employees | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/rbac/user/enable` | RbacUserAdminController#enable | system.user.enable | system.user | enable | 方法：system.user.enable |
+| GET | `/system/rbac/user/options` | RbacUserAdminController#options | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/rbac/user/page` | RbacUserAdminController#page | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/rbac/user/reset-password` | RbacUserAdminController#resetPassword | system.user.reset_password | system.user | reset_password | 方法：system.user.reset_password |
+| GET | `/system/rbac/user/scope-values` | RbacUserAdminController#scopeValues | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/rbac/user/unlock` | RbacUserAdminController#unlock | system.user.unlock | system.user | unlock | 方法：system.user.unlock |
+| POST | `/system/rbac/user/update` | RbacUserAdminController#update | system.user.edit | system.user | edit | 方法：system.user.edit |
+| GET | `/system/rbac/user/{userId}` | RbacUserAdminController#detail | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/role/page` | SystemController#rolePage | system.role.view | system.role | view | 方法：system.role.view |
+| POST | `/system/role/save` | SystemController#saveRole | system.role.edit | system.role | edit | 方法：system.role.edit |
 | POST | `/system/todo/done` | SystemController#doneTodo | — | — | — | ❌ |
 | POST | `/system/todo/page` | SystemController#todoPage | — | — | — | ❌ |
 | GET | `/system/todo/pending-count` | SystemController#pendingCount | — | — | — | ❌ |
 | GET | `/system/todo/summary` | SystemController#todoSummary | — | — | — | ❌ |
-| POST | `/system/user/page` | SystemController#userPage | system.user.view | system.user | view | ❌ |
-| POST | `/system/user/save` | SystemController#saveUser | system.user.edit | system.user | edit | ❌ |
-| POST | `/system/workflow/page` | SystemController#workflowPage | system.workflow.view | system.workflow | view | ❌ |
-| POST | `/system/workflow/save` | SystemController#saveWorkflow | system.workflow.edit | system.workflow | edit | ❌ |
+| POST | `/system/user/page` | SystemController#userPage | system.user.view | system.user | view | 方法：system.user.view |
+| POST | `/system/user/save` | SystemController#saveUser | system.user.edit | system.user | edit | 方法：system.user.edit |
+| POST | `/system/workflow/page` | SystemController#workflowPage | system.workflow.view | system.workflow | view | 方法：system.workflow.view |
+| POST | `/system/workflow/save` | SystemController#saveWorkflow | system.workflow.edit | system.workflow | edit | 方法：system.workflow.edit |
 
 ## tms
 

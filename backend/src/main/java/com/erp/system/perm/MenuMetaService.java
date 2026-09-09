@@ -174,8 +174,10 @@ public class MenuMetaService {
 
         jdbc.update("UPDATE sys_menu_meta SET menu_name = ?, name_customized = TRUE, " +
                 "updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?", name, menuId);
-        audit(str(node.get("menu_code")), "RENAME",
-                "{\"menuName\":{\"before\":\"" + escape(before) + "\",\"after\":\"" + escape(name) + "\"}}");
+        String code = str(node.get("menu_code"));
+        audit(menuId, code, "RENAME",
+                "{\"menuName\":{\"before\":\"" + escape(before) + "\",\"after\":\"" + escape(name) + "\"}}",
+                "菜单「" + before + "」重命名为「" + name + "」");
         return Map.of("warning", "");
     }
 
@@ -249,9 +251,11 @@ public class MenuMetaService {
 
         jdbc.update("UPDATE sys_menu_meta SET parent_id = ?, parent_customized = TRUE, " +
                 "updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?", newParentId, menuId);
-        audit(str(node.get("menu_code")), "MOVE",
+        audit(menuId, str(node.get("menu_code")), "MOVE",
                 "{\"parentId\":{\"before\":\"" + escape(nullToEmpty(oldParentId))
-                        + "\",\"after\":\"" + escape(nullToEmpty(newParentId)) + "\"}}");
+                        + "\",\"after\":\"" + escape(nullToEmpty(newParentId)) + "\"}}",
+                "菜单「" + str(node.get("menu_name")) + "」更换上级：「" + parentDisplayName(oldParentId)
+                        + "」→「" + parentDisplayName(newParentId) + "」");
         return warning.isEmpty() ? Map.of("warning", "") : Map.of("warning", warning);
     }
 
@@ -274,11 +278,14 @@ public class MenuMetaService {
         if (parentIds.size() > 1) {
             throw new IllegalArgumentException("一次只能调整同一上级下的菜单顺序");
         }
+        String parentName = parentIds.iterator().next() == null
+                ? "一级菜单" : menuNameOf(parentIds.iterator().next());
         for (SortItem item : parsed) {
             jdbc.update("UPDATE sys_menu_meta SET sort_order = ?, sort_customized = TRUE, " +
                     "updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?", item.sortOrder(), item.menuId());
         }
-        audit("SORT_BATCH", "SORT", "{\"count\":" + items.size() + "}");
+        audit(null, "SORT_BATCH", "SORT", "{\"count\":" + items.size() + "}",
+                "「" + parentName + "」下 " + items.size() + " 个菜单同层排序");
         return Map.of("warning", "");
     }
 
@@ -290,7 +297,8 @@ public class MenuMetaService {
         jdbc.update("UPDATE sys_menu_meta SET name_customized = FALSE, parent_customized = FALSE, " +
                 "sort_customized = FALSE, updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?", menuId);
         int applied = applyCodeDefaults(code);
-        audit(code, "RESET", "{\"applied\":" + applied + "}");
+        audit(menuId, code, "RESET", "{\"applied\":" + applied + "}",
+                "菜单「" + str(node.get("menu_name")) + "」恢复代码默认（名称/上级/排序）");
         return Map.of("warning", "");
     }
 
@@ -300,7 +308,7 @@ public class MenuMetaService {
         jdbc.update("UPDATE sys_menu_meta SET name_customized = FALSE, parent_customized = FALSE, " +
                 "sort_customized = FALSE WHERE is_system = TRUE");
         Map<String, Object> stats = registry.sync();
-        audit("ALL", "RESET_ALL", "{}");
+        audit(null, "ALL", "RESET_ALL", "{}", "整树恢复代码默认（清除全部名称/上级/排序自定义）");
         return stats;
     }
 
@@ -371,12 +379,31 @@ public class MenuMetaService {
         return rows.get(0);
     }
 
-    private void audit(String bizNo, String action, String detailJson) {
+    /**
+     * 菜单变更审计（MENU-012）：detailJson 保留结构化新旧值，content 写人话摘要（含 menu_id）。
+     * bizNo 用 menu_code（权限按编码跟随，便于按业务键检索）；SORT/RESET_ALL 等批量操作 menuId 可空。
+     */
+    private void audit(String menuId, String bizNo, String action, String detailJson, String content) {
         try {
-            opLog.log("system.menu", action, bizNo, detailJson);
+            String prefix = menuId == null ? "" : "[" + menuId + "] ";
+            opLog.logContent("system.menu", action, bizNo, detailJson, prefix + content);
         } catch (Exception ignored) {
             // 审计失败不阻断菜单操作
         }
+    }
+
+    private String menuNameOf(String menuId) {
+        try {
+            return jdbc.queryForObject("SELECT menu_name FROM sys_menu_meta WHERE menu_id = ?",
+                    String.class, menuId);
+        } catch (Exception e) {
+            return menuId;
+        }
+    }
+
+    /** 上级展示名：null=移到一级。 */
+    private String parentDisplayName(String parentId) {
+        return parentId == null ? "一级菜单" : menuNameOf(parentId);
     }
 
     @SuppressWarnings("unchecked")

@@ -3,6 +3,7 @@ package com.erp.system;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,6 +49,7 @@ public class SystemLogController {
     // ==================== 操作日志 ====================
 
     @PostMapping("/operation-log/page")
+    @RequirePerm("system.log.view")
     public ApiResponse<PageResult<Map<String, Object>>> operationLogPage(@RequestBody PageRequest request) {
         Map<String, Object> f = request.filters() == null ? Map.of() : request.filters();
         StringBuilder where = new StringBuilder(" WHERE 1=1");
@@ -74,6 +76,7 @@ public class SystemLogController {
 
     /** 详情：含改前改后 JSON（解析成对象返回）。/system 仅 ADMIN，敏感值不脱敏。 */
     @GetMapping("/operation-log/detail/{logId}")
+    @RequirePerm("system.log.view")
     public ApiResponse<Map<String, Object>> operationLogDetail(@PathVariable String logId) {
         List<Map<String, Object>> rows = jdbc.query(
                 "SELECT * FROM sys_operation_log_runtime WHERE log_id = ?", this::mapRowFull, logId);
@@ -85,6 +88,7 @@ public class SystemLogController {
 
     /** 按筛选条件导出（最多 {@value #EXPORT_LIMIT} 行），并写一条 EXPORT 日志。 */
     @PostMapping("/operation-log/export")
+    @RequirePerm("system.log.export")
     public ApiResponse<List<Map<String, Object>>> operationLogExport(@RequestBody PageRequest request) {
         Map<String, Object> f = request.filters() == null ? Map.of() : request.filters();
         StringBuilder where = new StringBuilder(" WHERE 1=1");
@@ -101,6 +105,7 @@ public class SystemLogController {
 
     /** 手动触发保留期清理。 */
     @PostMapping("/operation-log/manual-cleanup")
+    @RequirePerm(value = "system.log.biz_manual_cleanup", name = "手动清理日志", type = "ACTION")
     public ApiResponse<Map<String, Object>> manualCleanup() {
         int[] r = cleanupTask.cleanupNow();
         Map<String, Object> data = new LinkedHashMap<>();
@@ -112,6 +117,7 @@ public class SystemLogController {
     // ==================== 登录日志 ====================
 
     @PostMapping("/login-log/page")
+    @RequirePerm("system.login_log.view")
     public ApiResponse<PageResult<Map<String, Object>>> loginLogPage(@RequestBody PageRequest request) {
         Map<String, Object> f = request.filters() == null ? Map.of() : request.filters();
         StringBuilder where = new StringBuilder(" WHERE 1=1");
@@ -136,6 +142,7 @@ public class SystemLogController {
     }
 
     @PostMapping("/login-log/export")
+    @RequirePerm("system.login_log.export")
     public ApiResponse<List<Map<String, Object>>> loginLogExport(@RequestBody PageRequest request) {
         Map<String, Object> f = request.filters() == null ? Map.of() : request.filters();
         StringBuilder where = new StringBuilder(" WHERE 1=1");

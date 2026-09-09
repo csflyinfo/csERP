@@ -69,6 +69,14 @@ public class OperationLogService {
         save(builder(moduleCode, action).bizType(bizType).bizId(bizId).bizNo(bizNo).detail(detail).resultSuccess().build());
     }
 
+    /**
+     * 带可读变更内容的写入（PRD-28 MENU-012）：detailJson 留原始结构进 detail 列，
+     * content 写一句话变更说明进 operation_content（操作日志列表页直接可见）。
+     */
+    public void logContent(String moduleCode, String action, String bizNo, String detailJson, String content) {
+        save(builder(moduleCode, action).bizNo(bizNo).detail(detailJson).content(content).resultSuccess().build());
+    }
+
     /** 敏感操作（如成本调整、客户价格查看）：整条日志 sensitive=Y。 */
     public void logSensitive(String moduleCode, String action, String bizType, String bizId, String bizNo, String detail) {
         RecB b = builder(moduleCode, action).bizType(bizType).bizId(bizId).bizNo(bizNo).detail(detail).resultSuccess();
@@ -488,6 +496,7 @@ public class OperationLogService {
         RecB bizId(String v) { this.bizId = v; return this; }
         RecB bizNo(String v) { this.bizNo = v; return this; }
         RecB detail(String v) { this.detail = v; return this; }
+        RecB content(String v) { this.content = v; return this; }
         RecB resultSuccess() { this.result = "SUCCESS"; return this; }
 
         Rec build() {

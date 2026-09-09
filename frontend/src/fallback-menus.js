@@ -110,7 +110,9 @@ export const fallbackMenus = {
   ],
   系统管理: [
     { code: 'user', name: '用户管理' },
-    { code: 'role', name: '权限组管理' },
+    { code: 'role', name: '角色管理' },
+    // PRD-28 MENU-001：模块菜单管理仅 SYS_ADMIN 可见（adminOnly，侧栏与授权树均不出现给非超管）
+    { code: 'systemMenu', name: '模块菜单管理', adminOnly: true },
     { code: 'param', name: '系统参数' },
     { code: 'paramSetting', name: '参数设置' },
     { code: 'billNo', name: '单据编号规则' },

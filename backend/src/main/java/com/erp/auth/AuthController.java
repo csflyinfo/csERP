@@ -1,12 +1,17 @@
 package com.erp.auth;
 
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.CurrentUser;
 import com.erp.common.util.JwtUtil;
 import com.erp.common.util.RequestContext;
+import com.erp.system.OperationLogService;
+import com.erp.system.PasswordService;
+import com.erp.system.SysParamService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,11 +39,19 @@ public class AuthController {
     private final JdbcTemplate jdbcTemplate;
     private final JwtUtil jwtUtil;
     private final BCryptPasswordEncoder passwordEncoder;
+    private final PasswordService passwordService;
+    private final SysParamService sysParamService;
+    private final OperationLogService opLog;
 
-    public AuthController(JdbcTemplate jdbcTemplate, JwtUtil jwtUtil, BCryptPasswordEncoder passwordEncoder) {
+    public AuthController(JdbcTemplate jdbcTemplate, JwtUtil jwtUtil, BCryptPasswordEncoder passwordEncoder,
+                          PasswordService passwordService, SysParamService sysParamService,
+                          OperationLogService opLog) {
         this.jdbcTemplate = jdbcTemplate;
         this.jwtUtil = jwtUtil;
         this.passwordEncoder = passwordEncoder;
+        this.passwordService = passwordService;
+        this.sysParamService = sysParamService;
+        this.opLog = opLog;
     }
 
     @PostMapping("/login")
@@ -123,6 +136,88 @@ public class AuthController {
         return ApiResponse.ok(true);
     }
 
+    /**
+     * 个人中心信息（PRD-28 §10.5）：任何登录用户可取自己的资料，含绑定仓库与改密时间。
+     */
+    @GetMapping("/profile")
+    public ApiResponse<Map<String, Object>> profile() {
+        CurrentUser.Principal me = CurrentUser.get();
+        if (me == null || me.userId() == null) {
+            return ApiResponse.fail("401", "未登录");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT user_id, username, display_name, mobile, email, employee_id,
+                       must_change_pwd, pwd_update_time, last_login_time, last_login_ip
+                FROM sys_user_runtime WHERE user_id = ?
+                """, me.userId());
+        if (rows.isEmpty()) return ApiResponse.fail("404", "用户不存在");
+        Map<String, Object> db = rows.get(0);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("userId", db.get("user_id"));
+        out.put("username", db.get("username"));
+        out.put("displayName", db.get("display_name"));
+        out.put("mobile", db.get("mobile"));
+        out.put("email", db.get("email"));
+        out.put("employeeId", db.get("employee_id"));
+        out.put("mustChangePwd", effectiveMustChange(db));
+        out.put("pwdUpdateTime", db.get("pwd_update_time"));
+        out.put("lastLoginTime", db.get("last_login_time"));
+        out.put("lastLoginIp", db.get("last_login_ip"));
+        out.put("roles", loadRoles(me.userId()));
+        List<Map<String, Object>> whs = new ArrayList<>();
+        jdbcTemplate.queryForList("""
+                SELECT w.warehouse_id, w.warehouse_name, uw.is_primary
+                FROM sys_user_warehouse uw
+                JOIN base_warehouse w ON w.warehouse_id = uw.warehouse_id
+                WHERE uw.user_id = ? ORDER BY w.warehouse_code
+                """, me.userId()).forEach(r -> {
+            Map<String, Object> w = new LinkedHashMap<>();
+            w.put("warehouseId", r.get("warehouse_id"));
+            w.put("warehouseName", r.get("warehouse_name"));
+            w.put("isPrimary", r.get("is_primary"));
+            whs.add(w);
+        });
+        out.put("warehouses", whs);
+        return ApiResponse.ok(out);
+    }
+
+    /**
+     * 修改自己的密码（§8.4）：校验旧密码 → 强度 → 近 3 次历史 → 更新哈希/改密时间/首登标志 → 写历史。
+     */
+    @PostMapping("/change-password")
+    @Transactional
+    public ApiResponse<Map<String, Object>> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        CurrentUser.Principal me = CurrentUser.get();
+        if (me == null || me.userId() == null) {
+            return ApiResponse.fail("401", "未登录");
+        }
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT username, display_name, password FROM sys_user_runtime WHERE user_id = ?", me.userId());
+        if (rows.isEmpty()) return ApiResponse.fail("404", "用户不存在");
+        Map<String, Object> db = rows.get(0);
+        if (!passwordService.matches(request.oldPassword(), strVal(db, "password"))) {
+            opLog.logFail("system.user", "CHANGE_PASSWORD", strVal(db, "username"), "原密码错误");
+            throw new IllegalArgumentException("原密码不正确");
+        }
+        if (request.newPassword() == null || request.newPassword().isBlank()) {
+            throw new IllegalArgumentException("新密码不能为空");
+        }
+        if (request.newPassword().equals(request.oldPassword())) {
+            throw new IllegalArgumentException("新密码不能与原密码相同");
+        }
+        passwordService.validateStrength(request.newPassword());
+        passwordService.assertNotReused(me.userId(), request.newPassword());
+
+        String encoded = passwordService.encode(request.newPassword());
+        jdbcTemplate.update("UPDATE sys_user_runtime SET password = ?, must_change_pwd = FALSE, "
+                + "pwd_update_time = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+                encoded, me.userId());
+        passwordService.recordHistory(me.userId(), encoded);
+        opLog.logSensitive("system.user", "CHANGE_PASSWORD", "用户", me.userId(), me.username(),
+                "用户「" + strVal(db, "display_name") + "」自助修改密码");
+        return ApiResponse.ok(Map.of("success", true));
+    }
+
     @GetMapping("/current-user")
     public ApiResponse<Map<String, Object>> currentUser(jakarta.servlet.http.HttpServletRequest request) {
         String username = (String) request.getAttribute("currentUsername");
@@ -191,16 +286,36 @@ public class AuthController {
         info.put("roleName", roles.stream()
                 .filter(r -> primaryRoleCode.equals(strVal(r, "roleCode")))
                 .map(r -> strVal(r, "roleName")).findFirst().orElse(""));
-        // PRD-28：前端据此强制弹改密页
-        info.put("mustChangePwd", Boolean.TRUE.equals(user.get("mustChangePwd")));
+        // PRD-28：前端据此强制弹改密页；密码超有效期（SEC_PWD_EXPIRE_DAYS>0）同样强制
+        info.put("mustChangePwd", effectiveMustChange(user));
         return info;
+    }
+
+    /**
+     * 强制改密 = 管理员重置标记 OR 密码超过有效期。
+     * 参数 SEC_PWD_EXPIRE_DAYS 默认 0（永不过期）；密码改密时间缺失时按已过期处理。
+     */
+    private boolean effectiveMustChange(Map<String, Object> user) {
+        if (Boolean.TRUE.equals(user.get("mustChangePwd"))) return true;
+        int expireDays;
+        try {
+            expireDays = Integer.parseInt(sysParamService.get("SEC_PWD_EXPIRE_DAYS", "0").trim());
+        } catch (NumberFormatException e) {
+            expireDays = 0;
+        }
+        if (expireDays <= 0) return false;
+        Object ts = user.get("pwdUpdateTime");
+        if (ts == null) return true;
+        Timestamp pwdTime = ts instanceof Timestamp t ? t : Timestamp.valueOf(String.valueOf(ts));
+        return pwdTime.toInstant().plus(expireDays, ChronoUnit.DAYS).isBefore(Instant.now());
     }
 
     private Map<String, Object> findUser(String username) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT user_id userId, username, display_name displayName, password, status,
                        mobile, email, employee_id employeeId, primary_role_id primaryRoleId,
-                       fail_count failCount, lock_time lockTime, must_change_pwd mustChangePwd
+                       fail_count failCount, lock_time lockTime, must_change_pwd mustChangePwd,
+                       pwd_update_time pwdUpdateTime
                 FROM sys_user_runtime
                 WHERE username = ?
                 LIMIT 1
@@ -272,5 +387,8 @@ public class AuthController {
     }
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {
+    }
+
+    public record ChangePasswordRequest(@NotBlank String oldPassword, @NotBlank String newPassword) {
     }
 }

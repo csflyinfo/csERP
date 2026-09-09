@@ -33,6 +33,17 @@ export async function get(path) {
 }
 
 /**
+ * PUT 请求（模块菜单管理的改名/移动/排序使用 PUT 语义）
+ */
+export async function put(path, body = {}) {
+  return request(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+/**
  * 上传文件（multipart/form-data）
  */
 export async function upload(path, formData) {

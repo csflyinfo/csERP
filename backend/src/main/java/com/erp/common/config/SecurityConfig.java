@@ -66,6 +66,8 @@ public class SecurityConfig {
                     // 自助查询：任何登录用户只能取「自己的」菜单/权限（服务端按 CurrentUser 过滤），
                     // 必须排在 /system/** 全量封禁之前（先匹配先生效）
                     .requestMatchers("/system/menu/user-tree", "/system/perm/mine").authenticated()
+                    // 通知/待办是所有登录用户的个人中心能力，不属于系统管理，同样排在 /system/** 封禁之前
+                    .requestMatchers("/system/notification/**", "/system/todo/**").authenticated()
                     .requestMatchers("/system/**").hasRole("SYS_ADMIN")
                     .anyRequest().authenticated())
             .headers(h -> h

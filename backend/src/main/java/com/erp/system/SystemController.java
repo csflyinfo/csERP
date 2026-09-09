@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.system.perm.MenuMetaService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -64,6 +65,8 @@ public class SystemController {
     }
 
     @PostMapping("/field-scope")
+    // 遗留字段范围预览（卡片12 随旧用户/角色接口一并清理），语义归属角色配置
+    @RequirePerm("system.role.view")
     public ApiResponse<Map<String, Object>> fieldScope(@RequestBody Map<String, Object> request) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", ""));
         String roleCode = String.valueOf(request.getOrDefault("roleCode", "SYS_ADMIN"));
@@ -72,6 +75,7 @@ public class SystemController {
     }
 
     @PostMapping("/user/page")
+    @RequirePerm("system.user.view")
     public ApiResponse<PageResult<Map<String, Object>>> userPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT username,
@@ -86,6 +90,7 @@ public class SystemController {
     }
 
     @PostMapping("/user/save")
+    @RequirePerm("system.user.edit")
     public ApiResponse<Map<String, Object>> saveUser(@RequestBody Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("userId", "U" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
         String rawPassword = String.valueOf(request.getOrDefault("password", "admin123"));
@@ -100,6 +105,7 @@ public class SystemController {
     }
 
     @PostMapping("/role/page")
+    @RequirePerm("system.role.view")
     public ApiResponse<PageResult<Map<String, Object>>> rolePage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT role_code roleCode,
@@ -115,6 +121,7 @@ public class SystemController {
     }
 
     @PostMapping("/role/save")
+    @RequirePerm("system.role.edit")
     public ApiResponse<Map<String, Object>> saveRole(@RequestBody Map<String, Object> request) {
         String id = String.valueOf(request.getOrDefault("roleId", "R" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase()));
         jdbcTemplate.update("""
@@ -127,6 +134,7 @@ public class SystemController {
     }
 
     @PostMapping("/param/page")
+    @RequirePerm("system.param.view")
     public ApiResponse<PageResult<Map<String, Object>>> paramPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT param_key, param_name, param_value, default_value, param_group,
@@ -137,6 +145,7 @@ public class SystemController {
     }
 
     @PostMapping("/param/update")
+    @RequirePerm("system.param.edit")
     public ApiResponse<Map<String, Object>> updateParam(@RequestBody Map<String, Object> request) {
         String paramKey = str(request.get("paramKey"));
         String error = validateParam(paramKey, str(request.get("paramValue")));
@@ -154,6 +163,7 @@ public class SystemController {
      * param_group 为 NULL/空串的参数统一落「公共参数」，保证不会因分组值对不上在页面上消失。
      */
     @GetMapping("/param/setting")
+    @RequirePerm("system.param.view")
     public ApiResponse<Map<String, Object>> paramSetting() {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         for (String group : PARAM_GROUP_ORDER) {
@@ -241,6 +251,7 @@ public class SystemController {
      * 只能改 param_value，参数集合由 Flyway 管理，界面不支持新增/删除。
      */
     @PostMapping("/param/batch-update")
+    @RequirePerm(value = "system.param.biz_batch_update", name = "批量修改参数", type = "ACTION")
     @Transactional
     public ApiResponse<Map<String, Object>> batchUpdateParam(@RequestBody Map<String, Object> request) {
         Object raw = request.get("items");
@@ -329,6 +340,7 @@ public class SystemController {
     }
 
     @PostMapping("/bill-no-rule/page")
+    @RequirePerm("system.bill_no_rule.view")
     public ApiResponse<PageResult<Map<String, Object>>> billNoRulePage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT bill_type billType,
@@ -344,6 +356,7 @@ public class SystemController {
     }
 
     @PostMapping("/bill-no-rule/update")
+    @RequirePerm("system.bill_no_rule.edit")
     public ApiResponse<Map<String, Object>> updateBillNoRule(@RequestBody Map<String, Object> request) {
         jdbcTemplate.update("UPDATE sys_bill_no_rule_runtime SET prefix = COALESCE(?, prefix), serial_length = COALESCE(?, serial_length) WHERE bill_type = ?",
                 request.get("prefix"), request.get("serialLength"), request.get("billType"));
@@ -352,46 +365,55 @@ public class SystemController {
     }
 
     @PostMapping("/precision/page")
+    @RequirePerm("system.precision.view")
     public ApiResponse<PageResult<Map<String, Object>>> precisionPage(@RequestBody PageRequest request) {
         return simpleSystemPage(request, "PRECISION", "数量显示位数", "显示精度", "正常", "数量/单价/金额显示位数，只可增大");
     }
 
     @PostMapping("/precision/save")
+    @RequirePerm("system.precision.edit")
     public ApiResponse<Map<String, Object>> savePrecision(@RequestBody Map<String, Object> request) {
         return saveSimpleConfig("system.precision", request);
     }
 
     @PostMapping("/dictionary/page")
+    @RequirePerm("system.dictionary.view")
     public ApiResponse<PageResult<Map<String, Object>>> dictionaryPage(@RequestBody PageRequest request) {
         return simpleSystemPage(request, "DICT", "客户等级", "用户字典", "正常", "客户等级、支付方式、费用方向等业务字典");
     }
 
     @PostMapping("/dictionary/save")
+    @RequirePerm("system.dictionary.edit")
     public ApiResponse<Map<String, Object>> saveDictionary(@RequestBody Map<String, Object> request) {
         return saveSimpleConfig("system.dictionary", request);
     }
 
     @PostMapping("/workflow/page")
+    @RequirePerm("system.workflow.view")
     public ApiResponse<PageResult<Map<String, Object>>> workflowPage(@RequestBody PageRequest request) {
         return simpleSystemPage(request, "WF", "低价审批", "审批流", "正常", "超信用、低价、付款审批规则");
     }
 
     @PostMapping("/workflow/save")
+    @RequirePerm("system.workflow.edit")
     public ApiResponse<Map<String, Object>> saveWorkflow(@RequestBody Map<String, Object> request) {
         return saveSimpleConfig("system.workflow", request);
     }
 
     @PostMapping("/print-template/page")
+    @RequirePerm("system.print_template.view")
     public ApiResponse<PageResult<Map<String, Object>>> printTemplatePage(@RequestBody PageRequest request) {
         return simpleSystemPage(request, "PRINT", "销售单模板", "打印模板", "正常", "销售单、采购单、小票模板");
     }
 
     @PostMapping("/print-template/save")
+    @RequirePerm("system.print_template.edit")
     public ApiResponse<Map<String, Object>> savePrintTemplate(@RequestBody Map<String, Object> request) {
         return saveSimpleConfig("system.printTemplate", request);
     }
 
     @PostMapping("/import-list/page")
+    @RequirePerm("system.import_list.view")
     public ApiResponse<PageResult<Map<String, Object>>> importListPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT task_no code,
@@ -411,6 +433,7 @@ public class SystemController {
     }
 
     @PostMapping("/import-list/create")
+    @RequirePerm("system.import_list.add")
     public ApiResponse<Map<String, Object>> createImportTask(@RequestBody Map<String, Object> request) {
         String taskId = "IMP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String taskNo = "IMP" + System.currentTimeMillis();
@@ -432,6 +455,7 @@ public class SystemController {
     }
 
     @PostMapping("/import-list/download-failures")
+    @RequirePerm("system.import_list.export")
     public ApiResponse<Map<String, Object>> downloadImportFailures(@RequestBody Map<String, Object> request) {
         String taskNo = String.valueOf(request.getOrDefault("taskNo", request.getOrDefault("bizId", "")));
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
@@ -455,6 +479,7 @@ public class SystemController {
     }
 
     @PostMapping("/export-center/page")
+    @RequirePerm("system.export_center.view")
     public ApiResponse<PageResult<Map<String, Object>>> exportCenterPage(@RequestBody PageRequest request) {
         return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
                 SELECT task_no code,
@@ -472,6 +497,7 @@ public class SystemController {
     }
 
     @PostMapping("/export-center/download")
+    @RequirePerm("system.export_center.export")
     public ApiResponse<Map<String, Object>> downloadExport(@RequestBody Map<String, Object> request) {
         String taskNo = String.valueOf(request.getOrDefault("taskNo", request.getOrDefault("bizId", "")));
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""

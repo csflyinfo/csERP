@@ -130,3 +130,41 @@
 5. 原生 Windows node 不认 MSYS `/tmp`，临时文件一律放工程目录。
 
 **验证**：H2 先备份 `erp-v1.mv.db.bak-rbac4`；夹具（11 用户/10 角色/8 销售单/2 入库/4 库存/2 应收/4 商品含父子分类）跑 34 项断言全绿——销售单 9 视角矩阵（admin/老板 8、绑定甲仓仓管 4、SELF 销售员 3、SUB_TREE 两级主管 6、分类∩品牌 3、老板∩用户层乙仓收窄 4、采购岗跨维 3、零维度角色 0）、采购入库/库存/应收同构、scoped_amount 可见行重算、无 VIEW_COST 时 costPrice/stockAmount/availableQty=null 而 physicalQty 保留、销售员应收金额字段（V103 修复点）正常、导出 xlsx 无权限不含 12.34/有权限含/非敏感编码列保留、匿名 401；管理端真实库 admin 四列表与商品导出回归正常。夹具与 10 个测试账号、登录/操作日志按 RBAC4/U_R4_ 前缀全部清理（18 张表 COUNT=0），临时 SQL/脚本/xlsx 已删，备份确认无误后删除；后端日志 0 ERROR。
+
+### 2026-09-09 卡片5 落地：system 模块全量权限标注 + 用户/角色/菜单管理三页 + 个人中心（feat/rbac-5-system-annotate，V104）
+
+**后端**
+
+- `RbacUserAdminController`（/system/rbac/user/**，660 行）：分页/详情/新建/编辑/停用启用/解锁/重置密码；多角色分配（sys_user_role_rel，仅 NORMAL 角色可挂）、绑仓库（sys_user_warehouse）、用户层七维数据范围收窄（sys_user_data_scope，与角色结果 INTERSECT 只减不增）；员工选项 GET /employees、范围值选项 GET /scope-values（仓库/客户/供应商/业务员/分类/品牌，按维度关键词搜）；内置 admin 账号禁删禁停用禁解绑超管角色；全部方法 `@RequirePerm("system.user.*")`。
+- `RbacRoleAdminController`（/system/rbac/role/**，458 行）：角色分页/新建/编辑/复制/停用启用/删除（无用户挂载才允许删）；grants 四分区整存（菜单 menuIds/功能 funcCodes/字段 fieldCodes/数据范围 dataScopes，全量替换事务内完成）；**内置角色保护**：菜单/功能/字段三分区拒绝改写、仅数据范围可调（§12.2）；越权功能点/菜单 code 服务端按 func_meta/menu_meta 白名单过滤，防伪造提交。
+- `PasswordService`（100 行，新增）：改密/重置统一入口——强度校验（8+ 位含字母数字）、**不能与最近 3 次历史相同**（sys_pwd_history 留最近 3 条）、重置/新建置 must_change_pwd=TRUE、本人改密成功清除该标记；哈希只写库不打印不回传。
+- `AuthController` 增补个人中心：GET /auth/profile（登录人资料+多角色+绑仓+数据范围，roleCodes 由 roles[].roleCode 派生）、PUT /auth/profile（昵称/手机）、POST /auth/change-password（验旧密码+历史查重，强制改密场景同一接口）。
+- system 模块全量标注：SystemController、SystemLogController、PermissionQueryController、RbacUserAdminController、RbacRoleAdminController、MenuManageController 等共 **54 个端点**挂 @RequirePerm（perm-inventory：总 768/已标注 54/余 637 待卡片6~7）；菜单写操作维持「控制器 requireSuperAdmin + SecurityConfig `/system/**` hasRole SYS_ADMIN」双保险，自助查询（user-tree、perm/mine）放行顺序在前。
+- `V104__rbac_user_mgmt.sql`：sys_user_runtime 加 remark 列；新建 sys_pwd_history(user_id, password_hash, created_at) + 索引；存量账号当前密码回填为首条历史（NOT EXISTS 幂等），避免上线后第一次改密就与「当前密码」撞历史校验。
+
+**MENU-012 审计修复（真实 BUG，非测试妥协）**
+
+- 现象：菜单改名/移动/排序后，操作日志列表页「操作内容」列为空。根因：旧 4 参 `opLog.log(module, action, bizNo, detail)` 只写 detail 列（结构化 JSON），而列表页 SELECT 展示的是 operation_content 列。
+- 修复：OperationLogService 新增 `logContent(moduleCode, action, bizNo, detailJson, content)` 双写通道——detailJson 进 detail 保留机器可读结构，content 进 operation_content 做人话摘要；RecB builder 同步加 content。MenuMetaService 五个审计点改写带 menuId 前缀的可读内容：RENAME「[M_sales_order] 菜单「销售订单」重命名为「订单管理」」、MOVE「菜单「销售发货单」更换上级：「销售管理」→「总账」」（新旧上级均翻译为菜单名，null=「一级菜单」）、SORT「「销售管理」下 2 个菜单同层排序」、RESET/RESET_ALL 同理；opLog 整体 try/catch 永不影响业务。
+
+**前端（Vue 3 setup，原生控件，无新依赖）**
+
+- `views/system/UserManage.vue`（625 行）：用户列表（查询条件仅「查询」按钮触发）+ 编辑抽屉（基本信息/多角色勾选/绑仓/七维范围收窄表格）+ 重置密码二次确认弹窗 + 停用/启用/解锁；按钮全部 v-if 功能点（卡片8 统一切 v-permission 指令，本卡先用 store 判定）。
+- `views/system/RoleManage.vue`：三栏角色管理（左角色列表含内置角标/停用态、中 MenuGrantTree 授权树（grant-tree 排 admin_only/STOPPED/空目录）、右功能点（全局+模块分组）+字段权限+DataScopeEditor 数据范围）；内置角色三分区只读、复制角色带完整四分区；ScopeValuePicker 按维度搜选项。
+- `views/system/MenuManage.vue`：模块菜单管理——三级树（DIR/PAGE/STOPPED 分色、自定义标志角标）+ 编辑面板（改名、换上级下拉含层级提示、同层排序）、单节点「恢复默认」与「整树恢复」（confirm 参数二次确认，前端二次弹窗）；所有写操作仅超管可见入口，后端再硬校验。
+- `components/rbac/`：ChangePasswordDialog（普通/forced 两态，forced 无关闭无遮罩退出，mustChangePwd 时全屏强制）、ProfileDialog（个人中心内嵌修改密码）、MenuGrantTree、DataScopeEditor、ScopeValuePicker 共 5 个组件；api/rbac.js 收口全部 /system/rbac、/system/menu-manage 请求，client.js 补 403 统一提示。
+- 接线：auth store 增加 isSuperAdmin（roleCodes 含 SYS_ADMIN，兼容老令牌 ADMIN）/mustChangePwd 计算属性、fetchProfile（并发复用同一 Promise，token 持久化+刷新补拉 profile）、markPasswordChanged；路由注册 system-menu（meta.superAdmin），守卫改 async——直连超管页未拉 profile 先补拉、非超管重定向首页；AppShell 头像改下拉菜单（个人中心/修改密码/退出登录）、侧栏二级菜单按 adminOnly × isSuperAdmin 裁剪、挂载强制改密弹窗；fallback-menus 增「模块菜单管理」adminOnly 节点。
+
+**踩坑**
+
+1. **mvn package 前必须先停后端（本卡最重事故）**：后端运行中执行 repackage，Windows 下 jar 被 JVM 独占，rename jar→jar.original 失败的同时 spring-boot-maven-plugin **已把运行中的 fat jar 从 97MB 截断成 1.36MB 薄 jar**；旧 JVM 进程还活着但 classpath 文件被覆写，随后任意请求抛 NoClassDefFoundError（JdbcTemplate$1UpdateStatementCallback）。处理：TaskStop → 确认 8080 FREE → 重新 package 恢复 97,194,699 字节。纪律：任何 package/Shell 直连前先停服确认端口。
+2. 权限自助接口真实路径是 `/system/perm/mine`（控制器挂 @RequestMapping("/system")），脚本误打 /perm/mine 返回 500「No static resource」；SecurityConfig 显式提前放行的也是 /system/perm/mine。
+3. reset-all 因事故中断后菜单自定义标志残留库中：停服后 H2 Shell 对 is_system=TRUE 行三标志清零，重启时 PermissionRegistry.sync 按代码重算默认名/上级/排序——验证了「标志兜底清零 + 启动同步重算」这条人工还原路径有效。
+4. H2 Shell 直连仍须显式盘符 URL（jdbc:h2:E:/work/erp-wms-tms/backend/data/erp-v1;MODE=MySQL;CASE_INSENSITIVE_IDENTIFIERS=TRUE），先停后端，sa 空密码。
+
+**验证（共 111 条断言全绿）**
+
+- MENU 端到端 A 段 38/38：真实「销售主管」角色 R5_MMGR + 用户 r5mgr——MENU-001 用户树无任何 system.* 且保留 sales.order、非超管取管理树 403；MENU-002 改名/移动/整树恢复 403 矩阵；MENU-003 授权树无 system.menu；MENU-004 改名+nameCustomized+被授权用户树即时显示新名+空名拒绝；MENU-006 销售发货单移入财务>总账成三级；MENU-007 致四级的自挂拒绝；MENU-008 自挂/祖先挂后代防环；MENU-009 同层排序+跨父级拒绝+sortCustomized；MENU-011 改名移动后按 menu_code 的授权/功能点不失效；MENU-012 RENAME/MOVE/SORT 三条留痕含操作人 admin/时间/menu_id/新旧值。
+- 跨重启 B 段 15/15：MENU-005 改名、MENU-006 移动、MENU-009 排序均抗启动同步；MENU-010 三节点 reset 名称/上级/顺序/标志全还原；整树恢复缺 confirm 拒绝、confirm=true 执行、全树零标志残留；恢复后授权树完整。
+- 卡片2~4 回归 58/58；`npm --prefix frontend run build` 通过（UserManage/RoleManage/MenuManage 独立 chunk 齐全）；后端 mvn -o package BUILD SUCCESS。
+- 数据安全：操作前备份 `backend/data/backups/erp-v1.before-menu-retest.mv.db`（另有 before-rbac5）；夹具清理 SQL 执行后 H2 直查——R5 夹具用户/角色=0、system.menu 审计行=0、is_system 自定义标志=0，R_SAL_MGR 还原为 16 字段/5 范围/0 菜单种子，全库 users=1(admin)/roles=24 回到干净种子；全程未打印任何密码哈希，夹具密码走 API 明文 'Passw0rd!'。

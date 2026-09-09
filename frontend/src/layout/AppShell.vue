@@ -24,6 +24,8 @@ import StockTakeDrawer from '../components/StockTakeDrawer.vue'
 import DamageDrawer from '../components/DamageDrawer.vue'
 import OtherInboundDrawer from '../components/OtherInboundDrawer.vue'
 import OtherOutboundDrawer from '../components/OtherOutboundDrawer.vue'
+import ProfileDialog from '../components/rbac/ProfileDialog.vue'
+import ChangePasswordDialog from '../components/rbac/ChangePasswordDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,6 +44,14 @@ const toastText = ref('')
 const todoCount = ref(0)
 const notifyCount = ref(0)
 
+// PRD-28：头像下拉 / 个人中心 / 修改密码
+const userMenuOpen = ref(false)
+const profileVisible = ref(false)
+const pwdDialogVisible = ref(false)
+
+// 首登或管理员重置密码后强制改密（标记来自登录返回或 /auth/profile）
+const forcePwdVisible = computed(() => auth.mustChangePwd)
+
 async function loadCounts() {
   try {
     const [todo, notify] = await Promise.all([
@@ -56,8 +66,23 @@ async function loadCounts() {
 onMounted(() => {
   loadCounts()
   const timer = setInterval(loadCounts, 30000)
+  // 刷新后 auth.user 为 null（只持久化 token），补拉资料以驱动超管菜单与强制改密
+  if (auth.token && !auth.user) {
+    auth.fetchProfile().catch(() => {})
+  }
   return () => clearInterval(timer)
 })
+
+function onPwdSaved() {
+  pwdDialogVisible.value = false
+  auth.markPasswordChanged()
+  toast('密码修改成功')
+}
+
+function onProfilePwdChanged() {
+  auth.markPasswordChanged()
+  toast('密码修改成功')
+}
 
 // module code → 路由 path（camelCase → kebab-case）
 function codeToPath(code) {
@@ -355,10 +380,21 @@ const topKeys = computed(() => Object.keys(menus))
       <!-- 没有 tab 时用 spacer 把右侧按钮推到边 -->
       <div v-else class="spacer"></div>
       <button class="topbtn" @click="navigate('exportCenter')">导出中心</button>
-      <div class="user" @click="doLogout" style="cursor:pointer" title="点击退出登录">
-        <div class="avatar">{{ currentUser?.displayName?.slice(0, 1) || '管' }}</div>
-        <span>{{ currentUser?.displayName || '管理员' }}</span>
+      <div class="user-menu-wrap">
+        <div class="user" :class="{ on: userMenuOpen }" style="cursor:pointer" title="账户菜单"
+             @click="userMenuOpen = !userMenuOpen">
+          <div class="avatar">{{ currentUser?.displayName?.slice(0, 1) || '管' }}</div>
+          <span>{{ currentUser?.displayName || '管理员' }}</span>
+          <span class="caret">▾</span>
+        </div>
+        <div v-if="userMenuOpen" class="user-dropdown">
+          <div class="dropdown-item" @click="userMenuOpen = false; profileVisible = true">个人中心</div>
+          <div class="dropdown-item" @click="userMenuOpen = false; pwdDialogVisible = true">修改密码</div>
+          <div class="dropdown-item danger" @click="doLogout">退出登录</div>
+        </div>
       </div>
+      <!-- 透明遮罩：点击页面任意处关闭账户下拉 -->
+      <div v-if="userMenuOpen" class="dropdown-mask" @click="userMenuOpen = false"></div>
     </header>
 
     <!-- Sidebar -->
@@ -379,15 +415,17 @@ const topKeys = computed(() => Object.keys(menus))
           <span class="dot"></span>{{ items }}
         </div>
         <div v-if="activeTop === items" class="submenu">
-          <div
-            v-for="item in menus[items]"
-            :key="item.code"
-            class="lvl2"
-            :class="{ on: currentModule === item.code }"
-            @click.stop="navigate(item.code)"
-          >
-            {{ item.name }}
-          </div>
+          <template v-for="item in menus[items]" :key="item.code">
+            <!-- adminOnly 项（模块菜单管理）仅超管可见，MENU-001 -->
+            <div
+              v-if="!item.adminOnly || auth.isSuperAdmin"
+              class="lvl2"
+              :class="{ on: currentModule === item.code }"
+              @click.stop="navigate(item.code)"
+            >
+              {{ item.name }}
+            </div>
+          </template>
         </div>
       </template>
     </aside>
@@ -561,10 +599,46 @@ const topKeys = computed(() => Object.keys(menus))
       @close="app.closeOtherOutboundDrawer"
       @save="app.refreshSignal++; app.closeOtherOutboundDrawer(); app.showToast('保存成功')"
     />
+
+    <!-- PRD-28 个人中心 / 修改密码（头像下拉入口） -->
+    <ProfileDialog
+      :visible="profileVisible"
+      @close="profileVisible = false"
+      @password-changed="onProfilePwdChanged"
+    />
+    <ChangePasswordDialog
+      :visible="pwdDialogVisible"
+      @close="pwdDialogVisible = false"
+      @saved="onPwdSaved"
+    />
+    <!-- 首登/重置后强制改密：不可关闭，改密成功后随 mustChangePwd 清除自动消失 -->
+    <ChangePasswordDialog
+      :visible="forcePwdVisible"
+      :forced="true"
+      @saved="onPwdSaved"
+    />
   </div>
 </template>
 
 <style scoped>
+/* PRD-28 头像账户下拉 */
+.user-menu-wrap { position: relative; z-index: 60; }
+.user .caret { font-size: 10px; color: #909ba7; margin-left: 2px; }
+.user.on { background: #eef3fa; }
+.user-dropdown {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(18, 56, 95, 0.15);
+  min-width: 132px; padding: 4px; z-index: 61;
+}
+.dropdown-item {
+  padding: 8px 14px; font-size: 13px; color: #303133;
+  border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.dropdown-item:hover { background: #f0f5fb; color: var(--primary); }
+.dropdown-item.danger:hover { background: #fef0f0; color: #d93025; }
+.dropdown-mask { position: fixed; inset: 0; z-index: 55; }
+
 /* 顶栏内的 Tab 条 */
 .tab-bar-top {
   display: flex;
