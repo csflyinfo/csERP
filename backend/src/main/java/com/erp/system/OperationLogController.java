@@ -135,11 +135,15 @@ public class OperationLogController {
     }
 
     private boolean isAdmin() {
+        // PRD-28：优先读线程级当前用户；兼容老令牌再回落 SecurityContext 角色判定
+        try {
+            if (com.erp.common.security.CurrentUser.isSuperAdmin()) return true;
+        } catch (Exception ignored) {}
         try {
             var auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null) return false;
             for (GrantedAuthority a : auth.getAuthorities()) {
-                if ("ROLE_ADMIN".equals(a.getAuthority())) return true;
+                if ("ROLE_SYS_ADMIN".equals(a.getAuthority()) || "ROLE_ADMIN".equals(a.getAuthority())) return true;
             }
         } catch (Exception ignored) {}
         return false;

@@ -1,8 +1,10 @@
 package com.erp.common.config;
 
+import com.erp.common.security.RequirePermInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -10,6 +12,8 @@ import java.nio.file.Paths;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
+
+    private final RequirePermInterceptor requirePermInterceptor;
 
     @Value("${storage.type:local}")
     private String storageType;
@@ -19,6 +23,16 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Value("${storage.local.url-prefix:/uploads}")
     private String urlPrefix;
+
+    public WebConfig(RequirePermInterceptor requirePermInterceptor) {
+        this.requirePermInterceptor = requirePermInterceptor;
+    }
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        // PRD-28：Controller 方法/类上的 @RequirePerm 功能权限校验
+        registry.addInterceptor(requirePermInterceptor).addPathPatterns("/**");
+    }
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {

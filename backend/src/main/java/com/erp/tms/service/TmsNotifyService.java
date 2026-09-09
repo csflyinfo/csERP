@@ -160,12 +160,12 @@ public class TmsNotifyService {
     /**
      * 查询应当接收司机异常提醒的用户名。
      *
-     * <p>先找调度角色（DISPATCH），找不到再退到管理员（ADMIN）——异常提醒宁可多发给管理员，
-     * 也不能因为没配调度角色而无人知晓司机在路上出了问题。
+     * <p>先找调度角色（TMS_DISPATCHER），找不到再退到系统管理员（SYS_ADMIN）——异常提醒宁可多发给管理员，
+     * 也不能因为没配调度角色而无人知晓司机在路上出了问题。PRD-28 角色码切换。
      */
     public List<String> findDispatcherUsernames() {
-        List<String> users = findUsernamesByRole("DISPATCH");
-        if (users.isEmpty()) users = findUsernamesByRole("ADMIN");
+        List<String> users = findUsernamesByRole("TMS_DISPATCHER");
+        if (users.isEmpty()) users = findUsernamesByRole("SYS_ADMIN");
         return users;
     }
 

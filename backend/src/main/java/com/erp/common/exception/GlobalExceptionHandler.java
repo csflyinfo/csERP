@@ -1,6 +1,7 @@
 package com.erp.common.exception;
 
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.PermissionDeniedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -30,6 +31,13 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) {
         return ApiResponse.fail("400", ex.getMessage());
+    }
+
+    /** 功能权限不足（@RequirePerm 校验未过）：HTTP 403，消息本身即给用户看的中文提示。 */
+    @ExceptionHandler(PermissionDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handlePermissionDenied(PermissionDeniedException ex) {
+        return ApiResponse.fail("403", ex.getMessage());
     }
 
     /** 唯一键冲突：给用户一句通用提示，不回显 SQL/约束名（可能泄露表结构）。 */

@@ -1,5 +1,6 @@
 package com.erp.auth;
 
+import com.erp.common.security.CurrentUser;
 import com.erp.common.util.JwtUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
@@ -9,11 +10,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.lang.NonNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,18 +69,40 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         Claims claims = jwtUtil.parseToken(token);
         String username = claims.getSubject();
-        String roleCode = String.valueOf(claims.getOrDefault("roleCode", ""));
+        String userId = String.valueOf(claims.getOrDefault("userId", ""));
+        String displayName = String.valueOf(claims.getOrDefault("displayName", ""));
+        String employeeId = claims.get("employeeId") == null ? null : String.valueOf(claims.get("employeeId"));
+        String appType = claims.get("appType") == null ? "ERP" : String.valueOf(claims.get("appType"));
+        String warehouseId = claims.get("warehouseId") == null ? null : String.valueOf(claims.get("warehouseId"));
+
+        // PRD-28：优先读多角色声明 roleCodes，回落老版本单角色 roleCode
+        Set<String> roleCodes = new LinkedHashSet<>();
+        Object rawCodes = claims.get("roleCodes");
+        if (rawCodes instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null && !o.toString().isBlank()) roleCodes.add(o.toString());
+            }
+        }
+        String legacyRole = String.valueOf(claims.getOrDefault("roleCode", ""));
+        if (!legacyRole.isBlank()) roleCodes.add(legacyRole);
+        // V102 前签发的管理员令牌角色码还是 ADMIN，归一为新的 SYS_ADMIN，保证老令牌在新权限门下仍可用
+        if (roleCodes.remove("ADMIN")) roleCodes.add("SYS_ADMIN");
+
+        String primaryRoleCode = roleCodes.stream().findFirst().orElse("");
 
         request.setAttribute("currentUsername", username);
-        request.setAttribute("currentRoleCode", roleCode);
+        request.setAttribute("currentRoleCode", primaryRoleCode);
         // 供操作日志读取真实操作人 ID 与姓名（RequestContextFilter 消费）
-        request.setAttribute("currentUserId", String.valueOf(claims.getOrDefault("userId", "")));
-        request.setAttribute("currentDisplayName", String.valueOf(claims.getOrDefault("displayName", "")));
+        request.setAttribute("currentUserId", userId);
+        request.setAttribute("currentDisplayName", displayName);
+
+        // PRD-28：填充线程级当前用户，供 RequirePerm 拦截器 / 数据权限 / 业务层统一取用
+        CurrentUser.set(CurrentUser.of(userId, username, displayName, employeeId,
+                roleCodes, primaryRoleCode, appType, warehouseId));
 
         // 把角色写入 Spring Security 上下文，供 authorizeHttpRequests 授权规则使用
-        List<SimpleGrantedAuthority> authorities = roleCode == null || roleCode.isBlank()
-                ? List.of()
-                : List.of(new SimpleGrantedAuthority("ROLE_" + roleCode));
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        for (String code : roleCodes) authorities.add(new SimpleGrantedAuthority("ROLE_" + code));
         UsernamePasswordAuthenticationToken auth =
                 new UsernamePasswordAuthenticationToken(username, null, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
@@ -85,6 +111,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } finally {
             SecurityContextHolder.clearContext();
+            CurrentUser.clear();
         }
     }
 }

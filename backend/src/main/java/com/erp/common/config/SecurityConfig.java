@@ -18,9 +18,9 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * V1.0 授权策略：
+ * 授权策略（PRD-28）：
  * - /auth/login, /auth/logout, /actuator/**、H2 console：公开
- * - /system/** ：仅 ROLE_ADMIN 可访问
+ * - /system/** ：仅 SYS_ADMIN 可访问（V102 前的老令牌角色码 ADMIN 已在 JwtAuthFilter 归一）
  * - 其它接口：必须登录（JwtAuthFilter 已把角色写入 SecurityContext）
  */
 @Configuration
@@ -61,9 +61,9 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/auth/login", "/auth/logout", "/actuator/**", "/h2-console/**").permitAll()
                     .requestMatchers("/tms/app/login").permitAll()
-                    // 危险端点（冒烟清库 / 业务流程跑批）仅 ADMIN，防止司机端 888888 登录后越权
-                    .requestMatchers("/testing/**", "/flow/**").hasRole("ADMIN")
-                    .requestMatchers("/system/**").hasRole("ADMIN")
+                    // 危险端点（冒烟清库 / 业务流程跑批）仅 SYS_ADMIN，防止司机端 888888 登录后越权
+                    .requestMatchers("/testing/**", "/flow/**").hasRole("SYS_ADMIN")
+                    .requestMatchers("/system/**").hasRole("SYS_ADMIN")
                     .anyRequest().authenticated())
             .headers(h -> h
                     // H2 console 走 iframe，必须 SAMEORIGIN；不能 DENY

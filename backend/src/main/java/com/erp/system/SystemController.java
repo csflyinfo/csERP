@@ -49,7 +49,7 @@ public class SystemController {
     }
 
     @GetMapping("/menu/user-tree")
-    public ApiResponse<List<Map<String, Object>>> userMenuTree(@RequestParam(defaultValue = "ADMIN") String roleCode) {
+    public ApiResponse<List<Map<String, Object>>> userMenuTree(@RequestParam(defaultValue = "SYS_ADMIN") String roleCode) {
         return ApiResponse.ok(filterMenus(roleCode, List.of(
                 menu("dashboard", "首页", "/dashboard"),
                 menu("base", "基础资料", null,
@@ -185,7 +185,7 @@ public class SystemController {
     @PostMapping("/field-scope")
     public ApiResponse<Map<String, Object>> fieldScope(@RequestBody Map<String, Object> request) {
         String moduleCode = String.valueOf(request.getOrDefault("moduleCode", ""));
-        String roleCode = String.valueOf(request.getOrDefault("roleCode", "ADMIN"));
+        String roleCode = String.valueOf(request.getOrDefault("roleCode", "SYS_ADMIN"));
         Set<String> hidden = hiddenFields(roleCode, moduleCode);
         return ApiResponse.ok(GenericResult.row("moduleCode", moduleCode, "roleCode", roleCode, "hiddenFields", hidden));
     }
