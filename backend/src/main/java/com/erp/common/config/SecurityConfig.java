@@ -63,6 +63,9 @@ public class SecurityConfig {
                     .requestMatchers("/tms/app/login").permitAll()
                     // 危险端点（冒烟清库 / 业务流程跑批）仅 SYS_ADMIN，防止司机端 888888 登录后越权
                     .requestMatchers("/testing/**", "/flow/**").hasRole("SYS_ADMIN")
+                    // 自助查询：任何登录用户只能取「自己的」菜单/权限（服务端按 CurrentUser 过滤），
+                    // 必须排在 /system/** 全量封禁之前（先匹配先生效）
+                    .requestMatchers("/system/menu/user-tree", "/system/perm/mine").authenticated()
                     .requestMatchers("/system/**").hasRole("SYS_ADMIN")
                     .anyRequest().authenticated())
             .headers(h -> h

@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.system.perm.MenuMetaService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,147 +40,27 @@ public class SystemController {
     private final BCryptPasswordEncoder passwordEncoder;
     private final SysParamService sysParamService;
     private final OperationLogService opLog;
+    private final MenuMetaService menuMetaService;
 
     public SystemController(JdbcTemplate jdbcTemplate, BCryptPasswordEncoder passwordEncoder,
-                            SysParamService sysParamService, OperationLogService opLog) {
+                            SysParamService sysParamService, OperationLogService opLog,
+                            MenuMetaService menuMetaService) {
         this.jdbcTemplate = jdbcTemplate;
         this.passwordEncoder = passwordEncoder;
         this.sysParamService = sysParamService;
         this.opLog = opLog;
+        this.menuMetaService = menuMetaService;
     }
 
+    /**
+     * 当前登录用户的菜单树（PRD-28：改由 sys_menu_meta + sys_role_menu_rel 实时生成，支持三级）。
+     * 旧 roleCode 入参仅为兼容老前端调用，不再使用——任何人只能取自己的授权菜单。
+     */
     @GetMapping("/menu/user-tree")
-    public ApiResponse<List<Map<String, Object>>> userMenuTree(@RequestParam(defaultValue = "SYS_ADMIN") String roleCode) {
-        return ApiResponse.ok(filterMenus(roleCode, List.of(
-                menu("dashboard", "首页", "/dashboard"),
-                menu("base", "基础资料", null,
-                        menu("goods", "商品档案", "/base/goods"),
-                        menu("category", "商品分类", "/base/category"),
-                        menu("brand", "品牌管理", "/base/brand"),
-                        menu("unit", "单位管理", "/base/unit"),
-                        menu("customer", "门店/客户资料", "/base/customer"),
-                        menu("supplier", "供应商资料", "/base/supplier"),
-                        menu("warehouse", "仓库资料", "/base/warehouse"),
-                        menu("priceGroup", "价格组设置", "/base/price-group"),
-                        menu("goodsPriceAdjust", "商品综合调价单", "/base/goods-price-adjust"),
-                        menu("customerPrice", "客户价格调整单", "/base/customer-price-adjust"),
-                        menu("customerPriceQuery", "客户价格查询", "/base/customer-price-query"),
-                        menu("customerPriceChange", "客户商品变价查询", "/base/customer-price-change"),
-                        menu("territory", "片区管理", "/base/territory"),
-                        menu("routeLine", "线路管理", "/base/route-line"),
-                        menu("employee", "人员信息", "/base/employee"),
-                        menu("department", "部门管理", "/base/department"),
-                        menu("owner", "货主信息", "/base/owner"),
-                        menu("expenseType", "费用类型", "/base/expense-type"),
-                        menu("counterparty", "往来单位", "/base/counterparty"),
-                        menu("fundAccount", "资金账户", "/base/fund-account")
-                ),
-                menu("purchase", "采购管理", null,
-                        menu("purchaseOrder", "采购订单", "/purchase/order"),
-                        menu("purchaseInbound", "采购入库", "/purchase/inbound"),
-                        menu("purchaseReceipt", "采购收货单", "/purchase/receipt"),
-                        menu("purchaseReturnApply", "采购退货申请", "/purchase/return-apply"),
-                        menu("purchaseReturnOutbound", "采购退货出库", "/purchase/return-outbound"),
-                        menu("purchaseReturn", "采购退货单", "/purchase/return"),
-                        menu("purchaseExpense", "采购费用单", "/purchase/expense"),
-                        menu("purchaseInvoice", "采购发票", "/purchase/invoice")
-                ),
-                menu("sales", "销售管理", null,
-                        menu("quickOrder", "销售快速开单", "/sales/quick-order"),
-                        menu("salesOrder", "销售订单", "/sales/order"),
-                        menu("salesOutbound", "销售出库", "/sales/outbound"),
-                        menu("salesReceipt", "销售发货单", "/sales/receipt"),
-                        menu("rejectInbound", "拒收入库单", "/sales/reject-inbound"),
-                        menu("salesReturn", "销售退货单", "/sales/return"),
-                        menu("salesInvoice", "销售发票", "/sales/invoice"),
-                        menu("flyOrder", "飞单", "/sales/fly-order"),
-                        menu("emptyAdjust", "客户空退空出", "/sales/empty-adjust")
-                ),
-                menu("inventory", "库存管理", null,
-                        menu("stockBalance", "库存查询", "/inventory/balance"),
-                        menu("stockLedger", "库存流水", "/inventory/ledger"),
-                        menu("stockWarning", "库存预警", "/inventory/warning"),
-                        menu("transfer", "调拨单", "/inventory/transfer"),
-                        menu("damage", "报损单", "/inventory/damage"),
-                        menu("costAdjust", "成本调整单", "/inventory/cost-adjust"),
-                        menu("stockAdjust", "库存调整单", "/inventory/stock-adjust"),
-                        menu("otherInbound", "其他入库", "/inventory/other-inbound"),
-                        menu("otherOutbound", "其他出库", "/inventory/other-outbound"),
-                        menu("stockTake", "库存盘点", "/inventory/stock-take")
-                ),
-                menu("finance", "财务管理", null,
-                        menu("ar", "应收账款", "/finance/ar"),
-                        menu("ap", "应付账款", "/finance/ap"),
-                        menu("receiptPayment", "收付款单", "/finance/receipt-payment"),
-                        menu("arSettlement", "应收结算", "/finance/ar-settlement"),
-                        menu("apSettlement", "应付结算", "/finance/ap-settlement"),
-                        menu("financeExpense", "费用单", "/finance/expense"),
-                        menu("fundLedger", "资金流水", "/finance/fund-ledger"),
-                        menu("counterpartyAr", "往来单位应收", "/finance/counterparty-ar"),
-                        menu("counterpartyAp", "往来单位应付", "/finance/counterparty-ap"),
-                        menu("receiptVerify", "收款核销", "/finance/receipt-verify"),
-                        menu("paymentVerify", "付款核销", "/finance/payment-verify"),
-                        menu("customerStatement", "客户对账", "/finance/customer-statement"),
-                        menu("supplierStatement", "供应商对账", "/finance/supplier-statement")
-                ),
-                menu("gl", "总账管理", null,
-                        menu("glAccount", "会计科目", "/gl/account"),
-                        menu("glInitBalance", "总账初始化", "/gl/init-balance"),
-                        menu("glAuxProject", "核算项目", "/gl/aux-project"),
-                        menu("glVoucher", "凭证管理", "/gl/voucher"),
-                        menu("glEvent", "待生成凭证", "/gl/event"),
-                        menu("glVoucherTemplate", "凭证模板", "/gl/voucher-template"),
-                        menu("glTransferTemplate", "转账模板", "/gl/transfer-template"),
-                        menu("glBizSubjectMap", "业务类型映射", "/gl/biz-subject-map"),
-                        menu("glArchiveMapping", "档案科目映射", "/gl/archive-mapping"),
-                        menu("glLedger", "账簿查询", "/gl/ledger"),
-                        menu("glAssetCard", "资产卡片", "/gl/asset-card"),
-                        menu("glDepreciation", "折旧计提", "/gl/depreciation"),
-                        menu("glAssetCheck", "资产盘点", "/gl/asset-check"),
-                        menu("glPeriodClose", "期末处理", "/gl/period-close"),
-                        menu("glReport", "总账报表", "/gl/report"),
-                        menu("glReconcile", "业财对账", "/gl/reconcile")
-                ),
-                menu("report", "报表中心", null,
-                        menu("salesReport", "销售报表", "/report/sales"),
-                        menu("purchaseReport", "采购报表", "/report/purchase"),
-                        menu("stockReport", "库存报表", "/report/stock"),
-                        menu("financeReport", "财务报表", "/report/finance"),
-                        menu("invoiceTrackReport", "采购来票跟踪(按单据)", "/report/invoice-track"),
-                        menu("invoiceTrackGoodsReport", "采购来票跟踪(按商品)", "/report/invoice-track-goods"),
-                        menu("invoiceSupplierReport", "供应商来票统计", "/report/invoice-supplier"),
-                        menu("invoiceUnmatchedReport", "未勾稽发票", "/report/invoice-unmatched"),
-                        menu("invoiceDiffReport", "勾稽差异明细", "/report/invoice-diff")
-                ),
-                menu("system", "系统管理", null,
-                        menu("user", "用户管理", "/system/user"),
-                        menu("role", "权限组管理", "/system/role"),
-                        menu("param", "系统参数", "/system/param"),
-                        menu("billNo", "单据编号规则", "/system/bill-no-rule"),
-                        menu("precision", "显示精度设置", "/system/precision"),
-                        menu("dictionary", "用户数据字典", "/system/dictionary"),
-                        menu("workflow", "审批流配置", "/system/workflow"),
-                        menu("printTemplate", "打印模板设置", "/system/print-template"),
-                        menu("importList", "导入列表", "/system/import-list"),
-                        menu("exportCenter", "导出中心", "/system/export-center"),
-                        menu("log", "操作日志", "/system/operation-log"),
-                        menu("loginLog", "登录日志", "/system/login-log")
-                ),
-                menu("tms", "运输管理", null,
-                        menu("tms-dispatch-pool", "配送任务池", "/tms/dispatch-pool"),
-                        menu("tms-dispatch-list", "调度单管理", "/tms/dispatch-list"),
-                        menu("tms-return-dispatch", "退货单调度", "/tms/return-dispatch"),
-                        menu("tms-delivery-monitor", "在途监控", "/tms/delivery-monitor"),
-                        menu("tms-sign-verify", "签收核销", "/tms/sign-verify"),
-                        menu("tms-driver-return", "司机退货单", "/tms/driver-return"),
-                        menu("tms-reschedule-return", "改派返仓单", "/tms/reschedule-return"),
-                        menu("tms-customer-reject", "客户拒收单", "/tms/customer-reject"),
-                        menu("tms-exception-report", "异常上报处理", "/tms/exception-report"),
-                        menu("tms-settlement", "交账单管理", "/tms/settlement"),
-                        menu("tms-store-location", "门店定位审核", "/tms/store-location"),
-                        menu("tms-dashboard", "调度看板", "/tms/dashboard")
-                )
-        )));
+    public ApiResponse<List<Map<String, Object>>> userMenuTree(
+            @RequestParam(defaultValue = "ERP") String appType,
+            @RequestParam(required = false) String roleCode) {
+        return ApiResponse.ok(menuMetaService.userTree(appType));
     }
 
     @PostMapping("/field-scope")
@@ -714,34 +595,7 @@ public class SystemController {
         }
     }
 
-    private List<Map<String, Object>> filterMenus(String roleCode, List<Map<String, Object>> source) {
-        Set<String> allowed = menuScope(roleCode);
-        if (allowed.contains("*")) return source;
-        return source.stream()
-                .map(menu -> filterMenu(menu, allowed))
-                .filter(menu -> menu != null)
-                .toList();
-    }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> filterMenu(Map<String, Object> menu, Set<String> allowed) {
-        List<Map<String, Object>> children = ((List<Map<String, Object>>) menu.getOrDefault("children", List.of())).stream()
-                .map(child -> filterMenu(child, allowed))
-                .filter(child -> child != null)
-                .toList();
-        boolean visible = allowed.contains(String.valueOf(menu.get("code"))) || !children.isEmpty();
-        return visible ? Map.of("code", menu.get("code"), "name", menu.get("name"), "path", menu.get("path"), "children", children) : null;
-    }
-
-    private Set<String> menuScope(String roleCode) {
-        if ("SALE".equalsIgnoreCase(roleCode)) {
-            return Set.of("dashboard", "sales", "quickOrder", "salesOrder", "salesOutbound", "salesReceipt", "rejectInbound", "salesReturn", "salesInvoice", "inventory", "stockBalance", "stockLedger", "exportCenter", "log");
-        }
-        if ("PURCHASE".equalsIgnoreCase(roleCode)) {
-            return Set.of("dashboard", "base", "goods", "supplier", "purchase", "purchaseOrder", "purchaseInbound", "purchaseReceipt", "purchaseReturn", "purchaseExpense", "purchaseInvoice", "report", "invoiceTrackReport", "invoiceTrackGoodsReport", "invoiceSupplierReport", "invoiceUnmatchedReport", "invoiceDiffReport", "stockBalance", "exportCenter", "log");
-        }
-        return Set.of("*");
-    }
 
     private Set<String> hiddenFields(String roleCode, String moduleCode) {
         Set<String> hidden = new HashSet<>();
@@ -754,7 +608,4 @@ public class SystemController {
         return hidden;
     }
 
-    private Map<String, Object> menu(String code, String name, String path, Map<String, Object>... children) {
-        return Map.of("code", code, "name", name, "path", path == null ? "" : path, "children", List.of(children));
-    }
 }
