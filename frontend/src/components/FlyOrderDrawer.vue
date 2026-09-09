@@ -3,6 +3,9 @@ import { ref, watch, computed, onMounted, nextTick } from 'vue'
 import { post, get } from '../api/client.js'
 import InlineGoodsPicker from './InlineGoodsPicker.vue'
 import { clampDecimalInput, clampQtyInput, roundTo, PRICE_DECIMALS, AMOUNT_DECIMALS } from '../utils/decimal.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard } = useRbac('flyOrder')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -314,6 +317,7 @@ function addBlankRow() {
 // ==================== 保存 ====================
 
 async function doSave(andAudit = false) {
+  if (!guard(andAudit ? '保存并审核' : '保存草稿')) return
   if (!headerForm.value.supplierCode) { alert('请选择供应商'); return }
   if (!headerForm.value.customerCode) { alert('请选择客户'); return }
   if (filledRows.value.length === 0) { alert('请至少添加一行商品'); return }
@@ -492,11 +496,11 @@ async function loadEditData(row) {
                     <th style="width:80px">规格</th>
                     <th style="width:70px">单位</th>
                     <th style="width:60px">数量</th>
-                    <th style="width:70px">采购价</th>
-                    <th style="width:70px">销售价</th>
+                    <th v-if="canView('采购价')" style="width:70px">采购价</th>
+                    <th v-if="canView('销售价')" style="width:70px">销售价</th>
                     <th style="width:45px">税率</th>
-                    <th style="width:75px">采购金额</th>
-                    <th style="width:75px">销售金额</th>
+                    <th v-if="canView('采购金额')" style="width:75px">采购金额</th>
+                    <th v-if="canView('销售金额')" style="width:75px">销售金额</th>
                     <th style="width:90px">备注</th>
                     <th style="width:34px"></th>
                   </tr>
@@ -539,7 +543,7 @@ async function loadEditData(row) {
                              @keydown.enter.prevent="focusCell(idx + 1, 'goods')">
                     </td>
                     <!-- 采购价 -->
-                    <td>
+                    <td v-if="canView('采购价')">
                       <input class="fly-input fly-input-sm fly-input-right"
                              type="number" step="0.01"
                              v-model="row.purchasePrice"
@@ -547,7 +551,7 @@ async function loadEditData(row) {
                              :placeholder="row.purchasePriceAuto ? '自动' : ''">
                     </td>
                     <!-- 销售价 -->
-                    <td>
+                    <td v-if="canView('销售价')">
                       <input class="fly-input fly-input-sm fly-input-right"
                              type="number" step="0.01"
                              v-model="row.salesPrice"
@@ -559,14 +563,14 @@ async function loadEditData(row) {
                       <input class="fly-input fly-input-sm" v-model="row.taxRate" placeholder="13%">
                     </td>
                     <!-- 采购金额 -->
-                    <td>
+                    <td v-if="canView('采购金额')">
                       <input class="fly-input fly-input-sm fly-input-right"
                              type="number" step="0.01"
                              v-model="row.purchaseAmount"
                              @input="onAmountInput(row, 'purchaseAmount')">
                     </td>
                     <!-- 销售金额 -->
-                    <td>
+                    <td v-if="canView('销售金额')">
                       <input class="fly-input fly-input-sm fly-input-right"
                              type="number" step="0.01"
                              v-model="row.salesAmount"
@@ -588,12 +592,12 @@ async function loadEditData(row) {
                     <td></td>
                     <td></td>
                     <td class="fly-cell-right">合计：</td>
+                    <td v-if="canView('采购价')"></td>
+                    <td v-if="canView('销售价')"></td>
                     <td></td>
-                    <td></td>
-                    <td></td>
-                    <td class="fly-cell-right fly-total">¥{{ purchaseTotal }}</td>
-                    <td class="fly-cell-right fly-total">¥{{ salesTotal }}</td>
-                    <td class="fly-cell-right fly-profit">毛利: ¥{{ profitTotal }}</td>
+                    <td v-if="canView('采购金额')" class="fly-cell-right fly-total">¥{{ purchaseTotal }}</td>
+                    <td v-if="canView('销售金额')" class="fly-cell-right fly-total">¥{{ salesTotal }}</td>
+                    <td v-if="canView('毛利')" class="fly-cell-right fly-profit">毛利: ¥{{ profitTotal }}</td>
                     <td></td>
                   </tr>
                 </tfoot>
@@ -603,7 +607,7 @@ async function loadEditData(row) {
         </div>
 
         <!-- 底部 -->
-        <div class="fly-drawer-footer">
+        <div class="fly-drawer-footer" v-action-perms="actionHidden">
           <button class="fly-btn fly-btn-default" @click="emit('close')">取消</button>
           <button class="fly-btn fly-btn-default" @click="doSave(false)" :disabled="saving">保存草稿</button>
           <button class="fly-btn fly-btn-primary" @click="doSave(true)" :disabled="saving">保存并审核</button>

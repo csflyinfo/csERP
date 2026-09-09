@@ -4,6 +4,7 @@ import { post, get } from '../api/client.js'
 import GoodsAddDialog from './GoodsAddDialog.vue'
 import InlineGoodsPicker from './InlineGoodsPicker.vue'
 import { clampDecimalInput, clampQtyInput, roundTo, PRICE_DECIMALS, AMOUNT_DECIMALS } from '../utils/decimal.js'
+import { useRbac } from '../composables/useRbac.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -15,6 +16,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save'])
 
 const isPurchase = computed(() => props.moduleCode === 'purchaseOrder')
+// PRD-28 卡片6：订单抽屉的字段（单价/金额/可用库存/合计）与功能点（新建/编辑）权限
+const { canView, guard, permOf } = useRbac(computed(() => props.moduleCode))
 const title = computed(() => {
   const t = isPurchase.value ? '采购订单' : '销售订单'
   return props.mode === 'edit' ? `编辑${t}` : `新建${t}`
@@ -667,6 +670,8 @@ function firstShortage() {
 }
 
 async function saveBill() {
+  // PRD-28 卡片6：函数级功能点闸门（按钮通常已隐藏，防绕过）；最终由后端 403 兜底
+  if (!guard(props.mode === 'edit' ? '编辑' : '新建')) { alert('无权限执行该操作'); return }
   if (!validate()) {
     const first = Object.values(formErrors.value)[0]
     if (first) alert(first)
@@ -747,7 +752,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
         <div style="flex:1"></div>
         <div class="actions">
           <button class="btn" @click="closeDrawer">取消</button>
-          <button class="btn primary" title="Ctrl+S" @click="saveBill">保存 (Ctrl+S)</button>
+          <!-- PRD-28 卡片6：保存按新建/编辑功能点收权（采购 purchase.order.* / 销售 sales.order.*） -->
+          <button v-permission="permOf(moduleCode, mode === 'edit' ? '编辑' : '新建')" class="btn primary" title="Ctrl+S" @click="saveBill">保存 (Ctrl+S)</button>
         </div>
       </div>
 
@@ -809,7 +815,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
         <div class="card detail-card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="font-weight:900;color:var(--primary)">商品明细</div>
-            <button class="btn primary" style="height:26px;padding:0 10px;font-size:12px" title="Ctrl+A" @click="openGoodsAdd">+ 添加商品 (Ctrl+A)</button>
+            <!-- 添加明细行属于单据编辑行为：有新建或编辑功能点其一即可 -->
+            <button v-permission="[permOf(moduleCode, '新建'), permOf(moduleCode, '编辑')].filter(Boolean)" class="btn primary" style="height:26px;padding:0 10px;font-size:12px" title="Ctrl+A" @click="openGoodsAdd">+ 添加商品 (Ctrl+A)</button>
           </div>
           <div v-if="formErrors.details" style="color:var(--danger);font-size:12px;margin-bottom:6px">{{ formErrors.details }}</div>
           <div class="detail-tip">
@@ -827,9 +834,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   <th style="width:84px">{{ isPurchase ? '采购单位' : '销售单位' }}</th>
                   <th style="width:82px">{{ isPurchase ? '采购数量' : '销售数量' }}</th>
                   <th style="width:80px">小单位数量</th>
-                  <th v-if="!isPurchase" style="width:80px">可用库存</th>
-                  <th style="width:88px">单价</th>
-                  <th style="width:92px">金额</th>
+                  <th v-if="!isPurchase && canView('可用库存')" style="width:80px">可用库存</th>
+                  <th v-if="canView('单价')" style="width:88px">单价</th>
+                  <th v-if="canView('金额')" style="width:92px">金额</th>
                   <th v-if="!isPurchase" style="width:88px">销售属性</th>
                   <th style="min-width:110px">备注</th>
                   <th style="width:50px">操作</th>
@@ -885,14 +892,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   <td style="text-align:right">{{ row.smallQty }}</td>
 
                   <!-- 可用库存：选商品时按当前仓库带出；编辑本单时含本单已占用。超卖标红但不阻断输入，保存时才拦 -->
-                  <td v-if="!isPurchase" style="text-align:right"
+                  <td v-if="!isPurchase && canView('可用库存')" style="text-align:right"
                       :class="{ 'stock-short': isOverStock(row) }"
                       :title="stockTitleOf(row)">
                     {{ row.goodsCode ? (row.availableStock == null ? '-' : row.availableStock) : '' }}
                   </td>
 
                   <!-- 单价：≤4 位小数 -->
-                  <td class="cell-pad">
+                  <td v-if="canView('单价')" class="cell-pad">
                     <input
                       :ref="bindCell(index, 'price')"
                       class="cell-input num"
@@ -905,7 +912,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   </td>
 
                   <!-- 金额：2 位小数，改金额反算单价 -->
-                  <td class="cell-pad">
+                  <td v-if="canView('金额')" class="cell-pad">
                     <input
                       :ref="bindCell(index, 'amount')"
                       class="cell-input num strong"
@@ -941,7 +948,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
                   </td>
 
                   <td>
-                    <button class="link link-btn danger-link" @click="removeRow(index)">删除</button>
+                    <!-- 删除的是明细行（单据编辑行为），映射新建/编辑功能点而非单据删除 -->
+                    <button v-permission="[permOf(moduleCode, '新建'), permOf(moduleCode, '编辑')].filter(Boolean)" class="link link-btn danger-link" @click="removeRow(index)">删除</button>
                   </td>
                 </tr>
               </tbody>
@@ -950,7 +958,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
         </div>
 
         <div class="summary">
-          <span>合计金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="canView('合计金额')">合计金额：<b>¥ {{ totalAmount }}</b></span>
           <span>商品行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

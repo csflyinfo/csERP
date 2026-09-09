@@ -3,6 +3,7 @@ package com.erp.sales;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.inventory.service.InventoryCostService;
 import com.erp.wms.WmsInboundService;
 import jakarta.validation.Valid;
@@ -75,19 +76,39 @@ public class SalesReturnController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public SalesReturnController(JdbcTemplate jdbcTemplate,
                                  InventoryCostService inventoryCostService,
                                  com.erp.common.util.BillNoGenerator billNoGen,
                                  @Autowired(required = false) @Lazy WmsInboundService wmsInboundService,
                                  com.erp.system.OperationLogService opLog,
-                                 com.erp.finance.gl.GlHookService glHooks) {
+                                 com.erp.finance.gl.GlHookService glHooks,
+                                 com.erp.common.security.datascope.DataScopeService dataScope,
+                                 com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.wmsInboundService = wmsInboundService;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 销售退货单列表/详情共用数据范围目标：仓库/客户/建档人 + 商品分类/品牌按明细行（无业务员维度）。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget applyScopeTarget() {
+        return dataScope.target()
+                .warehouse("a.warehouse").customer("a.customer_name").creator("a.creator_name")
+                .goodsLines("a.apply_id", "sales_return_apply_detail", "apply_id");
+    }
+
+    /** 销售退货入库单列表/详情共用数据范围目标：仓库/客户 + 商品分类/品牌按明细行（本表无业务员与建档人字段）。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget inboundScopeTarget() {
+        return dataScope.target()
+                .warehouse("i.warehouse").customer("i.customer_name")
+                .goodsLines("i.inbound_id", "sales_return_inbound_detail", "inbound_id");
     }
 
     // ========================================================================
@@ -97,6 +118,7 @@ public class SalesReturnController {
     /**
      * 【按单添加商品】左表：该客户已审核的销售出库单列表。
      */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @GetMapping("/return-order/outbound-bills")
     public ApiResponse<List<Map<String, Object>>> outboundBills(
             @RequestParam String customerName,
@@ -128,12 +150,17 @@ public class SalesReturnController {
                   )
                 ORDER BY h.bill_date DESC, h.outbound_no DESC
                 """, customerName, from, to, noLike, noLike);
-        return ApiResponse.ok(rows.stream().map(SalesReturnController::camelize).toList());
+        // PRD-28 卡片6：选单弹窗属查看链路，金额按字段权限脱敏
+        List<Map<String, Object>> bills = rows.stream()
+                .map(SalesReturnController::camelize).toList();
+        fieldMasker.mask(bills, com.erp.common.security.MaskProfiles.SALES_BILL);
+        return ApiResponse.ok(bills);
     }
 
     /**
      * 【按单添加商品】右表：选中出库单的明细 + 已退数量 + 成本单价 + 可用库存。
      */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @GetMapping("/return-order/outbound-detail")
     public ApiResponse<Map<String, Object>> outboundDetail(
             @RequestParam String outboundId,
@@ -192,12 +219,15 @@ public class SalesReturnController {
         result.put("customer", str(pick(head, "customer")));
         result.put("warehouse", warehouse);
         result.put("details", lines);
+        // PRD-28 卡片6：原单明细售价/金额/成本价/可用量按字段权限脱敏
+        fieldMasker.mask(result, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(result);
     }
 
     /**
      * 【添加商品】三页签商品数据源：HISTORY（历史销售）/ CUSTOMER（客户商品）/ ALL（全部商品）。
      */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @GetMapping("/return-order/goods-options")
     public ApiResponse<List<Map<String, Object>>> goodsOptions(
             @RequestParam(required = false) String tab,
@@ -267,10 +297,15 @@ public class SalesReturnController {
                         """, wh, kw, kw, kw, kw);
             }
         }
-        return ApiResponse.ok(rows.stream().map(SalesReturnController::camelize).toList());
+        // PRD-28 卡片6：商品选择器带出售价/成本价/可用量，按字段权限脱敏
+        List<Map<String, Object>> options = rows.stream()
+                .map(SalesReturnController::camelize).toList();
+        fieldMasker.mask(options, com.erp.common.security.MaskProfiles.SALES_BILL);
+        return ApiResponse.ok(options);
     }
 
     /** 批次下拉。 */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @GetMapping("/return-order/batch-options")
     public ApiResponse<List<Map<String, Object>>> batchOptions(
             @RequestParam String goodsCode,
@@ -289,23 +324,33 @@ public class SalesReturnController {
                 WHERE bs.goods_code = ? AND bs.warehouse = ? AND bs.qty > 0
                 ORDER BY production_date, bs.batch_no
                 """, goodsCode, warehouse);
-        return ApiResponse.ok(rows.stream().map(SalesReturnController::camelize).toList());
+        // PRD-28 卡片6：批次成本价/可用量按字段权限脱敏
+        List<Map<String, Object>> batches = rows.stream()
+                .map(SalesReturnController::camelize).toList();
+        fieldMasker.mask(batches);
+        return ApiResponse.ok(batches);
     }
 
     /** 销售退货单列表。 */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @PostMapping("/return-order/page")
     public ApiResponse<PageResult<Map<String, Object>>> returnOrderPage(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT apply_id, apply_no, source_outbound_no,
-                       customer_code, customer_name, warehouse, bill_date,
-                       qty, return_qty, inbound_qty, signed_qty,
-                       amount, return_amount, inbound_amount,
-                       return_reason, status, inbound_generated,
-                       return_type, logistics_status, driver_name, arrange_time, push_time,
-                       creator_name, confirmed_user, confirmed_time, audit_user, audit_time, create_time, remark
-                FROM sales_return_apply
-                ORDER BY create_time DESC, apply_no DESC
+        // 数据范围（PRD-28 §5.3）：仓库/客户/建档人 + 商品分类/品牌按明细行过滤（无业务员维度）
+        var scope = applyScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT a.apply_id, a.apply_no, a.source_outbound_no,
+                       a.customer_code, a.customer_name, a.warehouse, a.bill_date,
+                       a.qty, a.return_qty, a.inbound_qty, a.signed_qty,
+                       a.amount, a.return_amount, a.inbound_amount,
+                       a.return_reason, a.status, a.inbound_generated,
+                       a.return_type, a.logistics_status, a.driver_name, a.arrange_time, a.push_time,
+                       a.creator_name, a.confirmed_user, a.confirmed_time, a.audit_user, a.audit_time, a.create_time, a.remark
+                FROM sales_return_apply a WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY a.create_time DESC, a.apply_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = rows.stream().map(r -> {
             Map<String, Object> row = camelize(r);
             row.put("statusText", resolveReturnOrderStatusText(str(pick(r, "status"))));
@@ -322,10 +367,12 @@ public class SalesReturnController {
             row.put("creatorInfo", str(pick(r, "creator_name")) + " " + str(pick(r, "create_time")));
             return row;
         }).collect(Collectors.toList());
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
     /** 销售退货单详情。 */
+    @RequirePerm(value = "sales.return.view", name = "查看")
     @GetMapping("/return-order/detail")
     public ApiResponse<Map<String, Object>> returnOrderDetail(
             @RequestParam(required = false) String applyId,
@@ -336,6 +383,15 @@ public class SalesReturnController {
                 "SELECT * FROM sales_return_apply WHERE apply_id = ? OR apply_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "销售退货单不存在");
         Map<String, Object> head = camelize(heads.get(0));
+        String realApplyId = String.valueOf(head.get("applyId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = applyScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM sales_return_apply a WHERE a.apply_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realApplyId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "销售退货单不存在或无权查看");
         head.put("returnQty", toBd(pick(heads.get(0), "return_qty")));
         head.put("inboundQty", toBd(pick(heads.get(0), "inbound_qty")));
         head.put("returnAmount", toBd(pick(heads.get(0), "return_amount")));
@@ -343,14 +399,23 @@ public class SalesReturnController {
         head.put("returnTypeText", resolveReturnTypeText(str(pick(heads.get(0), "return_type"))));
         head.put("logisticsStatusText", resolveLogisticsStatusText(
                 str(pick(heads.get(0), "return_type")), str(pick(heads.get(0), "logistics_status"))));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM sales_return_apply_detail WHERE apply_id = ? ORDER BY detail_id",
-                head.get("applyId"));
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM sales_return_apply_detail WHERE apply_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realApplyId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(SalesReturnController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
     /** 创建销售退货单：状态 = 待确认，return_qty = qty。 */
+    @RequirePerm(value = "sales.return.add", name = "新增")
     @PostMapping("/return-order/create")
     @Transactional
     public ApiResponse<Map<String, Object>> createReturnOrder(@RequestBody Map<String, Object> request) {
@@ -411,6 +476,7 @@ public class SalesReturnController {
     }
 
     /** 修改销售退货单（仅 DRAFT / PENDING 状态）。支持修改退货数量。 */
+    @RequirePerm(value = "sales.return.edit", name = "修改")
     @PostMapping("/return-order/update")
     @Transactional
     public ApiResponse<Map<String, Object>> updateReturnOrder(@RequestBody Map<String, Object> request) {
@@ -489,6 +555,7 @@ public class SalesReturnController {
     }
 
     /** 确认退货：PENDING → CONFIRMED。 */
+    @RequirePerm(value = "sales.return.biz_confirm", name = "确认退货")
     @PostMapping("/return-order/confirm")
     @Transactional
     public ApiResponse<Map<String, Object>> confirmReturnOrder(@Valid @RequestBody AuditRequest request) {
@@ -512,6 +579,7 @@ public class SalesReturnController {
     }
 
     /** 驳回：PENDING → REJECTED，单据关闭。 */
+    @RequirePerm(value = "sales.return.biz_reject", name = "驳回退货")
     @PostMapping("/return-order/reject")
     @Transactional
     public ApiResponse<Map<String, Object>> rejectReturnOrder(@Valid @RequestBody AuditRequest request) {
@@ -541,6 +609,7 @@ public class SalesReturnController {
      * 不经过 TMS 调度，所以不需要「安排调度」，直接给仓库下收货指令。
      * 幂等：入库单已存在时不重复生成，直接返回原单号。
      */
+    @RequirePerm(value = "sales.return.biz_push_warehouse", name = "下发仓储")
     @PostMapping("/return-order/push-warehouse")
     // 注意：不加 @Transactional —— generateInboundFromApply 与 wmsInboundService.createFromSalesReturn
     // 都有自己的事务，若把它们和物流状态 UPDATE 包在同一外层事务里，WMS 侧抛"已有任务"等
@@ -599,6 +668,7 @@ public class SalesReturnController {
      * <p>
      * 仓库已收货（入库单已审核）则不可撤销，需走入库单反审核链路。
      */
+    @RequirePerm(value = "sales.return.biz_cancel_push", name = "取消下发")
     @PostMapping("/return-order/cancel-push")
     @Transactional
     public ApiResponse<Map<String, Object>> cancelPushWarehouse(@Valid @RequestBody AuditRequest request) {
@@ -642,6 +712,7 @@ public class SalesReturnController {
      * 此时既没有入库单也没有调度记录，切换方式不会留下脏数据。
      * 一旦推送/排调度/回收，就必须先撤销那一步才能改。
      */
+    @RequirePerm(value = "sales.return.biz_change_type", name = "变更退货类型")
     @PostMapping("/return-order/change-return-type")
     @Transactional
     public ApiResponse<Map<String, Object>> changeReturnType(@RequestBody Map<String, Object> request) {
@@ -684,6 +755,7 @@ public class SalesReturnController {
      * 应收金额取 {@code return_amount}（退货金额）而非 {@code amount}（申请金额）——
      * 司机少签收时二者不等，冲减应收必须按实际退回的货算。
      */
+    @RequirePerm(value = "sales.return.audit", name = "审核")
     @PostMapping("/return-order/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditReturnOrder(@Valid @RequestBody AuditRequest request) {
@@ -803,6 +875,7 @@ public class SalesReturnController {
      * 「推送仓库 / 司机签收」环节，撤销它要走 cancel-push 或入库单自身的链路。
      * 已审核（仓库已收货）的入库单意味着货已回库，此时反审核会让账实不符，直接拦。
      */
+    @RequirePerm(value = "sales.return.unaudit", name = "反审核")
     @PostMapping("/return-order/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAuditReturnOrder(@Valid @RequestBody AuditRequest request) {
@@ -843,6 +916,7 @@ public class SalesReturnController {
         return ApiResponse.ok(Map.of("applyId", applyId, "status", "CONFIRMED", "effect", "已反审核，应收冲减已撤销"));
     }
 
+    @RequirePerm(value = "sales.return.delete", name = "删除")
     @PostMapping("/return-order/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> deleteReturnOrder(@Valid @RequestBody AuditRequest request) {
@@ -861,25 +935,33 @@ public class SalesReturnController {
     //  销售退货入库单 — 列表 / 详情 / 更新 / 审核
     // ========================================================================
 
+    @RequirePerm(value = "sales.return_inbound.view", name = "查看")
     @PostMapping("/return-inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> inboundPage(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT inbound_id, inbound_no, source_apply_no,
-                       customer_code, customer_name, bill_date,
-                       qty, amount, cost_amount, status, stock_updated,
-                       audit_user, audit_time, create_time, remark
-                FROM sales_return_inbound
-                ORDER BY create_time DESC, inbound_no DESC
+        // 数据范围（PRD-28 §5.3）：仓库/客户 + 商品分类/品牌按明细行过滤（本表无业务员与建档人字段）
+        var scope = inboundScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT i.inbound_id, i.inbound_no, i.source_apply_no,
+                       i.customer_code, i.customer_name, i.bill_date,
+                       i.qty, i.amount, i.cost_amount, i.status, i.stock_updated,
+                       i.audit_user, i.audit_time, i.create_time, i.remark
+                FROM sales_return_inbound i WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY i.create_time DESC, i.inbound_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = rows.stream().map(r -> {
             Map<String, Object> row = camelize(r);
             String st = str(pick(r, "status"));
             row.put("statusText", "PENDING".equals(st) ? "待审核" : "已审核");
             return row;
         }).collect(Collectors.toList());
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "sales.return_inbound.view", name = "查看")
     @GetMapping("/return-inbound/detail")
     public ApiResponse<Map<String, Object>> inboundDetail(
             @RequestParam(required = false) String inboundId,
@@ -890,14 +972,32 @@ public class SalesReturnController {
                 "SELECT * FROM sales_return_inbound WHERE inbound_id = ? OR inbound_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "退货入库单不存在");
         Map<String, Object> head = camelize(heads.get(0));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM sales_return_inbound_detail WHERE inbound_id = ? ORDER BY detail_id",
-                head.get("inboundId"));
+        String realInboundId = String.valueOf(head.get("inboundId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = inboundScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM sales_return_inbound i WHERE i.inbound_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realInboundId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "退货入库单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM sales_return_inbound_detail WHERE inbound_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realInboundId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(SalesReturnController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
     /** 修改入库数量（仅 PENDING，不可超申请数量）。 */
+    @RequirePerm(value = "sales.return_inbound.edit", name = "修改")
     @PostMapping("/return-inbound/update")
     @Transactional
     public ApiResponse<Map<String, Object>> updateInbound(@RequestBody Map<String, Object> request) {
@@ -1012,6 +1112,7 @@ public class SalesReturnController {
      * 1. 按当前库存成本单价计价回库
      * 2. 回写入库数量到销售退货单
      */
+    @RequirePerm(value = "sales.return_inbound.audit", name = "审核")
     @PostMapping("/return-inbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditInbound(@Valid @RequestBody AuditRequest request) {
@@ -1026,6 +1127,7 @@ public class SalesReturnController {
      * 通过本接口一次性补建。幂等：已有进行中任务的单据自动跳过。
      * <p>仅管理员可调；返回 created/skipped/failed 三类明细。
      */
+    @RequirePerm(value = "sales.return_inbound.biz_sync_wms_tasks", name = "同步WMS任务")
     @PostMapping("/return-inbound/sync-wms-tasks")
     public ApiResponse<Map<String, Object>> syncWmsTasks() {
         if (wmsInboundService == null) {

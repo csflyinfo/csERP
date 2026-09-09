@@ -126,14 +126,16 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 6 ｜ `feat/rbac-6-sales-purchase`（M2，V105，约 4d，最高优先业务卡）
 
-- [ ] sales/purchase 全部 Controller 补注解（写操作必须，查询补 view）
-- [ ] 列表/详情全部接 DataScopeHelper；价格/成本/毛利/采购价字段脱敏
-- [ ] 三个审批型全局功能落地：`global.low_price_approval`、`global.over_credit_approval`、`global.negative_stock_approval`（弹窗授权人账号密码，留痕）
-- [ ] 全局授予 + 模块级收回的反向收窄逻辑
-- [ ] 前端：按钮 `v-permission`、敏感列 `canViewField` 覆盖销售/采购全部页面
-- [ ] 越权契约测试（每 Controller ≥1 个 403）+ 冒烟补"低权限"账号场景
+> 落地（2026-09-10）：**本卡无 Flyway 迁移，V105 未消耗（允许跳号）**；卡片7 开工仍先 `ls migration/` 确认最大号（当前 V104）。
 
-**验收**：《方案》GLOBAL-001~004、DATA-007~009 及销售采购相关 40 条用例通过。
+- [x] sales/purchase 全部 Controller 补注解（写操作必须，查询补 view）——10 个业务 Controller + Report/Excel 共 12 类 121 处
+- [x] 列表/详情全部接 DataScopeHelper；价格/成本/毛利/采购价字段脱敏（含 ReportController 销售/采购报表旁路加固、maskExport 三入口、MaskProfiles）
+- [x] 三个审批型全局功能落地：`global.low_price_approval`、`global.over_credit_approval`、`global.negative_stock_approval`（NEED_APPROVAL 协议 + 弹窗授权人账号密码重放，成功/失败均留痕）
+- [x] 全局授予 + 模块级收回的反向收窄逻辑（8 个标准动作白名单 + 角色在目标菜单零 MODULE 配置才回落 global）
+- [x] 前端：按钮 `v-permission`、敏感列 `canViewField` 覆盖销售/采购全部页面（GenericBusinessList + 15 个 Drawer/Dialog，零新依赖）
+- [x] 越权契约测试（每 Controller ≥1 个 403）+ 冒烟补"低权限"账号场景
+
+**验收**：✅ 2026-09-10 通过。72 项契约断言全绿（401×3、403×16、脱敏×8、GLOBAL×13、DATA×10、三审批闸门×13、留痕×4 等），覆盖 GLOBAL-001~004、DATA-007~009；顺带修复两个真实 BUG（飞单导出 statusText 列 500、订单 Excel 导出 Date 无 Converter 致 0 字节）。详见 docs/优化记录-PRD28-RBAC.md 卡片6 节。
 
 ### 卡片 7 ｜ `feat/rbac-7-inv-fin-base`（M2，V106，约 3d）
 

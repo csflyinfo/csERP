@@ -10,17 +10,22 @@
  *   {@code details} 字段是明细数组。
  */
 import { computed } from 'vue'
+import { useRbac } from '../composables/useRbac.js'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
   title: { type: String, default: '单据详情' },
   data: { type: Object, default: () => ({}) },     // 后端 detail 返回的头部对象（含 details 数组）
+  /** 业务模块码（camelCase，如 purchaseReceipt）；敏感金额/成本/毛利字段按字段权限收口，空串不校验 */
+  moduleCode: { type: String, default: '' },
   /** 头部字段展示配置，形如 [{key,label,format?}]；不提供则自动展示所有非 details 字段 */
   headerFields: { type: Array, default: null },
   /** 明细列展示配置，形如 [{key,label,align?,format?}]；不提供则按明细第一行 keys 自动推导 */
   detailColumns: { type: Array, default: null },
 })
 const emit = defineEmits(['close'])
+
+const { canView } = useRbac(computed(() => props.moduleCode))
 
 const details = computed(() => Array.isArray(props.data?.details) ? props.data.details : [])
 
@@ -32,7 +37,9 @@ const autoHeaderFields = computed(() => {
     .filter(([k, v]) => !excluded.has(k) && v !== null && typeof v !== 'object')
     .map(([k]) => ({ key: k, label: humanize(k) }))
 })
-const headerCols = computed(() => props.headerFields || autoHeaderFields.value)
+const headerCols = computed(() =>
+  (props.headerFields || autoHeaderFields.value).filter(c => canView(c.label))
+)
 
 // 自动明细列：取第一行 keys
 const autoDetailColumns = computed(() => {
@@ -43,7 +50,9 @@ const autoDetailColumns = computed(() => {
     .filter(k => !excluded.has(k))
     .map(k => ({ key: k, label: humanize(k) }))
 })
-const cols = computed(() => props.detailColumns || autoDetailColumns.value)
+const cols = computed(() =>
+  (props.detailColumns || autoDetailColumns.value).filter(c => canView(c.label))
+)
 
 // 简单的 camelCase → 中文标签的字典（未命中时用 camelCase 显示）
 const LABEL_MAP = {

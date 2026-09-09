@@ -5,6 +5,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.inventory.service.InventoryCostService;
 import com.erp.purchase.entity.PurchaseInbound;
 import com.erp.purchase.entity.PurchaseInboundDetail;
@@ -22,6 +23,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -54,6 +56,7 @@ public class PurchaseController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public PurchaseController(JdbcTemplate jdbcTemplate,
                               PurchaseInboundService inboundService,
@@ -62,7 +65,8 @@ public class PurchaseController {
                               PurchaseReceiptController receiptController,
                               com.erp.common.util.BillNoGenerator billNoGen,
                               com.erp.system.OperationLogService opLog,
-                              com.erp.common.security.datascope.DataScopeService dataScope) {
+                              com.erp.common.security.datascope.DataScopeService dataScope,
+                              com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.inboundService = inboundService;
         this.inboundDetailService = inboundDetailService;
@@ -71,6 +75,7 @@ public class PurchaseController {
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
     }
 
     /** 把 JdbcTemplate 风格的 {@code ?} 片段转成 MyBatis-QueryWrapper.apply 需要的 {0}{1} 占位。 */
@@ -96,6 +101,7 @@ public class PurchaseController {
      *   <li>{@code inboundStatus} —— 入库状态：未入库 / 已入库（按 {@code stock_updated}，即库存是否已实际增加）</li>
      * </ul>
      */
+    @RequirePerm(value="purchase.inbound.view", name="查看")
     @PostMapping("/inbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> inboundPage(@RequestBody PageRequest request) {
         // 数据范围（PRD-28 §5.3）：仓库/供应商 + 商品分类/品牌按明细行过滤（pur_inbound 无建档人列）
@@ -136,9 +142,11 @@ public class PurchaseController {
             row.put("inboundStatus", Boolean.TRUE.equals(in.getStockUpdated()) ? "已入库" : "未入库");
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(new PageResult<>(mapped, (int) page.getCurrent(), (int) page.getSize(), page.getTotal(), Map.of()));
     }
 
+    @RequirePerm(value="purchase.inbound.view", name="查看")
     @GetMapping("/inbound/detail")
     public ApiResponse<Map<String, Object>> inboundDetail(
             @RequestParam(required = false) String inboundId,
@@ -149,9 +157,27 @@ public class PurchaseController {
                 new QueryWrapper<PurchaseInbound>().eq("inbound_id", key).or().eq("inbound_no", key)
         );
         if (inbound == null) return ApiResponse.ok(GenericResult.row("inboundId", key, "details", List.of()));
-        List<PurchaseInboundDetail> details = inboundDetailService.list(
-                new QueryWrapper<PurchaseInboundDetail>().eq("inbound_id", inbound.getInboundId()).orderByAsc("detail_id")
-        );
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404（PRD-28 §5.3；pur_inbound 无建档人列）
+        var scope = dataScope.target()
+                .warehouse("h.warehouse").supplier("h.supplier")
+                .goodsLines("h.inbound_id", "pur_inbound_detail", "inbound_id")
+                .build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM pur_inbound h WHERE h.inbound_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(inbound.getInboundId());
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "入库单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品
+        StringBuilder dSql = new StringBuilder("SELECT * FROM pur_inbound_detail WHERE inbound_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(inbound.getInboundId());
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> detailRows = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         Map<String, Object> result = new HashMap<>();
         result.put("inboundId", inbound.getInboundId());
         result.put("inboundNo", inbound.getInboundNo());
@@ -162,7 +188,8 @@ public class PurchaseController {
         result.put("qty", inbound.getQty());
         result.put("amount", inbound.getAmount());
         result.put("status", inbound.getStatus());
-        result.put("details", details);
+        result.put("details", detailRows.stream().map(PurchaseController::camelize).toList());
+        fieldMasker.mask(result, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(result);
     }
 
@@ -171,6 +198,7 @@ public class PurchaseController {
      * <p>返回：{@code supplier / warehouse / details} —— 每条订单明细一行，价格只读，
      * 已入库数量 = 累计 SUM(pur_inbound_detail.received_qty) by goods_code。前端可以按需拆分批次。
      */
+    @RequirePerm(value="purchase.inbound.view", name="查看")
     @GetMapping("/inbound/from-order")
     public ApiResponse<Map<String, Object>> inboundFromOrder(@RequestParam String orderNo) {
         List<Map<String, Object>> orderRows = jdbcTemplate.queryForList(
@@ -230,6 +258,8 @@ public class PurchaseController {
         result.put("orderAmount", toBd(pick(order, "amount")));
         result.put("inboundedAmount", toBd(pick(order, "inbound_amount")));
         result.put("details", lines);
+        // PRD-28 卡片6：选单预填同属查看链路，采购价/金额按字段权限脱敏
+        fieldMasker.mask(result, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(result);
     }
 
@@ -248,6 +278,7 @@ public class PurchaseController {
      * }
      * </pre>
      */
+    @RequirePerm(value="purchase.inbound.add", name="新增")
     @PostMapping("/inbound/create")
     @Transactional
     public ApiResponse<Map<String, Object>> createInbound(@RequestBody Map<String, Object> request) {
@@ -398,6 +429,7 @@ public class PurchaseController {
         return ApiResponse.ok(GenericResult.row("inboundId", id, "inboundNo", no, "sourceOrder", orderNo, "status", "PENDING"));
     }
 
+    @RequirePerm(value="purchase.inbound.audit", name="审核")
     @PostMapping("/inbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditInbound(@Valid @RequestBody AuditRequest request) {
@@ -637,17 +669,27 @@ public class PurchaseController {
 
     // ========== 采购退货已迁移到 PurchaseReturnController（完整三单流程） ==========
 
+    @RequirePerm(value="purchase.fee.view", name="查看")
     @PostMapping("/expense/page")
     public ApiResponse<PageResult<Map<String, Object>>> expensePage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT bill_no expenseNo, '运费' expenseType, object_name objectName, amount expenseAmount,
-                       CASE status WHEN 'APPROVED' THEN '已分摊' ELSE '未分摊' END allocationStatus,
-                       CASE status WHEN 'APPROVED' THEN '已生成' ELSE '未生成' END apStatus,
-                       CASE status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
-                FROM biz_simple_bill WHERE bill_type='PURCHASE_EXPENSE' ORDER BY bill_no DESC
-                """), request));
+        // 数据范围（PRD-28 §5.3）：费用单无供应商/人名列、无商品明细，仅按仓库过滤
+        var scope = dataScope.target().warehouse("h.warehouse").build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT h.bill_no expenseNo, '运费' expenseType, h.object_name objectName, h.amount expenseAmount,
+                       CASE h.status WHEN 'APPROVED' THEN '已分摊' ELSE '未分摊' END allocationStatus,
+                       CASE h.status WHEN 'APPROVED' THEN '已生成' ELSE '未生成' END apStatus,
+                       CASE h.status WHEN 'APPROVED' THEN '已审核' ELSE '待审核' END status
+                FROM biz_simple_bill h WHERE 1=1 AND h.bill_type='PURCHASE_EXPENSE'
+                """);
+        List<Object> args = new ArrayList<>();
+        scope.appendTo(sql, args);
+        sql.append(" ORDER BY h.bill_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
+        fieldMasker.mask(rows, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
+        return ApiResponse.ok(PageResult.of(rows, request));
     }
 
+    @RequirePerm(value="purchase.fee.audit", name="审核")
     @PostMapping("/expense/audit")
     public ApiResponse<Map<String, Object>> auditExpense(@Valid @RequestBody AuditRequest request) {
         jdbcTemplate.update("UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_type='PURCHASE_EXPENSE' AND (bill_id=? OR bill_no=? OR bill_no=(SELECT bill_no FROM biz_simple_bill WHERE bill_type='PURCHASE_EXPENSE' ORDER BY bill_no DESC LIMIT 1))", request.bizId(), request.bizId());
@@ -690,6 +732,23 @@ public class PurchaseController {
         Object v = row.get(key);
         if (v != null) return v;
         return row.get(key.toUpperCase(Locale.ROOT));
+    }
+
+    /** 下划线 key → 驼峰；H2 大写也一并处理。 */
+    private static Map<String, Object> camelize(Map<String, Object> row) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : row.entrySet()) {
+            String k = e.getKey().toLowerCase(Locale.ROOT);
+            StringBuilder sb = new StringBuilder();
+            boolean upper = false;
+            for (char c : k.toCharArray()) {
+                if (c == '_') { upper = true; continue; }
+                sb.append(upper ? Character.toUpperCase(c) : c);
+                upper = false;
+            }
+            out.put(sb.toString(), e.getValue());
+        }
+        return out;
     }
 
     public record AuditRequest(@NotBlank String bizId, String remark) {}

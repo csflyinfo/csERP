@@ -3,6 +3,7 @@ package com.erp.sales;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -54,31 +55,50 @@ public class RejectInboundController {
     private final InventoryCostService inventoryCostService;
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public RejectInboundController(JdbcTemplate jdbcTemplate,
                                    InventoryCostService inventoryCostService,
                                    com.erp.common.util.BillNoGenerator billNoGen,
-                                   com.erp.system.OperationLogService opLog) {
+                                   com.erp.system.OperationLogService opLog,
+                                   com.erp.common.security.datascope.DataScopeService dataScope,
+                                   com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 拒收入库单列表/详情共用数据范围目标：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget rejectScopeTarget() {
+        return dataScope.target()
+                .warehouse("h.warehouse").customer("h.customer_name").salesman("h.salesman").creator("h.creator_name")
+                .goodsLines("h.reject_inbound_id", "inv_reject_inbound_detail", "reject_inbound_id");
     }
 
     // ========================================================================
     //  列表
     // ========================================================================
 
+    @RequirePerm(value = "sales.reject_inbound.view", name = "查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT reject_inbound_id, inbound_no, source_receipt_no, source_outbound_no, source_order_no,
-                       customer_code, customer_name, warehouse, driver, route_line, salesman,
-                       bill_date, qty, amount, cost_amount, status, stock_updated,
-                       creator_name, audit_user, audit_time, create_time, remark
-                FROM inv_reject_inbound
-                ORDER BY create_time DESC, inbound_no DESC
+        // 数据范围（PRD-28 §5.3）：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行过滤
+        var scope = rejectScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT h.reject_inbound_id, h.inbound_no, h.source_receipt_no, h.source_outbound_no, h.source_order_no,
+                       h.customer_code, h.customer_name, h.warehouse, h.driver, h.route_line, h.salesman,
+                       h.bill_date, h.qty, h.amount, h.cost_amount, h.status, h.stock_updated,
+                       h.creator_name, h.audit_user, h.audit_time, h.create_time, h.remark
+                FROM inv_reject_inbound h WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY h.create_time DESC, h.inbound_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -88,6 +108,7 @@ public class RejectInboundController {
             row.put("inboundStatus", Boolean.TRUE.equals(pick(r, "stock_updated")) ? "已入库" : "未入库");
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
@@ -95,6 +116,7 @@ public class RejectInboundController {
     //  详情
     // ========================================================================
 
+    @RequirePerm(value = "sales.reject_inbound.view", name = "查看")
     @GetMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String inboundId,
@@ -108,10 +130,27 @@ public class RejectInboundController {
         // 前端抽屉统一用 inboundId 作为主键别名，避免各模块字段名不一致
         head.put("inboundId", head.get("rejectInboundId"));
         head.put("statusText", statusText(str(head.get("status"))));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM inv_reject_inbound_detail WHERE reject_inbound_id = ? ORDER BY detail_id",
-                head.get("rejectInboundId"));
+        String realInboundId = String.valueOf(head.get("rejectInboundId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = rejectScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM inv_reject_inbound h WHERE h.reject_inbound_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realInboundId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "拒收入库单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM inv_reject_inbound_detail WHERE reject_inbound_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realInboundId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(RejectInboundController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
@@ -119,6 +158,7 @@ public class RejectInboundController {
     //  批次下拉（编辑时可改批次，沿用仓库现有批次）
     // ========================================================================
 
+    @RequirePerm(value = "sales.reject_inbound.view", name = "查看")
     @GetMapping("/batch-options")
     public ApiResponse<List<Map<String, Object>>> batchOptions(
             @RequestParam String goodsCode,
@@ -134,7 +174,11 @@ public class RejectInboundController {
                 WHERE bs.goods_code = ? AND bs.warehouse = ?
                 ORDER BY bs.production_date, bs.batch_no
                 """, goodsCode, warehouse);
-        return ApiResponse.ok(rows.stream().map(RejectInboundController::camelize).toList());
+        // PRD-28 卡片6：批次成本价/可用量按字段权限脱敏
+        List<Map<String, Object>> batches = rows.stream()
+                .map(RejectInboundController::camelize).toList();
+        fieldMasker.mask(batches);
+        return ApiResponse.ok(batches);
     }
 
     // ========================================================================
@@ -147,6 +191,7 @@ public class RejectInboundController {
      * <p>成本单价来自原出库，<b>不可改</b>；请求里带了 costPrice 也会被忽略。
      * <p>入库数量允许填 0（表示该行不入库），但不得超过签收时的拒收数量。
      */
+    @RequirePerm(value = "sales.reject_inbound.edit", name = "修改")
     @PostMapping("/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> request) {
@@ -268,6 +313,7 @@ public class RejectInboundController {
      *
      * <p>入库数量为 0 的行直接跳过（表示该行不入库）。
      */
+    @RequirePerm(value = "sales.reject_inbound.audit", name = "审核")
     @PostMapping("/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
@@ -348,6 +394,7 @@ public class RejectInboundController {
      * 反审核：APPROVED → PENDING，扣回此前入库的库存。
      * <p>入库后若该批次已被后续单据出库导致库存不足，则拒绝反审核。
      */
+    @RequirePerm(value = "sales.reject_inbound.unaudit", name = "反审核")
     @PostMapping("/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {

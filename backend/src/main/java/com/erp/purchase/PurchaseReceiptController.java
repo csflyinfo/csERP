@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -47,31 +48,50 @@ public class PurchaseReceiptController {
     private final com.erp.common.util.BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public PurchaseReceiptController(JdbcTemplate jdbcTemplate,
                                      com.erp.common.util.BillNoGenerator billNoGen,
                                      com.erp.system.OperationLogService opLog,
-                                     com.erp.finance.gl.GlHookService glHooks) {
+                                     com.erp.finance.gl.GlHookService glHooks,
+                                     com.erp.common.security.datascope.DataScopeService dataScope,
+                                     com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 采购收货单数据范围目标：仓库/供应商/建档人 + 商品分类/品牌按明细行。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget receiptScopeTarget() {
+        return dataScope.target()
+                .warehouse("r.warehouse").supplier("r.supplier_name").creator("r.creator_name")
+                .goodsLines("r.receipt_id", "pur_receipt_detail", "receipt_id");
     }
 
     // ============ 列表 & 详情 ============
 
+    @RequirePerm(value="purchase.receipt.view", name="查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT receipt_id, receipt_no, source_inbound_no, source_order_no,
-                       supplier_code, supplier_name, warehouse, receipt_date,
-                       goods_amount, tax_amount, expense_amount, final_amount,
-                       ap_status, pay_status, status, creator_name,
-                       audit_user, audit_time, create_time, remark,
-                       invoiced_amount, invoice_status
-                FROM pur_receipt
-                ORDER BY create_time DESC, receipt_no DESC
+        // 数据范围（PRD-28 §5.3）：仓库/供应商/建档人 + 商品分类/品牌按明细行过滤
+        var scope = receiptScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT r.receipt_id, r.receipt_no, r.source_inbound_no, r.source_order_no,
+                       r.supplier_code, r.supplier_name, r.warehouse, r.receipt_date,
+                       r.goods_amount, r.tax_amount, r.expense_amount, r.final_amount,
+                       r.ap_status, r.pay_status, r.status, r.creator_name,
+                       r.audit_user, r.audit_time, r.create_time, r.remark,
+                       r.invoiced_amount, r.invoice_status
+                FROM pur_receipt r WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY r.create_time DESC, r.receipt_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -92,9 +112,11 @@ public class PurchaseReceiptController {
             row.put("untaxedAmount", goodsAmount.subtract(taxAmount).setScale(2, RoundingMode.HALF_UP));
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value="purchase.receipt.view", name="查看")
     @GetMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String receiptId,
@@ -105,20 +127,38 @@ public class PurchaseReceiptController {
                 "SELECT * FROM pur_receipt WHERE receipt_id = ? OR receipt_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "收货单不存在");
         Map<String, Object> head = camelize(heads.get(0));
+        String realReceiptId = String.valueOf(head.get("receiptId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404（PRD-28 §5.3）
+        var scope = receiptScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM pur_receipt r WHERE r.receipt_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realReceiptId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "收货单不存在或无权查看");
         // 不含税金额现算（与列表同口径，兼容语义变更前的老单据）
         BigDecimal headGoodsAmount = toBd(head.get("goodsAmount"));
         BigDecimal headTaxAmount = toBd(head.get("taxAmount"));
         head.put("untaxedAmount", headGoodsAmount.subtract(headTaxAmount).setScale(2, RoundingMode.HALF_UP));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM pur_receipt_detail WHERE receipt_id = ? ORDER BY detail_id",
-                head.get("receiptId"));
+        // 商品分类/品牌受限时，明细行只回可见商品
+        StringBuilder dSql = new StringBuilder("SELECT * FROM pur_receipt_detail WHERE receipt_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realReceiptId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(PurchaseReceiptController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(head);
     }
 
     // ============ 审核 / 反审核 ============
 
     /** 审核：写一条 fin_ap，回写 ap_status='已生成'、status='APPROVED'。 */
+    @RequirePerm(value="purchase.receipt.audit", name="审核")
     @PostMapping("/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditReceipt(@Valid @RequestBody AuditRequest request) {
@@ -176,6 +216,7 @@ public class PurchaseReceiptController {
      * 反审核：仅当对应 fin_ap 未收付款（paid_amount = 0）才允许。
      * 反审核时删除该条 fin_ap，将 ap_status 恢复为「未生成」、status 恢复为 PENDING。
      */
+    @RequirePerm(value="purchase.receipt.unaudit", name="反审核")
     @PostMapping("/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
@@ -221,6 +262,7 @@ public class PurchaseReceiptController {
      * （见 {@link #syncPriceToInbound}），保证未审核期间可反复改价而不污染库存。
      * <p>请求：{@code { receiptId, details: [{ detailId, price }] }}
      */
+    @RequirePerm(value="purchase.receipt.edit", name="修改")
     @PostMapping("/update")
     @Transactional
     public ApiResponse<Map<String, Object>> updateReceipt(@RequestBody Map<String, Object> request) {

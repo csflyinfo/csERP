@@ -55,7 +55,7 @@ public class SensitiveFieldRegistry {
     /** 注册全部 26 个字段及其响应 key（卡片4 脱敏器消费；新模块出现新 key 在此追加）。 */
     private void register() {
         bind("VIEW_SALE_PRICE", "salePrice", "sale_price", "salesPrice", "sales_price",
-                "standardPrice", "standard_price");
+                "standardPrice", "standard_price", "latestSalePrice", "latest_sale_price");
         bind("VIEW_SALE_AMOUNT", "saleAmount", "sale_amount", "salesAmount", "sales_amount");
         bind("VIEW_PURCHASE_PRICE", "purchasePrice", "purchase_price", "latestPurchasePrice",
                 "latest_purchase_price", "referencePurchasePrice", "reference_purchase_price",

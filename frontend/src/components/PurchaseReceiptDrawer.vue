@@ -15,6 +15,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('purchaseReceipt')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -195,6 +198,7 @@ function detailPayload() {
 
 /** 保存改价（不审核） */
 async function saveReceipt() {
+  if (!guard('编辑')) { errors.value.header = '无权限执行该操作'; return }
   if (!canEdit.value) { errors.value.header = readonlyReason.value; return }
   if (!validate()) return
   try {
@@ -211,6 +215,7 @@ async function saveReceipt() {
 
 /** 审核 → 生成应付 + 回写入库单单价 + 重算库存成本 */
 async function auditReceipt() {
+  if (!guard('审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   const changed = detailList.value.filter(isPriceChanged)
   const amount = totalGoodsAmount.value.toFixed(2)
@@ -240,6 +245,7 @@ async function auditReceipt() {
 
 /** 反审核 */
 async function reverseAudit() {
+  if (!guard('反审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!confirm(`确认反审核收货单【${head.value.receiptNo}】？\n\n将撤销该收货单生成的应付账款。若已发生付款核销，反审核会被拒绝。`)) return
   try {
     const result = await post('/purchase/receipt/reverse-audit', { bizId: head.value.receiptId })
@@ -262,10 +268,10 @@ function closeDrawer() { emit('close') }
           {{ statusText }}
         </span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">{{ canEdit ? '取消' : '关闭' }}</button>
           <template v-if="canEdit">
-            <button class="btn" @click="saveReceipt">保存改价</button>
+            <button class="btn" v-permission="permOf('purchaseReceipt', '编辑')" @click="saveReceipt">保存改价</button>
             <button class="btn primary" @click="auditReceipt">审核</button>
           </template>
           <button v-else-if="isApproved" class="btn" @click="reverseAudit">反审核</button>
@@ -316,7 +322,7 @@ function closeDrawer() { emit('close') }
               <label>来票状态</label>
               <input readonly :value="head.invoiceStatus || '未来票'" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('已来票金额（含税）')">
               <label>已来票金额（含税）</label>
               <input readonly :value="'¥ ' + Number(head.invoicedAmount || 0).toFixed(2)" />
             </div>
@@ -327,15 +333,15 @@ function closeDrawer() { emit('close') }
         <div class="card" style="padding:12px">
           <div style="font-weight:900;margin-bottom:10px;color:var(--primary)">金额汇总</div>
           <div class="grid4">
-            <div class="field">
+            <div class="field" v-if="canView('商品金额（含税）')">
               <label>商品金额（含税）</label>
               <input readonly class="highlight" :value="'¥ ' + totalGoodsAmount.toFixed(2)" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('税额')">
               <label>税额</label>
               <input readonly :value="'¥ ' + totalTaxAmount.toFixed(2)" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('不含税金额')">
               <label>不含税金额</label>
               <input readonly :value="'¥ ' + totalUntaxedAmount.toFixed(2)" />
             </div>
@@ -371,15 +377,15 @@ function closeDrawer() { emit('close') }
                   <th style="min-width:170px">商品名称</th>
                   <th style="width:70px">单位</th>
                   <th style="width:90px">收货数量</th>
-                  <th style="width:130px">单价（含税）</th>
-                  <th style="width:130px">金额（含税）</th>
+                  <th style="width:130px" v-if="canView('单价（含税）')">单价（含税）</th>
+                  <th style="width:130px" v-if="canView('金额（含税）')">金额（含税）</th>
                   <th style="width:70px">税率</th>
-                  <th style="width:100px">税额</th>
-                  <th style="width:110px">不含税金额</th>
+                  <th style="width:100px" v-if="canView('税额')">税额</th>
+                  <th style="width:110px" v-if="canView('不含税金额')">不含税金额</th>
                   <th v-if="isApproved" style="width:96px">已开票数量</th>
-                  <th v-if="isApproved" style="width:110px">已开票金额</th>
-                  <th v-if="isApproved" style="width:110px">未开票金额</th>
-                  <th v-if="canEdit" style="width:90px">原单价</th>
+                  <th v-if="isApproved && canView('已开票金额')" style="width:110px">已开票金额</th>
+                  <th v-if="isApproved && canView('未开票金额')" style="width:110px">未开票金额</th>
+                  <th v-if="canEdit && canView('原单价')" style="width:90px">原单价</th>
                 </tr>
               </thead>
               <tbody>
@@ -390,7 +396,7 @@ function closeDrawer() { emit('close') }
                   <td>{{ row.goodsName }}</td>
                   <td>{{ row.unitName }}</td>
                   <td class="num-cell">{{ row.qty }}</td>
-                  <td>
+                  <td v-if="canView('单价（含税）')">
                     <input v-if="canEdit" type="text" inputmode="decimal"
                            :value="priceDisplay(row)"
                            class="cell-input num wide"
@@ -398,7 +404,7 @@ function closeDrawer() { emit('close') }
                            @blur="onPriceBlur(row)" />
                     <span v-else class="num-cell">{{ Number(row.price).toFixed(4) }}</span>
                   </td>
-                  <td>
+                  <td v-if="canView('金额（含税）')">
                     <input v-if="canEdit" type="text" inputmode="decimal"
                            :value="amountDisplay(row)"
                            class="cell-input num wide"
@@ -408,18 +414,18 @@ function closeDrawer() { emit('close') }
                     <span v-else class="num-cell">{{ rowAmount(row) }}</span>
                   </td>
                   <td class="num-cell">{{ row.taxRate }}</td>
-                  <td class="num-cell">{{ rowTax(row).toFixed(2) }}</td>
-                  <td class="num-cell">
+                  <td class="num-cell" v-if="canView('税额')">{{ rowTax(row).toFixed(2) }}</td>
+                  <td class="num-cell" v-if="canView('不含税金额')">
                     {{ (Number(row.qty || 0) * Number(row.price || 0) - rowTax(row)).toFixed(2) }}
                   </td>
                   <template v-if="isApproved">
                     <td class="num-cell">{{ row.invoicedQty }}</td>
-                    <td class="num-cell">{{ row.invoicedAmount.toFixed(2) }}</td>
-                    <td class="num-cell" style="color:var(--danger);font-weight:700">
+                    <td class="num-cell" v-if="canView('已开票金额')">{{ row.invoicedAmount.toFixed(2) }}</td>
+                    <td class="num-cell" v-if="canView('未开票金额')" style="color:var(--danger);font-weight:700">
                       {{ Math.max(0, Number(row.qty || 0) * Number(row.price || 0) - row.invoicedAmount).toFixed(2) }}
                     </td>
                   </template>
-                  <td v-if="canEdit" class="num-cell orig">
+                  <td v-if="canEdit && canView('原单价')" class="num-cell orig">
                     <span v-if="isPriceChanged(row)">{{ Number(row.originalPrice).toFixed(4) }}</span>
                     <span v-else>-</span>
                   </td>
@@ -430,9 +436,9 @@ function closeDrawer() { emit('close') }
         </div>
 
         <div class="summary">
-          <span>商品金额（含税）：<b style="color:var(--danger)">¥ {{ totalGoodsAmount.toFixed(2) }}</b></span>
-          <span>税额：<b>¥ {{ totalTaxAmount.toFixed(2) }}</b></span>
-          <span>不含税金额：<b>¥ {{ totalUntaxedAmount.toFixed(2) }}</b></span>
+          <span v-if="canView('商品金额（含税）')">商品金额（含税）：<b style="color:var(--danger)">¥ {{ totalGoodsAmount.toFixed(2) }}</b></span>
+          <span v-if="canView('税额')">税额：<b>¥ {{ totalTaxAmount.toFixed(2) }}</b></span>
+          <span v-if="canView('不含税金额')">不含税金额：<b>¥ {{ totalUntaxedAmount.toFixed(2) }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

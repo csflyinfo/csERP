@@ -4,6 +4,10 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.FieldMasker;
+import com.erp.common.security.MaskProfiles;
+import com.erp.common.security.RequirePerm;
+import com.erp.common.security.datascope.DataScopeService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -11,7 +15,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -20,10 +27,15 @@ import java.util.UUID;
 public class ReportController {
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
+    private final DataScopeService dataScope;
+    private final FieldMasker fieldMasker;
 
-    public ReportController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog) {
+    public ReportController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
+                            DataScopeService dataScope, FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
     }
 
     @GetMapping("/dashboard/summary")
@@ -56,37 +68,99 @@ public class ReportController {
         ));
     }
 
+    @RequirePerm(value = "report.sales.view", name = "查看")
     @PostMapping("/sales/page")
     public ApiResponse<PageResult<Map<String, Object>>> salesReport(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT bill_date billDate,
-                       customer,
-                       salesman,
-                       warehouse,
-                       amount salesAmount,
-                       paid_amount paidAmount,
-                       unpaid_amount unpaidAmount,
-                       amount * 0.12 grossProfit,
-                       status
-                FROM sales_order
-                ORDER BY bill_date DESC, order_no DESC
-                """), request));
+        // PRD-28 卡片6：报表中心是绕开列表的旁路出口，与销售订单列表同口径接 DataScope + 字段脱敏
+        var scope = dataScope.target()
+                .warehouse("so.warehouse").customer("so.customer").salesman("so.salesman")
+                .creator("so.creator_name")
+                .goodsLines("so.order_id", "sales_order_detail", "order_id")
+                .build();
+        List<Object> whereArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, whereArgs);
+        // SELECT 列里的可见行金额子查询参数必须排在 WHERE 参数前（JDBC 按出现顺序绑定）
+        List<Object> selectArgs = new ArrayList<>();
+        StringBuilder q = new StringBuilder("""
+                SELECT so.bill_date bill_date,
+                       so.customer customer,
+                       so.salesman salesman,
+                       so.warehouse warehouse,
+                       so.amount sales_amount,
+                       so.paid_amount paid_amount,
+                       so.unpaid_amount unpaid_amount,
+                       so.amount * 0.12 gross_profit,
+                       so.status status
+                """);
+        if (scope.isGoodsRestricted()) {
+            q.append(", (SELECT COALESCE(SUM(d.amount),0) FROM sales_order_detail d WHERE d.order_id = so.order_id AND ");
+            scope.appendGoodsCodeCondition("d.goods_code", q, selectArgs);
+            q.append(") AS scoped_amount");
+        }
+        q.append(" FROM sales_order so WHERE 1=1").append(scopeSql)
+                .append(" ORDER BY so.bill_date DESC, so.order_no DESC");
+        List<Object> queryArgs = new ArrayList<>(selectArgs);
+        queryArgs.addAll(whereArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(q.toString(), queryArgs.toArray());
+        List<Map<String, Object>> mapped = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> row = camelize(r);
+            // 商品范围受限时，金额按可见明细行汇总（与销售订单列表同口径，方案 §5.3.1）
+            if (scope.isGoodsRestricted() && row.get("scopedAmount") != null) {
+                row.put("salesAmount", row.get("scopedAmount"));
+            }
+            row.remove("scopedAmount");
+            mapped.add(row);
+        }
+        fieldMasker.mask(mapped, MaskProfiles.SALES_BILL);
+        return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "report.purchase.view", name = "查看")
     @PostMapping("/purchase/page")
     public ApiResponse<PageResult<Map<String, Object>>> purchaseReport(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT bill_date billDate,
-                       supplier,
-                       buyer,
-                       warehouse,
-                       amount purchaseAmount,
-                       inbound_amount inboundAmount,
-                       payment_status paymentStatus,
-                       status
-                FROM pur_order
-                ORDER BY bill_date DESC, order_no DESC
-                """), request));
+        // PRD-28 卡片6：与采购订单列表同口径（仓库/供应商/采购员/建档人 + 商品分类/品牌明细行）
+        var scope = dataScope.target()
+                .warehouse("po.warehouse").supplier("po.supplier_name").salesman("po.buyer")
+                .creator("po.creator_name")
+                .goodsLines("po.order_id", "purchase_order_detail", "order_id")
+                .build();
+        List<Object> whereArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, whereArgs);
+        List<Object> selectArgs = new ArrayList<>();
+        StringBuilder q = new StringBuilder("""
+                SELECT po.bill_date bill_date,
+                       po.supplier_name supplier,
+                       po.buyer buyer,
+                       po.warehouse warehouse,
+                       po.amount purchase_amount,
+                       po.inbound_amount inbound_amount,
+                       po.payment_status payment_status,
+                       po.status status
+                """);
+        if (scope.isGoodsRestricted()) {
+            q.append(", (SELECT COALESCE(SUM(d.amount),0) FROM purchase_order_detail d WHERE d.order_id = po.order_id AND ");
+            scope.appendGoodsCodeCondition("d.goods_code", q, selectArgs);
+            q.append(") AS scoped_amount");
+        }
+        q.append(" FROM purchase_order po WHERE 1=1").append(scopeSql)
+                .append(" ORDER BY po.bill_date DESC, po.order_no DESC");
+        List<Object> queryArgs = new ArrayList<>(selectArgs);
+        queryArgs.addAll(whereArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(q.toString(), queryArgs.toArray());
+        List<Map<String, Object>> mapped = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> row = camelize(r);
+            if (scope.isGoodsRestricted() && row.get("scopedAmount") != null) {
+                row.put("purchaseAmount", row.get("scopedAmount"));
+            }
+            row.remove("scopedAmount");
+            mapped.add(row);
+        }
+        fieldMasker.mask(mapped, MaskProfiles.PURCHASE_BILL);
+        return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
     @PostMapping("/stock/page")
@@ -192,6 +266,7 @@ public class ReportController {
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "global.export", global = true, name = "导出", type = "ACTION")
     @PostMapping("/export")
     public ApiResponse<Map<String, Object>> exportReport(@RequestBody Map<String, Object> request) {
         String taskId = "EXP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
@@ -216,5 +291,22 @@ public class ReportController {
     private void logExport(String taskNo, String reportName) {
         // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名）。
         opLog.log("report.export", com.erp.system.OperationAction.EXPORT, taskNo, "导出报表：" + reportName);
+    }
+
+    /** H2 不带引号的别名会被拉成大写破坏驼峰，SQL 统一蛇形别名后由此转回驼峰。 */
+    private static Map<String, Object> camelize(Map<String, Object> row) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : row.entrySet()) {
+            String k = e.getKey().toLowerCase(Locale.ROOT);
+            StringBuilder sb = new StringBuilder();
+            boolean upper = false;
+            for (char c : k.toCharArray()) {
+                if (c == '_') { upper = true; continue; }
+                sb.append(upper ? Character.toUpperCase(c) : c);
+                upper = false;
+            }
+            out.put(sb.toString(), e.getValue());
+        }
+        return out;
     }
 }

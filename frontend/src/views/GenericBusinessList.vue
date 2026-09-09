@@ -25,7 +25,7 @@ import ImportDialog from '../components/ImportDialog.vue'
 import { IMPORT_PRESETS, MODULE_DEFAULT_IMPORT, MODULE_IMPORT_MENU } from '../importPresets.js'
 import { get, post, upload, downloadBlob, getBlob, saveBlobFile, saveTextFile } from '../api/client.js'
 import { getDict } from '../utils/dictionary.js'
-import { usePermission } from '../composables/usePermission.js'
+import { useRbac } from '../composables/useRbac.js'
 import { useColumnSettings } from '../composables/useColumnSettings.js'
 import FieldSettingDialog from '../components/FieldSettingDialog.vue'
 import { mapRecordToRow, moduleApis, excelModules } from '../module-api.js'
@@ -36,7 +36,9 @@ const route = useRoute()
 const router = useRouter()
 const moduleCode = computed(() => route.meta?.module || '')
 const config = computed(() => moduleConfigs[moduleCode.value] || {})
-const roleCode = 'ADMIN'
+// PRD-28 卡片6：功能点/敏感字段权限改由登录用户真实权限集驱动（stores/perm.js），不再用 roleCode='ADMIN' 兜底。
+// 绑定当前路由模块：actionHidden 供 v-action-perms 容器指令，guard 供写操作函数入口闸门。
+const { canViewColumn, actionHidden, guard } = useRbac(moduleCode)
 
 // 基础资料模块（用于列表操作列显示"编辑 删除"）
 const BASE_MODULES = ['goods', 'customer', 'supplier', 'warehouse', 'unit', 'brand', 'category', 'priceGroup', 'territory', 'routeLine', 'employee', 'department', 'owner', 'expenseType', 'counterparty', 'counterpartyType', 'fundAccount']
@@ -231,6 +233,8 @@ async function handleReceiptUnsign(row) {
  * 有拒收的单子必须走行内「确认签收」逐行填数量和拒收原因。
  */
 async function batchSignReceipts() {
+  // PRD-28 卡片6：批量签收直接绑定 @click 不经 handleAction，在此补同一道功能点闸门
+  if (!guard('批量签收')) { show('无权限执行「批量签收」'); return }
   if (selectedRowKeys.value.size === 0) { show('请勾选要签收的发货单'); return }
   const rows = tableRows.value.filter((_, i) => selectedRowKeys.value.has(i))
   const targets = rows.filter(r => {
@@ -626,7 +630,6 @@ function openEditDrawer(rowData) {
 
 defineExpose({ openAddDrawer, openEditDrawer })
 
-const { loadFieldScope, canViewField } = usePermission()
 const feedback = ref('')
 const dialog = ref(null)
 const selectedRow = ref(null)
@@ -887,9 +890,10 @@ const columns = computed(() => (config.value.columns || []).map((title, index) =
   num: /金额|数量|库存|单价|成本|余额|已收|未收|已付|未付|原价|现价|进价|税额|毛利|额度/.test(title),
   action: /操作/.test(title),
 })))
-// 加上「字段级权限」过滤：不能看的字段直接从可选列里排除
+// 加上「字段级权限」过滤：销售/采购模块的价格/成本/毛利/往来款等敏感列，
+// 无 VIEW_* 字段权限时直接从可选列里排除（后端响应也已把值置 null，双保险）
 const permittedColumns = computed(() =>
-    columns.value.filter(col => col.action || canViewField(moduleCode.value, col.title))
+    columns.value.filter(col => col.action || canViewColumn(moduleCode.value, col.title))
 )
 const {
   columnSettings, pendingSettings, visibleColumns, dialogColumnList,
@@ -989,7 +993,7 @@ async function loadRows() {
     const usingClientTreeFilter = moduleCode.value === 'employee'
     const reqPageSize = usingClientTreeFilter ? 1000 : pageSize.value
     const reqPageNo = usingClientTreeFilter ? 1 : pageNo.value
-    const data = await post(api.page, { pageNo: reqPageNo, pageSize: reqPageSize, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...(config.value.fixedFilters || {}), ...queryFilters.value, roleCode: roleCode } })
+    const data = await post(api.page, { pageNo: reqPageNo, pageSize: reqPageSize, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...(config.value.fixedFilters || {}), ...queryFilters.value } })
     let records = data.records || []
 
     // 价格组商品查询：派生 unitLevelText / statusText
@@ -1285,9 +1289,9 @@ function resetRows() {
 // 老的 loadColumnSettings / saveColumnSettings / resetColumnSettings
 // 已迁移到 useColumnSettings composable（见文件顶部）。此处保留空注释占位便于 git diff 定位。
 
-watch(() => [config.value, roleCode], () => {
-  // columnSettings 由 useColumnSettings composable 通过 storageKey watcher 自动加载
-  loadFieldScope(moduleCode.value, roleCode)
+watch(() => config.value, () => {
+  // columnSettings 由 useColumnSettings composable 通过 storageKey watcher 自动加载；
+  // 字段权限由路由守卫预拉的 perm store 驱动（permittedColumns），无需在此按角色加载
   // 特定模块的筛选下拉数据
   if (moduleCode.value === 'counterparty') loadCounterpartyTypesForFilter()
   if (moduleCode.value === 'employee') ensureDepartmentTree()
@@ -1744,7 +1748,7 @@ async function exportCurrentModuleXlsx() {
   const api = moduleApis[moduleCode.value]
   if (!api?.page) { show(`${config.value.title}暂不支持导出`); return }
   // 拉一次 10000 条（PRD F4 上限）
-  const data = await post(api.page, { pageNo: 1, pageSize: 10000, filters: { ...queryFilters.value, roleCode } })
+  const data = await post(api.page, { pageNo: 1, pageSize: 10000, filters: { ...queryFilters.value } })
   const records = data.records || []
   if (records.length === 0) { show('无数据可导出'); return }
   // 复用 loadRows 的派生列（保持视图一致）
@@ -1835,6 +1839,14 @@ function confirmHintOf(action) {
 
 async function handleAction(action, row = null) {
   const actionStr = String(action || '')
+
+  // PRD-28 卡片6：功能点前端闸门。按钮 v-action-perms 隐藏之外的第二道防线，
+  // 兜底 ProTable 工具栏 emit 的「导出」等不在本模板内、以及动态生成的动作入口；
+  // 最终安全仍由后端 @RequirePerm（403）保证。
+  if (!guard(actionStr)) {
+    show(`无权限执行「${actionStr}」`)
+    return
+  }
 
   // PRD-31 日志模块：详情 / 立即清理 / 导出（JSON→CSV）/ 刷新 走专用流程（不经过通用 ?id= 详情）
   if (moduleCode.value === 'log' || moduleCode.value === 'loginLog') {
@@ -2997,7 +3009,8 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     </aside>
 
     <section class="module-list">
-      <div class="page-ops">
+      <!-- PRD-28 卡片6：顶部操作区按按钮文案统一裁决功能点（新建/导入/导出/打印/审核并打印等） -->
+      <div class="page-ops" v-action-perms="actionHidden">
         <template v-for="action in config.actions" :key="action">
           <!-- 有子菜单的模块（如 counterparty）：导入按钮变下拉 -->
           <span v-if="action === '导入' && MODULE_IMPORT_MENU[moduleCode]" class="dropdown-wrap" @click.stop>
@@ -3071,7 +3084,8 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
             <button v-if="Number(row[col.key]) > 0" class="link link-btn" @click="openPriceGroupCustomers(row)">{{ row[col.key] }}</button>
             <span v-else style="color:#909399">{{ row[col.key] || 0 }}</span>
           </span>
-          <span v-else-if="/操作/.test(col.title)">
+          <!-- PRD-28 卡片6：行内操作列容器指令，按按钮文本统一裁决（含动态 v-for 动作按钮） -->
+          <span v-else-if="/操作/.test(col.title)" v-action-perms="actionHidden">
             <!-- PRD-31 采购/销售订单：查看本单据操作记录时间线（独立于下方状态化操作，始终可见） -->
             <button v-if="BIZ_TIMELINE_MAP[moduleCode]" class="link link-btn" @click="openTimeline(row)">记录</button>
             <!-- PRD-31 操作日志：行内"详情"打开改前改后抽屉 -->
@@ -3434,7 +3448,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       </ProTable>
 
       <!-- 飞单批量操作浮动栏 -->
-      <div v-if="moduleCode === 'flyOrder' && selectedRowKeys.size > 0" class="fly-batch-bar">
+      <div v-if="moduleCode === 'flyOrder' && selectedRowKeys.size > 0" class="fly-batch-bar" v-action-perms="actionHidden">
         <span class="fly-batch-count">已选 {{ selectedRowKeys.size }} 条</span>
         <button class="btn btn-primary" @click="handleAction('批量审核')">批量审核</button>
         <button class="btn" @click="handleAction('批量取消审核')">批量取消审核</button>
@@ -3443,21 +3457,21 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       </div>
 
       <!-- 费用单批量审核 -->
-      <div v-if="moduleCode === 'financeExpense' && selectedRowKeys.size > 0 && hasPendingSelected" class="fly-batch-bar">
+      <div v-if="moduleCode === 'financeExpense' && selectedRowKeys.size > 0 && hasPendingSelected" class="fly-batch-bar" v-action-perms="actionHidden">
         <span class="fly-batch-count">已选 {{ selectedRowKeys.size }} 条</span>
         <button class="btn btn-primary" @click="batchAuditExpense">批量审核</button>
         <button class="btn btn-text" @click="selectedRowKeys.clear()">取消选择</button>
       </div>
 
       <!-- 收款单/付款单批量操作浮动栏 -->
-      <div v-if="(moduleCode === 'receiptPayment' || moduleCode === 'paymentModule') && selectedRowKeys.size > 0 && hasPendingSelected" class="fly-batch-bar">
+      <div v-if="(moduleCode === 'receiptPayment' || moduleCode === 'paymentModule') && selectedRowKeys.size > 0 && hasPendingSelected" class="fly-batch-bar" v-action-perms="actionHidden">
         <span class="fly-batch-count">已选 {{ selectedRowKeys.size }} 条</span>
         <button class="btn btn-primary" @click="batchAuditReceipt">批量审核</button>
         <button class="btn btn-text" @click="selectedRowKeys.clear()">取消选择</button>
       </div>
 
       <!-- 销售发货单批量签收（按全签处理：拒收 0、签收 = 发货数量） -->
-      <div v-if="moduleCode === 'salesReceipt' && selectedRowKeys.size > 0 && hasUnsignedSelected" class="fly-batch-bar">
+      <div v-if="moduleCode === 'salesReceipt' && selectedRowKeys.size > 0 && hasUnsignedSelected" class="fly-batch-bar" v-action-perms="actionHidden">
         <span class="fly-batch-count">已选 {{ selectedRowKeys.size }} 条</span>
         <button class="btn btn-primary" @click="batchSignReceipts">批量签收</button>
         <button class="btn btn-text" @click="selectedRowKeys.clear()">取消选择</button>
@@ -3580,15 +3594,15 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 
         <div v-if="dialog.type === 'view'" class="section-block">
           <div class="grid4">
-            <div v-for="col in columns.filter(c => !/操作/.test(c.title))" :key="col.key" class="field"><label>{{ col.title }}</label><input readonly :value="selectedRow?.[col.key] || ''" /></div>
+            <div v-for="col in permittedColumns.filter(c => !c.action)" :key="col.key" class="field"><label>{{ col.title }}</label><input readonly :value="selectedRow?.[col.key] || ''" /></div>
           </div>
           <div v-if="detailData?.details?.length" class="section-block">
             <b>后端明细</b>
             <div class="scroll mini-scroll">
               <table>
-                <tr><th>商品编码</th><th>商品名称</th><th>单位</th><th>数量</th><th>单价</th><th>金额</th><th>成本金额</th></tr>
+                <tr><th>商品编码</th><th>商品名称</th><th>单位</th><th>数量</th><th v-if="canViewColumn(moduleCode, '单价')">单价</th><th v-if="canViewColumn(moduleCode, '金额')">金额</th><th v-if="canViewColumn(moduleCode, '成本金额')">成本金额</th></tr>
                 <tr v-for="detail in detailData.details" :key="detail.goodsCode + detail.goodsName + detail.qty">
-                  <td>{{ detail.goodsCode }}</td><td>{{ detail.goodsName }}</td><td>{{ detail.unit }}</td><td>{{ detail.qty }}</td><td>{{ detail.price }}</td><td>{{ detail.amount }}</td><td>{{ detail.costAmount }}</td>
+                  <td>{{ detail.goodsCode }}</td><td>{{ detail.goodsName }}</td><td>{{ detail.unit }}</td><td>{{ detail.qty }}</td><td v-if="canViewColumn(moduleCode, '单价')">{{ detail.price }}</td><td v-if="canViewColumn(moduleCode, '金额')">{{ detail.amount }}</td><td v-if="canViewColumn(moduleCode, '成本金额')">{{ detail.costAmount }}</td>
                 </tr>
               </table>
             </div>
@@ -3737,6 +3751,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     :visible="billDetailDrawer.visible"
     :title="billDetailDrawer.title"
     :data="billDetailDrawer.data"
+    :module-code="moduleCode"
     @close="closeBillDetail"
   />
 

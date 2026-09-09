@@ -19,6 +19,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('rejectInbound')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -184,6 +187,7 @@ function detailPayload() {
 
 /** 保存修改（不审核） */
 async function saveInbound() {
+  if (!guard('编辑')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   try {
     const result = await post('/sales/reject-inbound/update', {
@@ -201,6 +205,7 @@ async function saveInbound() {
 
 /** 审核入库 → 按原出库成本单价回库 + 写入库流水 + 重算成本 */
 async function auditInbound() {
+  if (!guard('审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   if (!confirm(`确认审核拒收入库单【${head.value.inboundNo}】？\n\n审核后将：\n· 按【原出库成本单价】计价（不是当前库存成本均价）\n· 拒收商品回库并写入库存流水\n· 重算移动加权平均成本\n\n如需撤销请走反审核。`)) return
   try {
@@ -222,6 +227,7 @@ async function auditInbound() {
 
 /** 反审核 → 扣回库存 */
 async function reverseAudit() {
+  if (!guard('反审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!confirm(`确认反审核拒收入库单【${head.value.inboundNo}】？\n\n将扣回本单已入库的库存。若相关批次已被后续单据出库导致库存不足，反审核会被拒绝。`)) return
   try {
     const result = await post('/sales/reject-inbound/reverse-audit', { bizId: head.value.inboundId })
@@ -243,9 +249,9 @@ function closeDrawer() { emit('close') }
         <span v-if="isApproved" class="badge ok">已审核</span>
         <span v-else class="badge wait">待审核</span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">关闭</button>
-          <button v-if="canEdit" class="btn" @click="saveInbound">保存</button>
+          <button v-if="canEdit" class="btn" v-permission="permOf('rejectInbound', '编辑')" @click="saveInbound">保存</button>
           <button v-if="canEdit" class="btn primary" @click="auditInbound">审核入库</button>
           <button v-if="isApproved && !readonly" class="btn" @click="reverseAudit">反审核</button>
         </div>
@@ -333,10 +339,10 @@ function closeDrawer() { emit('close') }
                   <th style="width:100px">本次入库数量</th>
                   <th style="width:105px">生产日期</th>
                   <th style="min-width:130px">批次号</th>
-                  <th style="width:105px">单价</th>
-                  <th style="width:100px">金额</th>
-                  <th style="width:98px">成本单价</th>
-                  <th style="width:88px">成本金额</th>
+                  <th v-if="canView('单价')" style="width:105px">单价</th>
+                  <th v-if="canView('金额')" style="width:100px">金额</th>
+                  <th v-if="canView('成本单价')" style="width:98px">成本单价</th>
+                  <th v-if="canView('成本金额')" style="width:88px">成本金额</th>
                   <th style="min-width:140px">拒收原因</th>
                 </tr>
               </thead>
@@ -383,15 +389,15 @@ function closeDrawer() { emit('close') }
                            style="width:100%;height:24px;font-size:12px;padding:0 6px" />
                     <span v-else>{{ row.batchNo || '-' }}</span>
                   </td>
-                  <td style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
-                  <td style="text-align:right;font-weight:700">
+                  <td v-if="canView('单价')" style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
+                  <td v-if="canView('金额')" style="text-align:right;font-weight:700">
                     {{ (Number(row.qty || 0) * Number(row.price || 0)).toFixed(2) }}
                   </td>
                   <!-- 成本单价：原出库成本，只读 -->
-                  <td style="text-align:right" title="取原出库单该商品的成本单价（与批次无关，系统按商品+仓库移动加权平均计价），不可修改">
+                  <td v-if="canView('成本单价')" style="text-align:right" title="取原出库单该商品的成本单价（与批次无关，系统按商品+仓库移动加权平均计价），不可修改">
                     {{ Number(row.costPrice || 0) > 0 ? Number(row.costPrice).toFixed(6) : '-' }}
                   </td>
-                  <td style="text-align:right;font-weight:700">
+                  <td v-if="canView('成本金额')" style="text-align:right;font-weight:700">
                     {{ (Number(row.qty || 0) * Number(row.costPrice || 0)).toFixed(2) }}
                   </td>
                   <td :title="row.rejectReason">{{ row.rejectReason || '-' }}</td>
@@ -404,8 +410,8 @@ function closeDrawer() { emit('close') }
         <div class="summary">
           <span>合计拒收数量：<b>{{ totalRejectQty }}</b></span>
           <span>合计入库数量：<b>{{ totalQty }}</b></span>
-          <span>合计拒收金额：<b>¥ {{ totalAmount }}</b></span>
-          <span>合计成本金额：<b>¥ {{ totalCostAmount }}</b></span>
+          <span v-if="canView('合计拒收金额')">合计拒收金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="canView('合计成本金额')">合计成本金额：<b>¥ {{ totalCostAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

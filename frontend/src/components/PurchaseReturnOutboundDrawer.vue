@@ -11,6 +11,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('purchaseReturnOutbound')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -340,6 +343,7 @@ function detailPayload() {
 
 /** 保存出库数量修改（不审核） */
 async function saveOutbound() {
+  if (!guard('编辑')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   try {
     const result = await post('/purchase/return-outbound/update', {
@@ -355,6 +359,7 @@ async function saveOutbound() {
 
 /** 审核出库 → 扣库存 + 生成采购退货单 */
 async function auditOutbound() {
+  if (!guard('审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   if (!confirm(`确认审核出库单【${head.value.outboundNo}】？\n\n审核后将：\n· 按当前库存成本单价计价\n· 扣减库存并写入库存流水\n· 自动生成采购退货单\n\n此操作不可直接撤销。`)) return
   try {
@@ -384,9 +389,9 @@ function closeDrawer() { emit('close') }
         <span v-if="isApproved" class="badge ok">已审核</span>
         <span v-else class="badge wait">待审核</span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">关闭</button>
-          <button v-if="canEdit" class="btn" @click="saveOutbound">保存</button>
+          <button v-if="canEdit" class="btn" v-permission="permOf('purchaseReturnOutbound', '编辑')" @click="saveOutbound">保存</button>
           <button v-if="canEdit" class="btn primary" @click="auditOutbound">审核出库</button>
         </div>
       </div>
@@ -457,12 +462,12 @@ function closeDrawer() { emit('close') }
                   <th style="width:80px">申请数量</th>
                   <th style="width:100px">出库数量 <span v-if="canEdit" class="req">*</span></th>
                   <th style="width:78px">未分配</th>
-                  <th style="width:110px">单价</th>
-                  <th style="width:110px">金额</th>
+                  <th style="width:110px" v-if="canView('单价')">单价</th>
+                  <th style="width:110px" v-if="canView('金额')">金额</th>
                   <th style="min-width:130px">批次号 <span v-if="canEdit" class="req">*</span></th>
                   <th style="min-width:100px">生产日期</th>
-                  <th style="width:100px">成本单价</th>
-                  <th style="width:90px">成本金额</th>
+                  <th style="width:100px" v-if="canView('成本单价')">成本单价</th>
+                  <th style="width:90px" v-if="canView('成本金额')">成本金额</th>
                   <th style="min-width:120px">源单号</th>
                   <th v-if="canEdit" style="width:96px">操作</th>
                 </tr>
@@ -498,8 +503,8 @@ function closeDrawer() { emit('close') }
                       :class="{ 'remain-warn': (remainOfApplyLine(row.applyDetailId) ?? 0) < 0 }">
                     {{ remainOfApplyLine(row.applyDetailId) ?? '-' }}
                   </td>
-                  <td style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
-                  <td style="text-align:right;font-weight:700">
+                  <td style="text-align:right" v-if="canView('单价')">{{ Number(row.price).toFixed(4) }}</td>
+                  <td style="text-align:right;font-weight:700" v-if="canView('金额')">
                     {{ (Number(row.qty || 0) * Number(row.price || 0)).toFixed(2) }}
                   </td>
                   <!-- 批次号：可改可新增（点击展开仓库内有库存批次） -->
@@ -529,14 +534,14 @@ function closeDrawer() { emit('close') }
                   </td>
                   <!-- 生产日期：随批次自动带出，只读 -->
                   <td>{{ row.productionDate || '-' }}</td>
-                  <td style="text-align:right">
+                  <td style="text-align:right" v-if="canView('成本单价')">
                     {{ Number(row.costPrice || 0) > 0 ? Number(row.costPrice).toFixed(6) : '审核后计算' }}
                   </td>
-                  <td style="text-align:right;font-weight:700">
+                  <td style="text-align:right;font-weight:700" v-if="canView('成本金额')">
                     {{ (Number(row.qty || 0) * Number(row.costPrice || 0)).toFixed(2) }}
                   </td>
                   <td>{{ row.sourceInboundNo || '-' }}</td>
-                  <td v-if="canEdit">
+                  <td v-if="canEdit" v-action-perms="actionHidden">
                     <button class="link link-btn" title="为该申请行新增一个出库批次（拆批次出库）"
                             @click="addBatchRow(index)">拆批次</button>
                     <button class="link link-btn danger-link" @click="removeRow(index)">删除</button>
@@ -549,8 +554,8 @@ function closeDrawer() { emit('close') }
 
         <div class="summary">
           <span>合计出库数量：<b>{{ totalQty }}</b></span>
-          <span>合计退货金额：<b>¥ {{ totalAmount }}</b></span>
-          <span v-if="isApproved">合计成本金额：<b>¥ {{ totalCostAmount }}</b></span>
+          <span v-if="canView('金额')">合计退货金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="isApproved && canView('成本金额')">合计成本金额：<b>¥ {{ totalCostAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

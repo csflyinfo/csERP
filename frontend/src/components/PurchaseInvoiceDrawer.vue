@@ -16,6 +16,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('purchaseInvoice')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -335,6 +338,7 @@ function buildPayload() {
 }
 
 async function saveDraft() {
+  if (!guard(isEdit.value ? '编辑' : '新建')) { errors.value.header = '无权限执行该操作'; return }
   if (!canEditHead.value) return
   if (!validate()) return
   try {
@@ -355,6 +359,7 @@ async function saveDraft() {
 }
 
 async function auditInvoice() {
+  if (!guard('审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!validate()) return
   if (!confirm(`确认审核发票【${head.value.invoiceNumber || ''}】？\n\n`
     + `· 发票金额 ¥${invoiceAmount.value.toFixed(2)}，已勾稽 ¥${matchedSum.value.toFixed(2)}（${matchStatusText.value}）\n`
@@ -380,6 +385,7 @@ async function auditInvoice() {
 
 /** 已审核发票继续勾稽：保存勾稽明细，后端增量回写来票状态 */
 async function saveMatches() {
+  if (!guard('编辑')) { errors.value.header = '无权限执行该操作'; return }
   if (!canEditMatches.value || !isApproved.value) return
   if (!validate()) return
   savingMatches.value = true
@@ -400,6 +406,7 @@ async function saveMatches() {
 }
 
 async function reverseAudit() {
+  if (!guard('反审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!confirm(`确认反审核发票【${head.value.invoiceNo || ''}】？\n\n将回退该发票对收货单/应付的来票状态勾稽（不影响其他发票的勾稽），发票恢复草稿可修改发票头。已认证发票不可反审核。`)) return
   try {
     const result = await post('/purchase/invoice/reverse-audit', { bizId: head.value.invoiceId })
@@ -411,6 +418,7 @@ async function reverseAudit() {
 }
 
 async function voidInvoice() {
+  if (!guard('作废')) { errors.value.header = '无权限执行该操作'; return }
   const reason = prompt(`作废发票【${head.value.invoiceNo || ''}】，请填写作废原因：\n（已认证发票不可作废，须走红字发票流程）`)
   if (reason === null) return
   if (!reason.trim()) { alert('作废原因必填'); return }
@@ -424,6 +432,7 @@ async function voidInvoice() {
 }
 
 async function certify(target) {
+  if (!guard('认证')) { errors.value.header = '无权限执行该操作'; return }
   try {
     const result = await post('/purchase/invoice/certify', { invoiceId: head.value.invoiceId, certStatus: target })
     emit('save', result)
@@ -434,6 +443,7 @@ async function certify(target) {
 }
 
 async function saveRemark() {
+  if (!guard('编辑')) { errors.value.header = '无权限执行该操作'; return }
   const append = remarkAppend.value.trim()
   if (!append) { alert('请填写要追加的备注内容'); return }
   remarkSaving.value = true
@@ -452,6 +462,7 @@ async function saveRemark() {
 }
 
 async function removeDraft() {
+  if (!guard('删除')) { errors.value.header = '无权限执行该操作'; return }
   if (!confirm(`确认删除发票草稿【${head.value.invoiceNo || head.value.invoiceNumber || ''}】？删除后不可恢复。`)) return
   try {
     const result = await post('/purchase/invoice/delete', { bizId: head.value.invoiceId })
@@ -479,11 +490,11 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
         <span v-if="head.status" class="status-tag st-match">{{ matchStatusText }}</span>
         <span v-if="head.certStatus" class="status-tag" :class="head.certStatus === '已认证' ? 'st-cert' : ''">{{ head.certStatus }}</span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">{{ canEditHead ? '取消' : '关闭' }}</button>
           <template v-if="canEditHead">
             <button class="btn danger" v-if="isEdit" @click="removeDraft">删除草稿</button>
-            <button class="btn" @click="saveDraft">保存</button>
+            <button class="btn" v-permission="isEdit ? permOf('purchaseInvoice', '编辑') : permOf('purchaseInvoice', '新建')" @click="saveDraft">保存</button>
             <button class="btn primary" @click="auditInvoice">审核</button>
           </template>
           <template v-else-if="isApproved && !readonly">
@@ -540,7 +551,7 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
               <label>收票日期</label>
               <input type="date" :readonly="!canEditHead" v-model="head.receiveDate" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('发票金额（含税价税合计）')">
               <label><span style="color:var(--danger)">*</span> 发票金额（含税价税合计）</label>
               <input type="number" step="0.01" min="0" :readonly="!canEditHead"
                      v-model.number="head.totalAmount" placeholder="按发票票面金额填写"
@@ -574,7 +585,7 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
           <div class="detail-toolbar">
             <div style="font-weight:900;color:var(--primary)">勾稽明细</div>
             <div style="display:flex;gap:8px;align-items:center">
-              <span style="font-size:12px;color:#5d7896">
+              <span v-if="canView('发票金额')" style="font-size:12px;color:#5d7896">
                 已勾稽 ¥{{ matchedSum.toFixed(2) }} ／ 发票金额 ¥{{ invoiceAmount.toFixed(2) }}
               </span>
               <button v-if="canEditMatches" class="btn small" @click="openPicker">+ 勾稽商品</button>
@@ -602,8 +613,8 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
                   <th style="width:56px">单位</th>
                   <th class="num" style="width:86px">税率</th>
                   <th class="num" style="width:130px">本次开票数量</th>
-                  <th class="num" style="width:150px">本次开票金额</th>
-                  <th class="num" style="width:100px">本次税额</th>
+                  <th class="num" style="width:150px" v-if="canView('本次开票金额')">本次开票金额</th>
+                  <th class="num" style="width:100px" v-if="canView('本次税额')">本次税额</th>
                   <th v-if="canEditMatches" style="width:70px">操作</th>
                 </tr>
               </thead>
@@ -629,13 +640,13 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
                     <span v-else class="num-cell">{{ m.thisQty }}</span>
                     <div v-if="canEditMatches" class="cell-hint">未开票 {{ m.uninvoicedQty }}</div>
                   </td>
-                  <td>
+                  <td v-if="canView('本次开票金额')">
                     <input v-if="canEditMatches" type="number" step="0.01" min="0"
                            class="cell-input num" v-model.number="m.thisAmount" @input="onAmountInput(m)" />
                     <span v-else class="num-cell">{{ matchThisAmount(m).toFixed(2) }}</span>
                     <div v-if="canEditMatches" class="cell-hint">未开票 ¥{{ Number(m.uninvoicedAmount || 0).toFixed(2) }}</div>
                   </td>
-                  <td class="num-cell">{{ lineTax(m).toFixed(2) }}</td>
+                  <td class="num-cell" v-if="canView('本次税额')">{{ lineTax(m).toFixed(2) }}</td>
                   <td v-if="canEditMatches">
                     <button class="btn-link danger" @click="removeMatch(idx)">取消勾稽</button>
                   </td>
@@ -665,10 +676,10 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
         </div>
 
         <div class="summary">
-          <span>发票金额：<b style="color:var(--danger)">¥ {{ invoiceAmount.toFixed(2) }}</b></span>
-          <span>税额：<b>¥ {{ taxDisplay.toFixed(2) }}</b></span>
-          <span>已勾稽金额：<b>¥ {{ matchedSum.toFixed(2) }}</b></span>
-          <span>未勾稽金额：<b :style="{ color: unmatchedAmount > TOLERANCE ? 'var(--danger)' : '' }">¥ {{ unmatchedAmount.toFixed(2) }}</b></span>
+          <span v-if="canView('发票金额')">发票金额：<b style="color:var(--danger)">¥ {{ invoiceAmount.toFixed(2) }}</b></span>
+          <span v-if="canView('税额')">税额：<b>¥ {{ taxDisplay.toFixed(2) }}</b></span>
+          <span v-if="canView('已勾稽金额')">已勾稽金额：<b>¥ {{ matchedSum.toFixed(2) }}</b></span>
+          <span v-if="canView('未勾稽金额')">未勾稽金额：<b :style="{ color: unmatchedAmount > TOLERANCE ? 'var(--danger)' : '' }">¥ {{ unmatchedAmount.toFixed(2) }}</b></span>
           <span>勾稽状态：<b>{{ matchStatusText }}</b></span>
         </div>
       </div>
@@ -708,13 +719,13 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
                 <th>规格</th>
                 <th>单位</th>
                 <th class="num">数量</th>
-                <th class="num">单价</th>
-                <th class="num">金额</th>
+                <th class="num" v-if="canView('单价')">单价</th>
+                <th class="num" v-if="canView('金额')">金额</th>
                 <th class="num">税率</th>
                 <th class="num">已开票数量</th>
                 <th class="num">未开票数量</th>
-                <th class="num">已开票金额</th>
-                <th class="num">未开票金额</th>
+                <th class="num" v-if="canView('已开票金额')">已开票金额</th>
+                <th class="num" v-if="canView('未开票金额')">未开票金额</th>
               </tr>
             </thead>
             <tbody>
@@ -728,13 +739,13 @@ function fmtDate(v) { return v ? String(v).slice(0, 10) : '' }
                 <td>{{ r.spec || '' }}</td>
                 <td>{{ r.unitName || '' }}</td>
                 <td class="num-cell">{{ r.qty }}</td>
-                <td class="num-cell">{{ Number(r.price || 0).toFixed(4) }}</td>
-                <td class="num-cell">{{ Number(r.amount || 0).toFixed(2) }}</td>
+                <td class="num-cell" v-if="canView('单价')">{{ Number(r.price || 0).toFixed(4) }}</td>
+                <td class="num-cell" v-if="canView('金额')">{{ Number(r.amount || 0).toFixed(2) }}</td>
                 <td class="num-cell">{{ r.taxRate || '13%' }}</td>
                 <td class="num-cell">{{ Number(r.invoicedQty || 0) }}</td>
                 <td class="num-cell">{{ Number(r.uninvoicedQty || 0) }}</td>
-                <td class="num-cell">{{ Number(r.invoicedAmount || 0).toFixed(2) }}</td>
-                <td class="num-cell" style="color:var(--danger);font-weight:700">{{ Number(r.uninvoicedAmount || 0).toFixed(2) }}</td>
+                <td class="num-cell" v-if="canView('已开票金额')">{{ Number(r.invoicedAmount || 0).toFixed(2) }}</td>
+                <td class="num-cell" v-if="canView('未开票金额')" style="color:var(--danger);font-weight:700">{{ Number(r.uninvoicedAmount || 0).toFixed(2) }}</td>
               </tr>
             </tbody>
           </table>

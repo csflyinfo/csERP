@@ -4,6 +4,8 @@ import com.alibaba.excel.EasyExcel;
 import com.alibaba.excel.context.AnalysisContext;
 import com.alibaba.excel.read.listener.ReadListener;
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.MaskProfiles;
+import com.erp.common.security.RequirePerm;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -21,12 +23,15 @@ public class ExcelController {
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
 
     public ExcelController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
-                           com.erp.common.security.FieldMasker fieldMasker) {
+                           com.erp.common.security.FieldMasker fieldMasker,
+                           com.erp.common.security.datascope.DataScopeService dataScope) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
         this.fieldMasker = fieldMasker;
+        this.dataScope = dataScope;
     }
 
     /** PRD-31 导入导出模块码归因：基础资料模块归一到 base.*（有中文名），其余保留原码。 */
@@ -39,10 +44,16 @@ public class ExcelController {
      * 通用导出：根据模块编码查询数据并导出为 Excel
      */
     @PostMapping("/export/{moduleCode}")
+    @RequirePerm(value = "global.export", global = true, name = "导出", type = "ACTION")
     public void export(@PathVariable String moduleCode, @RequestBody Map<String, Object> params, HttpServletResponse response) throws IOException {
         List<Map<String, Object>> data = queryData(moduleCode, params);
-        // PRD-28 §19 GLOBAL-002：导出链路与页面列表同一套字段脱敏，成本/价格/联系方式无权限即留空
-        fieldMasker.mask(data);
+        // PRD-28 §19 GLOBAL-002：导出链路与页面列表同一套字段脱敏，且成本/毛利另需
+        // global.data_export_sensitive 独立授权（maskExport）；amount 等通用列按模块选 profile（卡片6）。
+        switch (moduleCode) {
+            case "salesOrder" -> fieldMasker.maskExport(data, MaskProfiles.SALES_BILL);
+            case "purchaseOrder" -> fieldMasker.maskExport(data, MaskProfiles.PURCHASE_BILL);
+            default -> fieldMasker.maskExport(data);
+        }
         String fileName = URLEncoder.encode(moduleCode + "_导出_" + System.currentTimeMillis() + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         response.setCharacterEncoding("utf-8");
@@ -64,6 +75,7 @@ public class ExcelController {
      * 通用导入：上传 Excel 文件解析并入库
      */
     @PostMapping("/import/{moduleCode}")
+    @RequirePerm(value = "global.import", global = true, name = "导入", type = "ACTION")
     public ApiResponse<Map<String, Object>> importExcel(@PathVariable String moduleCode, @RequestParam("file") MultipartFile file,
                                                         @RequestParam(value = "taskName", required = false) String taskName) throws IOException {
         List<Map<Integer, String>> rows = new ArrayList<>();
@@ -142,17 +154,48 @@ public class ExcelController {
     // ========== 私有辅助方法 ==========
 
     private List<Map<String, Object>> queryData(String moduleCode, Map<String, Object> params) {
+        // 销售/采购订单导出走现行订单表并强制套数据范围（旧 pur_order 已废弃；PRD-28 卡片6）
+        if ("salesOrder".equals(moduleCode) || "purchaseOrder".equals(moduleCode)) {
+            return queryOrderExport(moduleCode);
+        }
         String sql = switch (moduleCode) {
             case "goods" -> "SELECT goods_code, goods_name, spec, category_name, brand_name, base_unit, barcode, standard_price, latest_purchase_price, min_sale_price, goods_type, shelf_life_days, storage_property, suggested_retail_price, stock_upper_limit, stock_lower_limit, default_supplier, default_warehouse, status FROM base_goods ORDER BY goods_code";
             case "customer" -> "SELECT customer_code, customer_name, channel_type, contact_name, mobile, territory, route_line, salesman, customer_level, account_period_type, cutoff_day, payment_day, credit_limit, invoice_title, tax_no, status FROM base_customer ORDER BY customer_code";
             case "supplier" -> "SELECT supplier_code, supplier_name, short_name, supplier_type, contact_name, phone, delivery_days, settlement_method, account_period_days, invoice_title, tax_no, status FROM base_supplier ORDER BY supplier_code";
             case "warehouse" -> "SELECT warehouse_code, warehouse_name, warehouse_type, inventory_type, cost_group, manager_name, status FROM base_warehouse ORDER BY warehouse_code";
-            case "purchaseOrder" -> "SELECT order_no, supplier, buyer, warehouse, bill_date, amount, inbound_amount, payment_status, arrival_status, status FROM pur_order ORDER BY order_no DESC";
-            case "salesOrder" -> "SELECT order_no, customer, salesman, warehouse, bill_date, amount, paid_amount, unpaid_amount, outbound_status, sign_status, status FROM sales_order ORDER BY order_no DESC";
             case "expenseType" -> "SELECT expense_type_code, expense_type_name, parent_code, direction, cost_participation, status FROM base_expense_type ORDER BY COALESCE(parent_code, ''), expense_type_code";
             default -> "SELECT '示例数据' as demo";
         };
         return jdbcTemplate.queryForList(sql);
+    }
+
+    /**
+     * 销售/采购订单报表导出：与列表同一套数据范围（仓库/客户或供应商/业务员/建档人 + 商品分类品牌按明细行），
+     * 低权限账号只能导出自己可见的订单；列与 {@link #buildHead} 的 purchaseOrder/salesOrder 一一对应。
+     */
+    private List<Map<String, Object>> queryOrderExport(String moduleCode) {
+        boolean sales = "salesOrder".equals(moduleCode);
+        StringBuilder sql = new StringBuilder();
+        List<Object> args = new ArrayList<>();
+        if (sales) {
+            sql.append("SELECT t.order_no, t.customer, t.salesman, t.warehouse, t.bill_date, t.amount, ")
+               .append("t.paid_amount, t.unpaid_amount, t.outbound_status, t.sign_status, t.status ")
+               .append("FROM sales_order t WHERE 1=1");
+            dataScope.target().warehouse("t.warehouse").customer("t.customer")
+                    .salesman("t.salesman").creator("t.creator_name")
+                    .goodsLines("t.order_id", "sales_order_detail", "order_id")
+                    .build().appendTo(sql, args);
+        } else {
+            sql.append("SELECT t.order_no, t.supplier_name, t.buyer, t.warehouse, t.bill_date, t.amount, ")
+               .append("t.inbound_amount, t.payment_status, t.inbound_status, t.status ")
+               .append("FROM purchase_order t WHERE 1=1");
+            dataScope.target().warehouse("t.warehouse").supplier("t.supplier_name")
+                    .salesman("t.buyer").creator("t.creator_name")
+                    .goodsLines("t.order_id", "purchase_order_detail", "order_id")
+                    .build().appendTo(sql, args);
+        }
+        sql.append(" ORDER BY t.order_no DESC");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray());
     }
 
     private List<List<String>> buildHead(String moduleCode) {
@@ -183,8 +226,8 @@ public class ExcelController {
                 case "customer" -> Arrays.asList(row.get("customer_code"), row.get("customer_name"), row.get("channel_type"), row.get("contact_name"), row.get("mobile"), row.get("territory"), row.get("route_line"), row.get("salesman"), row.get("customer_level"), row.get("account_period_type"), row.get("cutoff_day"), row.get("payment_day"), row.get("credit_limit"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
                 case "supplier" -> Arrays.asList(row.get("supplier_code"), row.get("supplier_name"), row.get("short_name"), row.get("supplier_type"), row.get("contact_name"), row.get("phone"), row.get("delivery_days"), row.get("settlement_method"), row.get("account_period_days"), row.get("invoice_title"), row.get("tax_no"), row.get("status"));
                 case "warehouse" -> Arrays.asList(row.get("warehouse_code"), row.get("warehouse_name"), row.get("warehouse_type"), row.get("inventory_type"), row.get("cost_group"), row.get("manager_name"), row.get("status"));
-                case "purchaseOrder" -> Arrays.asList(row.get("order_no"), row.get("supplier"), row.get("buyer"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("inbound_amount"), row.get("payment_status"), row.get("arrival_status"), row.get("status"));
-                case "salesOrder" -> Arrays.asList(row.get("order_no"), row.get("customer"), row.get("salesman"), row.get("warehouse"), row.get("bill_date"), row.get("amount"), row.get("paid_amount"), row.get("unpaid_amount"), row.get("outbound_status"), row.get("sign_status"), row.get("status"));
+                case "purchaseOrder" -> Arrays.asList(row.get("order_no"), row.get("supplier_name"), row.get("buyer"), row.get("warehouse"), fmtDate(row.get("bill_date")), row.get("amount"), row.get("inbound_amount"), row.get("payment_status"), row.get("inbound_status"), row.get("status"));
+                case "salesOrder" -> Arrays.asList(row.get("order_no"), row.get("customer"), row.get("salesman"), row.get("warehouse"), fmtDate(row.get("bill_date")), row.get("amount"), row.get("paid_amount"), row.get("unpaid_amount"), row.get("outbound_status"), row.get("sign_status"), row.get("status"));
                 case "expenseType" -> {
                     String parentCode = row.get("parent_code") == null ? "" : String.valueOf(row.get("parent_code"));
                     String parentName = parentCode.isEmpty() ? "" : expenseNameMap.getOrDefault(parentCode, parentCode);
@@ -200,6 +243,22 @@ public class ExcelController {
             });
         }
         return result;
+    }
+
+    /**
+     * EasyExcel 3.3.4 没有内置 {@code java.util.Date}/{@code java.sql.Date} 的 Converter，
+     * 直接写 Date 单元格会抛 ExcelWriteDataConvertException 导致整个导出 0 字节失败；
+     * 统一在 Java 层转字符串（项目约定日期格式化不走数据库函数）。
+     */
+    private static Object fmtDate(Object v) {
+        if (v == null) return null;
+        if (v instanceof java.sql.Date d) return d.toString();
+        if (v instanceof java.sql.Timestamp t) return t.toString().substring(0, 19);
+        if (v instanceof java.util.Date d)
+            return new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(d);
+        if (v instanceof java.time.LocalDate d) return d.toString();
+        if (v instanceof java.time.LocalDateTime t) return t.toString().replace('T', ' ').substring(0, 19);
+        return v;
     }
 
     private static String statusText(Object status) {

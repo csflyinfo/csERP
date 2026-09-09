@@ -3,6 +3,7 @@ package com.erp.sales;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -68,24 +69,40 @@ public class SalesReceiptController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public SalesReceiptController(JdbcTemplate jdbcTemplate,
                                   com.erp.common.util.BillNoGenerator billNoGen,
                                   RejectInboundController rejectInboundController,
                                   com.erp.system.OperationLogService opLog,
-                                  com.erp.finance.gl.GlHookService glHooks) {
+                                  com.erp.finance.gl.GlHookService glHooks,
+                                  com.erp.common.security.datascope.DataScopeService dataScope,
+                                  com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.rejectInboundController = rejectInboundController;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 销售发货单列表/详情共用数据范围目标：仓库/客户/建档人 + 商品分类/品牌按明细行（无业务员维度）。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget receiptScopeTarget() {
+        return dataScope.target()
+                .warehouse("r.warehouse").customer("r.customer_name").creator("r.creator_name")
+                .goodsLines("r.receipt_id", "sales_receipt_detail", "receipt_id");
     }
 
     // ============ 列表 & 详情 ============
 
+    @RequirePerm(value = "sales.receipt.view", name = "查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：仓库/客户/建档人 + 商品分类/品牌按明细行过滤（无业务员维度）
+        var scope = receiptScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
                 SELECT r.receipt_id, r.receipt_no, r.source_outbound_no, r.source_order_no,
                        r.customer_code, r.customer_name, r.warehouse, r.driver, r.receipt_date,
                        r.deliver_amount, r.sign_amount, r.reject_amount,
@@ -98,8 +115,12 @@ public class SalesReceiptController {
                         WHERE ri.source_receipt_no = r.receipt_no) AS reject_inbound_no
                 FROM sales_receipt r
                 LEFT JOIN fin_ar a ON a.source_bill = r.receipt_no
-                ORDER BY r.create_time DESC, r.receipt_no DESC
+                WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY r.create_time DESC, r.receipt_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -122,9 +143,11 @@ public class SalesReceiptController {
             row.put("orderNo", row.get("sourceOrderNo"));
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "sales.receipt.view", name = "查看")
     @GetMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String receiptId,
@@ -145,16 +168,33 @@ public class SalesReceiptController {
                 """, key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "销售发货单不存在");
         Map<String, Object> head = camelize(heads.get(0));
+        String realReceiptId = String.valueOf(head.get("receiptId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = receiptScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM sales_receipt r WHERE r.receipt_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realReceiptId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "销售发货单不存在或无权查看");
         head.put("signStatusText", str(head.getOrDefault("signStatus", "")).isBlank()
                 ? "待签收" : head.get("signStatus"));
         List<String> rejectNos = jdbcTemplate.queryForList(
                 "SELECT inbound_no FROM inv_reject_inbound WHERE source_receipt_no = ?",
                 String.class, str(head.get("receiptNo")));
         head.put("rejectInboundNo", rejectNos.isEmpty() ? null : rejectNos.get(0));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM sales_receipt_detail WHERE receipt_id = ? ORDER BY detail_id",
-                head.get("receiptId"));
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM sales_receipt_detail WHERE receipt_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realReceiptId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(SalesReceiptController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
@@ -167,6 +207,7 @@ public class SalesReceiptController {
      * 因为应收金额要按签收数量算，必须等签收登记完才有正确金额。
      * 本端点保留给「已签收但自动审核失败」之类的补救场景，两个前置校验和自动审核完全一致。
      */
+    @RequirePerm(value = "sales.receipt.audit", name = "审核")
     @PostMapping("/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditReceipt(@Valid @RequestBody AuditRequest request) {
@@ -236,6 +277,7 @@ public class SalesReceiptController {
         return arNo;
     }
 
+    @RequirePerm(value = "sales.receipt.unaudit", name = "反审核")
     @PostMapping("/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
@@ -302,6 +344,7 @@ public class SalesReceiptController {
      * <p>撤销签收（{@link #unsign}）会把这些全部回滚：删应收、恢复 PENDING、
      * 签收/拒收/税额/不含税金额全部归 0（回到生单口径）。
      */
+    @RequirePerm(value = "sales.receipt.biz_sign", name = "签收")
     @PostMapping("/sign")
     @Transactional
     public ApiResponse<Map<String, Object>> sign(@RequestBody Map<String, Object> request) {
@@ -475,6 +518,7 @@ public class SalesReceiptController {
      *   <li>清空 {@code signed_qty / reject_qty / reject_reason} 与主单签收字段。</li>
      * </ol>
      */
+    @RequirePerm(value = "sales.receipt.biz_unsign", name = "取消签收")
     @PostMapping("/unsign")
     @Transactional
     public ApiResponse<Map<String, Object>> unsign(@Valid @RequestBody AuditRequest request) {

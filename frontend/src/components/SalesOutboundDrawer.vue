@@ -15,6 +15,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('salesOutbound')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -270,6 +273,7 @@ function removeRow(index) {
 }
 
 async function saveOutbound() {
+  if (!guard(isEditMode.value ? '编辑' : '新建')) { errors.value.header = '无权限执行该操作'; return }
   errors.value = {}
   if (!headerForm.value.sourceOrder) {
     errors.value.header = '请选择来源销售订单'
@@ -373,9 +377,11 @@ function closeDrawer() { emit('close') }
       <div class="outbound-drawer-head">
         <b>{{ isEditMode ? '编辑销售出库单' : (props.sourceOrder ? '生成销售出库单' : '新建销售出库单') }}</b>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">取消</button>
-          <button class="btn primary" @click="saveOutbound">保存</button>
+          <button class="btn primary"
+                  v-permission="isEditMode ? permOf('salesOutbound', '编辑') : permOf('salesOutbound', '新建')"
+                  @click="saveOutbound">保存</button>
         </div>
       </div>
 
@@ -389,7 +395,7 @@ function closeDrawer() { emit('close') }
               <select v-if="!props.sourceOrder && !isEditMode" v-model="headerForm.sourceOrder" @change="onOrderChange($event.target.value)">
                 <option value="">请选择</option>
                 <option v-for="o in availableOrders" :key="o.orderNo || o.orderno" :value="o.orderNo || o.orderno">
-                  {{ o.orderNo || o.orderno }} - {{ o.customerName || o.customername }}（订单额 ¥{{ o.amount }}）
+                  {{ o.orderNo || o.orderno }} - {{ o.customerName || o.customername }}<template v-if="canView('订单金额')">（订单额 ¥{{ o.amount }}）</template>
                 </option>
               </select>
               <input v-else readonly :value="headerForm.sourceOrder" />
@@ -418,7 +424,7 @@ function closeDrawer() { emit('close') }
               <label>单据日期</label>
               <input type="date" v-model="headerForm.billDate" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('订单金额')">
               <label>订单金额</label>
               <input readonly :value="'¥ ' + Number(headerForm.orderAmount).toFixed(2)" />
             </div>
@@ -453,8 +459,8 @@ function closeDrawer() { emit('close') }
                   <th style="width:100px">单据数量 <span class="req">*</span></th>
                   <th style="width:70px">小单位</th>
                   <th style="width:90px">小单位数</th>
-                  <th style="width:80px">单价</th>
-                  <th style="width:90px">金额</th>
+                  <th v-if="canView('单价')" style="width:80px">单价</th>
+                  <th v-if="canView('金额')" style="width:90px">金额</th>
                   <th style="min-width:180px">批次 <span class="req">*</span></th>
                   <th style="min-width:130px">生产日期</th>
                   <th style="min-width:120px">备注</th>
@@ -478,8 +484,8 @@ function closeDrawer() { emit('close') }
                   </td>
                   <td>{{ row.smallUnitName }}</td>
                   <td style="text-align:right">{{ row.smallUnitQty }}</td>
-                  <td style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
-                  <td style="text-align:right;font-weight:700">
+                  <td v-if="canView('单价')" style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
+                  <td v-if="canView('金额')" style="text-align:right;font-weight:700">
                     {{ (Number(row.qty || 0) * Number(row.price || 0)).toFixed(2) }}
                   </td>
                   <td>
@@ -514,7 +520,7 @@ function closeDrawer() { emit('close') }
 
         <div class="summary">
           <span>合计数量：<b>{{ totalQty }}</b></span>
-          <span>合计金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="canView('合计金额')">合计金额：<b>¥ {{ totalAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

@@ -1,12 +1,27 @@
+import { promptApproval } from './approval-dialog.js'
+
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 const TOKEN_KEY = 'erp-token'
+
+/**
+ * 业务错误：保留后端 code 与 data。普通调用方仍可读 e.message；
+ * 特殊流程（如 NEED_APPROVAL）据 e.code/e.data 分支处理。
+ */
+export class ApiError extends Error {
+  constructor(code, message, data) {
+    super(message || '请求失败')
+    this.name = 'ApiError'
+    this.code = code
+    this.data = data
+  }
+}
 
 function authHeaders(extra = {}) {
   const token = localStorage.getItem(TOKEN_KEY)
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra
 }
 
-async function request(path, options = {}) {
+async function rawFetch(path, options) {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: authHeaders(options.headers || {}),
@@ -16,8 +31,33 @@ async function request(path, options = {}) {
     localStorage.removeItem(TOKEN_KEY)
     window.dispatchEvent(new CustomEvent('erp-auth-expired'))
   }
-  if (!response.ok || result.code !== '0') throw new Error(result.message || '请求失败')
-  return result.data
+  return { response, result }
+}
+
+async function request(path, options = {}) {
+  const { response, result } = await rawFetch(path, options)
+  if (response.ok && result.code === '0') return result.data
+
+  // PRD-28 §6.2.1：低价/超信用/负库存命中红线 → 弹授权框，合并凭证后重放原请求（仅一次）
+  const method = (options.method || 'GET').toUpperCase()
+  if (result.code === 'NEED_APPROVAL' && !options.__approvalRetried
+      && (method === 'POST' || method === 'PUT') && options.body) {
+    const cred = await promptApproval(result.data || {})
+    if (cred) {
+      const originalBody = JSON.parse(options.body || '{}')
+      const retryOptions = {
+        ...options,
+        body: JSON.stringify({ ...originalBody, approverAccount: cred.account, approverPassword: cred.password }),
+        __approvalRetried: true,
+      }
+      const retried = await rawFetch(path, retryOptions)
+      if (retried.response.ok && retried.result.code === '0') return retried.result.data
+      // 重放仍失败：按普通业务错误抛出（授权被拒/密码错等，后端已写失败日志）
+      throw new ApiError(retried.result.code, retried.result.message || '授权后重试失败', retried.result.data)
+    }
+  }
+
+  throw new ApiError(result.code, result.message || '请求失败', result.data)
 }
 
 export async function post(path, body = {}) {

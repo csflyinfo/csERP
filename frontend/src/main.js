@@ -13,8 +13,11 @@ import '@fontsource/fira-code/400.css'
 import '@fontsource/fira-code/500.css'
 
 import './styles/app.css'
+import { permissionDirective, actionPermsDirective } from './directives/permission.js'
 
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)
+app.directive('permission', permissionDirective)
+app.directive('action-perms', actionPermsDirective)
 app.mount('#app')

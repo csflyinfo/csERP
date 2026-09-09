@@ -4,6 +4,9 @@
  */
 import { ref, watch, computed } from 'vue'
 import { post } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView } = useRbac('purchaseExpense')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -273,7 +276,7 @@ watch(() => props.visible, async (v) => {
             <b style="font-size:13px">费用明细</b>
             <span v-if="formErrors.details" style="color:#f56c6c;font-size:12px">{{ formErrors.details }}</span>
             <div style="flex:1"></div>
-            <span style="font-size:12px;color:#606266">合计 ￥{{ totalAmount }}（税额 ￥{{ totalTax }}）</span>
+            <span v-if="canView('金额')" style="font-size:12px;color:#606266">合计 ￥{{ totalAmount }}（税额 ￥{{ totalTax }}）</span>
             <button class="btn" style="height:24px;font-size:11px;padding:0 8px" @click="addDetailRow">+ 添加行</button>
           </div>
           <div class="detail-scroll">
@@ -285,11 +288,11 @@ watch(() => props.visible, async (v) => {
                   <th style="min-width:100px">商品</th>
                   <th style="width:56px">品牌</th>
                   <th style="width:52px;text-align:right">数量</th>
-                  <th style="width:72px;text-align:right">单价</th>
-                  <th style="width:76px;text-align:right">金额</th>
+                  <th style="width:72px;text-align:right" v-if="canView('单价')">单价</th>
+                  <th style="width:76px;text-align:right" v-if="canView('金额')">金额</th>
                   <th style="width:50px;text-align:right">税率%</th>
-                  <th style="width:70px;text-align:right">税额</th>
-                  <th style="width:76px;text-align:right">不含税</th>
+                  <th style="width:70px;text-align:right" v-if="canView('税额')">税额</th>
+                  <th style="width:76px;text-align:right" v-if="canView('不含税')">不含税</th>
                   <th style="min-width:60px">备注</th>
                   <th style="width:36px">操作</th>
                 </tr>
@@ -314,11 +317,11 @@ watch(() => props.visible, async (v) => {
                   </td>
                   <td><input v-model="d.brandName" style="width:100%;height:24px;font-size:11px" placeholder="自动" /></td>
                   <td><input type="number" min="0" step="1" :value="d.qty" @input="d.qty=Number($event.target.value)||0; recalcDetail(d)" style="width:100%;height:24px;text-align:right;font-size:12px" /></td>
-                  <td><input type="text" :value="d.price == null ? '' : d.price" @input="onDetailPriceChange(d, $event.target.value)" style="width:100%;height:24px;text-align:right;font-size:12px" /></td>
-                  <td><input type="text" :value="d.amount" @input="onDetailAmountChange(d, $event.target.value)" style="width:100%;height:24px;text-align:right;font-size:12px;font-weight:600" /></td>
+                  <td v-if="canView('单价')"><input type="text" :value="d.price == null ? '' : d.price" @input="onDetailPriceChange(d, $event.target.value)" style="width:100%;height:24px;text-align:right;font-size:12px" /></td>
+                  <td v-if="canView('金额')"><input type="text" :value="d.amount" @input="onDetailAmountChange(d, $event.target.value)" style="width:100%;height:24px;text-align:right;font-size:12px;font-weight:600" /></td>
                   <td><input type="number" min="0" max="100" :value="d.taxRate" @input="d.taxRate=Number($event.target.value)||0; recalcDetail(d)" style="width:100%;height:24px;text-align:right;font-size:12px" /></td>
-                  <td style="text-align:right;font-size:12px;color:#e6a23c">{{ Number(d.taxAmount || 0).toFixed(2) }}</td>
-                  <td style="text-align:right;font-size:12px;color:#909399">{{ Number(d.excludingTaxAmount || 0).toFixed(2) }}</td>
+                  <td v-if="canView('税额')" style="text-align:right;font-size:12px;color:#e6a23c">{{ Number(d.taxAmount || 0).toFixed(2) }}</td>
+                  <td v-if="canView('不含税')" style="text-align:right;font-size:12px;color:#909399">{{ Number(d.excludingTaxAmount || 0).toFixed(2) }}</td>
                   <td><input v-model="d.remark" style="width:100%;height:24px;font-size:12px" placeholder="选填" /></td>
                   <td><button class="link link-btn danger-link" @click="removeDetailRow(i)">删除</button></td>
                 </tr>

@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-09 20:48:04
+> 生成时间：2026-09-10 00:22:13
 
 - 端点总数：768
-- 已挂 @RequirePerm：54
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：637
+- 已挂 @RequirePerm：175
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：544
 
 ## base
 
@@ -127,8 +127,8 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/excel/export/{moduleCode}` | ExcelController#export | — | — | — | ❌ |
-| POST | `/excel/import/{moduleCode}` | ExcelController#importExcel | — | — | — | ❌ |
+| POST | `/excel/export/{moduleCode}` | ExcelController#export | global.export | global | export | 方法：global.export（GLOBAL） |
+| POST | `/excel/import/{moduleCode}` | ExcelController#importExcel | global.import | global | import | 方法：global.import（GLOBAL） |
 | GET | `/excel/template/{moduleCode}` | ExcelController#downloadTemplate | — | — | — | ❌ |
 
 ## finance
@@ -353,59 +353,59 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/purchase/expense/audit` | PurchaseController#auditExpense | purchase.fee.audit | purchase.fee | audit | ❌ |
-| POST | `/purchase/expense/page` | PurchaseController#expensePage | purchase.fee.view | purchase.fee | view | ❌ |
-| POST | `/purchase/inbound/audit` | PurchaseController#auditInbound | purchase.inbound.audit | purchase.inbound | audit | ❌ |
-| POST | `/purchase/inbound/create` | PurchaseController#createInbound | purchase.inbound.add | purchase.inbound | add | ❌ |
-| GET | `/purchase/inbound/detail` | PurchaseController#inboundDetail | purchase.inbound.view | purchase.inbound | view | ❌ |
-| GET | `/purchase/inbound/from-order` | PurchaseController#inboundFromOrder | purchase.inbound.view | purchase.inbound | view | ❌ |
-| POST | `/purchase/inbound/page` | PurchaseController#inboundPage | purchase.inbound.view | purchase.inbound | view | ❌ |
-| POST | `/purchase/invoice/audit` | PurchaseInvoiceController#audit | purchase.invoice.audit | purchase.invoice | audit | ❌ |
-| POST | `/purchase/invoice/available-lines` | PurchaseInvoiceController#availableLines | purchase.invoice.biz_available_lines | purchase.invoice | biz_available_lines | ❌ |
-| POST | `/purchase/invoice/certify` | PurchaseInvoiceController#certify | purchase.invoice.biz_certify | purchase.invoice | biz_certify | ❌ |
-| POST | `/purchase/invoice/create` | PurchaseInvoiceController#create | purchase.invoice.add | purchase.invoice | add | ❌ |
-| POST | `/purchase/invoice/delete` | PurchaseInvoiceController#delete | purchase.invoice.delete | purchase.invoice | delete | ❌ |
-| GET | `/purchase/invoice/detail` | PurchaseInvoiceController#detail | purchase.invoice.view | purchase.invoice | view | ❌ |
-| POST | `/purchase/invoice/page` | PurchaseInvoiceController#page | purchase.invoice.view | purchase.invoice | view | ❌ |
-| POST | `/purchase/invoice/report/supplier/page` | PurchaseInvoiceController#supplierReport | purchase.invoice.biz_report | purchase.invoice | biz_report | ❌ |
-| POST | `/purchase/invoice/report/track/page` | PurchaseInvoiceController#trackReport | purchase.invoice.biz_report | purchase.invoice | biz_report | ❌ |
-| POST | `/purchase/invoice/report/unmatched/page` | PurchaseInvoiceController#unmatchedReport | purchase.invoice.biz_report | purchase.invoice | biz_report | ❌ |
-| POST | `/purchase/invoice/reverse-audit` | PurchaseInvoiceController#reverseAudit | purchase.invoice.unaudit | purchase.invoice | unaudit | ❌ |
-| POST | `/purchase/invoice/update` | PurchaseInvoiceController#update | purchase.invoice.edit | purchase.invoice | edit | ❌ |
-| POST | `/purchase/invoice/update-matches` | PurchaseInvoiceController#updateMatches | purchase.invoice.edit | purchase.invoice | edit | ❌ |
-| POST | `/purchase/invoice/update-remark` | PurchaseInvoiceController#updateRemark | purchase.invoice.edit | purchase.invoice | edit | ❌ |
-| POST | `/purchase/invoice/void` | PurchaseInvoiceController#voidInvoice | purchase.invoice.close | purchase.invoice | close | ❌ |
-| POST | `/purchase/order/audit` | OrderController#auditPurchase | purchase.order.audit | purchase.order | audit | ❌ |
-| POST | `/purchase/order/close` | OrderController#closePurchase | purchase.order.close | purchase.order | close | ❌ |
-| POST | `/purchase/order/create` | OrderController#createPurchase | purchase.order.add | purchase.order | add | ❌ |
-| POST | `/purchase/order/delete` | OrderController#deletePurchase | purchase.order.delete | purchase.order | delete | ❌ |
-| GET | `/purchase/order/detail` | OrderController#purchaseDetail | purchase.order.view | purchase.order | view | ❌ |
-| POST | `/purchase/order/page` | OrderController#purchasePage | purchase.order.view | purchase.order | view | ❌ |
-| POST | `/purchase/order/reverse-audit` | OrderController#reverseAuditPurchase | purchase.order.unaudit | purchase.order | unaudit | ❌ |
-| POST | `/purchase/receipt/audit` | PurchaseReceiptController#auditReceipt | purchase.receipt.audit | purchase.receipt | audit | ❌ |
-| GET | `/purchase/receipt/detail` | PurchaseReceiptController#detail | purchase.receipt.view | purchase.receipt | view | ❌ |
-| POST | `/purchase/receipt/page` | PurchaseReceiptController#page | purchase.receipt.view | purchase.receipt | view | ❌ |
-| POST | `/purchase/receipt/reverse-audit` | PurchaseReceiptController#reverseAudit | purchase.receipt.unaudit | purchase.receipt | unaudit | ❌ |
-| POST | `/purchase/receipt/update` | PurchaseReceiptController#updateReceipt | purchase.receipt.edit | purchase.receipt | edit | ❌ |
-| POST | `/purchase/return-apply/audit` | PurchaseReturnController#auditApply | purchase.return_apply.audit | purchase.return_apply | audit | ❌ |
-| GET | `/purchase/return-apply/batch-options` | PurchaseReturnController#batchOptions | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| POST | `/purchase/return-apply/create` | PurchaseReturnController#createApply | purchase.return_apply.add | purchase.return_apply | add | ❌ |
-| POST | `/purchase/return-apply/delete` | PurchaseReturnController#deleteApply | purchase.return_apply.delete | purchase.return_apply | delete | ❌ |
-| GET | `/purchase/return-apply/detail` | PurchaseReturnController#applyDetail | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| GET | `/purchase/return-apply/goods-options` | PurchaseReturnController#goodsOptions | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| GET | `/purchase/return-apply/inbound-bills` | PurchaseReturnController#inboundBills | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| GET | `/purchase/return-apply/inbound-detail` | PurchaseReturnController#inboundDetail | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| POST | `/purchase/return-apply/page` | PurchaseReturnController#applyPage | purchase.return_apply.view | purchase.return_apply | view | ❌ |
-| POST | `/purchase/return-apply/reverse-audit` | PurchaseReturnController#reverseAuditApply | purchase.return_apply.unaudit | purchase.return_apply | unaudit | ❌ |
-| POST | `/purchase/return-apply/update` | PurchaseReturnController#updateApply | purchase.return_apply.edit | purchase.return_apply | edit | ❌ |
-| POST | `/purchase/return-outbound/audit` | PurchaseReturnController#auditOutbound | purchase.return_outbound.audit | purchase.return_outbound | audit | ❌ |
-| GET | `/purchase/return-outbound/detail` | PurchaseReturnController#outboundDetail | purchase.return_outbound.view | purchase.return_outbound | view | ❌ |
-| POST | `/purchase/return-outbound/page` | PurchaseReturnController#outboundPage | purchase.return_outbound.view | purchase.return_outbound | view | ❌ |
-| POST | `/purchase/return-outbound/update` | PurchaseReturnController#updateOutbound | purchase.return_outbound.edit | purchase.return_outbound | edit | ❌ |
-| POST | `/purchase/return/audit` | PurchaseReturnController#auditReturn | purchase.return_bill.audit | purchase.return_bill | audit | ❌ |
-| GET | `/purchase/return/detail` | PurchaseReturnController#returnDetail | purchase.return_bill.view | purchase.return_bill | view | ❌ |
-| POST | `/purchase/return/page` | PurchaseReturnController#returnPage | purchase.return_bill.view | purchase.return_bill | view | ❌ |
-| POST | `/purchase/return/reverse-audit` | PurchaseReturnController#reverseAuditReturn | purchase.return_bill.unaudit | purchase.return_bill | unaudit | ❌ |
+| POST | `/purchase/expense/audit` | PurchaseController#auditExpense | purchase.fee.audit | purchase.fee | audit | 方法：purchase.fee.audit |
+| POST | `/purchase/expense/page` | PurchaseController#expensePage | purchase.fee.view | purchase.fee | view | 方法：purchase.fee.view |
+| POST | `/purchase/inbound/audit` | PurchaseController#auditInbound | purchase.inbound.audit | purchase.inbound | audit | 方法：purchase.inbound.audit |
+| POST | `/purchase/inbound/create` | PurchaseController#createInbound | purchase.inbound.add | purchase.inbound | add | 方法：purchase.inbound.add |
+| GET | `/purchase/inbound/detail` | PurchaseController#inboundDetail | purchase.inbound.view | purchase.inbound | view | 方法：purchase.inbound.view |
+| GET | `/purchase/inbound/from-order` | PurchaseController#inboundFromOrder | purchase.inbound.view | purchase.inbound | view | 方法：purchase.inbound.view |
+| POST | `/purchase/inbound/page` | PurchaseController#inboundPage | purchase.inbound.view | purchase.inbound | view | 方法：purchase.inbound.view |
+| POST | `/purchase/invoice/audit` | PurchaseInvoiceController#audit | purchase.invoice.audit | purchase.invoice | audit | 方法：purchase.invoice.audit |
+| POST | `/purchase/invoice/available-lines` | PurchaseInvoiceController#availableLines | purchase.invoice.view | purchase.invoice | view | 方法：purchase.invoice.view |
+| POST | `/purchase/invoice/certify` | PurchaseInvoiceController#certify | purchase.invoice.biz_certify | purchase.invoice | biz_certify | 方法：purchase.invoice.biz_certify |
+| POST | `/purchase/invoice/create` | PurchaseInvoiceController#create | purchase.invoice.add | purchase.invoice | add | 方法：purchase.invoice.add |
+| POST | `/purchase/invoice/delete` | PurchaseInvoiceController#delete | purchase.invoice.delete | purchase.invoice | delete | 方法：purchase.invoice.delete |
+| GET | `/purchase/invoice/detail` | PurchaseInvoiceController#detail | purchase.invoice.view | purchase.invoice | view | 方法：purchase.invoice.view |
+| POST | `/purchase/invoice/page` | PurchaseInvoiceController#page | purchase.invoice.view | purchase.invoice | view | 方法：purchase.invoice.view |
+| POST | `/purchase/invoice/report/supplier/page` | PurchaseInvoiceController#supplierReport | purchase.invoice.biz_report | purchase.invoice | biz_report | 方法：purchase.invoice.biz_report |
+| POST | `/purchase/invoice/report/track/page` | PurchaseInvoiceController#trackReport | purchase.invoice.biz_report | purchase.invoice | biz_report | 方法：purchase.invoice.biz_report |
+| POST | `/purchase/invoice/report/unmatched/page` | PurchaseInvoiceController#unmatchedReport | purchase.invoice.biz_report | purchase.invoice | biz_report | 方法：purchase.invoice.biz_report |
+| POST | `/purchase/invoice/reverse-audit` | PurchaseInvoiceController#reverseAudit | purchase.invoice.unaudit | purchase.invoice | unaudit | 方法：purchase.invoice.unaudit |
+| POST | `/purchase/invoice/update` | PurchaseInvoiceController#update | purchase.invoice.edit | purchase.invoice | edit | 方法：purchase.invoice.edit |
+| POST | `/purchase/invoice/update-matches` | PurchaseInvoiceController#updateMatches | purchase.invoice.edit | purchase.invoice | edit | 方法：purchase.invoice.edit |
+| POST | `/purchase/invoice/update-remark` | PurchaseInvoiceController#updateRemark | purchase.invoice.edit | purchase.invoice | edit | 方法：purchase.invoice.edit |
+| POST | `/purchase/invoice/void` | PurchaseInvoiceController#voidInvoice | purchase.invoice.close | purchase.invoice | close | 方法：purchase.invoice.close |
+| POST | `/purchase/order/audit` | OrderController#auditPurchase | purchase.order.audit | purchase.order | audit | 方法：purchase.order.audit |
+| POST | `/purchase/order/close` | OrderController#closePurchase | purchase.order.close | purchase.order | close | 方法：purchase.order.close |
+| POST | `/purchase/order/create` | OrderController#createPurchase | purchase.order.add | purchase.order | add | 方法：purchase.order.add |
+| POST | `/purchase/order/delete` | OrderController#deletePurchase | purchase.order.delete | purchase.order | delete | 方法：purchase.order.delete |
+| GET | `/purchase/order/detail` | OrderController#purchaseDetail | purchase.order.view | purchase.order | view | 方法：purchase.order.view |
+| POST | `/purchase/order/page` | OrderController#purchasePage | purchase.order.view | purchase.order | view | 方法：purchase.order.view |
+| POST | `/purchase/order/reverse-audit` | OrderController#reverseAuditPurchase | purchase.order.unaudit | purchase.order | unaudit | 方法：purchase.order.unaudit |
+| POST | `/purchase/receipt/audit` | PurchaseReceiptController#auditReceipt | purchase.receipt.audit | purchase.receipt | audit | 方法：purchase.receipt.audit |
+| GET | `/purchase/receipt/detail` | PurchaseReceiptController#detail | purchase.receipt.view | purchase.receipt | view | 方法：purchase.receipt.view |
+| POST | `/purchase/receipt/page` | PurchaseReceiptController#page | purchase.receipt.view | purchase.receipt | view | 方法：purchase.receipt.view |
+| POST | `/purchase/receipt/reverse-audit` | PurchaseReceiptController#reverseAudit | purchase.receipt.unaudit | purchase.receipt | unaudit | 方法：purchase.receipt.unaudit |
+| POST | `/purchase/receipt/update` | PurchaseReceiptController#updateReceipt | purchase.receipt.edit | purchase.receipt | edit | 方法：purchase.receipt.edit |
+| POST | `/purchase/return-apply/audit` | PurchaseReturnController#auditApply | purchase.return_apply.audit | purchase.return_apply | audit | 方法：purchase.return_apply.audit |
+| GET | `/purchase/return-apply/batch-options` | PurchaseReturnController#batchOptions | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| POST | `/purchase/return-apply/create` | PurchaseReturnController#createApply | purchase.return_apply.add | purchase.return_apply | add | 方法：purchase.return_apply.add |
+| POST | `/purchase/return-apply/delete` | PurchaseReturnController#deleteApply | purchase.return_apply.delete | purchase.return_apply | delete | 方法：purchase.return_apply.delete |
+| GET | `/purchase/return-apply/detail` | PurchaseReturnController#applyDetail | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| GET | `/purchase/return-apply/goods-options` | PurchaseReturnController#goodsOptions | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| GET | `/purchase/return-apply/inbound-bills` | PurchaseReturnController#inboundBills | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| GET | `/purchase/return-apply/inbound-detail` | PurchaseReturnController#inboundDetail | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| POST | `/purchase/return-apply/page` | PurchaseReturnController#applyPage | purchase.return_apply.view | purchase.return_apply | view | 方法：purchase.return_apply.view |
+| POST | `/purchase/return-apply/reverse-audit` | PurchaseReturnController#reverseAuditApply | purchase.return_apply.unaudit | purchase.return_apply | unaudit | 方法：purchase.return_apply.unaudit |
+| POST | `/purchase/return-apply/update` | PurchaseReturnController#updateApply | purchase.return_apply.edit | purchase.return_apply | edit | 方法：purchase.return_apply.edit |
+| POST | `/purchase/return-outbound/audit` | PurchaseReturnController#auditOutbound | purchase.return_outbound.audit | purchase.return_outbound | audit | 方法：purchase.return_outbound.audit |
+| GET | `/purchase/return-outbound/detail` | PurchaseReturnController#outboundDetail | purchase.return_outbound.view | purchase.return_outbound | view | 方法：purchase.return_outbound.view |
+| POST | `/purchase/return-outbound/page` | PurchaseReturnController#outboundPage | purchase.return_outbound.view | purchase.return_outbound | view | 方法：purchase.return_outbound.view |
+| POST | `/purchase/return-outbound/update` | PurchaseReturnController#updateOutbound | purchase.return_outbound.edit | purchase.return_outbound | edit | 方法：purchase.return_outbound.edit |
+| POST | `/purchase/return/audit` | PurchaseReturnController#auditReturn | purchase.return_bill.audit | purchase.return_bill | audit | 方法：purchase.return_bill.audit |
+| GET | `/purchase/return/detail` | PurchaseReturnController#returnDetail | purchase.return_bill.view | purchase.return_bill | view | 方法：purchase.return_bill.view |
+| POST | `/purchase/return/page` | PurchaseReturnController#returnPage | purchase.return_bill.view | purchase.return_bill | view | 方法：purchase.return_bill.view |
+| POST | `/purchase/return/reverse-audit` | PurchaseReturnController#reverseAuditReturn | purchase.return_bill.unaudit | purchase.return_bill | unaudit | 方法：purchase.return_bill.unaudit |
 
 ## report
 
@@ -418,79 +418,79 @@
 | GET | `/report/chart/sales-trend` | ReportController#salesTrend | report.chart.view | report.chart | view | ❌ |
 | GET | `/report/chart/stock-distribution` | ReportController#stockDistribution | report.chart.view | report.chart | view | ❌ |
 | GET | `/report/dashboard/summary` | ReportController#dashboardSummary | — | — | — | ❌ |
-| POST | `/report/export` | ReportController#exportReport | — | — | — | ❌ |
+| POST | `/report/export` | ReportController#exportReport | global.export | global | export | 方法：global.export（GLOBAL） |
 | POST | `/report/finance/page` | ReportController#financeReport | report.finance.view | report.finance | view | ❌ |
-| POST | `/report/purchase/page` | ReportController#purchaseReport | report.purchase.view | report.purchase | view | ❌ |
-| POST | `/report/sales/page` | ReportController#salesReport | report.sales.view | report.sales | view | ❌ |
+| POST | `/report/purchase/page` | ReportController#purchaseReport | report.purchase.view | report.purchase | view | 方法：report.purchase.view |
+| POST | `/report/sales/page` | ReportController#salesReport | report.sales.view | report.sales | view | 方法：report.sales.view |
 | POST | `/report/stock/page` | ReportController#stockReport | report.inventory.view | report.inventory | view | ❌ |
 
 ## sales
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/sales/fly-order/audit` | FlyOrderController#audit | sales.flying.audit | sales.flying | audit | ❌ |
-| POST | `/sales/fly-order/batch-audit` | FlyOrderController#batchAudit | sales.flying.audit | sales.flying | audit | ❌ |
-| POST | `/sales/fly-order/batch-delete` | FlyOrderController#batchDelete | sales.flying.biz_batch_delete | sales.flying | biz_batch_delete | ❌ |
-| POST | `/sales/fly-order/batch-unaudit` | FlyOrderController#batchUnaudit | sales.flying.unaudit | sales.flying | unaudit | ❌ |
-| POST | `/sales/fly-order/cancel` | FlyOrderController#cancel | sales.flying.close | sales.flying | close | ❌ |
-| POST | `/sales/fly-order/create` | FlyOrderController#create | sales.flying.add | sales.flying | add | ❌ |
-| POST | `/sales/fly-order/delete` | FlyOrderController#delete | sales.flying.delete | sales.flying | delete | ❌ |
-| GET | `/sales/fly-order/detail` | FlyOrderController#detail | sales.flying.view | sales.flying | view | ❌ |
-| POST | `/sales/fly-order/export` | FlyOrderController#exportAll | sales.flying.export | sales.flying | export | ❌ |
-| GET | `/sales/fly-order/export-detail` | FlyOrderController#exportDetail | sales.flying.export | sales.flying | export | ❌ |
-| GET | `/sales/fly-order/goods-price` | FlyOrderController#goodsPrice | sales.flying.view | sales.flying | view | ❌ |
-| POST | `/sales/fly-order/page` | FlyOrderController#page | sales.flying.view | sales.flying | view | ❌ |
-| POST | `/sales/fly-order/unaudit` | FlyOrderController#unaudit | sales.flying.unaudit | sales.flying | unaudit | ❌ |
-| POST | `/sales/fly-order/update` | FlyOrderController#update | sales.flying.edit | sales.flying | edit | ❌ |
-| POST | `/sales/order/audit` | OrderController#auditSales | sales.order.audit | sales.order | audit | ❌ |
-| POST | `/sales/order/close` | OrderController#closeSales | sales.order.close | sales.order | close | ❌ |
-| POST | `/sales/order/create` | OrderController#createSales | sales.order.add | sales.order | add | ❌ |
-| POST | `/sales/order/delete` | OrderController#deleteSales | sales.order.delete | sales.order | delete | ❌ |
-| GET | `/sales/order/detail` | OrderController#salesDetail | sales.order.view | sales.order | view | ❌ |
-| POST | `/sales/order/page` | OrderController#salesPage | sales.order.view | sales.order | view | ❌ |
-| POST | `/sales/order/reverse-audit` | OrderController#reverseAuditSales | sales.order.unaudit | sales.order | unaudit | ❌ |
-| POST | `/sales/order/update` | OrderController#updateSales | sales.order.edit | sales.order | edit | ❌ |
-| POST | `/sales/outbound/audit` | SalesOutboundController#audit | sales.outbound.audit | sales.outbound | audit | ❌ |
-| GET | `/sales/outbound/available-batches` | SalesOutboundController#availableBatches | sales.outbound.view | sales.outbound | view | ❌ |
-| POST | `/sales/outbound/create` | SalesOutboundController#create | sales.outbound.add | sales.outbound | add | ❌ |
-| GET | `/sales/outbound/detail` | SalesOutboundController#detail | sales.outbound.view | sales.outbound | view | ❌ |
-| GET | `/sales/outbound/from-order` | SalesOutboundController#fromOrder | sales.outbound.view | sales.outbound | view | ❌ |
-| POST | `/sales/outbound/page` | SalesOutboundController#page | sales.outbound.view | sales.outbound | view | ❌ |
-| POST | `/sales/outbound/update` | SalesOutboundController#update | sales.outbound.edit | sales.outbound | edit | ❌ |
-| POST | `/sales/quick-order/create-and-audit` | OrderController#quickOrderCreateAndAudit | sales.quick.audit | sales.quick | audit | ❌ |
-| POST | `/sales/receipt/audit` | SalesReceiptController#auditReceipt | sales.receipt.audit | sales.receipt | audit | ❌ |
-| GET | `/sales/receipt/detail` | SalesReceiptController#detail | sales.receipt.view | sales.receipt | view | ❌ |
-| POST | `/sales/receipt/page` | SalesReceiptController#page | sales.receipt.view | sales.receipt | view | ❌ |
-| POST | `/sales/receipt/reverse-audit` | SalesReceiptController#reverseAudit | sales.receipt.unaudit | sales.receipt | unaudit | ❌ |
-| POST | `/sales/receipt/sign` | SalesReceiptController#sign | sales.receipt.biz_sign | sales.receipt | biz_sign | ❌ |
-| POST | `/sales/receipt/unsign` | SalesReceiptController#unsign | sales.receipt.biz_unsign | sales.receipt | biz_unsign | ❌ |
-| POST | `/sales/reject-inbound/audit` | RejectInboundController#audit | sales.reject_inbound.audit | sales.reject_inbound | audit | ❌ |
-| GET | `/sales/reject-inbound/batch-options` | RejectInboundController#batchOptions | sales.reject_inbound.view | sales.reject_inbound | view | ❌ |
-| GET | `/sales/reject-inbound/detail` | RejectInboundController#detail | sales.reject_inbound.view | sales.reject_inbound | view | ❌ |
-| POST | `/sales/reject-inbound/page` | RejectInboundController#page | sales.reject_inbound.view | sales.reject_inbound | view | ❌ |
-| POST | `/sales/reject-inbound/reverse-audit` | RejectInboundController#reverseAudit | sales.reject_inbound.unaudit | sales.reject_inbound | unaudit | ❌ |
-| POST | `/sales/reject-inbound/update` | RejectInboundController#update | sales.reject_inbound.edit | sales.reject_inbound | edit | ❌ |
-| POST | `/sales/return-inbound/audit` | SalesReturnController#auditInbound | sales.return_inbound.audit | sales.return_inbound | audit | ❌ |
-| GET | `/sales/return-inbound/detail` | SalesReturnController#inboundDetail | sales.return_inbound.view | sales.return_inbound | view | ❌ |
-| POST | `/sales/return-inbound/page` | SalesReturnController#inboundPage | sales.return_inbound.view | sales.return_inbound | view | ❌ |
-| POST | `/sales/return-inbound/sync-wms-tasks` | SalesReturnController#syncWmsTasks | sales.return_inbound.biz_sync_wms_tasks | sales.return_inbound | biz_sync_wms_tasks | ❌ |
-| POST | `/sales/return-inbound/update` | SalesReturnController#updateInbound | sales.return_inbound.edit | sales.return_inbound | edit | ❌ |
-| POST | `/sales/return-order/audit` | SalesReturnController#auditReturnOrder | — | — | — | ❌ |
-| GET | `/sales/return-order/batch-options` | SalesReturnController#batchOptions | — | — | — | ❌ |
-| POST | `/sales/return-order/cancel-push` | SalesReturnController#cancelPushWarehouse | — | — | — | ❌ |
-| POST | `/sales/return-order/change-return-type` | SalesReturnController#changeReturnType | — | — | — | ❌ |
-| POST | `/sales/return-order/confirm` | SalesReturnController#confirmReturnOrder | — | — | — | ❌ |
-| POST | `/sales/return-order/create` | SalesReturnController#createReturnOrder | — | — | — | ❌ |
-| POST | `/sales/return-order/delete` | SalesReturnController#deleteReturnOrder | — | — | — | ❌ |
-| GET | `/sales/return-order/detail` | SalesReturnController#returnOrderDetail | — | — | — | ❌ |
-| GET | `/sales/return-order/goods-options` | SalesReturnController#goodsOptions | — | — | — | ❌ |
-| GET | `/sales/return-order/outbound-bills` | SalesReturnController#outboundBills | — | — | — | ❌ |
-| GET | `/sales/return-order/outbound-detail` | SalesReturnController#outboundDetail | — | — | — | ❌ |
-| POST | `/sales/return-order/page` | SalesReturnController#returnOrderPage | — | — | — | ❌ |
-| POST | `/sales/return-order/push-warehouse` | SalesReturnController#pushWarehouse | — | — | — | ❌ |
-| POST | `/sales/return-order/reject` | SalesReturnController#rejectReturnOrder | — | — | — | ❌ |
-| POST | `/sales/return-order/reverse-audit` | SalesReturnController#reverseAuditReturnOrder | — | — | — | ❌ |
-| POST | `/sales/return-order/update` | SalesReturnController#updateReturnOrder | — | — | — | ❌ |
+| POST | `/sales/fly-order/audit` | FlyOrderController#audit | sales.flying.audit | sales.flying | audit | 方法：sales.flying.audit |
+| POST | `/sales/fly-order/batch-audit` | FlyOrderController#batchAudit | sales.flying.audit | sales.flying | audit | 方法：sales.flying.audit |
+| POST | `/sales/fly-order/batch-delete` | FlyOrderController#batchDelete | sales.flying.delete | sales.flying | delete | 方法：sales.flying.delete |
+| POST | `/sales/fly-order/batch-unaudit` | FlyOrderController#batchUnaudit | sales.flying.unaudit | sales.flying | unaudit | 方法：sales.flying.unaudit |
+| POST | `/sales/fly-order/cancel` | FlyOrderController#cancel | sales.flying.close | sales.flying | close | 方法：sales.flying.close |
+| POST | `/sales/fly-order/create` | FlyOrderController#create | sales.flying.add | sales.flying | add | 方法：sales.flying.add |
+| POST | `/sales/fly-order/delete` | FlyOrderController#delete | sales.flying.delete | sales.flying | delete | 方法：sales.flying.delete |
+| GET | `/sales/fly-order/detail` | FlyOrderController#detail | sales.flying.view | sales.flying | view | 方法：sales.flying.view |
+| POST | `/sales/fly-order/export` | FlyOrderController#exportAll | sales.flying.export | sales.flying | export | 方法：sales.flying.export |
+| GET | `/sales/fly-order/export-detail` | FlyOrderController#exportDetail | sales.flying.export | sales.flying | export | 方法：sales.flying.export |
+| GET | `/sales/fly-order/goods-price` | FlyOrderController#goodsPrice | sales.flying.view | sales.flying | view | 方法：sales.flying.view |
+| POST | `/sales/fly-order/page` | FlyOrderController#page | sales.flying.view | sales.flying | view | 方法：sales.flying.view |
+| POST | `/sales/fly-order/unaudit` | FlyOrderController#unaudit | sales.flying.unaudit | sales.flying | unaudit | 方法：sales.flying.unaudit |
+| POST | `/sales/fly-order/update` | FlyOrderController#update | sales.flying.edit | sales.flying | edit | 方法：sales.flying.edit |
+| POST | `/sales/order/audit` | OrderController#auditSales | sales.order.audit | sales.order | audit | 方法：sales.order.audit |
+| POST | `/sales/order/close` | OrderController#closeSales | sales.order.close | sales.order | close | 方法：sales.order.close |
+| POST | `/sales/order/create` | OrderController#createSales | sales.order.add | sales.order | add | 方法：sales.order.add |
+| POST | `/sales/order/delete` | OrderController#deleteSales | sales.order.delete | sales.order | delete | 方法：sales.order.delete |
+| GET | `/sales/order/detail` | OrderController#salesDetail | sales.order.view | sales.order | view | 方法：sales.order.view |
+| POST | `/sales/order/page` | OrderController#salesPage | sales.order.view | sales.order | view | 方法：sales.order.view |
+| POST | `/sales/order/reverse-audit` | OrderController#reverseAuditSales | sales.order.unaudit | sales.order | unaudit | 方法：sales.order.unaudit |
+| POST | `/sales/order/update` | OrderController#updateSales | sales.order.edit | sales.order | edit | 方法：sales.order.edit |
+| POST | `/sales/outbound/audit` | SalesOutboundController#audit | sales.outbound.audit | sales.outbound | audit | 方法：sales.outbound.audit |
+| GET | `/sales/outbound/available-batches` | SalesOutboundController#availableBatches | sales.outbound.view | sales.outbound | view | 方法：sales.outbound.view |
+| POST | `/sales/outbound/create` | SalesOutboundController#create | sales.outbound.add | sales.outbound | add | 方法：sales.outbound.add |
+| GET | `/sales/outbound/detail` | SalesOutboundController#detail | sales.outbound.view | sales.outbound | view | 方法：sales.outbound.view |
+| GET | `/sales/outbound/from-order` | SalesOutboundController#fromOrder | sales.outbound.view | sales.outbound | view | 方法：sales.outbound.view |
+| POST | `/sales/outbound/page` | SalesOutboundController#page | sales.outbound.view | sales.outbound | view | 方法：sales.outbound.view |
+| POST | `/sales/outbound/update` | SalesOutboundController#update | sales.outbound.edit | sales.outbound | edit | 方法：sales.outbound.edit |
+| POST | `/sales/quick-order/create-and-audit` | OrderController#quickOrderCreateAndAudit | sales.quick.add | sales.quick | add | 方法：sales.quick.add |
+| POST | `/sales/receipt/audit` | SalesReceiptController#auditReceipt | sales.receipt.audit | sales.receipt | audit | 方法：sales.receipt.audit |
+| GET | `/sales/receipt/detail` | SalesReceiptController#detail | sales.receipt.view | sales.receipt | view | 方法：sales.receipt.view |
+| POST | `/sales/receipt/page` | SalesReceiptController#page | sales.receipt.view | sales.receipt | view | 方法：sales.receipt.view |
+| POST | `/sales/receipt/reverse-audit` | SalesReceiptController#reverseAudit | sales.receipt.unaudit | sales.receipt | unaudit | 方法：sales.receipt.unaudit |
+| POST | `/sales/receipt/sign` | SalesReceiptController#sign | sales.receipt.biz_sign | sales.receipt | biz_sign | 方法：sales.receipt.biz_sign |
+| POST | `/sales/receipt/unsign` | SalesReceiptController#unsign | sales.receipt.biz_unsign | sales.receipt | biz_unsign | 方法：sales.receipt.biz_unsign |
+| POST | `/sales/reject-inbound/audit` | RejectInboundController#audit | sales.reject_inbound.audit | sales.reject_inbound | audit | 方法：sales.reject_inbound.audit |
+| GET | `/sales/reject-inbound/batch-options` | RejectInboundController#batchOptions | sales.reject_inbound.view | sales.reject_inbound | view | 方法：sales.reject_inbound.view |
+| GET | `/sales/reject-inbound/detail` | RejectInboundController#detail | sales.reject_inbound.view | sales.reject_inbound | view | 方法：sales.reject_inbound.view |
+| POST | `/sales/reject-inbound/page` | RejectInboundController#page | sales.reject_inbound.view | sales.reject_inbound | view | 方法：sales.reject_inbound.view |
+| POST | `/sales/reject-inbound/reverse-audit` | RejectInboundController#reverseAudit | sales.reject_inbound.unaudit | sales.reject_inbound | unaudit | 方法：sales.reject_inbound.unaudit |
+| POST | `/sales/reject-inbound/update` | RejectInboundController#update | sales.reject_inbound.edit | sales.reject_inbound | edit | 方法：sales.reject_inbound.edit |
+| POST | `/sales/return-inbound/audit` | SalesReturnController#auditInbound | sales.return_inbound.audit | sales.return_inbound | audit | 方法：sales.return_inbound.audit |
+| GET | `/sales/return-inbound/detail` | SalesReturnController#inboundDetail | sales.return_inbound.view | sales.return_inbound | view | 方法：sales.return_inbound.view |
+| POST | `/sales/return-inbound/page` | SalesReturnController#inboundPage | sales.return_inbound.view | sales.return_inbound | view | 方法：sales.return_inbound.view |
+| POST | `/sales/return-inbound/sync-wms-tasks` | SalesReturnController#syncWmsTasks | sales.return_inbound.biz_sync_wms_tasks | sales.return_inbound | biz_sync_wms_tasks | 方法：sales.return_inbound.biz_sync_wms_tasks |
+| POST | `/sales/return-inbound/update` | SalesReturnController#updateInbound | sales.return_inbound.edit | sales.return_inbound | edit | 方法：sales.return_inbound.edit |
+| POST | `/sales/return-order/audit` | SalesReturnController#auditReturnOrder | sales.return.audit | sales.return | audit | 方法：sales.return.audit |
+| GET | `/sales/return-order/batch-options` | SalesReturnController#batchOptions | sales.return.view | sales.return | view | 方法：sales.return.view |
+| POST | `/sales/return-order/cancel-push` | SalesReturnController#cancelPushWarehouse | sales.return.biz_cancel_push | sales.return | biz_cancel_push | 方法：sales.return.biz_cancel_push |
+| POST | `/sales/return-order/change-return-type` | SalesReturnController#changeReturnType | sales.return.biz_change_type | sales.return | biz_change_type | 方法：sales.return.biz_change_type |
+| POST | `/sales/return-order/confirm` | SalesReturnController#confirmReturnOrder | sales.return.biz_confirm | sales.return | biz_confirm | 方法：sales.return.biz_confirm |
+| POST | `/sales/return-order/create` | SalesReturnController#createReturnOrder | sales.return.add | sales.return | add | 方法：sales.return.add |
+| POST | `/sales/return-order/delete` | SalesReturnController#deleteReturnOrder | sales.return.delete | sales.return | delete | 方法：sales.return.delete |
+| GET | `/sales/return-order/detail` | SalesReturnController#returnOrderDetail | sales.return.view | sales.return | view | 方法：sales.return.view |
+| GET | `/sales/return-order/goods-options` | SalesReturnController#goodsOptions | sales.return.view | sales.return | view | 方法：sales.return.view |
+| GET | `/sales/return-order/outbound-bills` | SalesReturnController#outboundBills | sales.return.view | sales.return | view | 方法：sales.return.view |
+| GET | `/sales/return-order/outbound-detail` | SalesReturnController#outboundDetail | sales.return.view | sales.return | view | 方法：sales.return.view |
+| POST | `/sales/return-order/page` | SalesReturnController#returnOrderPage | sales.return.view | sales.return | view | 方法：sales.return.view |
+| POST | `/sales/return-order/push-warehouse` | SalesReturnController#pushWarehouse | sales.return.biz_push_warehouse | sales.return | biz_push_warehouse | 方法：sales.return.biz_push_warehouse |
+| POST | `/sales/return-order/reject` | SalesReturnController#rejectReturnOrder | sales.return.biz_reject | sales.return | biz_reject | 方法：sales.return.biz_reject |
+| POST | `/sales/return-order/reverse-audit` | SalesReturnController#reverseAuditReturnOrder | sales.return.unaudit | sales.return | unaudit | 方法：sales.return.unaudit |
+| POST | `/sales/return-order/update` | SalesReturnController#updateReturnOrder | sales.return.edit | sales.return | edit | 方法：sales.return.edit |
 
 ## system
 

@@ -2,6 +2,10 @@ package com.erp.common.exception;
 
 import com.erp.common.api.ApiResponse;
 import com.erp.common.security.PermissionDeniedException;
+import com.erp.common.security.approval.NeedApprovalException;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -31,6 +35,19 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArgument(IllegalArgumentException ex) {
         return ApiResponse.fail("400", ex.getMessage());
+    }
+
+    /**
+     * 敏感操作需要授权人当场授权：HTTP 400 + code=NEED_APPROVAL，
+     * data 携带 approvalType/bizNo，前端据此弹授权账号密码框并重放原请求。
+     */
+    @ExceptionHandler(NeedApprovalException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Map<String, Object>> handleNeedApproval(NeedApprovalException ex) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("approvalType", ex.getType().name());
+        data.put("bizNo", ex.getBizNo() == null ? "" : ex.getBizNo());
+        return ApiResponse.fail("NEED_APPROVAL", ex.getMessage(), data);
     }
 
     /** 功能权限不足（@RequirePerm 校验未过）：HTTP 403，消息本身即给用户看的中文提示。 */

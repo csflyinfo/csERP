@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -49,36 +50,58 @@ public class SalesOutboundController {
     private final com.erp.system.OperationLogService opLog;
 
     private final com.erp.finance.gl.GlHookService glHooks;
+    private final com.erp.common.security.approval.ApprovalService approvalService;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
     public SalesOutboundController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
                                     SalesReceiptController receiptController,
                                     com.erp.common.util.BillNoGenerator billNoGen,
                                     com.erp.system.OperationLogService opLog,
-                                    com.erp.finance.gl.GlHookService glHooks) {
+                                    com.erp.finance.gl.GlHookService glHooks,
+                                    com.erp.common.security.approval.ApprovalService approvalService,
+                                    com.erp.common.security.datascope.DataScopeService dataScope,
+                                    com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.receiptController = receiptController;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
+        this.approvalService = approvalService;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 销售出库单列表/详情共用数据范围目标：仓库/客户/业务员 + 商品分类/品牌按明细行（本表无建档人字段，不做 CREATOR 维度）。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget outboundScopeTarget() {
+        return dataScope.target()
+                .warehouse("h.warehouse").customer("h.customer").salesman("h.salesman")
+                .goodsLines("h.outbound_id", "sales_outbound_detail", "outbound_id");
     }
 
     // ============ 列表 & 详情 ============
 
+    @RequirePerm(value = "sales.outbound.view", name = "查看")
     @PostMapping("/outbound/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
         // 列表返回全部字段，前端根据 module-config 展示需要的列
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        // 数据范围（PRD-28 §5.3）：仓库/客户/业务员 + 商品分类/品牌按明细行过滤
+        var scope = outboundScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
                 SELECT h.outbound_id, h.outbound_no, h.source_order, h.customer, h.warehouse, h.bill_date,
                        h.qty, h.amount, h.cost_amount, h.status, h.stock_updated, h.receipt_generated, h.created_at,
                        h.salesman, h.territory, h.route_line, h.driver, h.remark,
                        -- 派生：出库商品数（SKU 种类）= COUNT(DISTINCT goods_code)；件数 = SUM(qty)
                        (SELECT COUNT(DISTINCT goods_code) FROM sales_outbound_detail d WHERE d.outbound_id = h.outbound_id) AS sku_count,
                        (SELECT COALESCE(SUM(qty), 0) FROM sales_outbound_detail d WHERE d.outbound_id = h.outbound_id) AS piece_count
-                FROM sales_outbound h
-                ORDER BY h.created_at DESC, h.outbound_no DESC
+                FROM sales_outbound h WHERE 1=1
                 """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY h.created_at DESC, h.outbound_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -90,9 +113,11 @@ public class SalesOutboundController {
             });
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "sales.outbound.view", name = "查看")
     @GetMapping("/outbound/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String outboundId,
@@ -103,10 +128,27 @@ public class SalesOutboundController {
                 "SELECT * FROM sales_outbound WHERE outbound_id = ? OR outbound_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "出库单不存在");
         Map<String, Object> head = camelize(heads.get(0));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM sales_outbound_detail WHERE outbound_id = ? ORDER BY detail_id",
-                head.get("outboundId"));
+        String realOutboundId = String.valueOf(head.get("outboundId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = outboundScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM sales_outbound h WHERE h.outbound_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realOutboundId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "出库单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM sales_outbound_detail WHERE outbound_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realOutboundId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(SalesOutboundController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
@@ -115,6 +157,7 @@ public class SalesOutboundController {
      * <p>返回：{@code customer / warehouse / details}，每条明细带 orderQty / outboundedQty / remainQty；
      * 前端可按需拆行、指定批次扣减。
      */
+    @RequirePerm(value = "sales.outbound.view", name = "查看")
     @GetMapping("/outbound/from-order")
     public ApiResponse<Map<String, Object>> fromOrder(@RequestParam String orderNo) {
         List<Map<String, Object>> orderRows = jdbcTemplate.queryForList(
@@ -173,6 +216,8 @@ public class SalesOutboundController {
         result.put("orderAmount", toBd(pick(order, "amount")));
         result.put("outboundedAmount", toBd(pick(order, "outbound_amount")));
         result.put("details", lines);
+        // PRD-28 卡片6：选单预填同属查看链路，价格/金额按字段权限脱敏，防止列表脱敏被此接口绕过
+        fieldMasker.mask(result, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(result);
     }
 
@@ -182,6 +227,7 @@ public class SalesOutboundController {
      * <p>{@code availableQty = qty − locked_qty}：其他未审核出库单已锁定的批次量不可再选，
      * 前端下拉与行内校验都应看 availableQty，否则会在保存时才被后端的批次锁校验挡下。
      */
+    @RequirePerm(value = "sales.outbound.view", name = "查看")
     @GetMapping("/outbound/available-batches")
     public ApiResponse<List<Map<String, Object>>> availableBatches(
             @RequestParam String goodsCode, @RequestParam String warehouse) {
@@ -193,7 +239,11 @@ public class SalesOutboundController {
                 WHERE goods_code = ? AND warehouse = ? AND qty > 0
                 ORDER BY production_date ASC, batch_no ASC
                 """, goodsCode, warehouse);
-        return ApiResponse.ok(rows.stream().map(SalesOutboundController::camelize).toList());
+        // PRD-28 卡片6：批次下拉返回的成本价/可用量按字段权限脱敏（注册表全局 key 命中）
+        List<Map<String, Object>> batches = rows.stream()
+                .map(SalesOutboundController::camelize).toList();
+        fieldMasker.mask(batches);
+        return ApiResponse.ok(batches);
     }
 
     // ============ 创建 / 审核 ============
@@ -217,6 +267,7 @@ public class SalesOutboundController {
      * }
      * </pre>
      */
+    @RequirePerm(value = "sales.outbound.add", name = "新增")
     @PostMapping("/outbound/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> request) {
@@ -438,6 +489,7 @@ public class SalesOutboundController {
      * PENDING 出库单编辑 —— 允许改主表 remark / 明细 qty / batch_no / production_date / remark。
      * 明细整表替换（跟采购入库编辑一致的策略）。
      */
+    @RequirePerm(value = "sales.outbound.edit", name = "修改")
     @PostMapping("/outbound/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> request) {
@@ -629,6 +681,7 @@ public class SalesOutboundController {
         return BigDecimal.ONE;
     }
 
+    @RequirePerm(value = "sales.outbound.audit", name = "审核")
     @PostMapping("/outbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
@@ -663,7 +716,17 @@ public class SalesOutboundController {
                 WHERE outbound_id = ? OR outbound_no = ?
                 """, request.bizId(), request.bizId());
         String outboundId = str(pick(claimedRows.get(0), "outbound_id"));
-        String receiptNo = auditOutbound(outboundId, "销售出库审核");
+        // 负库存红线：按本单明细预测扣减后是否会出现库存/批次实物不足，命中则需「负库存授权」（PRD-28 卡片6）
+        NegStock neg = probeNegativeStock(outboundId);
+        boolean allowNegative = false;
+        if (neg != null) {
+            approvalService.requireApproval(
+                    com.erp.common.security.approval.ApprovalType.NEGATIVE_STOCK,
+                    "sales.outbound", neg.outboundNo(), neg.reason(),
+                    request.approverAccount(), request.approverPassword());
+            allowNegative = true;
+        }
+        String receiptNo = auditOutbound(outboundId, "销售出库审核", allowNegative);
         return ApiResponse.ok(Map.of(
                 "outboundId", outboundId,
                 "status", "APPROVED",
@@ -681,6 +744,16 @@ public class SalesOutboundController {
      */
     @Transactional
     String auditOutbound(String outboundId, String logDetail) {
+        // WMS 波次等自动链路严格模式：不允许负库存
+        return auditOutbound(outboundId, logDetail, false);
+    }
+
+    /**
+     * 出库审核核心（包级可见）。{@code allowNegative=true} 仅用于经「负库存授权」后的人工销售出库，
+     * 透传给 {@link InventoryCostService#salesOutbound} 去掉库存守卫，允许结存为负。
+     */
+    @Transactional
+    String auditOutbound(String outboundId, String logDetail, boolean allowNegative) {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
                 "SELECT outbound_id, outbound_no, source_order FROM sales_outbound WHERE outbound_id = ?",
                 outboundId);
@@ -715,7 +788,8 @@ public class SalesOutboundController {
                     str(pick(d, "warehouse")),
                     str(pick(d, "batch_no")),  // 可空 → 只扣 stock_balance 不扣批次层
                     toBd(pick(d, "qty")),
-                    outboundNo
+                    outboundNo,
+                    allowNegative
             );
         }
 
@@ -757,6 +831,77 @@ public class SalesOutboundController {
                 "UPDATE sales_outbound SET receipt_generated = TRUE WHERE outbound_id = ?",
                 outboundId);
         return receiptNo;
+    }
+
+    /** 负库存探针结果：出库单号 + 人话原因；库存充足时 {@link #probeNegativeStock} 返回 null。 */
+    private record NegStock(String outboundNo, String reason) {}
+
+    /**
+     * 预测本次出库扣减后是否会出现库存/批次实物不足。口径与 {@code auditOutbound → salesOutbound}
+     * 严格模式守卫完全一致：
+     * <ul>
+     *   <li>余额层：扣实物前先释放本单锁定（仅来源订单非空），实际释放 min(qty, locked)，
+     *       故守卫时刻可用 = 当前 available + min(qty, locked)；</li>
+     *   <li>批次层：守卫比的是批次实物 {@code qty}（与批次锁无关，批次锁在扣减前已释放）。</li>
+     * </ul>
+     */
+    private NegStock probeNegativeStock(String outboundId) {
+        List<Map<String, Object>> heads = jdbcTemplate.queryForList(
+                "SELECT outbound_no, source_order FROM sales_outbound WHERE outbound_id = ?", outboundId);
+        if (heads.isEmpty()) return null;
+        String outboundNo = str(pick(heads.get(0), "outbound_no"));
+        boolean hasSource = !str(pick(heads.get(0), "source_order")).isBlank();
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(
+                "SELECT goods_code, goods_name, warehouse, batch_no, qty "
+                        + "FROM sales_outbound_detail WHERE outbound_id = ?", outboundId);
+        List<String> breaches = new ArrayList<>();
+        for (Map<String, Object> d : details) {
+            String goods = str(pick(d, "goods_code"));
+            String goodsName = str(pick(d, "goods_name"));
+            String wh = str(pick(d, "warehouse"));
+            String batch = str(pick(d, "batch_no"));
+            BigDecimal qty = toBd(pick(d, "qty"));
+            String label = (goodsName.isBlank() ? goods : goodsName) + "（" + wh + "）";
+
+            // 余额层
+            List<Map<String, Object>> bal = jdbcTemplate.queryForList(
+                    "SELECT COALESCE(available_qty, 0) AS avail, COALESCE(locked_qty, 0) AS locked "
+                            + "FROM inv_stock_balance WHERE goods_code = ? AND warehouse = ?",
+                    goods, wh);
+            if (bal.isEmpty()) {
+                breaches.add(label + " 无库存记录");
+            } else {
+                BigDecimal avail = toBd(pick(bal.get(0), "avail"));
+                BigDecimal locked = toBd(pick(bal.get(0), "locked"));
+                BigDecimal released = hasSource ? locked.min(qty) : BigDecimal.ZERO;
+                BigDecimal guardAvail = avail.add(released);
+                if (guardAvail.compareTo(qty) < 0) {
+                    breaches.add(label + " 可用库存不足：需 " + qty.toPlainString()
+                            + "，可用 " + guardAvail.toPlainString()
+                            + "（缺口 " + qty.subtract(guardAvail).toPlainString() + "）");
+                }
+            }
+
+            // 批次层：守卫比批次实物 qty
+            if (!batch.isBlank()) {
+                List<Map<String, Object>> b = jdbcTemplate.queryForList(
+                        "SELECT COALESCE(qty, 0) AS bqty FROM inv_batch_stock "
+                                + "WHERE goods_code = ? AND warehouse = ? AND batch_no = ?",
+                        goods, wh, batch);
+                if (b.isEmpty()) {
+                    breaches.add(label + " 批次 " + batch + " 不存在");
+                } else {
+                    BigDecimal bqty = toBd(pick(b.get(0), "bqty"));
+                    if (bqty.compareTo(qty) < 0) {
+                        breaches.add(label + " 批次 " + batch + " 实物不足：需 " + qty.toPlainString()
+                                + "，批次库存 " + bqty.toPlainString()
+                                + "（缺口 " + qty.subtract(bqty).toPlainString() + "）");
+                    }
+                }
+            }
+        }
+        if (breaches.isEmpty()) return null;
+        return new NegStock(outboundNo, "本次出库将导致负库存：" + String.join("；", breaches));
     }
 
     /**
@@ -974,5 +1119,6 @@ public class SalesOutboundController {
         return out;
     }
 
-    public record AuditRequest(@NotBlank String bizId, String remark) {}
+    public record AuditRequest(@NotBlank String bizId, String remark,
+                               String approverAccount, String approverPassword) {}
 }

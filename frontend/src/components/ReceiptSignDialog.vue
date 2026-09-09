@@ -19,6 +19,9 @@
  */
 import { ref, watch, computed } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard } = useRbac('salesReceipt')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -149,6 +152,7 @@ function validate() {
 }
 
 async function confirmSign() {
+  if (!guard('确认签收')) { errorMsg.value = '无权限执行该操作'; return }
   if (!validate()) return
   const head0 = `确认签收发货单【${head.value.receiptNo}】？\n\n`
   let tip
@@ -193,7 +197,7 @@ async function confirmSign() {
     <div class="modal-lite-box" style="width:min(1040px,97vw);max-height:90vh">
       <div class="modal-lite-head">
         <b>确认签收 {{ head.receiptNo || '' }}</b>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="emit('close')">关闭</button>
           <button class="btn primary" @click="confirmSign" :disabled="loading">确认签收</button>
         </div>
@@ -226,11 +230,11 @@ async function confirmSign() {
 
         <!-- 金额汇总：发货金额取主单（出库审核时已定死），其余按当前输入现算预览 -->
         <div style="display:flex;flex-wrap:wrap;gap:18px;padding:8px 12px;background:#fdf6ec;border:1px solid #faecd8;border-radius:4px;margin-bottom:10px;font-size:13px">
-          <span>发货金额：<b style="color:#303133">{{ deliverAmount }}</b></span>
-          <span>签收金额：<b style="color:#409eff">{{ totalSignAmount }}</b></span>
-          <span>拒收金额：<b :style="{ color: hasReject ? '#f56c6c' : '#909399' }">{{ totalRejectAmount }}</b></span>
-          <span>税额：<b style="color:#303133">{{ totalTaxAmount }}</b></span>
-          <span>不含税金额：<b style="color:#303133">{{ totalUntaxedAmount }}</b></span>
+          <span v-if="canView('发货金额')">发货金额：<b style="color:#303133">{{ deliverAmount }}</b></span>
+          <span v-if="canView('签收金额')">签收金额：<b style="color:#409eff">{{ totalSignAmount }}</b></span>
+          <span v-if="canView('拒收金额')">拒收金额：<b :style="{ color: hasReject ? '#f56c6c' : '#909399' }">{{ totalRejectAmount }}</b></span>
+          <span v-if="canView('税额')">税额：<b style="color:#303133">{{ totalTaxAmount }}</b></span>
+          <span v-if="canView('不含税金额')">不含税金额：<b style="color:#303133">{{ totalUntaxedAmount }}</b></span>
           <span style="color:#909399;margin-left:auto">税额按价内倒算：签收金额 × 税率 ÷ (1+税率)</span>
         </div>
 
@@ -247,8 +251,8 @@ async function confirmSign() {
                 <th style="width:80px">发货数量</th>
                 <th style="width:96px">签收数量</th>
                 <th style="width:96px">拒收数量</th>
-                <th style="width:84px">签收金额</th>
-                <th style="width:84px">拒收金额</th>
+                <th v-if="canView('签收金额')" style="width:84px">签收金额</th>
+                <th v-if="canView('拒收金额')" style="width:84px">拒收金额</th>
                 <th style="min-width:180px">拒收原因</th>
                 <th style="width:92px">快捷</th>
               </tr>
@@ -272,8 +276,8 @@ async function confirmSign() {
                          style="width:100%;height:24px;text-align:right" />
                 </td>
                 <!-- 金额只读，随数量联动，不可直接编辑 -->
-                <td style="text-align:right;color:#409eff">{{ lineSignAmount(row) }}</td>
-                <td style="text-align:right" :style="{ color: Number(row.rejectQty || 0) > 0 ? '#f56c6c' : '#909399' }">
+                <td v-if="canView('签收金额')" style="text-align:right;color:#409eff">{{ lineSignAmount(row) }}</td>
+                <td v-if="canView('拒收金额')" style="text-align:right" :style="{ color: Number(row.rejectQty || 0) > 0 ? '#f56c6c' : '#909399' }">
                   {{ lineRejectAmount(row) }}
                 </td>
                 <td>

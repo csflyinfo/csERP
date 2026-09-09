@@ -3,6 +3,7 @@ package com.erp.purchase;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -47,23 +48,44 @@ public class PurchaseInvoiceController {
 
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public PurchaseInvoiceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen) {
+    public PurchaseInvoiceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                                     com.erp.common.security.datascope.DataScopeService dataScope,
+                                     com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /** 采购发票数据范围目标：供应商/建档人 + 商品分类/品牌按明细行（pur_invoice 无仓库列）。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget invoiceScopeTarget() {
+        return dataScope.target()
+                .supplier("i.supplier_name").creator("i.creator_name")
+                .goodsLines("i.invoice_id", "pur_invoice_line", "invoice_id");
     }
 
     // ============ 列表 & 详情 ============
 
+    @RequirePerm(value="purchase.invoice.view", name="查看")
     @PostMapping("/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT invoice_id, invoice_no, invoice_number, invoice_code, invoice_type, direction, " +
-                        "supplier_code, supplier_name, issue_date, receive_date, " +
-                        "untaxed_amount, tax_amount, total_amount, matched_amount, match_status, " +
-                        "cert_status, cert_date, status, void_reason, creator_name, create_time, " +
-                        "auditor_name, audit_time, remark " +
-                        "FROM pur_invoice ORDER BY create_time DESC, invoice_no DESC");
+        // 数据范围（PRD-28 §5.3）：供应商/建档人 + 商品分类/品牌按明细行过滤
+        var scope = invoiceScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
+                SELECT i.invoice_id, i.invoice_no, i.invoice_number, i.invoice_code, i.invoice_type, i.direction,
+                       i.supplier_code, i.supplier_name, i.issue_date, i.receive_date,
+                       i.untaxed_amount, i.tax_amount, i.total_amount, i.matched_amount, i.match_status,
+                       i.cert_status, i.cert_date, i.status, i.void_reason, i.creator_name, i.create_time,
+                       i.auditor_name, i.audit_time, i.remark
+                FROM pur_invoice i WHERE 1=1
+                """);
+        List<Object> params = new ArrayList<>();
+        scope.appendTo(sql, params);
+        sql.append(" ORDER BY i.create_time DESC, i.invoice_no DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
@@ -74,9 +96,11 @@ public class PurchaseInvoiceController {
             row.put("supplier", row.get("supplierName")); // 兼容前端模糊映射
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value="purchase.invoice.view", name="查看")
     @GetMapping("/detail")
     public ApiResponse<Map<String, Object>> detail(
             @RequestParam(required = false) String invoiceId,
@@ -87,27 +111,49 @@ public class PurchaseInvoiceController {
                 "SELECT * FROM pur_invoice WHERE invoice_id = ? OR invoice_no = ?", key, key);
         if (heads.isEmpty()) return ApiResponse.fail("404", "发票不存在");
         Map<String, Object> head = camelize(heads.get(0));
+        String realInvoiceId = String.valueOf(head.get("invoiceId"));
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404（PRD-28 §5.3）
+        var scope = invoiceScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM pur_invoice i WHERE i.invoice_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realInvoiceId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "发票不存在或无权查看");
         BigDecimal total = toBd(head.get("totalAmount"));
         BigDecimal matched = toBd(head.get("matchedAmount"));
         head.put("unmatchedAmount", total.subtract(matched).setScale(2, RoundingMode.HALF_UP));
         head.put("invoiceAmount", total);
 
-        List<Map<String, Object>> lines = jdbcTemplate.queryForList(
-                "SELECT * FROM pur_invoice_line WHERE invoice_id = ? ORDER BY sort_order, line_id",
-                head.get("invoiceId"));
+        // 商品分类/品牌受限时，明细行只回可见商品
+        StringBuilder lineSql = new StringBuilder("SELECT * FROM pur_invoice_line WHERE invoice_id = ?");
+        List<Object> lineArgs = new ArrayList<>();
+        lineArgs.add(realInvoiceId);
+        if (scope.isGoodsRestricted()) {
+            lineSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", lineSql, lineArgs);
+        }
+        lineSql.append(" ORDER BY sort_order, line_id");
+        List<Map<String, Object>> lines = jdbcTemplate.queryForList(lineSql.toString(), lineArgs.toArray());
         head.put("lines", lines.stream().map(PurchaseInvoiceController::camelize).toList());
 
         // 勾稽商品行（录入后即保存，草稿/已审核都回显）
-        List<Map<String, Object>> matchLines = jdbcTemplate.queryForList(
-                "SELECT * FROM pur_invoice_match_line WHERE invoice_id = ? ORDER BY create_time, id",
-                head.get("invoiceId"));
+        StringBuilder mlSql = new StringBuilder("SELECT * FROM pur_invoice_match_line WHERE invoice_id = ?");
+        List<Object> mlArgs = new ArrayList<>();
+        mlArgs.add(realInvoiceId);
+        if (scope.isGoodsRestricted()) {
+            mlSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", mlSql, mlArgs);
+        }
+        mlSql.append(" ORDER BY create_time, id");
+        List<Map<String, Object>> matchLines = jdbcTemplate.queryForList(mlSql.toString(), mlArgs.toArray());
         head.put("matchLines", matchLines.stream().map(PurchaseInvoiceController::camelize).toList());
 
-        // 勾稽聚合行（按收货单）：带实时已来票/未票金额
+        // 勾稽聚合行（按收货单）：带实时已来票/未票金额（无商品明细行，不做商品过滤）
         List<Map<String, Object>> matches = new ArrayList<>();
         for (Map<String, Object> m : jdbcTemplate.queryForList(
                 "SELECT * FROM pur_invoice_match WHERE invoice_id = ? ORDER BY create_time, match_id",
-                head.get("invoiceId"))) {
+                realInvoiceId)) {
             Map<String, Object> mm = camelize(m);
             String billNo = str(mm.get("billNo"));
             List<Map<String, Object>> bills = jdbcTemplate.queryForList(
@@ -132,11 +178,13 @@ public class PurchaseInvoiceController {
             matches.add(mm);
         }
         head.put("matches", matches);
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
         return ApiResponse.ok(head);
     }
 
     // ============ 新建 / 修改（草稿） ============
 
+    @RequirePerm(value="purchase.invoice.add", name="新增")
     @PostMapping("/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> request) {
@@ -148,6 +196,7 @@ public class PurchaseInvoiceController {
                 "status", "草稿", "effect", "发票已保存为草稿"));
     }
 
+    @RequirePerm(value="purchase.invoice.edit", name="修改")
     @PostMapping("/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> request) {
@@ -299,6 +348,7 @@ public class PurchaseInvoiceController {
     // ============ 审核 / 反审核 / 作废 / 删除 ============
 
     /** 审核：按勾稽行回写收货单与应付的来票金额/状态，发票转已审核。 */
+    @RequirePerm(value="purchase.invoice.audit", name="审核")
     @PostMapping("/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
@@ -402,6 +452,7 @@ public class PurchaseInvoiceController {
     }
 
     /** 反审核：按 matched_before 快照逆向回退；已认证发票禁止。 */
+    @RequirePerm(value="purchase.invoice.unaudit", name="反审核")
     @PostMapping("/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
@@ -425,6 +476,7 @@ public class PurchaseInvoiceController {
     }
 
     /** 作废：已审核票先逆向回退再作废；已认证禁止；作废原因必填。 */
+    @RequirePerm(value="purchase.invoice.close", name="作废")
     @PostMapping("/void")
     @Transactional
     public ApiResponse<Map<String, Object>> voidInvoice(@Valid @RequestBody AuditRequest request) {
@@ -449,6 +501,7 @@ public class PurchaseInvoiceController {
     }
 
     /** 删除：仅草稿；已审核/已作废留痕不可删。 */
+    @RequirePerm(value="purchase.invoice.delete", name="删除")
     @PostMapping("/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> delete(@Valid @RequestBody AuditRequest request) {
@@ -472,6 +525,7 @@ public class PurchaseInvoiceController {
      * 超收货额 1 元容差自动置平、超出拒绝；勾稽行全部移除则该收货单恢复到本发票贡献前。
      * 反审核/作废仍按 applied_amount 整体剥离，不影响其他发票。
      */
+    @RequirePerm(value="purchase.invoice.edit", name="修改")
     @PostMapping("/update-matches")
     @Transactional
     public ApiResponse<Map<String, Object>> updateMatches(@RequestBody Map<String, Object> request) {
@@ -856,6 +910,7 @@ public class PurchaseInvoiceController {
 
     // ============ 认证 & 备注 ============
 
+    @RequirePerm(value="purchase.invoice.biz_certify", name="发票认证")
     @PostMapping("/certify")
     @Transactional
     public ApiResponse<Map<String, Object>> certify(@RequestBody Map<String, Object> request) {
@@ -879,6 +934,7 @@ public class PurchaseInvoiceController {
     }
 
     /** 审核后追加备注（主信息锁定，仅备注可改）。 */
+    @RequirePerm(value="purchase.invoice.edit", name="修改")
     @PostMapping("/update-remark")
     @Transactional
     public ApiResponse<Map<String, Object>> updateRemark(@RequestBody Map<String, Object> request) {
@@ -905,6 +961,7 @@ public class PurchaseInvoiceController {
      * 已被其他发票（含草稿，不含作废；编辑时排除本发票）占用的数量/金额不计入未开票。
      * 金额口径含税；金额占用取勾稽行 this_amount（可为手工票面金额，不完全等于数量×单价）。
      */
+    @RequirePerm(value="purchase.invoice.view", name="查看")
     @PostMapping("/available-lines")
     public ApiResponse<List<Map<String, Object>>> availableLines(@RequestBody Map<String, Object> request) {
         String supplierCode = str(request.get("supplierCode")).trim();
@@ -943,7 +1000,11 @@ public class PurchaseInvoiceController {
             rows = jdbcTemplate.queryForList(sql, excludeInvoiceId == null ? "" : excludeInvoiceId,
                     supplierCode, kw, kw);
         }
-        return ApiResponse.ok(rows.stream().map(PurchaseInvoiceController::camelize).toList());
+        // PRD-28 卡片6：可勾稽行选择器含采购单价/来票金额，按发票视角（应付往来）脱敏
+        List<Map<String, Object>> lines = rows.stream()
+                .map(PurchaseInvoiceController::camelize).toList();
+        fieldMasker.mask(lines, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
+        return ApiResponse.ok(lines);
     }
 
     /**
@@ -965,12 +1026,15 @@ public class PurchaseInvoiceController {
     /**
      * R1 采购来票跟踪。filters.dimension：bill（单据级，默认）/ goods（商品级）。
      */
+    @RequirePerm(value="purchase.invoice.biz_report", name="发票报表")
     @PostMapping("/report/track/page")
     public ApiResponse<PageResult<Map<String, Object>>> trackReport(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? new HashMap<>() : new HashMap<>(request.filters());
         String dimension = str(filters.getOrDefault("dimension", "bill"));
         filters.remove("dimension"); // 维度参数不参与行模糊过滤
         List<Map<String, Object>> out = "goods".equalsIgnoreCase(dimension) ? trackByGoods() : trackByBill();
+        // 报表只做字段脱敏，不接 DataScope（PRD-28 §5.3 采购发票按财务视角脱敏）
+        fieldMasker.mask(out, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
         return ApiResponse.ok(PageResult.of(out, new PageRequest(
                 request.pageNo(), request.pageSize(), request.sortField(), request.sortOrder(), filters)));
     }
@@ -1030,6 +1094,7 @@ public class PurchaseInvoiceController {
     }
 
     /** R2 供应商来票统计（累计口径：未票余额取收货单实时来票额）。 */
+    @RequirePerm(value="purchase.invoice.biz_report", name="发票报表")
     @PostMapping("/report/supplier/page")
     public ApiResponse<PageResult<Map<String, Object>>> supplierReport(@RequestBody PageRequest request) {
         Map<String, Map<String, Object>> bySupplier = new LinkedHashMap<>();
@@ -1074,12 +1139,15 @@ public class PurchaseInvoiceController {
             out.add(row);
         }
         out.sort((a, b) -> toBd(b.get("unbilledAmount")).compareTo(toBd(a.get("unbilledAmount"))));
+        // 报表只做字段脱敏，不接 DataScope（PRD-28 §5.3 采购发票按财务视角脱敏）
+        fieldMasker.mask(out, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
         return ApiResponse.ok(PageResult.of(out, request));
     }
 
     /**
      * R4 未勾稽发票与勾稽差异。filters.dimension：unmatched（默认）/ diff。
      */
+    @RequirePerm(value="purchase.invoice.biz_report", name="发票报表")
     @PostMapping("/report/unmatched/page")
     public ApiResponse<PageResult<Map<String, Object>>> unmatchedReport(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters() == null ? new HashMap<>() : new HashMap<>(request.filters());
@@ -1109,6 +1177,8 @@ public class PurchaseInvoiceController {
                 out.add(row);
             }
         }
+        // 报表只做字段脱敏，不接 DataScope（PRD-28 §5.3 采购发票按财务视角脱敏）
+        fieldMasker.mask(out, com.erp.common.security.MaskProfiles.PURCHASE_INVOICE);
         return ApiResponse.ok(PageResult.of(out, request));
     }
 

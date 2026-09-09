@@ -13,8 +13,11 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
 import PurchaseInboundPickerDialog from './PurchaseInboundPickerDialog.vue'
 import PurchaseReturnGoodsPickerDialog from './PurchaseReturnGoodsPickerDialog.vue'
+
+const { canView, actionHidden, guard } = useRbac('purchaseReturnApply')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -597,6 +600,11 @@ function validate() {
 }
 
 async function saveApply(status) {
+  // 草稿/提交都是制单（create=add、update=edit）；提交审核不是 audit 动作
+  if (!guard(isEdit.value ? '编辑' : '新建')) {
+    errors.value.header = '无权限执行该操作'
+    return
+  }
   if (!canEdit.value) {
     errors.value.header = readonlyReason.value
     return
@@ -651,7 +659,7 @@ function closeDrawer() { emit('close') }
           {{ statusText }}
         </span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">{{ canEdit ? '取消' : '关闭' }}</button>
           <template v-if="canEdit">
             <button class="btn" @click="saveApply('DRAFT')">保存草稿</button>
@@ -705,7 +713,7 @@ function closeDrawer() { emit('close') }
         <div class="card detail-card">
           <div class="detail-toolbar">
             <div style="font-weight:900;color:var(--primary)">退货明细</div>
-            <div v-if="canEdit" class="toolbar-btns">
+            <div v-if="canEdit" class="toolbar-btns" v-action-perms="actionHidden">
               <button class="btn primary" @click="openInboundPicker">按单添加商品</button>
               <button class="btn" @click="openGoodsPicker">添加商品</button>
             </div>
@@ -730,13 +738,13 @@ function closeDrawer() { emit('close') }
                   <th style="min-width:90px">规格</th>
                   <th style="width:92px">单位</th>
                   <th style="width:92px">退货数量 <span v-if="canEdit" class="req">*</span></th>
-                  <th style="width:130px">单价</th>
-                  <th style="width:130px">金额</th>
+                  <th style="width:130px" v-if="canView('单价')">单价</th>
+                  <th style="width:130px" v-if="canView('金额')">金额</th>
                   <th style="min-width:130px">批次号</th>
                   <th style="width:100px">生产日期</th>
                   <th style="width:78px">可退数量</th>
                   <th style="width:78px">可用库存</th>
-                  <th style="width:96px">成本单价</th>
+                  <th style="width:96px" v-if="canView('成本单价')">成本单价</th>
                   <th style="min-width:130px">源单号</th>
                   <th v-if="canEdit" style="width:56px">操作</th>
                 </tr>
@@ -780,7 +788,7 @@ function closeDrawer() { emit('close') }
                     <span v-else class="num-cell">{{ row.qty }}</span>
                   </td>
                   <!-- 单价：纯文本录入，最多4位小数 -->
-                  <td>
+                  <td v-if="canView('单价')">
                     <input
                       v-if="canEdit"
                       type="text"
@@ -793,7 +801,7 @@ function closeDrawer() { emit('close') }
                     <span v-else class="num-cell">{{ Number(row.price || 0).toFixed(4) }}</span>
                   </td>
                   <!-- 金额：纯文本录入，最多2位小数；改金额按数量反算单价（4位小数） -->
-                  <td>
+                  <td v-if="canView('金额')">
                     <input
                       v-if="canEdit"
                       type="text"
@@ -842,9 +850,9 @@ function closeDrawer() { emit('close') }
                         ? `批次可用 ${row.availableStock}，本单其他行已占用 ${Number(row.availableStock || 0) - remainStockFor(row, index)}` : ''">
                     {{ remainStockFor(row, index) }}
                   </td>
-                  <td class="num-cell">{{ Number(row.costPrice || 0).toFixed(6) }}</td>
+                  <td class="num-cell" v-if="canView('成本单价')">{{ Number(row.costPrice || 0).toFixed(6) }}</td>
                   <td>{{ row.sourceInboundNo || '-' }}</td>
-                  <td v-if="canEdit">
+                  <td v-if="canEdit" v-action-perms="actionHidden">
                     <button class="link link-btn danger-link" @click="removeRow(index)">删除</button>
                   </td>
                 </tr>
@@ -855,7 +863,7 @@ function closeDrawer() { emit('close') }
 
         <div class="summary">
           <span>合计退货数量：<b>{{ totalQty }}</b></span>
-          <span>合计退货金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="canView('金额')">合计退货金额：<b>¥ {{ totalAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

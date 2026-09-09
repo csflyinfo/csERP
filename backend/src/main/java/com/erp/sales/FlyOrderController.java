@@ -3,6 +3,7 @@ package com.erp.sales;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,18 +21,45 @@ import java.util.*;
 @RestController
 public class FlyOrderController {
 
+    /** 飞单导出为中文表头，脱敏需把中文列名映射回字段权限码（PRD-28 卡片6）。 */
+    private static final Map<String, String> FLY_EXPORT_FIELDS = Map.of(
+            "采购价", "VIEW_PURCHASE_PRICE",
+            "销售价", "VIEW_SALE_PRICE",
+            "采购金额", "VIEW_PURCHASE_AMOUNT",
+            "销售金额", "VIEW_SALE_AMOUNT",
+            "毛利", "VIEW_PROFIT");
+
     private final JdbcTemplate jdbcTemplate;
     private final BillNoGenerator billNoGen;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.common.security.datascope.DataScopeService dataScope;
+    private final com.erp.common.security.FieldMasker fieldMasker;
 
-    public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen, com.erp.system.OperationLogService opLog) {
+    public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
+                              com.erp.system.OperationLogService opLog,
+                              com.erp.common.security.datascope.DataScopeService dataScope,
+                              com.erp.common.security.FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
+        this.dataScope = dataScope;
+        this.fieldMasker = fieldMasker;
+    }
+
+    /**
+     * 飞单数据范围目标：客户/供应商/业务员/建档人 + 商品分类/品牌按明细行。
+     * 飞单不经过仓库（即时购销），故无 WAREHOUSE 维度。
+     */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget flyScopeTarget() {
+        return dataScope.target()
+                .customer("f.customer_name").supplier("f.supplier_name")
+                .salesman("f.salesman").creator("f.creator_name")
+                .goodsLines("f.fly_id", "fly_order_detail", "fly_id");
     }
 
     // ====================== 创建飞单（草稿） ======================
 
+    @RequirePerm(value = "sales.flying.add", name = "新增")
     @PostMapping("/sales/fly-order/create")
     @Transactional
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> req) {
@@ -92,6 +120,7 @@ public class FlyOrderController {
 
     // ====================== 更新飞单（仅草稿） ======================
 
+    @RequirePerm(value = "sales.flying.edit", name = "修改")
     @PostMapping("/sales/fly-order/update")
     @Transactional
     public ApiResponse<Map<String, Object>> update(@RequestBody Map<String, Object> req) {
@@ -160,6 +189,7 @@ public class FlyOrderController {
 
     // ====================== 分页查询（带筛选） ======================
 
+    @RequirePerm(value = "sales.flying.view", name = "查看")
     @PostMapping("/sales/fly-order/page")
     public ApiResponse<PageResult<Map<String, Object>>> page(@RequestBody PageRequest request) {
         Map<String, Object> filters = request.filters();
@@ -169,22 +199,25 @@ public class FlyOrderController {
         String supplierCode = filters != null ? str(filters.get("supplierCode")) : "";
         String status = filters != null ? str(filters.get("status")).trim() : "";
 
+        // 数据范围（PRD-28 §5.3）：飞单无仓库维度，按客户/供应商/业务员/建档人 + 商品明细行过滤
+        var scope = flyScopeTarget().build();
         StringBuilder sql = new StringBuilder("""
-                SELECT fly_id, fly_no, supplier_code, supplier_name, customer_code, customer_name,
-                       salesman, bill_date, purchase_amount, sales_amount, profit_amount, status,
-                       purchase_order_no, sales_order_no, remark, creator_name, create_time,
-                       audit_user, audit_time
-                FROM fly_order WHERE 1=1
+                SELECT f.fly_id, f.fly_no, f.supplier_code, f.supplier_name, f.customer_code, f.customer_name,
+                       f.salesman, f.bill_date, f.purchase_amount, f.sales_amount, f.profit_amount, f.status,
+                       f.purchase_order_no, f.sales_order_no, f.remark, f.creator_name, f.create_time,
+                       f.audit_user, f.audit_time
+                FROM fly_order f WHERE 1=1
                 """);
         List<Object> params = new ArrayList<>();
 
-        if (dateFrom != null) { sql.append(" AND bill_date >= ?"); params.add(dateFrom); }
-        if (dateTo != null) { sql.append(" AND bill_date <= ?"); params.add(dateTo); }
-        if (!customerCode.isBlank()) { sql.append(" AND customer_code = ?"); params.add(customerCode); }
-        if (!supplierCode.isBlank()) { sql.append(" AND supplier_code = ?"); params.add(supplierCode); }
-        if (!status.isBlank()) { sql.append(" AND status = ?"); params.add(status); }
+        if (dateFrom != null) { sql.append(" AND f.bill_date >= ?"); params.add(dateFrom); }
+        if (dateTo != null) { sql.append(" AND f.bill_date <= ?"); params.add(dateTo); }
+        if (!customerCode.isBlank()) { sql.append(" AND f.customer_code = ?"); params.add(customerCode); }
+        if (!supplierCode.isBlank()) { sql.append(" AND f.supplier_code = ?"); params.add(supplierCode); }
+        if (!status.isBlank()) { sql.append(" AND f.status = ?"); params.add(status); }
+        scope.appendTo(sql, params);
 
-        sql.append(" ORDER BY create_time DESC, fly_no DESC");
+        sql.append(" ORDER BY f.create_time DESC, f.fly_no DESC");
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
@@ -204,11 +237,13 @@ public class FlyOrderController {
         }
         // SQL 已处理筛选条件，PageResult 只做分页；避免 PageResult.of 的文本过滤将 dateFrom/dateTo 等作为子串误杀
         PageRequest paginationOnly = new PageRequest(request.pageNo(), request.pageSize(), request.sortField(), request.sortOrder(), java.util.Map.of());
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, paginationOnly));
     }
 
     // ====================== 查询明细 ======================
 
+    @RequirePerm(value = "sales.flying.view", name = "查看")
     @GetMapping("/sales/fly-order/detail")
     public ApiResponse<Map<String, Object>> detail(@RequestParam String flyId) {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
@@ -216,9 +251,26 @@ public class FlyOrderController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "飞单不存在");
         Map<String, Object> head = camelize(heads.get(0));
         String realFlyId = String.valueOf(head.get("flyId"));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList(
-                "SELECT * FROM fly_order_detail WHERE fly_id = ? ORDER BY detail_id", realFlyId);
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404（PRD-28 §5.3）
+        var scope = flyScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM fly_order f WHERE f.fly_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realFlyId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "飞单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品
+        StringBuilder dSql = new StringBuilder("SELECT * FROM fly_order_detail WHERE fly_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realFlyId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(FlyOrderController::camelize).toList());
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(head);
     }
 
@@ -229,6 +281,7 @@ public class FlyOrderController {
      * <p>采购价：unit_config JSON 中的 purchasePrice → 兜底 base_goods.latest_purchase_price
      * <p>销售价：客户价格组(base_price_group_item) → 客户最近售价 → 兜底 base_goods.suggested_retail_price / standard_price
      */
+    @RequirePerm(value = "sales.flying.view", name = "查看")
     @GetMapping("/sales/fly-order/goods-price")
     public ApiResponse<Map<String, Object>> goodsPrice(
             @RequestParam String goodsCode,
@@ -340,11 +393,15 @@ public class FlyOrderController {
         }
         out.put("salesPrice", salesPrice);
 
+        // PRD-28 卡片6：飞单选商品自动带价同属查看链路（含 units 内价格），按字段权限脱敏；
+        // 无价格字段权的角色在飞单抽屉里价格列同样隐藏，行为一致
+        fieldMasker.mask(out, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(out);
     }
 
     // ====================== 审核飞单（核心） ======================
 
+    @RequirePerm(value = "sales.flying.audit", name = "审核")
     @PostMapping("/sales/fly-order/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@RequestBody Map<String, Object> req) {
@@ -505,6 +562,7 @@ public class FlyOrderController {
 
     // ====================== 反审核 ======================
 
+    @RequirePerm(value = "sales.flying.unaudit", name = "反审核")
     @PostMapping("/sales/fly-order/unaudit")
     @Transactional
     public ApiResponse<Map<String, Object>> unaudit(@RequestBody Map<String, Object> req) {
@@ -579,6 +637,7 @@ public class FlyOrderController {
 
     // ====================== 作废 ======================
 
+    @RequirePerm(value = "sales.flying.close", name = "作废")
     @PostMapping("/sales/fly-order/cancel")
     @Transactional
     public ApiResponse<Map<String, Object>> cancel(@RequestBody Map<String, Object> req) {
@@ -602,6 +661,7 @@ public class FlyOrderController {
 
     // ====================== 删除（仅草稿） ======================
 
+    @RequirePerm(value = "sales.flying.delete", name = "删除")
     @PostMapping("/sales/fly-order/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> delete(@RequestBody Map<String, Object> req) {
@@ -626,6 +686,7 @@ public class FlyOrderController {
 
     // ====================== 批量审核 ======================
 
+    @RequirePerm(value = "sales.flying.audit", name = "审核")
     @PostMapping("/sales/fly-order/batch-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> batchAudit(@RequestBody Map<String, Object> req) {
@@ -645,6 +706,7 @@ public class FlyOrderController {
 
     // ====================== 批量取消审核 ======================
 
+    @RequirePerm(value = "sales.flying.unaudit", name = "反审核")
     @PostMapping("/sales/fly-order/batch-unaudit")
     @Transactional
     public ApiResponse<Map<String, Object>> batchUnaudit(@RequestBody Map<String, Object> req) {
@@ -664,6 +726,7 @@ public class FlyOrderController {
 
     // ====================== 批量删除 ======================
 
+    @RequirePerm(value = "sales.flying.delete", name = "删除")
     @PostMapping("/sales/fly-order/batch-delete")
     @Transactional
     public ApiResponse<Map<String, Object>> batchDelete(@RequestBody Map<String, Object> req) {
@@ -683,17 +746,24 @@ public class FlyOrderController {
 
     // ====================== 导出 ======================
 
+    @RequirePerm(value = "sales.flying.export", name = "导出")
     @PostMapping("/sales/fly-order/export")
     public ApiResponse<List<Map<String, Object>>> exportAll(@RequestBody Map<String, Object> req) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+        // 导出与列表同一数据范围口径，防止绕过列表限制拉全部（PRD-28 §5.3）
+        var scope = flyScopeTarget().build();
+        StringBuilder sql = new StringBuilder("""
                 SELECT fly_no AS 飞单号, supplier_name AS 供应商, customer_name AS 客户, salesman AS 业务员,
                        bill_date AS 单据日期, purchase_amount AS 采购金额, sales_amount AS 销售金额,
-                       profit_amount AS 毛利, status AS 状态, statusText AS 状态文本,
+                       profit_amount AS 毛利, status AS 状态,
                        purchase_order_no AS 关联采购单, sales_order_no AS 关联销售单,
                        remark AS 备注, creator_name AS 制单人, create_time AS 制单时间,
                        audit_user AS 审核人, audit_time AS 审核时间
-                FROM fly_order ORDER BY create_time DESC
+                FROM fly_order f WHERE 1=1
                 """);
+        List<Object> args = new ArrayList<>();
+        scope.appendTo(sql, args);
+        sql.append(" ORDER BY f.create_time DESC");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
         // 给状态加中文显示
         for (Map<String, Object> r : rows) {
             String st = String.valueOf(r.getOrDefault("STATUS", ""));
@@ -701,28 +771,52 @@ public class FlyOrderController {
                 case "DRAFT" -> "待审核"; case "APPROVED" -> "已审核"; case "CANCELLED" -> "已作废"; default -> st;
             });
         }
+        // GLOBAL-002：导出链路成本/毛利另需 global.data_export_sensitive（maskExport）
+        fieldMasker.maskExport(rows, FLY_EXPORT_FIELDS);
         flyLog(com.erp.system.OperationAction.EXPORT, "", "导出快速开单");
         return ApiResponse.ok(rows);
     }
 
+    @RequirePerm(value = "sales.flying.export", name = "导出")
     @GetMapping("/sales/fly-order/export-detail")
     public ApiResponse<List<Map<String, Object>>> exportDetail(@RequestParam String flyId) {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
-                "SELECT fly_no FROM fly_order WHERE fly_id = ? OR fly_no = ?", flyId, flyId);
-        String flyNo = heads.isEmpty() ? flyId : String.valueOf(heads.get(0).get("fly_no"));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList("""
+                "SELECT fly_id, fly_no FROM fly_order WHERE fly_id = ? OR fly_no = ?", flyId, flyId);
+        if (heads.isEmpty()) return ApiResponse.fail("404", "飞单不存在");
+        String realFlyId = String.valueOf(heads.get(0).get("fly_id"));
+        String flyNo = String.valueOf(heads.get(0).get("fly_no"));
+        // 行级数据范围校验，防止越权导出他人飞单
+        var scope = flyScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM fly_order f WHERE f.fly_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realFlyId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "飞单不存在或无权导出");
+        // 商品分类/品牌受限只导出可见商品行
+        StringBuilder dSql = new StringBuilder("""
                 SELECT d.goods_code AS 商品编码, d.goods_name AS 商品名称, d.spec AS 规格,
                        d.unit_name AS 单位, d.qty AS 数量, d.purchase_price AS 采购价,
                        d.sales_price AS 销售价, d.purchase_amount AS 采购金额,
                        d.sales_amount AS 销售金额, d.tax_rate AS 税率, d.remark AS 备注
-                FROM fly_order_detail d WHERE d.fly_id = ? ORDER BY d.detail_id
-                """, flyId);
+                FROM fly_order_detail d WHERE d.fly_id = ?
+                """);
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realFlyId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("d.goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY d.detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         // 在前面插入飞单号标识行
         Map<String, Object> headerRow = new LinkedHashMap<>();
         headerRow.put("商品编码", "飞单号: " + flyNo);
         List<Map<String, Object>> result = new ArrayList<>();
         result.add(headerRow);
         result.addAll(details);
+        // GLOBAL-002：导出明细的采购价/毛利同样受 global.data_export_sensitive 控制
+        fieldMasker.maskExport(result, FLY_EXPORT_FIELDS);
         return ApiResponse.ok(result);
     }
 

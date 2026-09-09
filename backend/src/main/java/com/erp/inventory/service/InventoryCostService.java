@@ -458,11 +458,25 @@ public class InventoryCostService {
     }
 
     /**
-     * 销售出库审核 — 扣减库存（成本不变）
+     * 销售出库审核 — 扣减库存（成本不变），严格模式：可用量/批次实物不足即拒绝。
      */
     @Transactional
     public void salesOutbound(String goodsCode, String goodsName, String warehouse, String batchNo,
                                BigDecimal outboundQty, String sourceBill) {
+        salesOutbound(goodsCode, goodsName, warehouse, batchNo, outboundQty, sourceBill, false);
+    }
+
+    /**
+     * 销售出库审核 — 扣减库存（成本不变）。
+     *
+     * @param allowNegative 是否允许负库存出库。{@code false}（默认，含 WMS 波次等自动链路）：
+     *                      可用量或批次实物不足直接抛错；{@code true}：经「负库存授权」后调用，
+     *                      去掉库存守卫无条件扣减，允许实物/可用结存为负（PRD-28 卡片6）。
+     *                      商品在该仓库从无库存记录时仍拒绝（无成本价、无行可扣，账实会不符）。
+     */
+    @Transactional
+    public void salesOutbound(String goodsCode, String goodsName, String warehouse, String batchNo,
+                               BigDecimal outboundQty, String sourceBill, boolean allowNegative) {
         if (outboundQty == null || outboundQty.signum() <= 0) {
             // 负数/零出库会变成加库存，必须拒绝
             throw new IllegalArgumentException("出库数量必须大于 0：" + goodsCode + " / " + warehouse);
@@ -473,37 +487,62 @@ public class InventoryCostService {
                         .eq("warehouse", warehouse)
         );
         if (balance == null) {
-            throw new IllegalArgumentException("库存不足：" + goodsCode + " / " + warehouse);
+            throw new IllegalArgumentException("库存不足：" + goodsCode + " / " + warehouse
+                    + (allowNegative ? "（该商品从未入库，负库存授权也无法出库，请先做入库）" : ""));
         }
         BigDecimal costPrice = nz(balance.getCostPrice());
 
-        // 原子条件扣减：仅当可用量足够时才把 physical/available 各减 outboundQty，
-        // 行锁在 UPDATE 内持有，杜绝并发双读导致的超扣。
-        int rows = jdbcTemplate.update("""
-                UPDATE inv_stock_balance
-                SET physical_qty = COALESCE(physical_qty, 0) - ?,
-                    available_qty = COALESCE(available_qty, 0) - ?,
-                    stock_amount = (COALESCE(physical_qty, 0) - ?) * ?,
-                    last_inout_time = CURRENT_TIMESTAMP
-                WHERE goods_code = ? AND warehouse = ?
-                  AND COALESCE(available_qty, 0) >= ?
-                """, outboundQty, outboundQty, outboundQty, costPrice,
-                goodsCode, warehouse, outboundQty);
+        int rows;
+        if (allowNegative) {
+            // 负库存授权：无条件扣减，允许 physical/available 结存为负（扣减公式与正常路径一致）
+            rows = jdbcTemplate.update("""
+                    UPDATE inv_stock_balance
+                    SET physical_qty = COALESCE(physical_qty, 0) - ?,
+                        available_qty = COALESCE(available_qty, 0) - ?,
+                        stock_amount = (COALESCE(physical_qty, 0) - ?) * ?,
+                        last_inout_time = CURRENT_TIMESTAMP
+                    WHERE goods_code = ? AND warehouse = ?
+                    """, outboundQty, outboundQty, outboundQty, costPrice,
+                    goodsCode, warehouse);
+        } else {
+            // 原子条件扣减：仅当可用量足够时才把 physical/available 各减 outboundQty，
+            // 行锁在 UPDATE 内持有，杜绝并发双读导致的超扣。
+            rows = jdbcTemplate.update("""
+                    UPDATE inv_stock_balance
+                    SET physical_qty = COALESCE(physical_qty, 0) - ?,
+                        available_qty = COALESCE(available_qty, 0) - ?,
+                        stock_amount = (COALESCE(physical_qty, 0) - ?) * ?,
+                        last_inout_time = CURRENT_TIMESTAMP
+                    WHERE goods_code = ? AND warehouse = ?
+                      AND COALESCE(available_qty, 0) >= ?
+                    """, outboundQty, outboundQty, outboundQty, costPrice,
+                    goodsCode, warehouse, outboundQty);
+        }
         if (rows == 0) {
             throw new IllegalArgumentException("库存不足：" + goodsCode + " / " + warehouse);
         }
         BigDecimal newQty = nz(balance.getPhysicalQty()).subtract(outboundQty);
 
-        // 批次层：从指定批次扣减；同样带 qty >= ? 的条件守卫，防止批次超扣
+        // 批次层：从指定批次扣减。严格模式带 qty >= ? 守卫防批次超扣；负库存授权时无条件扣减
         if (batchNo != null && !batchNo.isBlank()) {
-            int batchRows = jdbcTemplate.update("""
-                    UPDATE inv_batch_stock
-                    SET qty = qty - ?, stock_amount = (qty - ?) * cost_price, last_inout_time = CURRENT_TIMESTAMP
-                    WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
-                      AND qty >= ?
-                    """, outboundQty, outboundQty, goodsCode, warehouse, batchNo, outboundQty);
+            int batchRows;
+            if (allowNegative) {
+                batchRows = jdbcTemplate.update("""
+                        UPDATE inv_batch_stock
+                        SET qty = qty - ?, stock_amount = (qty - ?) * cost_price, last_inout_time = CURRENT_TIMESTAMP
+                        WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
+                        """, outboundQty, outboundQty, goodsCode, warehouse, batchNo);
+            } else {
+                batchRows = jdbcTemplate.update("""
+                        UPDATE inv_batch_stock
+                        SET qty = qty - ?, stock_amount = (qty - ?) * cost_price, last_inout_time = CURRENT_TIMESTAMP
+                        WHERE goods_code = ? AND warehouse = ? AND batch_no = ?
+                          AND qty >= ?
+                        """, outboundQty, outboundQty, goodsCode, warehouse, batchNo, outboundQty);
+            }
             if (batchRows == 0) {
-                throw new IllegalArgumentException("批次库存不足：" + goodsCode + " / 批次 " + batchNo);
+                throw new IllegalArgumentException("批次库存不足：" + goodsCode + " / 批次 " + batchNo
+                        + (allowNegative ? "（批次记录不存在，请先入库该批次）" : ""));
             }
         }
 

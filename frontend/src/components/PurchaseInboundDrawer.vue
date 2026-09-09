@@ -13,6 +13,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard, permOf } = useRbac('purchaseInbound')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -171,6 +174,7 @@ function onBatchNoInput(row) {
 
 /** 校验并提交 */
 async function saveInbound() {
+  if (!guard('新建')) { errors.value.header = '无权限执行该操作'; return }
   errors.value = {}
   if (!headerForm.value.sourceOrder) {
     errors.value.header = '请选择来源采购订单'
@@ -234,7 +238,7 @@ function closeDrawer() { emit('close') }
         <div style="flex:1"></div>
         <div class="actions">
           <button class="btn" @click="closeDrawer">取消</button>
-          <button class="btn primary" @click="saveInbound">保存</button>
+          <button class="btn primary" v-permission="permOf('purchaseInbound', '新建')" @click="saveInbound">保存</button>
         </div>
       </div>
 
@@ -250,7 +254,7 @@ function closeDrawer() { emit('close') }
               <select v-if="!props.sourceOrder" v-model="headerForm.sourceOrder" @change="onOrderChange($event.target.value)">
                 <option value="">请选择</option>
                 <option v-for="o in availableOrders" :key="o.orderNo" :value="o.orderNo">
-                  {{ o.orderNo }} - {{ o.supplierName }}（订单额 ¥{{ o.amount }}）
+                  {{ o.orderNo }} - {{ o.supplierName }}<span v-if="canView('订单金额')">（订单额 ¥{{ o.amount }}）</span>
                 </option>
               </select>
               <input v-else readonly :value="headerForm.sourceOrder" />
@@ -267,11 +271,11 @@ function closeDrawer() { emit('close') }
               <label>单据日期</label>
               <input type="date" v-model="headerForm.billDate" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('订单金额')">
               <label>订单金额</label>
               <input readonly :value="'¥ ' + Number(headerForm.orderAmount).toFixed(2)" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('已入库金额')">
               <label>已入库金额</label>
               <input readonly :value="'¥ ' + Number(headerForm.inboundedAmount).toFixed(2)" />
             </div>
@@ -300,8 +304,8 @@ function closeDrawer() { emit('close') }
                   <th style="width:80px">已入库</th>
                   <th style="width:80px">剩余</th>
                   <th style="width:100px">实收数量 <span class="req">*</span></th>
-                  <th style="width:80px">单价</th>
-                  <th style="width:90px">金额</th>
+                  <th style="width:80px" v-if="canView('单价')">单价</th>
+                  <th style="width:90px" v-if="canView('金额')">金额</th>
                   <th style="min-width:120px">批次号</th>
                   <th style="min-width:120px">生产日期</th>
                   <th style="min-width:120px">到期日期</th>
@@ -327,8 +331,8 @@ function closeDrawer() { emit('close') }
                       style="width:100%;height:24px;text-align:right"
                     />
                   </td>
-                  <td style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
-                  <td style="text-align:right;font-weight:700">
+                  <td style="text-align:right" v-if="canView('单价')">{{ Number(row.price).toFixed(4) }}</td>
+                  <td style="text-align:right;font-weight:700" v-if="canView('金额')">
                     {{ (Number(row.receivedQty || 0) * Number(row.price || 0)).toFixed(2) }}
                   </td>
                   <td>
@@ -349,7 +353,7 @@ function closeDrawer() { emit('close') }
                   <td>
                     <input type="date" v-model="row.expiryDate" style="width:100%;height:24px" />
                   </td>
-                  <td>
+                  <td v-action-perms="actionHidden">
                     <button class="link link-btn" @click="splitRow(index, 2)">拆 2</button>
                     <button class="link link-btn" @click="splitRow(index, 3)">拆 3</button>
                     <button class="link link-btn danger-link" @click="removeRow(index)">删除</button>
@@ -362,7 +366,7 @@ function closeDrawer() { emit('close') }
 
         <div class="summary">
           <span>合计数量：<b>{{ totalQty }}</b></span>
-          <span>合计金额：<b>¥ {{ totalAmount }}</b></span>
+          <span v-if="canView('金额')">合计金额：<b>¥ {{ totalAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

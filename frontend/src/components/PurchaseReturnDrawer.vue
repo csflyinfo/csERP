@@ -17,6 +17,9 @@
  */
 import { ref, computed, watch } from 'vue'
 import { post, get } from '../api/client.js'
+import { useRbac } from '../composables/useRbac.js'
+
+const { canView, actionHidden, guard } = useRbac('purchaseReturn')
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -79,6 +82,7 @@ async function loadReturn(id) {
 
 /** 审核 → 写负向 fin_ap 冲减应付（按含税商品金额） */
 async function auditReturn() {
+  if (!guard('审核')) { errors.value.header = '无权限执行该操作'; return }
   const amount = Number(head.value.goodsAmount || 0).toFixed(2)
   if (!confirm(`确认审核采购退货单【${head.value.returnNo}】？\n\n审核后将写入一条金额为 -¥${amount}（含税商品金额）的负向应付记录，冲减供应商【${head.value.supplierName}】的应付账款。`)) return
   try {
@@ -92,6 +96,7 @@ async function auditReturn() {
 
 /** 反审核 → 删除负向 fin_ap */
 async function reverseAudit() {
+  if (!guard('反审核')) { errors.value.header = '无权限执行该操作'; return }
   if (!confirm(`确认反审核采购退货单【${head.value.returnNo}】？\n\n反审核后将撤销该退货单的应付冲减记录。若已发生付款核销，反审核会被拒绝。`)) return
   try {
     const result = await post('/purchase/return/reverse-audit', { bizId: head.value.returnId })
@@ -113,7 +118,7 @@ function closeDrawer() { emit('close') }
         <span v-if="isApproved" class="badge ok">已审核</span>
         <span v-else class="badge wait">待审核</span>
         <div style="flex:1"></div>
-        <div class="actions">
+        <div class="actions" v-action-perms="actionHidden">
           <button class="btn" @click="closeDrawer">关闭</button>
           <button v-if="!isApproved" class="btn primary" @click="auditReturn">审核（冲减应付）</button>
           <button v-else class="btn" @click="reverseAudit">反审核</button>
@@ -166,19 +171,19 @@ function closeDrawer() { emit('close') }
         <div class="card" style="padding:12px">
           <div style="font-weight:900;margin-bottom:10px;color:var(--primary)">金额汇总</div>
           <div class="grid4">
-            <div class="field">
+            <div class="field" v-if="canView('商品金额（含税）')">
               <label>商品金额（含税）</label>
               <input readonly class="highlight" :value="'¥ ' + Number(head.goodsAmount || 0).toFixed(2)" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('税额')">
               <label>税额</label>
               <input readonly :value="'¥ ' + Number(head.taxAmount || 0).toFixed(2)" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('不含税金额')">
               <label>不含税金额</label>
               <input readonly :value="'¥ ' + untaxedAmount" />
             </div>
-            <div class="field">
+            <div class="field" v-if="canView('成本金额')">
               <label>成本金额</label>
               <input readonly :value="'¥ ' + Number(head.costAmount || 0).toFixed(2)" />
             </div>
@@ -205,12 +210,12 @@ function closeDrawer() { emit('close') }
                   <th style="min-width:160px">商品名称</th>
                   <th style="width:60px">单位</th>
                   <th style="width:90px">退货数量</th>
-                  <th style="width:90px">单价</th>
-                  <th style="width:90px">金额(含税)</th>
+                  <th style="width:90px" v-if="canView('单价')">单价</th>
+                  <th style="width:90px" v-if="canView('金额(含税)')">金额(含税)</th>
                   <th style="width:70px">税率</th>
-                  <th style="width:90px">税额</th>
-                  <th style="width:100px">成本单价</th>
-                  <th style="width:90px">成本金额</th>
+                  <th style="width:90px" v-if="canView('税额')">税额</th>
+                  <th style="width:100px" v-if="canView('成本单价')">成本单价</th>
+                  <th style="width:90px" v-if="canView('成本金额')">成本金额</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,12 +225,12 @@ function closeDrawer() { emit('close') }
                   <td>{{ row.goodsName }}</td>
                   <td>{{ row.unitName }}</td>
                   <td style="text-align:right">{{ row.qty }}</td>
-                  <td style="text-align:right">{{ Number(row.price).toFixed(4) }}</td>
-                  <td style="text-align:right;font-weight:700">{{ Number(row.amount).toFixed(2) }}</td>
+                  <td style="text-align:right" v-if="canView('单价')">{{ Number(row.price).toFixed(4) }}</td>
+                  <td style="text-align:right;font-weight:700" v-if="canView('金额(含税)')">{{ Number(row.amount).toFixed(2) }}</td>
                   <td style="text-align:right">{{ row.taxRate }}</td>
-                  <td style="text-align:right">{{ Number(row.taxAmount).toFixed(2) }}</td>
-                  <td style="text-align:right">{{ Number(row.costPrice).toFixed(6) }}</td>
-                  <td style="text-align:right;font-weight:700">{{ Number(row.costAmount).toFixed(2) }}</td>
+                  <td style="text-align:right" v-if="canView('税额')">{{ Number(row.taxAmount).toFixed(2) }}</td>
+                  <td style="text-align:right" v-if="canView('成本单价')">{{ Number(row.costPrice).toFixed(6) }}</td>
+                  <td style="text-align:right;font-weight:700" v-if="canView('成本金额')">{{ Number(row.costAmount).toFixed(2) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -234,9 +239,9 @@ function closeDrawer() { emit('close') }
 
         <div class="summary">
           <span>合计退货数量：<b>{{ totalQty }}</b></span>
-          <span>商品金额（含税）：<b style="color:var(--danger)">¥ {{ Number(head.goodsAmount || 0).toFixed(2) }}</b></span>
-          <span>税额：<b>¥ {{ Number(head.taxAmount || 0).toFixed(2) }}</b></span>
-          <span>不含税金额：<b>¥ {{ untaxedAmount }}</b></span>
+          <span v-if="canView('商品金额（含税）')">商品金额（含税）：<b style="color:var(--danger)">¥ {{ Number(head.goodsAmount || 0).toFixed(2) }}</b></span>
+          <span v-if="canView('税额')">税额：<b>¥ {{ Number(head.taxAmount || 0).toFixed(2) }}</b></span>
+          <span v-if="canView('不含税金额')">不含税金额：<b>¥ {{ untaxedAmount }}</b></span>
           <span>行数：<b>{{ detailList.length }}</b></span>
         </div>
       </div>

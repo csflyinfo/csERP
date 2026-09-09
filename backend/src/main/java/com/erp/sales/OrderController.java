@@ -3,6 +3,7 @@ package com.erp.sales;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +27,7 @@ public class OrderController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.common.security.approval.ApprovalService approvalService;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
@@ -33,7 +35,8 @@ public class OrderController {
                            com.erp.wms.WmsInboundService wmsInboundService,
                            com.erp.system.OperationLogService opLog,
                            com.erp.common.security.datascope.DataScopeService dataScope,
-                           com.erp.common.security.FieldMasker fieldMasker) {
+                           com.erp.common.security.FieldMasker fieldMasker,
+                           com.erp.common.security.approval.ApprovalService approvalService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
@@ -41,6 +44,7 @@ public class OrderController {
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.approvalService = approvalService;
     }
 
     /** 建档人：当前登录用户姓名（数据范围 OWNER/DEFAULT DENY 依赖），无登录上下文回落系统管理员。 */
@@ -52,6 +56,23 @@ public class OrderController {
 
     // ============ 销售订单 ============
 
+    /** 销售订单列表/详情共用数据范围目标：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget salesOrderScopeTarget() {
+        return dataScope.target()
+                .warehouse("so.warehouse").customer("so.customer").salesman("so.salesman")
+                .creator("so.creator_name")
+                .goodsLines("so.order_id", "sales_order_detail", "order_id");
+    }
+
+    /** 采购订单列表/详情共用数据范围目标：仓库/供应商/采购员(buyer 复用业务员维度)/建档人 + 商品明细行。 */
+    private com.erp.common.security.datascope.DataScopeService.ScopeTarget purchaseOrderScopeTarget() {
+        return dataScope.target()
+                .warehouse("po.warehouse").supplier("po.supplier_name").salesman("po.buyer")
+                .creator("po.creator_name")
+                .goodsLines("po.order_id", "purchase_order_detail", "order_id");
+    }
+
+    @RequirePerm(value = "sales.order.add", name = "新增")
     @PostMapping("/sales/order/create")
     @Transactional
     public ApiResponse<Map<String, Object>> createSales(@RequestBody Map<String, Object> req) {
@@ -76,6 +97,8 @@ public class OrderController {
         // 库存校验：在任何 INSERT 之前做，不足则直接返回，事务内尚无写入
         String shortage = checkStockOfPayload(warehouse, details);
         if (shortage != null) return ApiResponse.fail("400", shortage);
+        // 低价销售红线：明细单价低于商品最低售价时，需有「低价销售授权」的人当场授权（PRD-28 卡片6）
+        requireLowPriceApproval(details, orderNo, req);
         jdbcTemplate.update("""
                 INSERT INTO sales_order (order_id, order_no, customer, customer_code, salesman, warehouse,
                     bill_date, expected_delivery_date, price_group_code, amount, unpaid_amount, status, creator_name, remark, stock_check)
@@ -117,17 +140,14 @@ public class OrderController {
         return ApiResponse.ok(out);
     }
 
+    @RequirePerm(value = "sales.order.view", name = "查看")
     @PostMapping("/sales/order/page")
     public ApiResponse<PageResult<Map<String, Object>>> salesPage(@RequestBody PageRequest request) {
         // 走 snake_case AS snake_case，让 camelize 正确转成驼峰
         // outbound_count / outbound_audited_count：供前端收敛行内按钮
         //   已生成出库单 → 不显示【生成出库单】；已有已审核出库单（已出库）→ 不显示【反审核】
         // 数据范围（PRD-28 §5.3）：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行过滤
-        var scope = dataScope.target()
-                .warehouse("so.warehouse").customer("so.customer").salesman("so.salesman")
-                .creator("so.creator_name")
-                .goodsLines("so.order_id", "sales_order_detail", "order_id")
-                .build();
+        var scope = salesOrderScopeTarget().build();
         List<Object> whereArgs = new ArrayList<>();
         StringBuilder scopeSql = new StringBuilder();
         scope.appendTo(scopeSql, whereArgs);
@@ -181,10 +201,11 @@ public class OrderController {
             row.put("creatorInfo", (creator == null ? "" : creator) + " " + (createdAt == null ? "" : createdAt));
             mapped.add(row);
         }
-        fieldMasker.mask(mapped);
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.SALES_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "sales.order.view", name = "查看")
     @GetMapping("/sales/order/detail")
     public ApiResponse<Map<String, Object>> salesDetail(
             @RequestParam(required = false) String orderId,
@@ -198,11 +219,26 @@ public class OrderController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "订单不存在");
         Map<String, Object> head = camelize(heads.get(0));
         String realOrderId = String.valueOf(head.get("orderId"));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList("""
-                SELECT * FROM sales_order_detail WHERE order_id = ? ORDER BY detail_id
-                """, realOrderId);
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404，不泄露单据存在性（PRD-28 §5.3）
+        var scope = salesOrderScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM sales_order so WHERE so.order_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realOrderId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "订单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品（单据头金额另由字段权限脱敏）
+        StringBuilder dSql = new StringBuilder("SELECT * FROM sales_order_detail WHERE order_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realOrderId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(OrderController::camelize).toList());
-        fieldMasker.mask(head);
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.SALES_BILL);
         // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；销售订单非敏感模块）
         opLog.logView(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.KeyFields.BIZ_SALES_ORDER,
                 realOrderId, str(head.get("orderNo")), false);
@@ -210,6 +246,7 @@ public class OrderController {
     }
 
     /** 销售订单编辑（仅 PENDING 允许），全量替换明细。 */
+    @RequirePerm(value = "sales.order.edit", name = "修改")
     @PostMapping("/sales/order/update")
     @Transactional
     public ApiResponse<Map<String, Object>> updateSales(@RequestBody Map<String, Object> req) {
@@ -240,6 +277,8 @@ public class OrderController {
         String shortage = checkStockAllowingOwnLock(newWarehouse, newNeed,
                 newWarehouse.equals(oldWarehouse) ? oldNeed : Map.of(), goodsNamesOfPayload(details));
         if (shortage != null) return ApiResponse.fail("400", shortage);
+        // 低价销售红线：改单后的明细单价低于最低售价同样需要授权（PRD-28 卡片6）
+        requireLowPriceApproval(details, str(pickCS(beforeMain, "order_no")), req);
 
         // 先整体释放旧占用，再整体锁定新数量。
         // 校验公式保证释放后一定锁得回来（含历史未锁订单：那时 min(旧量, 已锁) 本来就小）。
@@ -304,6 +343,7 @@ public class OrderController {
      * 可用库存已被自己扣掉，这么比必然自己挡自己。这里改为兜底校验
      * <b>实物库存 ≥ 本单数量</b>——实物可能被盘亏、其他出库、调拨抽走，那种情况必须拦。
      */
+    @RequirePerm(value = "sales.order.audit", name = "审核")
     @PostMapping("/sales/order/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> auditSales(@RequestBody Map<String, Object> req) {
@@ -323,6 +363,8 @@ public class OrderController {
         Map<String, BigDecimal> need = needOfOrder(realOrderId);
         String shortage = checkPhysicalByNeed(warehouse, need, goodsNamesOfOrder(realOrderId));
         if (shortage != null) return ApiResponse.fail("400", shortage);
+        // 超信用红线：本单审核后客户应收未收将超过信用额度时，需「超信用授权」（PRD-28 卡片6）
+        requireOverCreditApproval(realOrderId, orderNo, req);
 
         jdbcTemplate.update("""
                 UPDATE sales_order
@@ -353,6 +395,7 @@ public class OrderController {
      * 单子还在、还要出货，占用必须延续到出库或关闭。
      * 被删掉的出库单占用的是<b>批次库存</b>，那一层要跟着单子一起释放。
      */
+    @RequirePerm(value = "sales.order.unaudit", name = "反审核")
     @PostMapping("/sales/order/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAuditSales(@RequestBody Map<String, Object> req) {
@@ -434,6 +477,7 @@ public class OrderController {
     }
 
     /** 销售订单关闭：APPROVED/PENDING → CLOSED，释放尚未出库部分的锁定库存。 */
+    @RequirePerm(value = "sales.order.close", name = "关闭")
     @PostMapping("/sales/order/close")
     @Transactional
     public ApiResponse<Map<String, Object>> closeSales(@RequestBody Map<String, Object> req) {
@@ -463,6 +507,7 @@ public class OrderController {
     }
 
     /** 销售订单删除：仅 PENDING 可删；删除前释放本单占用的库存。 */
+    @RequirePerm(value = "sales.order.delete", name = "删除")
     @PostMapping("/sales/order/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> deleteSales(@RequestBody Map<String, Object> req) {
@@ -490,6 +535,7 @@ public class OrderController {
      * 走 JdbcTemplate 复用 createSales / auditSales 逻辑，避免依赖已删除的老 SalesController helper。
      * <p>库存已由 {@code createSales} 占用，这里<b>不再重复锁定</b>。
      */
+    @RequirePerm(value = "sales.quick.add", name = "快速开单")
     @PostMapping("/sales/quick-order/create-and-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> quickOrderCreateAndAudit(@RequestBody Map<String, Object> req) {
@@ -499,6 +545,8 @@ public class OrderController {
         Map<String, Object> data = createResult.data();
         String orderId = String.valueOf(data.get("orderId"));
         String warehouse = str(req.get("warehouseId"));
+        // 快速开单同样受超信用红线约束（低价红线已在 createSales 内校验，授权字段随 req 透传）
+        requireOverCreditApproval(orderId, String.valueOf(data.get("orderNo")), req);
         // 内联审核，避免 Spring 代理自调用绕过事务
         jdbcTemplate.update("""
                 UPDATE sales_order
@@ -516,6 +564,70 @@ public class OrderController {
         out.put("amount", data.get("amount"));
         out.put("effect", warehouse.isBlank() ? "快速开单已审核（未指定仓库，未占用库存）" : "快速开单已审核并占用库存");
         return ApiResponse.ok(out);
+    }
+
+    // ============ 销售订单 · 审批红线（PRD-28 卡片6）============
+
+    /**
+     * 低价销售红线：逐明细比对商品最低售价 {@code base_goods.min_sale_price}，
+     * 任一明细单价低于最低售价（最低售价为空或 ≤0 表示不限制），即需拥有
+     * 「低价销售授权」的人当场授权，否则抛 NeedApprovalException 由前端弹授权框重放。
+     */
+    private void requireLowPriceApproval(List<Map<String, Object>> details, String orderNo, Map<String, Object> req) {
+        List<String> breaches = new ArrayList<>();
+        for (Map<String, Object> d : details) {
+            String goodsCode = str(d.get("goodsCode")).trim();
+            if (goodsCode.isEmpty()) continue;
+            List<Map<String, Object>> g = jdbcTemplate.queryForList(
+                    "SELECT min_sale_price FROM base_goods WHERE goods_code = ?", goodsCode);
+            if (g.isEmpty()) continue;
+            BigDecimal minPrice = toBd(pickCS(g.get(0), "min_sale_price"));
+            BigDecimal price = toBd(d.get("price"));
+            if (minPrice.compareTo(BigDecimal.ZERO) > 0 && price.compareTo(minPrice) < 0) {
+                String name = str(d.get("goodsName"));
+                breaches.add((name.isBlank() ? goodsCode : name)
+                        + " 单价 " + plain(price) + " 低于最低售价 " + plain(minPrice));
+            }
+        }
+        if (breaches.isEmpty()) return;
+        approvalService.requireApproval(
+                com.erp.common.security.approval.ApprovalType.LOW_PRICE,
+                "sales.order", orderNo, String.join("；", breaches),
+                str(req.get("approverAccount")), str(req.get("approverPassword")));
+    }
+
+    /**
+     * 超信用红线：审核时按客户汇总当前应收未收（{@code fin_ar.unreceived_amount}，
+     * 红冲/拒收为负数自然轧差）再加本单未收金额，超过客户信用额度
+     * {@code base_customer.credit_limit}（为空或 ≤0 表示不做授信管控）即需「超信用授权」。
+     * 订单审核本身不生成应收，故本单未收金额必须计入审核后的额度占用。
+     */
+    private void requireOverCreditApproval(String orderId, String orderNo, Map<String, Object> req) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT so.customer AS customer, so.unpaid_amount AS unpaid_amount,
+                       c.credit_limit AS credit_limit,
+                       (SELECT COALESCE(SUM(a.unreceived_amount), 0) FROM fin_ar a
+                          WHERE a.customer = so.customer) AS ar_outstanding
+                FROM sales_order so
+                LEFT JOIN base_customer c ON c.customer_name = so.customer
+                WHERE so.order_id = ?
+                """, orderId);
+        if (rows.isEmpty()) return;
+        Map<String, Object> row = rows.get(0);
+        BigDecimal creditLimit = toBd(pickCS(row, "credit_limit"));
+        if (creditLimit.compareTo(BigDecimal.ZERO) <= 0) return;
+        BigDecimal outstanding = toBd(pickCS(row, "ar_outstanding"));
+        BigDecimal unpaid = toBd(pickCS(row, "unpaid_amount"));
+        BigDecimal after = outstanding.add(unpaid);
+        if (after.compareTo(creditLimit) <= 0) return;
+        String customer = str(pickCS(row, "customer"));
+        String reason = "客户「" + (customer.isBlank() ? "未指定" : customer) + "」审核后应收未收 "
+                + plain(after) + " 超过信用额度 " + plain(creditLimit)
+                + "（当前未收 " + plain(outstanding) + "＋本单 " + plain(unpaid) + "）";
+        approvalService.requireApproval(
+                com.erp.common.security.approval.ApprovalType.OVER_CREDIT,
+                "sales.order", orderNo, reason,
+                str(req.get("approverAccount")), str(req.get("approverPassword")));
     }
 
     // ============ 销售订单 · 库存校验与锁定辅助 ============
@@ -772,6 +884,7 @@ public class OrderController {
 
     // ============ 采购订单 ============
 
+    @RequirePerm(value = "purchase.order.add", name = "新增")
     @PostMapping("/purchase/order/create")
     @Transactional
     public ApiResponse<Map<String, Object>> createPurchase(@RequestBody Map<String, Object> req) {
@@ -823,20 +936,43 @@ public class OrderController {
         return ApiResponse.ok(out);
     }
 
+    @RequirePerm(value = "purchase.order.view", name = "查看")
     @PostMapping("/purchase/order/page")
     public ApiResponse<PageResult<Map<String, Object>>> purchasePage(@RequestBody PageRequest request) {
         // 走 snake_case AS snake_case，让 camelize 正确转成驼峰
         // （H2 会把不带引号的 alias 拉成大写，破坏驼峰 → 用统一 snake_case 兜底）
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT order_id, order_no, supplier_name, supplier_code,
-                       buyer, warehouse, bill_date, amount, paid_amount, unpaid_amount, inbound_amount,
-                       inbound_status, payment_status,
-                       status, creator_name, create_time, audit_time, audit_user, remark
-                FROM purchase_order ORDER BY create_time DESC, order_no DESC
+        // 数据范围（PRD-28 §5.3）：仓库/供应商/采购员(buyer)/建档人 + 商品分类/品牌按明细行过滤
+        var scope = purchaseOrderScopeTarget().build();
+        List<Object> whereArgs = new ArrayList<>();
+        StringBuilder scopeSql = new StringBuilder();
+        scope.appendTo(scopeSql, whereArgs);
+        List<Object> selectArgs = new ArrayList<>();
+        StringBuilder q = new StringBuilder("""
+                SELECT po.order_id, po.order_no, po.supplier_name, po.supplier_code,
+                       po.buyer, po.warehouse, po.bill_date, po.amount, po.paid_amount, po.unpaid_amount, po.inbound_amount,
+                       po.inbound_status, po.payment_status,
+                       po.status, po.creator_name, po.create_time, po.audit_time, po.audit_user, po.remark
                 """);
+        // 商品范围受限时，主单金额按可见明细行汇总（方案 §5.3.1）；SELECT 列参数须排在 WHERE 参数前
+        if (scope.isGoodsRestricted()) {
+            q.append(", (SELECT COALESCE(SUM(d.amount),0) FROM purchase_order_detail d WHERE d.order_id = po.order_id AND ");
+            List<Object> goodsArgs = new ArrayList<>();
+            scope.appendGoodsCodeCondition("d.goods_code", q, goodsArgs);
+            q.append(") AS scoped_amount");
+            selectArgs.addAll(goodsArgs);
+        }
+        q.append(" FROM purchase_order po WHERE 1=1").append(scopeSql)
+                .append(" ORDER BY po.create_time DESC, po.order_no DESC");
+        List<Object> queryArgs = new ArrayList<>(selectArgs);
+        queryArgs.addAll(whereArgs);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(q.toString(), queryArgs.toArray());
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
+            if (scope.isGoodsRestricted() && row.get("scopedAmount") != null) {
+                row.put("amount", row.get("scopedAmount"));
+            }
+            row.remove("scopedAmount");
             String st = String.valueOf(row.getOrDefault("status", ""));
             row.put("statusText", switch (st) {
                 case "PENDING" -> "待审核";
@@ -855,9 +991,11 @@ public class OrderController {
             row.put("arrivalStatus", row.getOrDefault("inboundStatus", ""));
             mapped.add(row);
         }
+        fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
+    @RequirePerm(value = "purchase.order.view", name = "查看")
     @GetMapping("/purchase/order/detail")
     public ApiResponse<Map<String, Object>> purchaseDetail(
             @RequestParam(required = false) String orderId,
@@ -870,11 +1008,26 @@ public class OrderController {
         if (heads.isEmpty()) return ApiResponse.fail("404", "订单不存在");
         Map<String, Object> head = camelize(heads.get(0));
         String realOrderId = String.valueOf(head.get("orderId"));
-        List<Map<String, Object>> details = jdbcTemplate.queryForList("""
-                SELECT * FROM purchase_order_detail WHERE order_id = ? ORDER BY detail_id
-                """, realOrderId);
+        // 数据范围行级校验：无权查看时与「不存在」同样回 404（PRD-28 §5.3）
+        var scope = purchaseOrderScopeTarget().build();
+        StringBuilder cntSql = new StringBuilder("SELECT COUNT(*) FROM purchase_order po WHERE po.order_id = ?");
+        List<Object> cntArgs = new ArrayList<>();
+        cntArgs.add(realOrderId);
+        scope.appendTo(cntSql, cntArgs);
+        Integer inScope = jdbcTemplate.queryForObject(cntSql.toString(), Integer.class, cntArgs.toArray());
+        if (inScope == null || inScope == 0) return ApiResponse.fail("404", "订单不存在或无权查看");
+        // 商品分类/品牌受限时，明细行只回可见商品
+        StringBuilder dSql = new StringBuilder("SELECT * FROM purchase_order_detail WHERE order_id = ?");
+        List<Object> dArgs = new ArrayList<>();
+        dArgs.add(realOrderId);
+        if (scope.isGoodsRestricted()) {
+            dSql.append(" AND ");
+            scope.appendGoodsCodeCondition("goods_code", dSql, dArgs);
+        }
+        dSql.append(" ORDER BY detail_id");
+        List<Map<String, Object>> details = jdbcTemplate.queryForList(dSql.toString(), dArgs.toArray());
         head.put("details", details.stream().map(OrderController::camelize).toList());
-        fieldMasker.mask(head);
+        fieldMasker.mask(head, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
         // 查看单据详情留痕（受 OP_LOG_ENABLE_DETAIL_VIEW 开关控制；采购订单非敏感模块）
         opLog.logView(com.erp.system.OperationModule.PURCHASE_ORDER, com.erp.system.KeyFields.BIZ_PURCHASE_ORDER,
                 realOrderId, str(head.get("orderNo")), false);
@@ -886,6 +1039,7 @@ public class OrderController {
      *  （该方法有自己的事务），若外层包事务，createFromPurchase 抛"已有进行中任务"时
      *  即使被 catch 也会把外层事务标成 rollback-only，导致审核 UPDATE 回滚。
      *  审核本身只一条 UPDATE，单语句天然原子，无需显式事务。 */
+    @RequirePerm(value = "purchase.order.audit", name = "审核")
     @PostMapping("/purchase/order/audit")
     public ApiResponse<Map<String, Object>> auditPurchase(@RequestBody Map<String, Object> req) {
         String key = str(req.get("orderId"));
@@ -940,6 +1094,7 @@ public class OrderController {
     }
 
     /** 采购订单反审核：APPROVED → PENDING；已生成入库单则拒绝 */
+    @RequirePerm(value = "purchase.order.unaudit", name = "反审核")
     @PostMapping("/purchase/order/reverse-audit")
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAuditPurchase(@RequestBody Map<String, Object> req) {
@@ -976,6 +1131,7 @@ public class OrderController {
     }
 
     /** 采购订单终止：APPROVED/PENDING → CLOSED（不再允许生成入库单）。已入库的部分保留。 */
+    @RequirePerm(value = "purchase.order.close", name = "关闭")
     @PostMapping("/purchase/order/close")
     @Transactional
     public ApiResponse<Map<String, Object>> closePurchase(@RequestBody Map<String, Object> req) {
@@ -994,6 +1150,7 @@ public class OrderController {
     }
 
     /** 采购订单删除：仅 PENDING 可删；同时删明细 */
+    @RequirePerm(value = "purchase.order.delete", name = "删除")
     @PostMapping("/purchase/order/delete")
     @Transactional
     public ApiResponse<Map<String, Object>> deletePurchase(@RequestBody Map<String, Object> req) {

@@ -168,3 +168,57 @@
 - 跨重启 B 段 15/15：MENU-005 改名、MENU-006 移动、MENU-009 排序均抗启动同步；MENU-010 三节点 reset 名称/上级/顺序/标志全还原；整树恢复缺 confirm 拒绝、confirm=true 执行、全树零标志残留；恢复后授权树完整。
 - 卡片2~4 回归 58/58；`npm --prefix frontend run build` 通过（UserManage/RoleManage/MenuManage 独立 chunk 齐全）；后端 mvn -o package BUILD SUCCESS。
 - 数据安全：操作前备份 `backend/data/backups/erp-v1.before-menu-retest.mv.db`（另有 before-rbac5）；夹具清理 SQL 执行后 H2 直查——R5 夹具用户/角色=0、system.menu 审计行=0、is_system 自定义标志=0，R_SAL_MGR 还原为 16 字段/5 范围/0 菜单种子，全库 users=1(admin)/roles=24 回到干净种子；全程未打印任何密码哈希，夹具密码走 API 明文 'Passw0rd!'。
+
+### 2026-09-10 卡片6 落地：销售/采购全量鉴权脱敏 + 三条审批红线（feat/rbac-6-sales-purchase，无迁移）
+
+> 本卡**未消耗 Flyway 版本号**（V105 空出，允许跳号）；卡片7 开工仍按纪律先 `ls migration/` 确认最大号（当前 V104）。
+
+**后端：12 个类 121 处 @RequirePerm**
+
+- 销售 6 个 Controller：OrderController 16（销售/采购订单同源，create/update/page/detail/goods-price/audit/unaudit/cancel/delete/batch-* 写操作逐项、查询挂 view）、FlyOrderController 14、SalesReturnController 21、SalesOutboundController 7、SalesReceiptController 6、RejectInboundController 6；采购 4 个：PurchaseReturnController 19、PurchaseInvoiceController 15、PurchaseController 7、PurchaseReceiptController 5；另 ReportController 3、ExcelController 2。
+- 七维 DataScope 推广到销售/采购全部列表与详情：销售侧 warehouse/customer/salesman/creator/goodsLines，采购侧 warehouse/supplier/owner(采购员)/creator/goodsLines；商品维度受限时主单金额继续用卡片4 的可见明细 `scoped_amount` 子查询重算（SELECT 参数先于 WHERE 绑定）。
+- 价格/成本/毛利脱敏：page/detail/goods-price 经 FieldMasker；新增 `common/security/MaskProfiles.java` 收口 SALES_BILL/PURCHASE_BILL 的 key→field_code 映射（蛇形 paid_amount/inbound_amount/invoiced_amount 与驼峰两套）。
+
+**三条审批红线（common/security/approval/ 新包，ApprovalService + ApprovalType + NeedApprovalException）**
+
+- 闸门点：销售订单保存时低价（OrderController.createSales，库存校验后 INSERT 前）、销售订单审核时超信用（auditSales，PENDING 校验后）、出库审核负库存（SalesOutboundController.audit，抢占 PENDING→AUDITING、probeNegativeStock 之后）。
+- 协议：本人持 `global.*_approval` 功能直接放行（SOURCE_SELF，免弹窗）；无凭证抛 NeedApprovalException → **HTTP 400 + body `{code:'NEED_APPROVAL', data:{approvalType,bizNo}}`**；前端弹窗收账号密码合并进**原请求体**（approverAccount/approverPassword）重放一次。
+- 授权人校验链：账号存在→未停用→未锁定→密码正确→userIdHasFunc 确实持权→不能给本人授权；通过 `opLog.logContent` 双写（`<TYPE>_APPROVAL`，detail JSON + 含"授权通过/操作员/授权人/单号/原因"的人话 content），失败 `opLog.logFail`（result='FAIL'，原因写 fail_reason 列，防暴力试密码审计），日志异常永不影响业务。
+- **负库存产品口径（验收中校正，需同步《方案》）**：余额表无记录（该商品从未入库）→"该商品从未入库，负库存授权也无法出库，请先做入库"，**授权也不能放行**；有余额行但可用量（含来源单锁回补）不足 → 可授权放行；批次可用量另校验。
+- **反向收窄（全局授予 + 模块级收回）**：`MODULE_TO_GLOBAL_ACTION` 仅 8 个标准动作可回落（audit/unaudit/close/delete/import/export/print/log→log_view）；判定=①显式模块功能点命中即放行；②否则按角色遍历，该角色持对应 global.* **且其在目标菜单下零个 MODULE 功能点配置**才回落放行。角色一旦在某菜单配过任何模块点（含仅 view），global 对该菜单即收窄；view/add/edit/biz_* 永不回落。前端有效集由 `effectiveCodes()` 同规则展开。
+
+**报表旁路加固（GLOBAL/DATA 验收前的真实缺口）**
+
+- ReportController 的 /report/sales/page、/report/purchase/page 此前完全不经业务 Controller：无鉴权、无 DataScope、金额裸出。补 `report.sales.view`/`report.purchase.view`（菜单码是 report.sales/report.purchase，不是 salesReport——非 global 功能点前缀必须命中 MenuCatalog 否则启动 fail-fast）、七维 DataScope、FieldMasker + 驼峰转换；dashboard/chart/stock/finance 留卡片7。/report/export 挂 global.export。
+- GLOBAL-002 导出脱敏三入口统一走新 `maskExport(payload[, profile])`：超管跳过；无 `global.data_export_sensitive` 时先移除 EXPORT_RESTRICTED_FIELDS（VIEW_COST/VIEW_COST_AMOUNT/VIEW_STOCK_COST/VIEW_PROFIT/VIEW_PROFIT_TOTAL）再 walk；入口=ExcelController 通用导出（salesOrder→SALES_BILL、purchaseOrder→PURCHASE_BILL、default 无 profile）、FlyOrderController 飞单导出与飞单明细导出（FLY_EXPORT_FIELDS：采购价/采购金额→采购类字段、销售价/销售金额/毛利→销售/利润类字段）；通用导出 queryOrderExport 对销售/采购订单补全维 DataScope。
+
+**两个顺带修复的真实 BUG（非测试妥协）**
+
+1. **飞单导出对所有用户 500**：FlyOrderController.export 的 SQL 选了表中不存在的 Java 计算字段 `statusText AS 状态文本`（H2 Column "STATUSTEXT" not found [42122]）。删除该列，中文状态仍由后续 Java switch 计算，无依赖损失；全仓 grep 无同类残留。
+2. **销售/采购订单 Excel 导出 0 字节 + HTTP 200**：ExcelController.buildBody 两处把 bill_date（java.sql.Date）直写 EasyExcel，3.3.4 无内置 Date Converter 抛 ExcelWriteDataConvertException，响应头已提交后异常 → 下载到 0 字节 xlsx 且状态码 200（极难被发现）。新增 `fmtDate()` 在 Java 层统一转字符串（sql.Date/Timestamp/Util Date/LocalDate/LocalDateTime 全覆盖），两个 case 应用。
+
+**前端（Vue 3 setup，零新依赖）**
+
+- 基建 5 个新文件：`directives/permission.js`（v-permission 无权限移除元素 / {disable:true} 改禁用；v-action-perms 供操作区/批量栏扫描）main.js 全局注册；`composables/useRbac.js`（16 模块 MODULE_MENU 映射、permOf/codesForAction、canViewField/canViewColumn、actionHidden/guard）；`composables/usePerm.js`、`stores/perm.js`（权限集缓存）；`api/approval-dialog.js`（原生 DOM 授权弹窗，TITLE_MAP 三类标题、textContent 防注入、并发去重不叠加）。
+- `api/client.js` 拦截 body `code==='NEED_APPROVAL'`（与 HTTP 状态无关）→ 弹窗 → 合并 approverAccount/approverPassword 重放，`__approvalRetried` 标志保证最多一次；取消则按原业务错误提示。
+- `GenericBusinessList.vue`：列集经 canViewColumn 过滤、明细弹层单价/金额/成本金额三个敏感列 v-if、行操作与左下角批量栏 actionHidden/guard 控权；15 个销售/采购 Drawer/Dialog（Bill/BillDetail/FlyOrder/SalesOutbound/ReceiptSign/SalesReturn 两态/RejectInbound/PurchaseInbound/Receipt/Return 三态/Invoice/Expense）保存/审核/加行/删行按钮全部 v-permission，价格字段 canViewField。
+- 抽查结论：销售/采购页面全部经 GenericBusinessList 收口无旁路；全仓无角色码 ADMIN 硬编码新增；旧 composables/usePermission.js 已无任何引用（死文件，与零按钮零引用的 FallbackBusinessList.vue 一起留卡片12 清旧）；客户价格调整/查询等 4 页面走 /base/ 接口，归卡片7。
+
+**踩坑**
+
+1. 业务错误在本系统是 **HTTP 200 + body code='400'**（e.status 恒 200，必须看 body）；唯 NEED_APPROVAL 走 HTTP 400，前端按 body code 分流两种都能兜住。
+2. 手开（无来源订单）出库单 sourceOrder 空串落库撞 `UK_SALES_OUTBOUND_SOURCE_ORDER`（NULLS FIRST，空串只许一条）；契约改用唯一占位单号（查不到订单即按手开处理，不做余量校验）。
+3. H2 的 LIKE **不支持 `[_]` 字符类转义**（`LIKE 'R6[_]G%'` 实测 0 行），下划线要么裸写 `LIKE 'R6_G%'`（确认无 R6xG 干扰数据）要么 `ESCAPE`；清理盘点首轮因此全 0，靠等值计数才定位。
+4. 契约每轮自建 PENDING 超信用单（客户额度 1 元、120 元必超）与一次性专属客户 R6_RC_<ts>，避免多轮累积单被审核/外行业务员单污染集合断言；报表"G2 整张不可见"必须用专属客户隔离，否则历史低价单的 G1 行会被误计。
+5. xlsx 断言：EasyExcel 3.x 字符串走 inlineStr（`<c t="inlineStr"><is><t>`）非 sharedStrings，null 是自闭合空 c；解包用 `C:/Windows/System32/tar.exe`（bsdtar 认 zip），单元格正则要同时兼容 inlineStr/`<v>`/自闭合三种形态。
+6. RunScript 执行 DML 不打印 SELECT 结果，盘点用 Shell -sql；长 SQL 写 UTF-8 文件 `-sql "$(cat file)"`（双引号内单引号原样保留），别在 bash 单引号串里写 SQL 字符串字面量（'' 转义在 bash 单引号内不生效，引号被静默吞掉）。
+
+**验证（72 项契约断言全绿，0 FAIL）**
+
+- 匿名 401×3；零权账号 403×15（10 Controller + 采购订单 + 销售/采购报表 + 2 导出点）+ 只读账号审核 403；脱敏 8（订单 page/详情/goods-price：非敏感键保留、金额/单价/采购价 null）；
+- GLOBAL-001 通用导出 5（有权 200 PK 头/无权 403/5 单齐全/无字段权金额列空/admin 有值 120）；GLOBAL-002 飞单导出 5（exp 毛利 null 且采购/销售金额按字段权保留、exps 毛利=40）；GLOBAL-003 反向收窄 3（销售 audit 403、admin 造采购单、仅持 global.audit 且菜单零配置的 gap 回落放行 APPROVED）；
+- DATA 10（分类/品牌/SUB_TREE/SELF 集合行数、可见行金额、报表 view、报表 G1 可见行金额重算、专属客户 G2 整张隐藏、报表估算毛利 grossProfit 脱敏、sov 报表 403）；
+- 低价闸门 5（NEED_APPROVAL→错密码/无权账号失败留痕→正确授权重放成功→持权人 SELF 免凭证）；超信用 3（每轮自建 PENDING 单/NEED_APPROVAL/boss 重放 APPROVED）；负库存 5（两张单/NEED_APPROVAL/持权人重放 APPROVED/boss 零模块回落+SELF）；
+- 留痕 4（成功 content 含操作员/授权人/原因/单号、失败 result=FAIL 且 fail_reason 含"密码|权限"≥2、超信用单号、负库存出库单号）。
+- 双构建绿：`mvn -o compile` RC=0；停服后 `mvn -o package -DskipTests` RC=0（fat jar 97,232,972 字节）；后端运行日志 grep ERROR=0、Resolved 异常=0，唯一 WARN 为 Flyway 对 H2 2.2.224 的版本兼容提示；`npm run build` 通过（合并前复跑）。
+- 数据安全：停服后备份 `backups/erp-v1.pre-rbac6-cleanup-20260910-003535.mv.db`（另有 20260909-232414 一份）；清理后 H2 直查 30 项 R6 痕迹=0（12 用户/12 角色及 8 张关联表悬空行=0、R6 商品/客户/员工/分类/品牌=0、销售/出库/发货/飞单/采购订单及明细=0、R6BAL1 余额与 4 条库存流水=0、u_r6 操作/登录日志=0），admin 与 24 内置角色完好；本开发库商品/客户/供应商/仓库主数据本就为空种子，删除条件全部按 R6 编码精确命中未做整表清空；tmp-rbac6/ 临时脚本/SQL/xlsx 验收后删除；未打印任何密码哈希，夹具密码走 API 明文（'Passw0rd!'，admin/admin123）。
