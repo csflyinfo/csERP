@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../config/pda_perms.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
@@ -38,7 +41,12 @@ class PutawayPage extends StatefulWidget {
 
 class _PutawayPageState extends State<PutawayPage> {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   final _searchCtrl = TextEditingController();
+
+  bool get _canStart => _auth.can(PdaPerm.putawayStart);
+  bool get _canConfirm => _auth.can(PdaPerm.putawayConfirm);
+  bool get _canFreeBin => _auth.can(PdaPerm.putawayFreeBin);
   List<dynamic> _all = const [];
   String _group = '';
   bool _loading = true;
@@ -67,7 +75,7 @@ class _PutawayPageState extends State<PutawayPage> {
         return s == 'PENDING' || s == 'PUTTING';
       }).toList();
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -104,19 +112,20 @@ class _PutawayPageState extends State<PutawayPage> {
       appBar: AppBar(
         title: const Text('上架作业'),
         actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _selectMode = !_selectMode;
-                _selected.clear();
-              });
-            },
-            child: Text(_selectMode ? '取消' : '批量上架',
-                style: const TextStyle(
-                    color: PdaTheme.primary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-          ),
+          if (_canConfirm)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectMode = !_selectMode;
+                  _selected.clear();
+                });
+              },
+              child: Text(_selectMode ? '取消' : '批量上架',
+                  style: const TextStyle(
+                      color: PdaTheme.primary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+            ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(96),
@@ -443,32 +452,39 @@ class _PutawayPageState extends State<PutawayPage> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                claimed
-                    ? ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(96, 40),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        icon: const Icon(Icons.check, size: 18),
-                        label: const Text('确认上架'),
-                        onPressed: () => _confirmDialog(pid, recBin),
-                      )
-                    : OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(96, 40),
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        icon: const Icon(Icons.play_arrow, size: 18),
-                        label: const Text('领取'),
-                        onPressed: () async {
-                          await runWithBusy(
-                            context,
-                            () => _svc.putawayClaim(pid),
-                            successMsg: '已领取',
-                          );
-                          _load();
-                        },
+                if (claimed)
+                  if (_canConfirm)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(96, 40),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                       ),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('确认上架'),
+                      onPressed: () => _confirmDialog(pid, recBin),
+                    )
+                  else
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4),
+                      child: Text('待确认', style: PdaStyles.sub),
+                    )
+                else if (_canStart)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(96, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('领取'),
+                    onPressed: () async {
+                      await runWithBusy(
+                        context,
+                        () => _svc.putawayClaim(pid),
+                        successMsg: '已领取',
+                      );
+                      _load();
+                    },
+                  ),
               ],
             ]),
           ),
@@ -635,12 +651,20 @@ class _PutawayPageState extends State<PutawayPage> {
     final pid = pickStr(m, ['putawayId', 'putaway_id']);
     final claimed = pickStr(m, ['assignee']).isNotEmpty;
     if (!claimed) {
+      if (!_canStart) {
+        if (mounted) toast(context, '无领取上架任务权限：wms_pda.putaway.start', error: true);
+        return;
+      }
       try {
         await _svc.putawayClaim(pid);
       } catch (e) {
-        if (mounted) toast(context, '$e', error: true);
+        if (mounted) toast(context, ApiService.friendlyError(e), error: true);
         return;
       }
+    }
+    if (!_canConfirm) {
+      if (mounted) toast(context, '已领取，等待有上架权限的人员确认', error: true);
+      return;
     }
     if (mounted) {
       _confirmDialog(pid, pickStr(m, ['recommendBin', 'recommend_bin']));
@@ -649,6 +673,9 @@ class _PutawayPageState extends State<PutawayPage> {
 
   Future<void> _confirmDialog(String pid, String recommendBin) async {
     final ctrl = TextEditingController(text: recommendBin);
+    // 改放库位需要 free_bin 载荷权限；无权限只能按推荐位上架。
+    final canFree = _canFreeBin;
+    final canConfirm = recommendBin.isNotEmpty || canFree;
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -658,25 +685,26 @@ class _PutawayPageState extends State<PutawayPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (recommendBin.isNotEmpty)
-              PdaAlert.info('推荐库位：$recommendBin，扫其他库位表示实际入位不同。')
+              PdaAlert.info(canFree
+                  ? '推荐库位：$recommendBin，扫其他库位表示实际入位不同。'
+                  : '推荐库位：$recommendBin，将按推荐位上架。')
             else
               PdaAlert.warning('该任务无推荐库位，请扫目标库位条码'),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: '目标库位（空=使用推荐）',
-                  prefixIcon: Icon(Icons.qr_code_scanner)),
-              onSubmitted: (v) async {
-                Navigator.pop(ctx);
-                await runWithBusy(
-                  context,
-                  () => _svc.putawayConfirm(pid, actualBin: ctrl.text.trim()),
-                  successMsg: '上架成功，库存已更新',
-                );
-                _load();
-              },
+              autofocus: canFree,
+              readOnly: !canFree,
+              decoration: InputDecoration(
+                labelText: canFree ? '目标库位（与推荐一致=推荐上架）' : '目标库位（无改放权限）',
+                prefixIcon: const Icon(Icons.qr_code_scanner),
+              ),
+              onSubmitted: canConfirm
+                  ? (v) async {
+                      Navigator.pop(ctx);
+                      await _submitConfirm(pid, recommendBin, ctrl.text);
+                    }
+                  : null,
             ),
           ],
         ),
@@ -685,15 +713,12 @@ class _PutawayPageState extends State<PutawayPage> {
               onPressed: () => Navigator.pop(ctx),
               child: const Text('取消')),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await runWithBusy(
-                context,
-                () => _svc.putawayConfirm(pid, actualBin: ctrl.text.trim()),
-                successMsg: '上架成功，库存已更新',
-              );
-              _load();
-            },
+            onPressed: canConfirm
+                ? () async {
+                    Navigator.pop(ctx);
+                    await _submitConfirm(pid, recommendBin, ctrl.text);
+                  }
+                : null,
             child: const Text('确认上架'),
           ),
         ],
@@ -701,10 +726,31 @@ class _PutawayPageState extends State<PutawayPage> {
     );
   }
 
+  /// 实际库位与推荐一致（或为空且推荐为空）时不传 actualBin，
+  /// 避免普通上架权被误判成 free_bin 载荷。
+  Future<void> _submitConfirm(
+      String pid, String recommendBin, String typed) async {
+    final actual = typed.trim();
+    final changed = actual.isNotEmpty && actual != recommendBin;
+    if (changed && !_canFreeBin) {
+      toast(context, '无改放库位权限：wms_pda.putaway.free_bin', error: true);
+      return;
+    }
+    if (recommendBin.isEmpty && actual.isEmpty) {
+      toast(context, '无推荐库位时必须扫描目标库位', error: true);
+      return;
+    }
+    await runWithBusy(
+      context,
+      () => _svc.putawayConfirm(pid, actualBin: changed ? actual : ''),
+      successMsg: '上架成功，库存已更新',
+    );
+    _load();
+  }
+
   Future<void> _showStock(Map<String, dynamic> m) async {
     final goodsCode = pickStr(m, ['goodsCode', 'goods_code']);
     final goodsName = pickStr(m, ['goodsName', 'goods_name'], '未命名商品');
-    final warehouse = pickStr(m, ['warehouse']);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -718,9 +764,9 @@ class _PutawayPageState extends State<PutawayPage> {
     List<dynamic> rows = const [];
     String? err;
     try {
-      rows = await _svc.putawayBinStock(goodsCode, warehouse: warehouse);
+      rows = await _svc.putawayBinStock(goodsCode);
     } catch (e) {
-      err = '$e';
+      err = ApiService.friendlyError(e);
     }
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).pop();

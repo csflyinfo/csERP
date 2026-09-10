@@ -1,5 +1,6 @@
 package com.erp.common.config;
 
+import com.erp.common.security.PdaAppGuardInterceptor;
 import com.erp.common.security.RequirePermInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -14,6 +15,7 @@ import java.nio.file.Paths;
 public class WebConfig implements WebMvcConfigurer {
 
     private final RequirePermInterceptor requirePermInterceptor;
+    private final PdaAppGuardInterceptor pdaAppGuardInterceptor;
 
     @Value("${storage.type:local}")
     private String storageType;
@@ -24,12 +26,18 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${storage.local.url-prefix:/uploads}")
     private String urlPrefix;
 
-    public WebConfig(RequirePermInterceptor requirePermInterceptor) {
+    public WebConfig(RequirePermInterceptor requirePermInterceptor,
+                     PdaAppGuardInterceptor pdaAppGuardInterceptor) {
         this.requirePermInterceptor = requirePermInterceptor;
+        this.pdaAppGuardInterceptor = pdaAppGuardInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // PRD-28 卡片9：/wms/app/** 端类型隔离（登录端点除外），非 WMS_PDA 令牌一律 401
+        registry.addInterceptor(pdaAppGuardInterceptor)
+                .addPathPatterns("/wms/app/**")
+                .excludePathPatterns(PdaAppGuardInterceptor.LOGIN_PATH);
         // PRD-28：Controller 方法/类上的 @RequirePerm 功能权限校验
         registry.addInterceptor(requirePermInterceptor).addPathPatterns("/**");
     }

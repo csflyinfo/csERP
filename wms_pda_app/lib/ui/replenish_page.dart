@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import '../config/pda_perms.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 
 /// 补货作业：列出待补货任务 → 领取 → 完成（从储备位补到拣货位）。
+/// 领取/完成均由后端 wms_pda.replenish.confirm 强制；加急补货在拣货缺货时触发。
 class ReplenishPage extends StatefulWidget {
   const ReplenishPage({super.key});
   @override
@@ -12,8 +16,11 @@ class ReplenishPage extends StatefulWidget {
 
 class _ReplenishPageState extends State<ReplenishPage> {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   List<dynamic> _tasks = const [];
   bool _loading = true;
+
+  bool get _canConfirm => _auth.can(PdaPerm.replenishConfirm);
 
   @override
   void initState() {
@@ -26,7 +33,7 @@ class _ReplenishPageState extends State<ReplenishPage> {
     try {
       _tasks = await _svc.replenishTasks(status: 'PENDING');
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -83,18 +90,21 @@ class _ReplenishPageState extends State<ReplenishPage> {
                                     style: PdaStyles.sub),
                               ]),
                               const SizedBox(height: 8),
-                              if (!claimed)
+                              if (!_canConfirm)
+                                const Text('无补货操作权限',
+                                    style: PdaStyles.sub)
+                              else if (!claimed)
                                 OutlinedButton.icon(
                                   icon: const Icon(Icons.play_arrow, size: 18),
                                   label: const Text('领取'),
                                   onPressed: () async {
-                                    await runWithBusy(
+                                    final r = await runWithBusy(
                                       context,
                                       () => _svc.replenishClaim(
                                           m['taskId'].toString()),
                                       successMsg: '已领取',
                                     );
-                                    _load();
+                                    if (r != null) _load();
                                   },
                                 )
                               else
@@ -102,13 +112,13 @@ class _ReplenishPageState extends State<ReplenishPage> {
                                   icon: const Icon(Icons.check, size: 18),
                                   label: const Text('补货完成'),
                                   onPressed: () async {
-                                    await runWithBusy(
+                                    final r = await runWithBusy(
                                       context,
                                       () => _svc.replenishComplete(
                                           m['taskId'].toString()),
                                       successMsg: '补货完成',
                                     );
-                                    _load();
+                                    if (r != null) _load();
                                   },
                                 ),
                             ],

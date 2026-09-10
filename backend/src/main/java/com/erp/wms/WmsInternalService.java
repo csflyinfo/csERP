@@ -1,5 +1,6 @@
 package com.erp.wms;
 
+import com.erp.common.security.PermissionService;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.common.util.BillNoGenerator.BillType;
 import com.erp.inventory.service.InventoryCostService;
@@ -29,17 +30,28 @@ import java.util.UUID;
 @Service
 public class WmsInternalService {
 
+    /** 库存查询-成本单价功能点（还需 VIEW_COST 字段授权，双控）。 */
+    public static final String FUNC_STOCK_VIEW_COST = "wms_pda.stock_query.view_cost";
+    /** 库存查询-批次列功能点。 */
+    public static final String FUNC_STOCK_VIEW_BATCH = "wms_pda.stock_query.view_batch";
+
     private final JdbcTemplate jdbc;
     private final BillNoGenerator billNo;
     private final SysParamService params;
     private final InventoryCostService inventoryCost;
+    private final WmsWarehouseResolver warehouseResolver;
+    private final PermissionService permissionService;
 
     public WmsInternalService(JdbcTemplate jdbc, BillNoGenerator billNo, SysParamService params,
-                              InventoryCostService inventoryCost) {
+                              InventoryCostService inventoryCost,
+                              WmsWarehouseResolver warehouseResolver,
+                              PermissionService permissionService) {
         this.jdbc = jdbc;
         this.billNo = billNo;
         this.params = params;
         this.inventoryCost = inventoryCost;
+        this.warehouseResolver = warehouseResolver;
+        this.permissionService = permissionService;
     }
 
     // ==================== 补货 ====================
@@ -102,9 +114,13 @@ public class WmsInternalService {
                   AND (qty - COALESCE(locked_qty,0)) > 0
                 ORDER BY (qty - COALESCE(locked_qty,0)) DESC LIMIT 1
                 """, goodsCode, batchNo == null ? "" : batchNo, toBin, waveId);
-        if (src.isEmpty()) throw new IllegalStateException("找不到可用库存源库位");
+        if (src.isEmpty()) throw new IllegalArgumentException("找不到可用库存源库位");
         String fromBin = TmsUtil.str(src.get(0).get("bin_code"));
-        String warehouse = jdbc.queryForObject("SELECT warehouse FROM wms_wave WHERE wave_id = ?", String.class, waveId);
+        List<String> whRows = jdbc.queryForList(
+                "SELECT warehouse FROM wms_wave WHERE wave_id = ?", String.class, waveId);
+        if (whRows.isEmpty()) throw new IllegalArgumentException("波次不存在：" + waveId);
+        warehouseResolver.assertIfPda(whRows.get(0));
+        String warehouse = whRows.get(0);
         String id = createReplenish(warehouse, goodsCode, "", batchNo, fromBin, toBin, qty, "URGENT", waveId);
         jdbc.update("UPDATE wms_replenish_task SET assignee = ? WHERE task_id = ?", operator, id);
         return Map.of("taskId", id, "fromBin", fromBin);
@@ -131,6 +147,9 @@ public class WmsInternalService {
                 FROM wms_replenish_task WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        // PRD-28 卡片9：PDA 强制当前作业仓（PDA-007）
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) { sql.append(" AND warehouse = ?"); args.add(pdaWh); }
         if (status != null && !status.isBlank()) { sql.append(" AND status = ?"); args.add(status); }
         if (assignee != null && !assignee.isBlank()) { sql.append(" AND (assignee = ? OR assignee IS NULL)"); args.add(assignee); }
         sql.append(" ORDER BY created_at DESC");
@@ -140,11 +159,15 @@ public class WmsInternalService {
     /** PDA 领取补货任务。 */
     @Transactional
     public Map<String, Object> claimReplenish(String taskId, String operator) {
+        List<Map<String, Object>> h = jdbc.queryForList(
+                "SELECT warehouse, status, assignee FROM wms_replenish_task WHERE task_id = ?", taskId);
+        if (h.isEmpty()) throw new IllegalArgumentException("补货任务不存在");
+        warehouseResolver.assertIfPda(TmsUtil.str(h.get(0).get("warehouse")));
         int n = jdbc.update("""
                 UPDATE wms_replenish_task SET assignee = ?, status = 'PICKING', started_at = CURRENT_TIMESTAMP
                 WHERE task_id = ? AND (assignee IS NULL OR assignee = '' OR assignee = ?)
                 """, operator, taskId, operator);
-        if (n == 0) throw new IllegalStateException("任务已被他人领取");
+        if (n == 0) throw new IllegalArgumentException("任务已被他人领取");
         return Map.of("taskId", taskId, "assignee", operator);
     }
 
@@ -154,6 +177,7 @@ public class WmsInternalService {
         List<Map<String, Object>> r = TmsUtil.queryCamel(jdbc,
                 "SELECT * FROM wms_replenish_task WHERE task_id = ?", taskId);
         if (r.isEmpty()) throw new IllegalArgumentException("补货任务不存在");
+        warehouseResolver.assertIfPda(TmsUtil.str(r.get(0).get("warehouse")));
         Map<String, Object> t = r.get(0);
         if ("DONE".equals(t.get("status"))) return Map.of("taskId", taskId, "already", true);
         moveBinStock(TmsUtil.str(t.get("goodsCode")), TmsUtil.str(t.get("warehouse")),
@@ -167,6 +191,9 @@ public class WmsInternalService {
 
     @Transactional
     public Map<String, Object> createMove(Map<String, Object> req, String operator) {
+        // PRD-28 卡片9：PDA 端仓库强制取登录仓，忽略 body 传入值
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        String warehouse = pdaWh != null ? pdaWh : strOr(req.get("warehouse"), "总仓");
         String id = "MV" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
         String no = billNo.nextNo(BillType.WMS_MOVE, "wms_move_task", "task_no");
         jdbc.update("""
@@ -174,7 +201,7 @@ public class WmsInternalService {
                 (task_id, task_no, warehouse, move_type, from_bin, to_bin, goods_code, goods_name,
                  batch_no, qty, assignee, status, remark, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, CURRENT_TIMESTAMP)
-                """, id, no, strOr(req.get("warehouse"), "总仓"), strOr(req.get("moveType"), "ACTIVE"),
+                """, id, no, warehouse, strOr(req.get("moveType"), "ACTIVE"),
                 TmsUtil.str(req.get("fromBin")), TmsUtil.str(req.get("toBin")),
                 TmsUtil.str(req.get("goodsCode")), TmsUtil.str(req.get("goodsName")),
                 emptyToNull(TmsUtil.str(req.get("batchNo"))), toBd(req.get("qty")),
@@ -190,6 +217,8 @@ public class WmsInternalService {
                 FROM wms_move_task WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) { sql.append(" AND warehouse = ?"); args.add(pdaWh); }
         if (status != null && !status.isBlank()) { sql.append(" AND status = ?"); args.add(status); }
         if (keyword != null && !keyword.isBlank()) {
             sql.append(" AND (LOWER(task_no) LIKE ? OR LOWER(goods_code) LIKE ? OR LOWER(goods_name) LIKE ?)");
@@ -205,6 +234,7 @@ public class WmsInternalService {
         List<Map<String, Object>> r = TmsUtil.queryCamel(jdbc,
                 "SELECT * FROM wms_move_task WHERE task_id = ?", taskId);
         if (r.isEmpty()) throw new IllegalArgumentException("移库任务不存在");
+        warehouseResolver.assertIfPda(TmsUtil.str(r.get(0).get("warehouse")));
         Map<String, Object> t = r.get(0);
         if ("DONE".equals(t.get("status"))) return Map.of("taskId", taskId, "already", true);
         moveBinStock(TmsUtil.str(t.get("goodsCode")), TmsUtil.str(t.get("warehouse")),
@@ -314,7 +344,8 @@ public class WmsInternalService {
                 "SELECT * FROM wms_adjust_record WHERE adjust_id = ?", adjustId);
         if (r.isEmpty()) throw new IllegalArgumentException("调整单不存在");
         Map<String, Object> a = r.get(0);
-        if (!"PENDING".equals(a.get("status"))) throw new IllegalStateException("调整单已审批");
+        warehouseResolver.assertIfPda(TmsUtil.str(a.get("warehouse")));
+        if (!"PENDING".equals(a.get("status"))) throw new IllegalArgumentException("调整单已审批");
         if (!approved) {
             jdbc.update("UPDATE wms_adjust_record SET status='REJECTED', approver=?, remark=? WHERE adjust_id=?",
                     approver, remark, adjustId);
@@ -352,14 +383,15 @@ public class WmsInternalService {
     }
 
     public List<Map<String, Object>> listAdjust(String status) {
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
         return TmsUtil.queryCamel(jdbc, """
                 SELECT adjust_id, adjust_no, warehouse, adjust_type, bin_code, goods_code, goods_name,
                        batch_no, book_qty, actual_qty, adjust_qty, reason, status, operator, approver,
                        remark, created_at, approved_at
                 FROM wms_adjust_record
-                WHERE (? IS NULL OR status = ?)
+                WHERE (? IS NULL OR status = ?) AND (? IS NULL OR warehouse = ?)
                 ORDER BY created_at DESC
-                """, status, status);
+                """, status, status, pdaWh, pdaWh);
     }
 
     // ==================== 报损 ====================
@@ -373,7 +405,9 @@ public class WmsInternalService {
         String id = "DM" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
         String no = billNo.nextNo(BillType.WMS_DAMAGE, "wms_damage_record", "damage_no");
         String goodsCode = TmsUtil.str(req.get("goodsCode"));
-        String warehouse = strOr(req.get("warehouse"), "总仓");
+        // PRD-28 卡片9：PDA 端仓库强制取登录仓
+        String pdaWhD = warehouseResolver.pdaWarehouseNameOrNull();
+        String warehouse = pdaWhD != null ? pdaWhD : strOr(req.get("warehouse"), "总仓");
         BigDecimal qty = toBd(req.get("qty"));
         BigDecimal cost = BigDecimal.ZERO;
         try {
@@ -398,7 +432,8 @@ public class WmsInternalService {
                 "SELECT * FROM wms_damage_record WHERE damage_id = ?", damageId);
         if (r.isEmpty()) throw new IllegalArgumentException("报损单不存在");
         Map<String, Object> d = r.get(0);
-        if (!"PENDING".equals(d.get("status"))) throw new IllegalStateException("报损单已审批");
+        warehouseResolver.assertIfPda(TmsUtil.str(d.get("warehouse")));
+        if (!"PENDING".equals(d.get("status"))) throw new IllegalArgumentException("报损单已审批");
         if (!approved) {
             jdbc.update("UPDATE wms_damage_record SET status='REJECTED', approver=? WHERE damage_id=?", approver, damageId);
             return Map.of("damageId", damageId, "status", "REJECTED");
@@ -417,14 +452,16 @@ public class WmsInternalService {
     }
 
     public List<Map<String, Object>> listDamage(String status) {
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        Object whArg = pdaWh;
         return TmsUtil.queryCamel(jdbc, """
                 SELECT damage_id, damage_no, warehouse, bin_code, goods_code, goods_name, batch_no,
                        qty, cost_amount, reason, responsibility, image_url, status, operator, approver,
                        remark, created_at, approved_at
                 FROM wms_damage_record
-                WHERE (? IS NULL OR status = ?)
+                WHERE (? IS NULL OR status = ?) AND (? IS NULL OR warehouse = ?)
                 ORDER BY created_at DESC
-                """, status, status);
+                """, status, status, whArg, whArg);
     }
 
     // ==================== 组装 / 拆卸 ====================
@@ -511,7 +548,9 @@ public class WmsInternalService {
     public Map<String, Object> createStocktake(Map<String, Object> req, String operator) {
         String id = "ST" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
         String no = billNo.nextNo(BillType.WMS_STOCKTAKE, "wms_stocktake_task", "task_no");
-        String warehouse = strOr(req.get("warehouse"), "总仓");
+        // PRD-28 卡片9：PDA 端仓库强制取登录仓
+        String pdaWhSt = warehouseResolver.pdaWarehouseNameOrNull();
+        String warehouse = pdaWhSt != null ? pdaWhSt : strOr(req.get("warehouse"), "总仓");
         String countType = TmsUtil.str(req.get("countType"));
         if (countType.isBlank()) countType = "DYNAMIC";
         String countMode = params.getInt("WMS_COUNT_MODE_DEFAULT", 0, 0, 1) == 0 ? "BLIND" : "OPEN";
@@ -574,22 +613,36 @@ public class WmsInternalService {
     }
 
     public List<Map<String, Object>> listStocktake(String status) {
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
         return TmsUtil.queryCamel(jdbc, """
                 SELECT task_id, task_no, count_type, count_mode, scope_text, warehouse, status,
                        total_bins, counted_bins, diff_count, assignee, freeze_flag, remark, created_at, finished_at
                 FROM wms_stocktake_task
-                WHERE (? IS NULL OR status = ?)
+                WHERE (? IS NULL OR status = ?) AND (? IS NULL OR warehouse = ?)
                 ORDER BY created_at DESC
-                """, status, status);
+                """, status, status, pdaWh, pdaWh);
     }
 
     public List<Map<String, Object>> stocktakeBins(String taskId) {
+        assertStocktakeWarehouse(taskId);
         return TmsUtil.queryCamel(jdbc, """
                 SELECT id, task_id, bin_code, goods_code, goods_name, batch_no, book_qty, real_qty,
                        diff_qty, recounted, counter, counted_at, status
                 FROM wms_stocktake_bin WHERE task_id = ?
                 ORDER BY bin_code, goods_code
                 """, taskId);
+    }
+
+    /** 盘点单仓库断言（PDA 隔离，PDA-007）。 */
+    private void assertStocktakeWarehouse(String taskId) {
+        warehouseResolver.assertIfPda(stocktakeWarehouseOf(taskId));
+    }
+
+    private String stocktakeWarehouseOf(String taskId) {
+        List<String> wh = jdbc.queryForList(
+                "SELECT warehouse FROM wms_stocktake_task WHERE task_id = ?", String.class, taskId);
+        if (wh.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        return wh.get(0);
     }
 
     /** PDA 提交一行盘点结果。暗盘不回写 diff 给前端看。 */
@@ -600,6 +653,7 @@ public class WmsInternalService {
                 id);
         if (r.isEmpty()) throw new IllegalArgumentException("盘点行不存在");
         Map<String, Object> row = r.get(0);
+        warehouseResolver.assertIfPda(stocktakeWarehouseOf(TmsUtil.str(row.get("taskId"))));
         BigDecimal book = toBd(row.get("bookQty"));
         BigDecimal diff = realQty.subtract(book);
         String lineStatus = diff.signum() == 0 ? "COUNTED" : "DIFF";
@@ -621,6 +675,10 @@ public class WmsInternalService {
     /** 复盘一行。 */
     @Transactional
     public Map<String, Object> recountBin(String id, BigDecimal realQty, String counter) {
+        List<String> taskIds = jdbc.queryForList(
+                "SELECT task_id FROM wms_stocktake_bin WHERE id = ?", String.class, id);
+        if (taskIds.isEmpty()) throw new IllegalArgumentException("盘点行不存在");
+        warehouseResolver.assertIfPda(stocktakeWarehouseOf(taskIds.get(0)));
         jdbc.update("""
                 UPDATE wms_stocktake_bin SET real_qty=?, diff_qty=? - book_qty, counter=?, recounted='Y',
                     counted_at=CURRENT_TIMESTAMP,
@@ -631,7 +689,35 @@ public class WmsInternalService {
     }
 
     /**
-     * 盘点完成审批：有差异的行自动生成 wms_adjust_record 待审批；解冻库位；盘点单关闭。
+     * PDA 盘点提交（wms_pda.stocktake.submit，KEEPER/LEADER）：
+     * 所有盘点行必须已录入实盘数，单据转为 PENDING_APPROVAL 待主管审核，不产生调整单。
+     */
+    @Transactional
+    public Map<String, Object> submitStocktake(String taskId, String operator) {
+        List<Map<String, Object>> t = TmsUtil.queryCamel(jdbc,
+                "SELECT * FROM wms_stocktake_task WHERE task_id = ?", taskId);
+        if (t.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        Map<String, Object> task = t.get(0);
+        warehouseResolver.assertIfPda(TmsUtil.str(task.get("warehouse")));
+        String status = TmsUtil.str(task.get("status"));
+        if ("APPROVED".equals(status)) throw new IllegalArgumentException("盘点单已审核完成");
+        if ("PENDING_APPROVAL".equals(status)) return Map.of("taskId", taskId, "already", true);
+        Integer uncounted = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM wms_stocktake_bin WHERE task_id = ? AND real_qty IS NULL",
+                Integer.class, taskId);
+        if (uncounted != null && uncounted > 0) {
+            throw new IllegalArgumentException("还有 " + uncounted + " 行未录入实盘数，不能提交");
+        }
+        jdbc.update("UPDATE wms_stocktake_task SET status='PENDING_APPROVAL' WHERE task_id=?", taskId);
+        TmsUtil.log(jdbc, "wms.stocktake", "SUBMIT", TmsUtil.str(task.get("taskNo")),
+                "盘点提交待审，操作人 " + operator);
+        return Map.of("taskId", taskId, "status", "PENDING_APPROVAL");
+    }
+
+    /**
+     * 盘点完成审批（wms_pda.stocktake.audit，仅 LEADER）：
+     * 有差异的行自动生成 wms_adjust_record 待审批；解冻库位；盘点单关闭。
+     * PDA 端只允许审核已提交（PENDING_APPROVAL）的盘点单；PC 端保持原口径（盘点中亦可直接审核）。
      */
     @Transactional
     public Map<String, Object> finishStocktake(String taskId, String operator) {
@@ -639,6 +725,11 @@ public class WmsInternalService {
                 "SELECT * FROM wms_stocktake_task WHERE task_id = ?", taskId);
         if (t.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
         Map<String, Object> task = t.get(0);
+        warehouseResolver.assertIfPda(TmsUtil.str(task.get("warehouse")));
+        if (warehouseResolver.isPda()
+                && !"PENDING_APPROVAL".equals(TmsUtil.str(task.get("status")))) {
+            throw new IllegalArgumentException("盘点单尚未提交，不能审核");
+        }
         List<Map<String, Object>> diffs = TmsUtil.queryCamel(jdbc,
                 "SELECT * FROM wms_stocktake_bin WHERE task_id=? AND diff_qty <> 0", taskId);
         int adjustCount = 0;
@@ -790,19 +881,61 @@ public class WmsInternalService {
     }
 
     public List<Map<String, Object>> listPerformance(LocalDate from, LocalDate to) {
-        return TmsUtil.queryCamel(jdbc, """
+        return listPerformance(from, to, null, null);
+    }
+
+    /**
+     * 绩效查询（PRD-28 卡片9）。
+     * <ul>
+     *   <li>PDA self：强制只看本人（{@code wms_pda.performance.view_self}，PDA-006）；</li>
+     *   <li>PDA team（LEADER）：看当前仓绑定用户（wms_performance_daily 无仓库列，
+     *       以「绑定当前仓的启用用户」为口径过滤 operator）。</li>
+     * </ul>
+     *
+     * @param operatorSelf PDA 本人查询时传当前用户名；PC/主管口径传 null
+     * @param warehouseId  PDA 主管口径传当前登录仓 id；其他场景传 null
+     */
+    public List<Map<String, Object>> listPerformance(LocalDate from, LocalDate to,
+                                                     String operatorSelf, String warehouseId) {
+        StringBuilder sql = new StringBuilder("""
                 SELECT stat_date, operator, role_code, receive_qty, receive_lines, putaway_qty, putaway_lines,
                        pick_qty, pick_lines, check_orders, replenish_count, error_count, work_minutes
                 FROM wms_performance_daily
                 WHERE stat_date BETWEEN ? AND ?
-                ORDER BY stat_date DESC, operator
-                """, from, to);
+                """);
+        List<Object> args = new ArrayList<>();
+        args.add(from); args.add(to);
+        if (operatorSelf != null && !operatorSelf.isBlank()) {
+            sql.append(" AND operator = ?");
+            args.add(operatorSelf);
+        } else if (warehouseId != null && !warehouseId.isBlank()) {
+            sql.append(" AND operator IN (")
+               .append("SELECT u.username FROM sys_user_runtime u ")
+               .append("JOIN sys_user_warehouse uw ON uw.user_id = u.user_id ")
+               .append("WHERE uw.warehouse_id = ? AND COALESCE(u.status,'NORMAL')='NORMAL')");
+            args.add(warehouseId);
+        }
+        sql.append(" ORDER BY stat_date DESC, operator");
+        return TmsUtil.queryCamel(jdbc, sql.toString(), args.toArray());
     }
 
     // ==================== 库存查询 ====================
 
-    /** 实物库存查询（wms_bin_stock 与 inv_stock_balance 对账视图）。 */
+    /**
+     * 实物库存查询（wms_bin_stock 与 inv_stock_balance 对账视图）。
+     * PRD-28 卡片9：PDA 端仓库强制取登录仓；批次列受 {@code wms_pda.stock_query.view_batch} 控制；
+     * 成本单价/金额受 {@code wms_pda.stock_query.view_cost} 功能点 + VIEW_COST/VIEW_COST_AMOUNT
+     * 字段授权双控（PDA 默认五角色均无成本权限，仅 LEADER 授予）。
+     */
     public List<Map<String, Object>> binStockQuery(String warehouse, String keyword, boolean discrepancyOnly) {
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) warehouse = pdaWh;
+        final String wh = warehouse;
+        boolean canBatch = !warehouseResolver.isPda() || permissionService.hasFunc(FUNC_STOCK_VIEW_BATCH);
+        boolean canCost = !warehouseResolver.isPda()
+                || (permissionService.hasFunc(FUNC_STOCK_VIEW_COST) && permissionService.hasField("VIEW_COST"));
+        boolean canCostAmount = canCost && (!warehouseResolver.isPda()
+                || permissionService.hasField("VIEW_COST_AMOUNT"));
         StringBuilder sql = new StringBuilder("""
                 SELECT s.goods_code, s.goods_name, s.warehouse, s.bin_code, s.batch_no,
                        s.qty AS bin_qty, s.locked_qty,
@@ -813,7 +946,7 @@ public class WmsInternalService {
                 WHERE s.warehouse = ? AND s.qty > 0
                 """);
         List<Object> args = new ArrayList<>();
-        args.add(warehouse);
+        args.add(wh);
         if (keyword != null && !keyword.isBlank()) {
             sql.append(" AND (LOWER(s.goods_code) LIKE ? OR LOWER(s.goods_name) LIKE ?)");
             String k = "%" + keyword.toLowerCase() + "%";
@@ -824,11 +957,170 @@ public class WmsInternalService {
         if (discrepancyOnly) {
             rows.removeIf(r -> {
                 BigDecimal pq = toBd(r.get("physicalQty"));
-                BigDecimal avail = inventoryCost.getAvailableQty(TmsUtil.str(r.get("goodsCode")), warehouse);
+                BigDecimal avail = inventoryCost.getAvailableQty(TmsUtil.str(r.get("goodsCode")), wh);
                 return avail != null && avail.compareTo(pq) == 0;
             });
         }
+        for (Map<String, Object> r : rows) {
+            if (!canBatch) r.put("batchNo", null);
+            if (canCost) {
+                BigDecimal cp = null;
+                try {
+                    cp = inventoryCost.getCurrentCostPrice(TmsUtil.str(r.get("goodsCode")), wh);
+                } catch (Exception ignore) { }
+                r.put("unitCost", cp);
+                if (canCostAmount && cp != null) {
+                    r.put("costAmount", cp.multiply(toBd(r.get("binQty")))
+                            .setScale(2, java.math.RoundingMode.HALF_UP));
+                }
+            }
+        }
         return rows;
+    }
+
+    // ==================== 异常中心（PRD-28 卡片9） ====================
+
+    /**
+     * 异常单列表。仓库隔离：出库异常经 wms_wave 定位仓库，入库异常（source_type=INBOUND）
+     * 经 source_bill=入库任务号关联 wms_inbound_task 定位仓库；PDA 强制当前仓。
+     */
+    public List<Map<String, Object>> listExceptions(String status, String keyword) {
+        StringBuilder sql = new StringBuilder("""
+                SELECT e.exception_id, e.exception_no, e.wave_id, e.wave_no, e.source_order_no,
+                       e.source_type, e.source_bill, e.goods_code, e.exception_type, e.qty,
+                       e.status, e.priority, e.description, e.resolution, e.reporter, e.assignee,
+                       e.handler, e.bin_code, e.deadline, e.created_at, e.resolved_at,
+                       COALESCE(w.warehouse, it.warehouse) AS warehouse
+                FROM wms_exception e
+                LEFT JOIN wms_wave w ON w.wave_id = e.wave_id
+                LEFT JOIN wms_inbound_task it ON it.task_no = e.source_bill
+                	AND COALESCE(e.source_type,'OUTBOUND') = 'INBOUND'
+                WHERE 1=1
+                """);
+        List<Object> args = new ArrayList<>();
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) { sql.append(" AND COALESCE(w.warehouse, it.warehouse) = ?"); args.add(pdaWh); }
+        if (status != null && !status.isBlank()) { sql.append(" AND e.status = ?"); args.add(status); }
+        if (keyword != null && !keyword.isBlank()) {
+            sql.append(" AND (LOWER(e.exception_no) LIKE ? OR LOWER(e.source_order_no) LIKE ?"
+                    + " OR LOWER(e.goods_code) LIKE ? OR LOWER(e.description) LIKE ?)");
+            String k = "%" + keyword.toLowerCase() + "%";
+            args.add(k); args.add(k); args.add(k); args.add(k);
+        }
+        sql.append(" ORDER BY e.created_at DESC");
+        return TmsUtil.queryCamel(jdbc, sql.toString(), args.toArray());
+    }
+
+    /**
+     * PDA 上报异常（wms_pda.exception.report，全员）。
+     * 入参：exceptionType(SHORT/DIFF/DAMAGE/OTHER)、description（必填）、qty、goodsCode、
+     * sourceType(OUTBOUND/INBOUND)、waveId/sourceOrderNo 或 sourceBill(入库任务号)、binCode、priority。
+     */
+    @Transactional
+    public Map<String, Object> reportException(Map<String, Object> req, String operator) {
+        String type = strOr(req.get("exceptionType"), "OTHER").toUpperCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("SHORT", "DIFF", "DAMAGE", "OTHER").contains(type)) {
+            throw new IllegalArgumentException("异常类型不合法：" + type);
+        }
+        String desc = TmsUtil.str(req.get("description"));
+        if (desc.isBlank()) throw new IllegalArgumentException("请填写异常描述");
+        String sourceType = "INBOUND".equalsIgnoreCase(TmsUtil.str(req.get("sourceType")))
+                ? "INBOUND" : "OUTBOUND";
+        String waveId = TmsUtil.str(req.get("waveId"));
+        String sourceBill = TmsUtil.str(req.get("sourceBill"));
+        // 仓库隔离断言：出库按波次，入库按入库任务号
+        if ("INBOUND".equals(sourceType)) {
+            if (sourceBill.isBlank()) throw new IllegalArgumentException("入库异常必须关联入库任务号");
+            List<String> wh = jdbc.queryForList(
+                    "SELECT warehouse FROM wms_inbound_task WHERE task_no = ? OR task_id = ?",
+                    String.class, sourceBill, sourceBill);
+            if (wh.isEmpty()) throw new IllegalArgumentException("入库任务不存在：" + sourceBill);
+            warehouseResolver.assertIfPda(wh.get(0));
+        } else if (!waveId.isBlank()) {
+            List<String> wh = jdbc.queryForList(
+                    "SELECT warehouse FROM wms_wave WHERE wave_id = ?", String.class, waveId);
+            if (wh.isEmpty()) throw new IllegalArgumentException("波次不存在：" + waveId);
+            warehouseResolver.assertIfPda(wh.get(0));
+        }
+        String exId = "EX" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase();
+        String exNo = billNo.nextNo(BillType.WMS_EXCEPTION, "wms_exception", "exception_no");
+        String waveNo = "";
+        if (!waveId.isBlank()) {
+            List<String> nos = jdbc.queryForList(
+                    "SELECT wave_no FROM wms_wave WHERE wave_id = ?", String.class, waveId);
+            if (!nos.isEmpty()) waveNo = nos.get(0);
+        }
+        String priority = strOr(req.get("priority"), "MEDIUM").toUpperCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("URGENT", "HIGH", "MEDIUM", "LOW").contains(priority)) priority = "MEDIUM";
+        jdbc.update("""
+                INSERT INTO wms_exception (exception_id, exception_no, wave_id, wave_no, source_order_no,
+                    source_type, source_bill, goods_code, exception_type, qty, status, description,
+                    reporter, priority, bin_code, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, exId, exNo, emptyToNull(waveId), emptyToNull(waveNo),
+                emptyToNull(TmsUtil.str(req.get("sourceOrderNo"))), sourceType, emptyToNull(sourceBill),
+                emptyToNull(TmsUtil.str(req.get("goodsCode"))), type, toBd(req.get("qty")),
+                desc, operator, priority, emptyToNull(TmsUtil.str(req.get("binCode"))));
+        TmsUtil.log(jdbc, "wms.exception", "REPORT", exNo, operator + " 上报异常 " + type + "：" + desc);
+        return Map.of("exceptionId", exId, "exceptionNo", exNo);
+    }
+
+    /** 异常处理（wms_pda.exception.handle，仅 LEADER）：填处理结果，状态 RESOLVED。 */
+    @Transactional
+    public Map<String, Object> handleException(String exceptionId, String resolution, String handler) {
+        Map<String, Object> e = mustGetException(exceptionId);
+        if (resolution == null || resolution.isBlank()) throw new IllegalArgumentException("请填写处理结果");
+        jdbc.update("""
+                UPDATE wms_exception SET status='RESOLVED', resolution=?, handler=?,
+                    resolved_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+                WHERE exception_id=?
+                """, resolution.trim(), handler, exceptionId);
+        TmsUtil.log(jdbc, "wms.exception", "HANDLE", TmsUtil.str(e.get("exceptionNo")),
+                handler + " 处理异常：" + resolution.trim());
+        return Map.of("exceptionId", exceptionId, "status", "RESOLVED");
+    }
+
+    /** 异常分派（wms_pda.exception.assign，仅 LEADER）：指派人必须启用且绑定当前仓。 */
+    @Transactional
+    public Map<String, Object> assignException(String exceptionId, String assignee, String operator) {
+        if (assignee == null || assignee.isBlank()) throw new IllegalArgumentException("请指定处理人");
+        mustGetException(exceptionId);
+        // 复用出库服务的同仓用户校验（PDA 场景）
+        if (warehouseResolver.isPda()) {
+            String whId = warehouseResolver.currentWarehouseId();
+            Integer n = jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM sys_user_runtime u
+                    JOIN sys_user_warehouse uw ON uw.user_id = u.user_id
+                    WHERE u.username = ? AND COALESCE(u.status,'NORMAL')='NORMAL' AND uw.warehouse_id = ?
+                    """, Integer.class, assignee.trim(), whId);
+            if (n == null || n == 0) {
+                throw new IllegalArgumentException("用户「" + assignee + "」不存在、已停用或未绑定当前作业仓库");
+            }
+        }
+        jdbc.update("""
+                UPDATE wms_exception SET assignee=?, status=CASE WHEN status='OPEN' THEN 'HANDLING' ELSE status END,
+                    updated_at=CURRENT_TIMESTAMP WHERE exception_id=?
+                """, assignee.trim(), exceptionId);
+        TmsUtil.log(jdbc, "wms.exception", "ASSIGN", exceptionId,
+                operator + " 分派异常给 " + assignee.trim());
+        return Map.of("exceptionId", exceptionId, "assignee", assignee.trim());
+    }
+
+    private Map<String, Object> mustGetException(String exceptionId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT e.*, COALESCE(w.warehouse, it.warehouse) AS wh_name
+                FROM wms_exception e
+                LEFT JOIN wms_wave w ON w.wave_id = e.wave_id
+                LEFT JOIN wms_inbound_task it ON it.task_no = e.source_bill
+                	AND COALESCE(e.source_type,'OUTBOUND') = 'INBOUND'
+                WHERE e.exception_id = ? OR e.exception_no = ?
+                """, exceptionId, exceptionId);
+        if (rows.isEmpty()) throw new IllegalArgumentException("异常单不存在：" + exceptionId);
+        Map<String, Object> e = rows.get(0);
+        Object wh = e.get("wh_name");
+        if (wh == null) wh = e.get("WH_NAME");
+        warehouseResolver.assertIfPda(wh == null ? null : String.valueOf(wh));
+        return TmsUtil.camelize(e);
     }
 
     // ==================== 公共工具 ====================

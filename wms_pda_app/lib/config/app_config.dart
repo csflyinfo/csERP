@@ -16,7 +16,12 @@ class AppConfig {
 
   static const String apiBaseKey = 'wms_pda_api_base';
   static const String tokenKey = 'wms_pda_token';
+
+  /// 旧版本用户缓存 key（登录成功后清理）。
   static const String userKey = 'wms_pda_user';
+
+  /// PRD-28：完整登录快照（user/menus/funcs/fields/params/superAdmin）。
+  static const String sessionKey = 'wms_pda_session';
 
   static String _override = '';
 

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import '../config/pda_perms.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 
-/// 移库作业：列出 PC 端已创建的移库单 → 扫源/目标库位核对 → 确认完成。
+/// 移库作业：列出当前仓移库单 → 确认完成；有 move.add 可在 PDA 直接建单。
+/// 按钮裁剪：move.add 新建（FAB）、move.confirm 确认完成；后端同口径强制。
 class MovePage extends StatefulWidget {
   const MovePage({super.key});
   @override
@@ -12,9 +16,13 @@ class MovePage extends StatefulWidget {
 
 class _MovePageState extends State<MovePage> {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   final _search = TextEditingController();
   List<dynamic> _tasks = const [];
   bool _loading = true;
+
+  bool get _canAdd => _auth.can(PdaPerm.moveAdd);
+  bool get _canConfirm => _auth.can(PdaPerm.moveConfirm);
 
   @override
   void initState() {
@@ -27,7 +35,7 @@ class _MovePageState extends State<MovePage> {
     try {
       _tasks = await _svc.moveTasks(keyword: _search.text.trim());
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -68,6 +76,8 @@ class _MovePageState extends State<MovePage> {
               final fromBin = pickStr(m, ['fromBin', 'from_bin']);
               final toBin = pickStr(m, ['toBin', 'to_bin']);
               final qty = pickNum(m, ['qty']);
+              final batch = pickStr(m, ['batchNo', 'batch_no']);
+              final active = status != 'DONE' && status != 'CANCELLED';
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: Padding(
@@ -85,7 +95,7 @@ class _MovePageState extends State<MovePage> {
                       ]),
                       const SizedBox(height: 4),
                       Text(
-                          '${pickStr(m, ['goodsName', 'goods_name'])} · $qty ${pickStr(m, ['batchNo', 'batch_no']).isNotEmpty ? '批次：${pickStr(m, ['batchNo', 'batch_no'])}' : ''}',
+                          '${pickStr(m, ['goodsName', 'goods_name'])} · $qty${batch.isNotEmpty ? ' · 批次：$batch' : ''}',
                           style: PdaStyles.sub),
                       const SizedBox(height: 6),
                       Row(children: [
@@ -103,21 +113,24 @@ class _MovePageState extends State<MovePage> {
                         const SizedBox(width: 4),
                         Text(toBin, style: PdaStyles.sub),
                       ]),
-                      if (status != 'DONE' && status != 'CANCELLED') ...[
+                      if (active) ...[
                         const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.check, size: 18),
-                          label: const Text('确认移库完成'),
-                          onPressed: () async {
-                            await runWithBusy(
-                              context,
-                              () => _svc.moveComplete(
-                                  m['taskId'].toString()),
-                              successMsg: '移库完成',
-                            );
-                            _load();
-                          },
-                        ),
+                        if (_canConfirm)
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('确认移库完成'),
+                            onPressed: () async {
+                              final r = await runWithBusy(
+                                context,
+                                () =>
+                                    _svc.moveComplete(m['taskId'].toString()),
+                                successMsg: '移库完成',
+                              );
+                              if (r != null) _load();
+                            },
+                          )
+                        else
+                          const Text('无移库完成权限', style: PdaStyles.sub),
                       ],
                     ],
                   ),
@@ -125,6 +138,130 @@ class _MovePageState extends State<MovePage> {
               );
             }),
         ],
+      ),
+      floatingActionButton: _canAdd
+          ? FloatingActionButton.extended(
+              onPressed: _showAddSheet,
+              icon: const Icon(Icons.add),
+              label: const Text('新建移库'),
+            )
+          : null,
+    );
+  }
+
+  /// PDA 建移库单：源/目标库位、商品、数量必填；仓库强制登录仓（后端处理）。
+  Future<void> _showAddSheet() async {
+    final fromCtrl = TextEditingController();
+    final toCtrl = TextEditingController();
+    final codeCtrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final batchCtrl = TextEditingController();
+    final qtyCtrl = TextEditingController(text: '1');
+    final remarkCtrl = TextEditingController();
+    String? error;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('新建移库单', style: PdaStyles.title),
+              const SizedBox(height: 12),
+              TextField(
+                controller: fromCtrl,
+                decoration: const InputDecoration(
+                    labelText: '源库位 *', prefixIcon: Icon(Icons.upload)),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: toCtrl,
+                decoration: const InputDecoration(
+                    labelText: '目标库位 *', prefixIcon: Icon(Icons.download)),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: codeCtrl,
+                decoration: const InputDecoration(
+                    labelText: '商品编码 *', prefixIcon: Icon(Icons.qr_code)),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: '商品名称'),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: batchCtrl,
+                    decoration: const InputDecoration(labelText: '批次（可空）'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextField(
+                    controller: qtyCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: '数量 *'),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              TextField(
+                controller: remarkCtrl,
+                decoration: const InputDecoration(labelText: '备注（可空）'),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!,
+                    style:
+                        const TextStyle(fontSize: 13, color: PdaTheme.danger)),
+              ],
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('提交'),
+                onPressed: () async {
+                  final qty = num.tryParse(qtyCtrl.text.trim());
+                  if (fromCtrl.text.trim().isEmpty ||
+                      toCtrl.text.trim().isEmpty ||
+                      codeCtrl.text.trim().isEmpty) {
+                    setSheet(() => error = '请填写源库位、目标库位和商品编码');
+                    return;
+                  }
+                  if (qty == null || qty <= 0) {
+                    setSheet(() => error = '数量必须大于 0');
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  final r = await runWithBusy(
+                    context,
+                    () => _svc.moveAdd(
+                      fromBin: fromCtrl.text.trim(),
+                      toBin: toCtrl.text.trim(),
+                      goodsCode: codeCtrl.text.trim(),
+                      goodsName: nameCtrl.text.trim(),
+                      batchNo: batchCtrl.text.trim(),
+                      qty: qty,
+                      remark: remarkCtrl.text.trim(),
+                    ),
+                    successMsg: '移库单已创建',
+                  );
+                  if (r != null) _load();
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

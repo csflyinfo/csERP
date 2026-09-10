@@ -29,7 +29,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             "/auth/login",
             "/auth/logout",
             "/actuator/health",
-            "/tms/app/login"
+            "/tms/app/login",
+            "/wms/app/login"
     );
 
     private final JwtUtil jwtUtil;

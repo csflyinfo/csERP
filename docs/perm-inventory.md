@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-10 05:11:17
+> 生成时间：2026-09-10 08:54:33
 
-- 端点总数：770
-- 已挂 @RequirePerm：509
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：238
+- 端点总数：793
+- 已挂 @RequirePerm：566
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：204
 
 ## base
 
@@ -712,41 +712,64 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/wms/app/binding/bind` | WmsAppController#bindingBind | — | — | — | ❌ |
-| POST | `/wms/app/binding/lookup` | WmsAppController#bindingLookup | — | — | — | ❌ |
-| POST | `/wms/app/binding/transfer` | WmsAppController#bindingTransfer | — | — | — | ❌ |
-| POST | `/wms/app/binding/unbind` | WmsAppController#bindingUnbind | — | — | — | ❌ |
-| POST | `/wms/app/check/fail` | WmsAppController#checkFail | — | — | — | ❌ |
-| POST | `/wms/app/check/pass` | WmsAppController#checkPass | — | — | — | ❌ |
-| POST | `/wms/app/container/contents` | WmsAppController#containerContents | — | — | — | ❌ |
-| POST | `/wms/app/container/create` | WmsAppController#containerCreate | — | — | — | ❌ |
-| POST | `/wms/app/container/lookup` | WmsAppController#containerLookup | — | — | — | ❌ |
-| POST | `/wms/app/container/release` | WmsAppController#containerRelease | — | — | — | ❌ |
-| POST | `/wms/app/inbound/detail` | WmsAppController#inboundDetail | — | — | — | ❌ |
-| POST | `/wms/app/inbound/finish-receive` | WmsAppController#inboundFinish | — | — | — | ❌ |
-| POST | `/wms/app/inbound/putaway-tasks` | WmsAppController#putawayTasks | — | — | — | ❌ |
-| POST | `/wms/app/inbound/putaway/batch-confirm` | WmsAppController#putawayBatchConfirm | — | — | — | ❌ |
-| POST | `/wms/app/inbound/putaway/bin-stock` | WmsAppController#putawayBinStock | — | — | — | ❌ |
-| POST | `/wms/app/inbound/putaway/claim` | WmsAppController#putawayClaim | — | — | — | ❌ |
-| POST | `/wms/app/inbound/putaway/confirm` | WmsAppController#putawayConfirm | — | — | — | ❌ |
-| POST | `/wms/app/inbound/receive` | WmsAppController#inboundReceive | — | — | — | ❌ |
-| POST | `/wms/app/inbound/recheck` | WmsAppController#inboundRecheck | — | — | — | ❌ |
-| POST | `/wms/app/inbound/tasks` | WmsAppController#inboundTasks | — | — | — | ❌ |
-| POST | `/wms/app/load/ship` | WmsAppController#ship | — | — | — | ❌ |
-| POST | `/wms/app/move/complete` | WmsAppController#moveComplete | — | — | — | ❌ |
-| POST | `/wms/app/move/tasks` | WmsAppController#moveTasks | — | — | — | ❌ |
-| POST | `/wms/app/pick/claim` | WmsAppController#claim | — | — | — | ❌ |
-| POST | `/wms/app/pick/complete` | WmsAppController#complete | — | — | — | ❌ |
-| POST | `/wms/app/pick/item` | WmsAppController#pickItem | — | — | — | ❌ |
-| POST | `/wms/app/pick/task-detail` | WmsAppController#taskDetail | — | — | — | ❌ |
-| POST | `/wms/app/pick/tasks` | WmsAppController#tasks | — | — | — | ❌ |
-| POST | `/wms/app/profile` | WmsAppController#profile | — | — | — | ❌ |
-| POST | `/wms/app/replenish/claim` | WmsAppController#replenishClaim | — | — | — | ❌ |
-| POST | `/wms/app/replenish/complete` | WmsAppController#replenishComplete | — | — | — | ❌ |
-| POST | `/wms/app/replenish/tasks` | WmsAppController#replenishTasks | — | — | — | ❌ |
-| POST | `/wms/app/stocktake/bins` | WmsAppController#stocktakeBins | — | — | — | ❌ |
-| POST | `/wms/app/stocktake/count` | WmsAppController#stocktakeCount | — | — | — | ❌ |
-| POST | `/wms/app/stocktake/recount` | WmsAppController#stocktakeRecount | — | — | — | ❌ |
+| POST | `/wms/app/binding/bind` | WmsAppController#bindingBind | wms_pda.putaway.free_bin | wms_pda.putaway | free_bin | 方法：wms_pda.putaway.free_bin |
+| POST | `/wms/app/binding/lookup` | WmsAppController#bindingLookup | wms_pda.putaway.view | wms_pda.putaway | view | 方法：wms_pda.putaway.view |
+| POST | `/wms/app/binding/transfer` | WmsAppController#bindingTransfer | wms_pda.putaway.free_bin | wms_pda.putaway | free_bin | 方法：wms_pda.putaway.free_bin |
+| POST | `/wms/app/binding/unbind` | WmsAppController#bindingUnbind | wms_pda.putaway.free_bin | wms_pda.putaway | free_bin | 方法：wms_pda.putaway.free_bin |
+| POST | `/wms/app/check/fail` | WmsAppController#checkFail | wms_pda.check.exception | wms_pda.check | exception | 方法：wms_pda.check.exception |
+| POST | `/wms/app/check/pass` | WmsAppController#checkPass | wms_pda.check.confirm | wms_pda.check | confirm | 方法：wms_pda.check.confirm |
+| POST | `/wms/app/check/tasks` | WmsAppController#checkTasks | wms_pda.check.view | wms_pda.check | view | 方法：wms_pda.check.view |
+| POST | `/wms/app/container/contents` | WmsAppController#containerContents | wms_pda.receive.scan | wms_pda.receive | scan | 方法：wms_pda.receive.scan |
+| POST | `/wms/app/container/create` | WmsAppController#containerCreate | wms_pda.receive.start | wms_pda.receive | start | 方法：wms_pda.receive.start |
+| POST | `/wms/app/container/lookup` | WmsAppController#containerLookup | wms_pda.receive.scan | wms_pda.receive | scan | 方法：wms_pda.receive.scan |
+| POST | `/wms/app/container/release` | WmsAppController#containerRelease | wms_pda.putaway.confirm | wms_pda.putaway | confirm | 方法：wms_pda.putaway.confirm |
+| POST | `/wms/app/damage/add` | WmsAppController#damageAdd | wms_pda.damage.add | wms_pda.damage | add | 方法：wms_pda.damage.add |
+| POST | `/wms/app/damage/audit` | WmsAppController#damageAudit | wms_pda.damage.audit | wms_pda.damage | audit | 方法：wms_pda.damage.audit |
+| POST | `/wms/app/damage/list` | WmsAppController#damageList | wms_pda.damage.view | wms_pda.damage | view | 方法：wms_pda.damage.view |
+| POST | `/wms/app/exception/assign` | WmsAppController#exceptionAssign | wms_pda.exception.assign | wms_pda.exception | assign | 方法：wms_pda.exception.assign |
+| POST | `/wms/app/exception/handle` | WmsAppController#exceptionHandle | wms_pda.exception.handle | wms_pda.exception | handle | 方法：wms_pda.exception.handle |
+| POST | `/wms/app/exception/list` | WmsAppController#exceptionList | wms_pda.exception.view | wms_pda.exception | view | 方法：wms_pda.exception.view |
+| POST | `/wms/app/exception/report` | WmsAppController#exceptionReport | wms_pda.exception.report | wms_pda.exception | report | 方法：wms_pda.exception.report |
+| POST | `/wms/app/inbound/create` | WmsAppController#inboundCreate | wms_pda.other_inbound.add | wms_pda.other_inbound | add | 方法：wms_pda.other_inbound.add |
+| POST | `/wms/app/inbound/detail` | WmsAppController#inboundDetail | wms_pda.receive.view | wms_pda.receive | view | 方法：wms_pda.receive.view |
+| POST | `/wms/app/inbound/finish-receive` | WmsAppController#inboundFinish | wms_pda.receive.confirm | wms_pda.receive | confirm | 方法：wms_pda.receive.confirm |
+| POST | `/wms/app/inbound/putaway-tasks` | WmsAppController#putawayTasks | wms_pda.putaway.view | wms_pda.putaway | view | 方法：wms_pda.putaway.view |
+| POST | `/wms/app/inbound/putaway/batch-confirm` | WmsAppController#putawayBatchConfirm | wms_pda.putaway.confirm | wms_pda.putaway | confirm | 方法：wms_pda.putaway.confirm |
+| POST | `/wms/app/inbound/putaway/bin-stock` | WmsAppController#putawayBinStock | wms_pda.putaway.view | wms_pda.putaway | view | 方法：wms_pda.putaway.view |
+| POST | `/wms/app/inbound/putaway/claim` | WmsAppController#putawayClaim | wms_pda.putaway.start | wms_pda.putaway | start | 方法：wms_pda.putaway.start |
+| POST | `/wms/app/inbound/putaway/confirm` | WmsAppController#putawayConfirm | wms_pda.putaway.confirm | wms_pda.putaway | confirm | 方法：wms_pda.putaway.confirm |
+| POST | `/wms/app/inbound/receive` | WmsAppController#inboundReceive | wms_pda.receive.scan | wms_pda.receive | scan | 方法：wms_pda.receive.scan |
+| POST | `/wms/app/inbound/recheck` | WmsAppController#inboundRecheck | wms_pda.receive.recheck | wms_pda.receive | recheck | 方法：wms_pda.receive.recheck |
+| POST | `/wms/app/inbound/tasks` | WmsAppController#inboundTasks | wms_pda.receive.view | wms_pda.receive | view | 方法：wms_pda.receive.view |
+| POST | `/wms/app/load/ship` | WmsAppController#ship | wms_pda.load.confirm | wms_pda.load | confirm | 方法：wms_pda.load.confirm |
+| POST | `/wms/app/load/tasks` | WmsAppController#loadTasks | wms_pda.load.view | wms_pda.load | view | 方法：wms_pda.load.view |
+| POST | `/wms/app/login` | WmsPdaAuthController#login | — | — | — | ❌ |
+| POST | `/wms/app/move/add` | WmsAppController#moveAdd | wms_pda.move.add | wms_pda.move | add | 方法：wms_pda.move.add |
+| POST | `/wms/app/move/complete` | WmsAppController#moveComplete | wms_pda.move.confirm | wms_pda.move | confirm | 方法：wms_pda.move.confirm |
+| POST | `/wms/app/move/tasks` | WmsAppController#moveTasks | wms_pda.move.view | wms_pda.move | view | 方法：wms_pda.move.view |
+| POST | `/wms/app/performance` | WmsAppController#performance | wms_pda.performance.view_self | wms_pda.performance | view_self | 方法：wms_pda.performance.view_self |
+| POST | `/wms/app/pick/claim` | WmsAppController#claim | wms_pda.pick.start | wms_pda.pick | start | 方法：wms_pda.pick.start |
+| POST | `/wms/app/pick/complete` | WmsAppController#complete | wms_pda.pick.confirm | wms_pda.pick | confirm | 方法：wms_pda.pick.confirm |
+| POST | `/wms/app/pick/item` | WmsAppController#pickItem | wms_pda.pick.scan | wms_pda.pick | scan | 方法：wms_pda.pick.scan |
+| POST | `/wms/app/pick/short-pick` | WmsAppController#shortPick | wms_pda.pick.short_pick | wms_pda.pick | short_pick | 方法：wms_pda.pick.short_pick |
+| POST | `/wms/app/pick/skip` | WmsAppController#skip | wms_pda.pick.skip | wms_pda.pick | skip | 方法：wms_pda.pick.skip |
+| POST | `/wms/app/pick/task-detail` | WmsAppController#taskDetail | wms_pda.pick.view | wms_pda.pick | view | 方法：wms_pda.pick.view |
+| POST | `/wms/app/pick/tasks` | WmsAppController#tasks | wms_pda.pick.view | wms_pda.pick | view | 方法：wms_pda.pick.view |
+| POST | `/wms/app/pick/transfer` | WmsAppController#transfer | wms_pda.pick.transfer | wms_pda.pick | transfer | 方法：wms_pda.pick.transfer |
+| POST | `/wms/app/profile` | WmsAppController#profile | wms_pda.profile.view | wms_pda.profile | view | 方法：wms_pda.profile.view |
+| POST | `/wms/app/replenish/claim` | WmsAppController#replenishClaim | wms_pda.replenish.confirm | wms_pda.replenish | confirm | 方法：wms_pda.replenish.confirm |
+| POST | `/wms/app/replenish/complete` | WmsAppController#replenishComplete | wms_pda.replenish.confirm | wms_pda.replenish | confirm | 方法：wms_pda.replenish.confirm |
+| POST | `/wms/app/replenish/tasks` | WmsAppController#replenishTasks | wms_pda.replenish.view | wms_pda.replenish | view | 方法：wms_pda.replenish.view |
+| POST | `/wms/app/replenish/urgent` | WmsAppController#replenishUrgent | wms_pda.replenish.urgent | wms_pda.replenish | urgent | 方法：wms_pda.replenish.urgent |
+| POST | `/wms/app/stock-query` | WmsAppController#stockQuery | wms_pda.stock_query.view | wms_pda.stock_query | view | 方法：wms_pda.stock_query.view |
+| POST | `/wms/app/stocktake/audit` | WmsAppController#stocktakeAudit | wms_pda.stocktake.audit | wms_pda.stocktake | audit | 方法：wms_pda.stocktake.audit |
+| POST | `/wms/app/stocktake/bins` | WmsAppController#stocktakeBins | wms_pda.stocktake.view | wms_pda.stocktake | view | 方法：wms_pda.stocktake.view |
+| POST | `/wms/app/stocktake/count` | WmsAppController#stocktakeCount | wms_pda.stocktake.input | wms_pda.stocktake | input | 方法：wms_pda.stocktake.input |
+| POST | `/wms/app/stocktake/recount` | WmsAppController#stocktakeRecount | wms_pda.stocktake.input | wms_pda.stocktake | input | 方法：wms_pda.stocktake.input |
+| POST | `/wms/app/stocktake/submit` | WmsAppController#stocktakeSubmit | wms_pda.stocktake.submit | wms_pda.stocktake | submit | 方法：wms_pda.stocktake.submit |
+| POST | `/wms/app/task-assign/assign` | WmsAppController#assign | wms_pda.task_assign.assign | wms_pda.task_assign | assign | 方法：wms_pda.task_assign.assign |
+| POST | `/wms/app/task-assign/recall` | WmsAppController#recall | wms_pda.task_assign.recall | wms_pda.task_assign | recall | 方法：wms_pda.task_assign.recall |
+| POST | `/wms/app/task-assign/tasks` | WmsAppController#assignTasks | wms_pda.task_assign.view | wms_pda.task_assign | view | 方法：wms_pda.task_assign.view |
 | POST | `/wms/bin-stock/page` | WmsController#binStock | wms.bin_stock.view | wms.bin_stock | view | ❌ |
 | POST | `/wms/bin/delete` | WmsController#deleteBin | wms.bin.delete | wms.bin | delete | ❌ |
 | POST | `/wms/bin/import` | WmsController#importBins | wms.bin.import | wms.bin | import | ❌ |

@@ -38,15 +38,17 @@ public class WmsOutboundService {
     private final SalesOutboundController salesOutbound;
     private final BillNoGenerator billNo;
     private final SysParamService params;
+    private final WmsWarehouseResolver warehouseResolver;
 
     public WmsOutboundService(JdbcTemplate jdbc, InventoryCostService inventoryCost,
                               SalesOutboundController salesOutbound, BillNoGenerator billNo,
-                              SysParamService params) {
+                              SysParamService params, WmsWarehouseResolver warehouseResolver) {
         this.jdbc = jdbc;
         this.inventoryCost = inventoryCost;
         this.salesOutbound = salesOutbound;
         this.billNo = billNo;
         this.params = params;
+        this.warehouseResolver = warehouseResolver;
     }
 
     // ==================== 订单池 ====================
@@ -513,6 +515,11 @@ public class WmsOutboundService {
                 WHERE t.status <> 'CANCELLED'
                 """);
         List<Object> args = new ArrayList<>();
+        // PRD-28 卡片9：PDA 任务列表强制登录仓（PDA-007）；scope=all 的主管口径由 controller 另验功能点
+        if (warehouseResolver.isPda()) {
+            sql.append(" AND t.warehouse = ?");
+            args.add(warehouseResolver.currentWarehouseName());
+        }
         if ("mine".equalsIgnoreCase(scope) && assignee != null && !assignee.isBlank()) {
             sql.append(" AND t.assignee = ?");
             args.add(assignee);
@@ -531,6 +538,7 @@ public class WmsOutboundService {
         List<Map<String, Object>> h = jdbc.queryForList(
                 "SELECT * FROM wms_pick_task WHERE task_id = ? OR task_no = ?", taskId, taskId);
         if (h.isEmpty()) throw new IllegalArgumentException("拣货任务不存在：" + taskId);
+        warehouseResolver.assertIfPda(str(h.get(0).get("warehouse")));
         Map<String, Object> task = TmsUtil.camelize(h.get(0));
         // 汇总拣：同 SKU 合并应拣数量并列出分播去向；按单拣：带订单号逐条
         List<Map<String, Object>> lines = TmsUtil.queryCamel(jdbc, """
@@ -548,8 +556,9 @@ public class WmsOutboundService {
     @Transactional
     public Map<String, Object> claimTask(String taskId, String assignee, boolean help) {
         List<Map<String, Object>> h = jdbc.queryForList(
-                "SELECT task_id, status, help_task FROM wms_pick_task WHERE task_id = ?", taskId);
+                "SELECT task_id, status, help_task, warehouse FROM wms_pick_task WHERE task_id = ?", taskId);
         if (h.isEmpty()) throw new IllegalArgumentException("拣货任务不存在");
+        warehouseResolver.assertIfPda(str(h.get(0).get("warehouse")));
         String status = str(pick(h.get(0), "status"));
         if (!"PENDING".equals(status)) throw new IllegalArgumentException("任务已被领取或已完成");
         jdbc.update("""
@@ -574,6 +583,7 @@ public class WmsOutboundService {
                                         BigDecimal qty, String actualBatchNo, String actualBin, String assignee) {
         Map<String, Object> d = findDetail(detailId, taskId, goodsCode);
         if (d == null) throw new IllegalArgumentException("未找到待拣明细");
+        warehouseResolver.assertIfPda(str(d.get("warehouse")));
         String status = str(d.get("status"));
         if ("PICKED".equals(status)) throw new IllegalArgumentException("该明细已拣完");
         BigDecimal required = bd(d.get("requiredQty"));
@@ -614,6 +624,10 @@ public class WmsOutboundService {
     /** 整任务拣货完成（PC 一键 / PDA 提交）。 */
     @Transactional
     public Map<String, Object> completeTask(String taskId, String assignee) {
+        List<Map<String, Object>> taskHead = jdbc.queryForList(
+                "SELECT warehouse FROM wms_pick_task WHERE task_id = ?", taskId);
+        if (taskHead.isEmpty()) throw new IllegalArgumentException("拣货任务不存在：" + taskId);
+        warehouseResolver.assertIfPda(str(taskHead.get(0).get("warehouse")));
         List<Map<String, Object>> lines = jdbc.queryForList(
                 "SELECT detail_id, required_qty, picked_qty, status FROM wms_wave_detail WHERE pick_task_id = ?", taskId);
         boolean allPicked = true;
@@ -648,7 +662,21 @@ public class WmsOutboundService {
     @Transactional
     public Map<String, Object> recheckOrder(String waveId, String orderNo, String operator,
                                             String checkScope, BigDecimal shortQty, boolean pass) {
-        String wh = waveWarehouse(waveId);
+        return recheckOrder(waveId, orderNo, operator, checkScope, shortQty, pass, null);
+    }
+
+    /**
+     * 复核通过/不通过（PRD-28 卡片9：reason 为不通过原因，PDA 必填并写异常单留痕）。
+     */
+    @Transactional
+    public Map<String, Object> recheckOrder(String waveId, String orderNo, String operator,
+                                            String checkScope, BigDecimal shortQty, boolean pass,
+                                            String reason) {
+        List<String> whRows = jdbc.queryForList(
+                "SELECT warehouse FROM wms_wave WHERE wave_id = ?", String.class, waveId);
+        if (whRows.isEmpty()) throw new IllegalArgumentException("波次不存在：" + waveId);
+        warehouseResolver.assertIfPda(whRows.get(0));
+        String wh = whRows.get(0);
         List<Map<String, Object>> lines = jdbc.queryForList(
                 "SELECT goods_code, required_qty, picked_qty, alloc_batch_no, picked_batch_no, status "
                         + "FROM wms_wave_detail WHERE wave_id = ? AND source_order_no = ?", waveId, orderNo);
@@ -666,12 +694,17 @@ public class WmsOutboundService {
             }
         }
         if (!pass) {
+            if (warehouseResolver.isPda() && (reason == null || reason.isBlank())) {
+                throw new IllegalArgumentException("请填写复核不通过原因");
+            }
             String exNo = billNo.nextNo(BillNoGenerator.BillType.WMS_EXCEPTION, "wms_exception", "exception_no");
+            String desc = "复核不通过" + (reason == null || reason.isBlank() ? "" : "：" + reason.trim());
             jdbc.update("""
-                    INSERT INTO wms_exception (exception_id, exception_no, wave_id, source_order_no, exception_type,
-                        qty, status, description, reporter, assignee)
-                    VALUES (?, ?, ?, ?, 'DIFF', ?, 'OPEN', '复核不通过', ?, NULL)
-                    """, id("EX"), exNo, waveId, orderNo, required.subtract(picked), operator);
+                    INSERT INTO wms_exception (exception_id, exception_no, wave_id, wave_no, source_order_no, exception_type,
+                        qty, status, description, reporter, assignee, source_type, priority, created_at)
+                    VALUES (?, ?, ?, (SELECT wave_no FROM wms_wave WHERE wave_id = ?), ?, 'DIFF', ?, 'OPEN', ?, ?, NULL, 'OUTBOUND', 'HIGH', CURRENT_TIMESTAMP)
+                    """, id("EX"), exNo, waveId, waveId, orderNo, required.subtract(picked), desc, operator);
+            TmsUtil.log(jdbc, "wms.recheck", "NG", orderNo, desc);
             return Map.of("passed", false, "exceptionNo", exNo);
         }
 
@@ -753,6 +786,7 @@ public class WmsOutboundService {
         List<Map<String, Object>> heads = jdbc.queryForList(
                 "SELECT wave_no, route_line, driver, warehouse FROM wms_wave WHERE wave_id = ?", waveId);
         if (heads.isEmpty()) throw new IllegalArgumentException("波次不存在");
+        warehouseResolver.assertIfPda(str(heads.get(0).get("warehouse")));
         List<Map<String, Object>> orders = jdbc.queryForList(
                 "SELECT DISTINCT source_order_no, generated_outbound_no FROM wms_wave_detail "
                         + "WHERE wave_id = ? AND generated_outbound_no IS NOT NULL", waveId);
@@ -801,6 +835,194 @@ public class WmsOutboundService {
         List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbc, sql.toString(), args.toArray());
         for (Map<String, Object> r : rows) r.put("statusText", detailStatusText(str(r.get("status"))));
         return rows;
+    }
+
+    // ==================== PDA：缺货 / 跳过 / 转交 / 复核装车任务（PRD-28 卡片9） ====================
+
+    /**
+     * 缺货上报（wms_pda.pick.short_pick）：明细置 SHORT，写 wms_exception（必须录原因），
+     * 任务进度/波次进度实时回算；整任务完成时沿用自动挂起逻辑。
+     */
+    @Transactional
+    public Map<String, Object> shortPick(String detailId, BigDecimal shortQty, String reason, String operator) {
+        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("缺货上报必须填写原因");
+        Map<String, Object> d = findDetail(detailId, null, null);
+        if (d == null) throw new IllegalArgumentException("未找到待拣明细");
+        warehouseResolver.assertIfPda(str(d.get("warehouse")));
+        BigDecimal required = bd(d.get("requiredQty"));
+        BigDecimal picked = bd(d.get("pickedQty"));
+        BigDecimal qty = (shortQty == null || shortQty.signum() <= 0) ? required.subtract(picked) : shortQty;
+        String waveId = str(d.get("waveId"));
+        jdbc.update("UPDATE wms_wave_detail SET status='SHORT' WHERE detail_id=?", detailId);
+        String exNo = insertException(waveId, str(d.get("sourceOrderNo")), str(d.get("goodsCode")),
+                "SHORT", qty, "缺货上报：" + reason.trim(), operator);
+        String taskId = str(d.get("pickTaskId"));
+        if (!taskId.isBlank()) {
+            recalcTaskProgress(taskId);
+            recalcWaveProgress(taskOfWave(taskId));
+            advanceWaveStatusByTask(taskId);
+        }
+        TmsUtil.log(jdbc, "wms.pick", "SHORT_PICK", str(d.get("sourceOrderNo")),
+                "缺货上报 " + str(d.get("goodsCode")) + " x" + qty + "，原因：" + reason.trim());
+        return Map.of("detailId", detailId, "status", "SHORT", "exceptionNo", exNo);
+    }
+
+    /**
+     * 跳过商品（wms_pda.pick.skip）：明细保持未拣状态（稍后可回来拣），仅写异常留痕（必须录原因）。
+     */
+    @Transactional
+    public Map<String, Object> skipDetail(String detailId, String reason, String operator) {
+        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("跳过商品必须填写原因");
+        Map<String, Object> d = findDetail(detailId, null, null);
+        if (d == null) throw new IllegalArgumentException("未找到待拣明细");
+        warehouseResolver.assertIfPda(str(d.get("warehouse")));
+        String exNo = insertException(str(d.get("waveId")), str(d.get("sourceOrderNo")),
+                str(d.get("goodsCode")), "OTHER", BigDecimal.ZERO,
+                "跳过商品：" + reason.trim(), operator);
+        TmsUtil.log(jdbc, "wms.pick", "SKIP", str(d.get("sourceOrderNo")),
+                "跳过 " + str(d.get("goodsCode")) + "，原因：" + reason.trim());
+        return Map.of("detailId", detailId, "exceptionNo", exNo);
+    }
+
+    /**
+     * 拣货任务转交（wms_pda.pick.transfer，仅 KEEPER/LEADER）：
+     * 目标人必须是启用状态且绑定了当前作业仓库的用户，防止把任务转给别仓账号。
+     */
+    @Transactional
+    public Map<String, Object> transferTask(String taskId, String toAssignee, String operator) {
+        if (toAssignee == null || toAssignee.isBlank()) throw new IllegalArgumentException("请指定转交对象");
+        List<Map<String, Object>> h = jdbc.queryForList(
+                "SELECT task_id, status, warehouse FROM wms_pick_task WHERE task_id = ?", taskId);
+        if (h.isEmpty()) throw new IllegalArgumentException("拣货任务不存在：" + taskId);
+        warehouseResolver.assertIfPda(str(h.get(0).get("warehouse")));
+        assertUserInCurrentWarehouse(toAssignee);
+        jdbc.update("UPDATE wms_pick_task SET assignee = ?, assign_type = 'TRANSFER' WHERE task_id = ?",
+                toAssignee.trim(), taskId);
+        TmsUtil.log(jdbc, "wms.pick", "TRANSFER", taskId, operator + " 转交任务给 " + toAssignee.trim());
+        return Map.of("taskId", taskId, "assignee", toAssignee.trim());
+    }
+
+    /**
+     * 复核任务列表：当前仓待复核（PICKED 拣完待复核 / CHECKING 复核中）波次及其订单。
+     * PRD-28 卡片9：每行附 orders（按 source_order_no 聚合），复核员无 pick.view 权限，
+     * 不能再借 pick/task-detail 拉明细，逐单通过/差异登记所需订单信息由本端点一次下发。
+     */
+    public List<Map<String, Object>> checkTaskList() {
+        String wh = warehouseResolver.currentWarehouseName();
+        List<Map<String, Object>> waves = TmsUtil.queryCamel(jdbc, """
+                SELECT w.wave_id, w.wave_no, w.status, w.route_line, w.driver, w.picked_at,
+                       COUNT(DISTINCT d.source_order_no) AS order_count,
+                       COALESCE(SUM(d.required_qty),0) AS required_qty,
+                       COALESCE(SUM(d.picked_qty),0) AS picked_qty
+                FROM wms_wave w
+                JOIN wms_wave_detail d ON d.wave_id = w.wave_id
+                WHERE w.warehouse = ? AND w.status IN ('PICKED','CHECKING','SUSPENDED')
+                GROUP BY w.wave_id, w.wave_no, w.status, w.route_line, w.driver, w.picked_at
+                ORDER BY w.picked_at DESC, w.wave_no
+                """, wh);
+        if (waves.isEmpty()) return waves;
+        String placeholders = waves.stream().map(w -> "?").collect(java.util.stream.Collectors.joining(","));
+        Object[] waveIds = waves.stream().map(w -> w.get("waveId")).toArray();
+        List<Map<String, Object>> orderRows = TmsUtil.queryCamel(jdbc,
+                "SELECT wave_id, source_order_no, MAX(customer_name) AS customer_name, " +
+                "COALESCE(SUM(required_qty),0) AS required_qty, COALESCE(SUM(picked_qty),0) AS picked_qty " +
+                "FROM wms_wave_detail WHERE wave_id IN (" + placeholders + ") " +
+                "GROUP BY wave_id, source_order_no ORDER BY source_order_no",
+                waveIds);
+        java.util.Map<String, List<Map<String, Object>>> byWave = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> o : orderRows) {
+            byWave.computeIfAbsent(TmsUtil.str(o.get("waveId")), k -> new ArrayList<>()).add(o);
+        }
+        for (Map<String, Object> w : waves) {
+            w.put("orders", byWave.getOrDefault(TmsUtil.str(w.get("waveId")), List.of()));
+        }
+        return waves;
+    }
+
+    /** 装车任务列表：当前仓复核完成（已生成发货单）尚未发运的波次及订单。 */
+    public List<Map<String, Object>> loadTaskList() {
+        String wh = warehouseResolver.currentWarehouseName();
+        return TmsUtil.queryCamel(jdbc, """
+                SELECT w.wave_id, w.wave_no, w.status, w.route_line, w.driver,
+                       COUNT(DISTINCT d.source_order_no) AS order_count
+                FROM wms_wave w
+                JOIN wms_wave_detail d ON d.wave_id = w.wave_id
+                WHERE w.warehouse = ? AND w.status = 'CHECKED'
+                  AND d.generated_outbound_no IS NOT NULL
+                GROUP BY w.wave_id, w.wave_no, w.status, w.route_line, w.driver
+                ORDER BY w.checked_at DESC, w.wave_no
+                """, wh);
+    }
+
+    /**
+     * 主管指派拣货任务（wms_pda.task_assign.assign，仅 LEADER）：
+     * 目标人必须启用且绑定当前仓；任务直接置为 CLAIMED（assignee 即领取人）。
+     */
+    @Transactional
+    public Map<String, Object> assignTask(String taskId, String toAssignee, String operator) {
+        if (toAssignee == null || toAssignee.isBlank()) throw new IllegalArgumentException("请指定指派人");
+        List<Map<String, Object>> h = jdbc.queryForList(
+                "SELECT task_id, status, warehouse FROM wms_pick_task WHERE task_id = ?", taskId);
+        if (h.isEmpty()) throw new IllegalArgumentException("拣货任务不存在：" + taskId);
+        warehouseResolver.assertIfPda(str(h.get(0).get("warehouse")));
+        assertUserInCurrentWarehouse(toAssignee);
+        jdbc.update("""
+                UPDATE wms_pick_task SET assignee = ?, assign_type = 'ASSIGN', status = 'CLAIMED',
+                    claimed_at = CURRENT_TIMESTAMP WHERE task_id = ?
+                """, toAssignee.trim(), taskId);
+        jdbc.update("UPDATE wms_wave_detail SET pick_task_id = ? WHERE pick_task_id IS NULL AND wave_id = "
+                + "(SELECT wave_id FROM wms_pick_task WHERE task_id = ?)", taskId, taskId);
+        TmsUtil.log(jdbc, "wms.pick", "ASSIGN", taskId, operator + " 指派任务给 " + toAssignee.trim());
+        return Map.of("taskId", taskId, "assignee", toAssignee.trim());
+    }
+
+    /**
+     * 主管撤回指派（wms_pda.task_assign.recall，仅 LEADER）：
+     * 仅未开始拣货（PENDING/CLAIMED）的任务可撤回，撤回后回到公共任务池。
+     */
+    @Transactional
+    public Map<String, Object> recallTask(String taskId, String operator) {
+        List<Map<String, Object>> h = jdbc.queryForList(
+                "SELECT task_id, status, warehouse FROM wms_pick_task WHERE task_id = ?", taskId);
+        if (h.isEmpty()) throw new IllegalArgumentException("拣货任务不存在：" + taskId);
+        warehouseResolver.assertIfPda(str(h.get(0).get("warehouse")));
+        String status = str(h.get(0).get("status"));
+        if ("PICKING".equals(status) || "PICKED".equals(status)) {
+            throw new IllegalArgumentException("任务已开始拣货，不能撤回");
+        }
+        jdbc.update("""
+                UPDATE wms_pick_task SET assignee = NULL, assign_type = 'FREE', status = 'PENDING',
+                    claimed_at = NULL, help_task = 'N' WHERE task_id = ?
+                """, taskId);
+        TmsUtil.log(jdbc, "wms.pick", "RECALL", taskId, operator + " 撤回任务指派");
+        return Map.of("taskId", taskId, "status", "PENDING");
+    }
+
+    /** 校验目标用户启用且绑定当前 PDA 登录仓（task assign/transfer 共用）。 */
+    void assertUserInCurrentWarehouse(String username) {
+        String whId = warehouseResolver.currentWarehouseId();
+        Integer n = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM sys_user_runtime u
+                JOIN sys_user_warehouse uw ON uw.user_id = u.user_id
+                WHERE u.username = ? AND COALESCE(u.status,'NORMAL') = 'NORMAL'
+                  AND uw.warehouse_id = ?
+                """, Integer.class, username.trim(), whId);
+        if (n == null || n == 0) {
+            throw new IllegalArgumentException("用户「" + username + "」不存在、已停用或未绑定当前作业仓库");
+        }
+    }
+
+    /** 写一条出库异常单，返回异常单号。 */
+    private String insertException(String waveId, String orderNo, String goodsCode, String type,
+                                   BigDecimal qty, String description, String operator) {
+        String exNo = billNo.nextNo(BillNoGenerator.BillType.WMS_EXCEPTION, "wms_exception", "exception_no");
+        jdbc.update("""
+                INSERT INTO wms_exception (exception_id, exception_no, wave_id, wave_no, source_order_no,
+                    goods_code, exception_type, qty, status, description, reporter, source_type, priority, created_at)
+                VALUES (?, ?, ?, (SELECT wave_no FROM wms_wave WHERE wave_id = ?), ?, ?, ?, ?, 'OPEN', ?, ?, 'OUTBOUND', 'MEDIUM', CURRENT_TIMESTAMP)
+                """, id("EX"), exNo, emptyToNull(waveId), emptyToNull(waveId), emptyToNull(orderNo),
+                emptyToNull(goodsCode), type, qty, description, operator);
+        return exNo;
     }
 
     // ==================== 内部辅助 ====================

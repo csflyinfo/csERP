@@ -282,3 +282,38 @@
 - 真实后端 e2e（夹具 RBAC8LOW 零菜单角色 + rbac8low 用户）：admin user-tree 三级实证（finance > finance.gl(DIR) > 16 个 PAGE 含 voucher）且 147 映射码全覆盖、admin_only 的 system.menu 超管可见；零菜单用户树为空、按守卫同构规则除 /dashboard 外 146 路径全拦截、/system/perm/mine 自助可取、业务接口 HTTP 403（无操作权限：sales.order.view）；授「sales 根+sales.order」后树仅 2 码、/sales-order 放行而 /ar、/gl-voucher、/wms-pick、/user 全拦、非超管树无 system.menu；**菜单可见但零功能点时数据接口仍 403**（菜单裁剪≠功能授权的关键边界）。
 - 门槛：roleCode ADMIN grep 清零；新增文件无 console.log；`npm run build` ✓ built；后端本卡零改动，fat jar 复跑启动权限同步新增0、fail-fast 通过。
 - 数据安全：操作前备份 backend/data/backups/erp-v1.pre-rbac8-verify-20260910-051043.mv.db；夹具验收后停服 H2 Shell 精确清理（user/role + user_role/user_data_scope/user_warehouse/pwd_history/role 四 rel/login_log），H2 直查 after-user=0、after-role=0、双 orphan-rel=0；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；tmp-rbac8/ 验收后整目录删除。
+
+### 2026-09-10 卡片9 落地：PDA 工号选仓登录 + 六角色矩阵 + 仓库硬隔离（feat/rbac-8-pda-login，V107）
+
+> M3 移动权限卡。后端 PDA 端 58 个端点全部纳管（57 个 @RequirePerm + /login 豁免），Flutter 端登录/菜单/按钮全链路按授权裁剪；启动同步日志「菜单 192 / 功能点 1666 / PDA 六角色授权 199 行」。
+
+**后端**
+
+- `V107__rbac_pda_role_grants.sql`：唯一内容是给内置 R_WMS_LEADER 幂等补 `VIEW_COST`/`VIEW_COST_AMOUNT` 两个字段授权（MERGE 式存在即跳过）；六角色菜单/功能点授权不再用 SQL 维护，统一由 `PermissionRegistry.PDA_ROLE_FUNCS` 矩阵在启动时**幂等对账**（先删矩阵外 wms_pda 授权再补齐缺失，代码即唯一授权来源；非 wms_pda 授权与自定义角色不动）。
+- `WmsPdaAuthService` + `POST /wms/app/login`：工号+密码两步选仓——0 绑定仓 400 拒绝、单绑定仓直发 token、多仓返回 `needWarehouse+warehouses` 不发 token，第二步带非绑定 warehouseId 返回 400「未绑定所选仓库」；SYS_ADMIN 不绑仓也可登录（端内选仓，功能校验短路）。JWT claims：`sub`=工号、userId、displayName、roleCodes、appType=WMS_PDA、warehouseId、employeeId。登录载荷含 token/user/warehouses/menus 树/funcs/fields/superAdmin/参数快照（盲收/容差/复检等 PARAM_KEYS）。
+- `PdaAppGuardInterceptor`：`/wms/app/**`（除 /login）强制 WMS_PDA appType，ERP/DRIVER 旧令牌与无令牌一律 HTTP 401 JSON（`请使用 PDA 重新登录（选择作业仓库）`）。
+- `WmsAppController`：58 端点全部 CurrentUser 化——`operator()` 只认 JWT，忽略请求体 operator；create_by/receiver/assignee/绩效操作人落自然人。同端点多动作用 `@RequirePerm(alsoRegister=...)` 注册载荷码 + 方法体 `checkPerm` 分支裁决（check/pass 的 scan/pack、load/ship 的 scan、入库三组 view/scan/confirm、绩效 view_team/export、盘点 bins 的 scan、库存批次/成本、首页 profile 三开关、receive 的 start/print_label/over_receive、putaway 的 scan/free_bin/split、拣货 all 范围的 assign.view）。
+- `WmsWarehouseResolver`：token warehouseId→仓库名每请求解析（空名兜底总仓），全部 PDA 查询强制当前仓；`assertIfPda/assertCurrent` 对跨仓详情/操作抛 IllegalArgumentException「该单据属于仓库「X」，非当前作业仓库「Y」，禁止操作」。
+- `WmsInboundService.recheck`：PDA 请求且参数 `WMS_RECHECK_SELF_NG=1`（**默认 1=禁止**，方案旧文 "=0" 为笔误已更正）时 receiver=当前人即拒「不能复检本人收货单」；超收在 service 层校验 `wms_pda.receive.over_receive` + 必填原因。
+- 库存查询：批次列受 view_batch、成本单价/金额受 view_cost 功能 + VIEW_COST/VIEW_COST_AMOUNT 字段**双控**（service 内列裁剪/金额清零）。
+
+**Flutter（wms_pda_app，无新依赖）**
+
+- 登录页两步式（工号密码 → 多仓选仓列表），首登改密强制、dio 401 统一清会话回登录页；`AuthService` 持有 menus 树/funcs/fields/参数快照，提供 hasMenu/can/字段判定。
+- 首页卡片完全由 menus 派生：**仅 view/view_self 类功能点派生页面菜单**（纯动作授权如 PUTAWAY 的 move.confirm、PICKER 的 replenish.urgent 不再产生打不开的卡片）；异常/绩效是全员菜单但首页卡片仅管理者可见（handle|assign / view_team），普通作业员从「我的」页"异常中心/我的绩效"进入。收货员首页严格 4 卡（PDA-002）。
+- `pda_perms.dart` 65 个功能码常量与后端逐字一致；全 App 53 处 `can(PdaPerm.xxx)` 按钮闸门 + 页面分组入库 receiveGroupView/Scan/Confirm 按入库类型切换码；`flutter analyze` 零 issue。
+- 预留功能点（home.scan 全局扫码、putaway.scan 扫托、putaway.split 拆托、replenish.urgent 加急按钮）后端已注册并强制、本期前端无入口，后续补按钮直接按 funcs 裁剪。
+
+**验收（backend/tmp-card9-accept/accept.js，46 断言全绿，脚本用后即删）**
+
+- PDA-001（8）：单仓直发；JWT appType/warehouseId/sub 三 claims；ERP token 与无令牌访问 /wms/app/* 均 401；错密 400「账号或密码错误」。
+- PDA-002（16）：多仓第一步 needWarehouse 且无 token；收货员菜单恰为 receive/receive_return/other_inbound/stock_query 四页，pick/check/load/putaway/stocktake/move/damage/task_assign 全无；首页卡片 deep-equal 恰好 4 张；PUTAWAY 持 move.confirm 不出现移库卡但有上架/补货卡。
+- PDA-003（4）：c9recv 开始→逐行收货→完成（WMS_RECHECK_ENABLED=1/MODE=0 进 RECHECK）；PC 端核对任务 receiver=工号 c9recv，非管理员/系统管理员。
+- PDA-004（4）：复制 PICKER 建自定义角色 WMS_PICK_C9 去掉 pick.short_pick——菜单仍在、funcs 已无该码（按钮隐藏依据）；直调 /pick/short-pick 403；正常 PICKER 同接口权限层放行。
+- PDA-005（2）：本人收货本人复检 400「不能复检本人收货单」；他人（KEEPER）复检通过进 PUTAWAY。
+- PDA-006（5）：本人绩效 200、全仓 403、导出 403；LEADER 全仓/导出均 200。
+- PDA-007（7）：A 仓任务列表只见 A 不见 B；A token 操作 B 单详情 400 跨仓拒绝；选未绑定仓 400；重登 B 后 JWT warehouseId=B 且只见 B 任务。
+- 权限对拍：docs/perm-inventory.md 启动自动重生成（793 端点 / 566 已挂），wms 段 58 个 app 端点 57 挂注解；前端 65 常量 == Controller 65 功能码（双向差集为空），矩阵 66 码仅多 home.view（首页菜单派生用）。
+- 过程坑：卡片6/7 验收残留的 R6_SUP 孤儿收货任务（采购单已删、任务未删，仓库=总仓）占用了 RK/CGDD 当日 MAX+1 序号，导致本卡脚本按单号捞到旧任务误判 PDA-003；停服 H2 Shell 查明后精确删除孤儿任务与 S_C9 单据（先备份 backups/erp-v1.pre-cleanup-c9.*），重跑全绿。
+- 数据安全：操作前备份 H2；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；验收后停服精确清理 C9 夹具（用户/自定义角色/仓库/供应商/商品/单据/参数复位），tmp-card9-accept/ 与 tmp-card9-boot.log 用后即删。
+

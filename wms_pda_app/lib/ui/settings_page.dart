@@ -47,10 +47,9 @@ class _SettingsPageState extends State<SettingsPage> {
               final normalized = v.isEmpty ? '' : AppConfig.normalize(v);
               await AppConfig.saveOverride(normalized);
               ApiService.instance.applyBaseUrl();
-              if (mounted) {
-                toast(context, '已保存：${AppConfig.apiBase}');
-                Navigator.pop(context);
-              }
+              if (!mounted) return;
+              toast(this.context, '已保存：${AppConfig.apiBase}');
+              Navigator.pop(this.context);
             },
           ),
           const SizedBox(height: 8),
@@ -61,8 +60,9 @@ class _SettingsPageState extends State<SettingsPage> {
               await AppConfig.saveOverride('');
               ApiService.instance.applyBaseUrl();
               _c.clear();
-              if (mounted) setState(() {});
-              if (mounted) toast(context, '已恢复默认：${AppConfig.defaultApiBase}');
+              if (!mounted) return;
+              setState(() {});
+              toast(this.context, '已恢复默认：${AppConfig.defaultApiBase}');
             },
           ),
         ],

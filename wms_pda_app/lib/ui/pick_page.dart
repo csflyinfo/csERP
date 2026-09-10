@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import '../config/pda_perms.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 
-/// 拣货作业：我的 / 可支援 / 全部 三个 tab，
-/// 点任务进详情 → 逐行扫商品（pickItem）→ 全部拣完 completeTask。
+/// 拣货作业：我的 / 可支援 /（主管）全部 tab。
+///
+/// PRD-28 卡片9：tab 数量与按钮全部按功能点裁剪——
+/// - pick.view 看列表，task_assign.view 才有"全部"池；
+/// - pick.start 领取、pick.scan 扫码拣货、pick.confirm 完成；
+/// - pick.short_pick 缺货上报、pick.skip 跳过、pick.transfer 转交；
+/// 隐藏按钮直调仍会被后端 403（PDA-004）。
 class PickPage extends StatefulWidget {
   const PickPage({super.key});
   @override
@@ -14,78 +22,113 @@ class PickPage extends StatefulWidget {
 class _PickPageState extends State<PickPage>
     with SingleTickerProviderStateMixin {
   final _svc = WmsAppService.instance;
-  late final TabController _tab = TabController(length: 3, vsync: this);
-  final List<List<dynamic>> _data = [[], [], []];
+  final _auth = AuthService.instance;
+
+  late final List<String> _scopes = [
+    'mine',
+    'help',
+    if (_auth.can(PdaPerm.assignView)) 'all',
+  ];
+  late final TabController _tab =
+      TabController(length: _scopes.length, vsync: this);
+  late final List<List<dynamic>> _data =
+      List.generate(_scopes.length, (_) => const []);
   bool _loading = true;
   Map<String, dynamic>? _detail;
+
+  bool get _canClaim => _auth.can(PdaPerm.pickStart);
+  bool get _canScan => _auth.can(PdaPerm.pickScan);
+  bool get _canComplete => _auth.can(PdaPerm.pickConfirm);
+  bool get _canShort => _auth.can(PdaPerm.pickShort);
+  bool get _canSkip => _auth.can(PdaPerm.pickSkip);
+  bool get _canTransfer => _auth.can(PdaPerm.pickTransfer);
+
+  String _scopeLabel(String s) => switch (s) {
+        'mine' => '我的',
+        'help' => '可支援',
+        'all' => '全部',
+        _ => s,
+      };
 
   @override
   void initState() {
     super.initState();
     _tab.addListener(() {
-      if (!_tab.indexIsChanging) _load();
+      if (!_tab.indexIsChanging) setState(() {});
     });
-    _load();
+    _loadList();
   }
 
-  Future<void> _load() async {
-    if (_detail != null) {
-      // 详情页刷新
-      final id = _detail!['taskId'].toString();
-      try {
-        _detail = await _svc.pickTaskDetail(id);
-      } catch (_) {}
-      if (mounted) setState(() {});
-      return;
-    }
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
+
+  /// 每个 scope 独立容错：主管池 403/网络失败不影响"我的/可支援"。
+  Future<void> _loadList() async {
     setState(() => _loading = true);
-    final scopes = ['mine', 'help', 'all'];
-    try {
-      final r = await Future.wait(scopes.map((s) => _svc.pickTasks(scope: s)));
-      _data[0] = r[0];
-      _data[1] = r[1];
-      _data[2] = r[2];
-    } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    final results = await Future.wait(
+      _scopes.map((s) async {
+        try {
+          return await _svc.pickTasks(scope: s);
+        } catch (_) {
+          return <dynamic>[];
+        }
+      }),
+    );
+    for (var i = 0; i < results.length; i++) {
+      _data[i] = results[i];
     }
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _refreshDetail() async {
+    final id = _detail!['taskId'].toString();
+    try {
+      _detail = await _svc.pickTaskDetail(id);
+    } catch (e) {
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
+    }
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
     if (_detail != null) return _buildDetail();
-    return PdaScaffold(
-      title: '拣货作业',
-      onRefresh: _load,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            color: PdaTheme.surface,
-            child: TabBar(
-              controller: _tab,
-              labelColor: PdaTheme.primary,
-              indicatorColor: PdaTheme.primary,
-              unselectedLabelColor: PdaTheme.textSecondary,
-              tabs: [
-                Tab(text: '我的 (${_data[0].length})'),
-                Tab(text: '可支援 (${_data[1].length})'),
-                Tab(text: '全部 (${_data[2].length})'),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: PdaTheme.primary))
-                : TabBarView(
-                    controller: _tab,
-                    children: List.generate(3, (i) => _taskList(_data[i])),
-                  ),
-          ),
-        ],
+    // 不用 PdaScaffold：内部 Expanded 与它的 ListView 包裹冲突（见 receive_page 注释）。
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('拣货作业'),
+        bottom: TabBar(
+          controller: _tab,
+          labelColor: PdaTheme.primary,
+          indicatorColor: PdaTheme.primary,
+          unselectedLabelColor: PdaTheme.textSecondary,
+          tabs: [
+            for (var i = 0; i < _scopes.length; i++)
+              Tab(text: '${_scopeLabel(_scopes[i])} (${_data[i].length})'),
+          ],
+        ),
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _loadList,
+          color: PdaTheme.primary,
+          child: _loading
+              ? ListView(children: const [
+                  SizedBox(
+                      height: 200,
+                      child: Center(
+                          child: CircularProgressIndicator(
+                              color: PdaTheme.primary)))
+                ])
+              : TabBarView(
+                  controller: _tab,
+                  children: List.generate(
+                      _scopes.length, (i) => _taskList(_data[i])),
+                ),
+        ),
       ),
     );
   }
@@ -122,8 +165,8 @@ class _PickPageState extends State<PickPage>
                 ),
               const SizedBox(width: 6),
               Text(_statusText(status),
-                  style: TextStyle(
-                      fontSize: 11, color: _statusColor(status))),
+                  style:
+                      TextStyle(fontSize: 11, color: _statusColor(status))),
             ]),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,8 +192,13 @@ class _PickPageState extends State<PickPage>
   Future<void> _openTask(Map<String, dynamic> task) async {
     final taskId = task['taskId'].toString();
     final status = pickStr(task, ['status']);
-    final needClaim = status == 'PENDING' && pickStr(task, ['assignee']).isEmpty;
+    final needClaim =
+        status == 'PENDING' && pickStr(task, ['assignee']).isEmpty;
     if (needClaim) {
+      if (!_canClaim) {
+        toast(context, '无领取拣货任务权限：wms_pda.pick.start', error: true);
+        return;
+      }
       final ok = await runWithBusy(
         context,
         () => _svc.pickClaim(taskId, help: _tab.index == 1),
@@ -159,13 +207,11 @@ class _PickPageState extends State<PickPage>
       if (ok == null) return;
     }
     if (!mounted) return;
-    setState(() => _loading = true);
     try {
       _detail = await _svc.pickTaskDetail(taskId);
+      setState(() {});
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     }
   }
 
@@ -185,11 +231,17 @@ class _PickPageState extends State<PickPage>
     return PdaScaffold(
       title: pickStr(m, ['taskNo', 'task_no'], '拣货详情'),
       actions: [
+        if (_canTransfer)
+          IconButton(
+            tooltip: '转交任务',
+            onPressed: _transferDialog,
+            icon: const Icon(Icons.swap_horiz),
+          ),
         IconButton(
             onPressed: () => setState(() => _detail = null),
             icon: const Icon(Icons.list_alt)),
       ],
-      onRefresh: _load,
+      onRefresh: _refreshDetail,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -204,43 +256,83 @@ class _PickPageState extends State<PickPage>
             final lm = Map<String, dynamic>.from(l as Map);
             final required = pickNum(lm, ['requiredQty', 'required_qty']);
             final got = pickNum(lm, ['pickedQty', 'picked_qty']);
-            final done = got >= required && required > 0;
+            final lineStatus = pickStr(lm, ['status']);
+            final short = lineStatus == 'SHORT';
+            final done = short || (got >= required && required > 0);
             final bin = pickStr(lm, ['allocBinCode', 'alloc_bin_code']);
             final zone = pickStr(lm, ['allocZoneCode', 'alloc_zone_code']);
-            final sortDest = pickStr(lm, ['sortDestination', 'sort_destination']);
+            final sortDest =
+                pickStr(lm, ['sortDestination', 'sort_destination']);
             return ProductRow(
               name: pickStr(lm, ['goodsName', 'goods_name'], '未命名'),
               code:
                   '${pickStr(lm, ['goodsCode', 'goods_code'])} · $zone $bin 应拣 $required'
                   '${sortDest.isNotEmpty ? '\n分播→$sortDest' : ''}',
-              qtyLabel: done ? '$got' : (got > 0 ? '$got/$required' : '--'),
-              qtyUnit: done ? '已拣' : '待拣',
-              qtyColor: done ? PdaTheme.primary : null,
-              statusIcon: done ? Icons.check_circle : Icons.radio_button_unchecked,
-              statusColor: done ? PdaTheme.primary : PdaTheme.textSecondary,
+              qtyLabel: short ? '缺' : (done ? '$got' : (got > 0 ? '$got/$required' : '--')),
+              qtyUnit: short ? '缺货' : (done ? '已拣' : '待拣'),
+              qtyColor: short
+                  ? PdaTheme.danger
+                  : (done ? PdaTheme.primary : null),
+              statusIcon: short
+                  ? Icons.error_outline
+                  : (done
+                      ? Icons.check_circle
+                      : Icons.radio_button_unchecked),
+              statusColor: short
+                  ? PdaTheme.danger
+                  : (done ? PdaTheme.primary : PdaTheme.textSecondary),
               onTap: done ? null : () => _pickItemDialog(lm),
+              trailing: (!done && (_canShort || _canSkip))
+                  ? PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onSelected: (v) {
+                        if (v == 'short') _shortDialog(lm);
+                        if (v == 'skip') _skipDialog(lm);
+                      },
+                      itemBuilder: (_) => [
+                        if (_canShort)
+                          const PopupMenuItem(
+                              value: 'short',
+                              child: Text('缺货上报')),
+                        if (_canSkip)
+                          const PopupMenuItem(
+                              value: 'skip', child: Text('跳过商品')),
+                      ],
+                    )
+                  : null,
             );
           }),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            icon: const Icon(Icons.done_all),
-            label: const Text('拣货完成'),
-            onPressed: () async {
-              await runWithBusy(
-                context,
-                () => _svc.pickComplete(m['taskId'].toString()),
-                successMsg: '拣货完成，任务已提交',
-              );
-              setState(() => _detail = null);
-              _load();
-            },
-          ),
+          if (_canComplete)
+            ElevatedButton.icon(
+              icon: const Icon(Icons.done_all),
+              label: const Text('拣货完成'),
+              onPressed: () async {
+                await runWithBusy(
+                  context,
+                  () => _svc.pickComplete(m['taskId'].toString()),
+                  successMsg: '拣货完成，任务已提交',
+                );
+                setState(() => _detail = null);
+                _loadList();
+              },
+            ),
+          if (!_canScan && !_canComplete)
+            const PdaAlert(
+              text: '当前账号只有查看权限，不能扫码拣货或提交完成',
+              color: PdaTheme.textSecondary,
+              icon: Icons.lock_outline,
+            ),
         ],
       ),
     );
   }
 
   Future<void> _pickItemDialog(Map<String, dynamic> line) async {
+    if (!_canScan) {
+      toast(context, '无扫码拣货权限：wms_pda.pick.scan', error: true);
+      return;
+    }
     final qtyCtrl = TextEditingController(text: '1');
     final binCtrl = TextEditingController(
         text: pickStr(line, ['allocBinCode', 'alloc_bin_code']));
@@ -255,8 +347,8 @@ class _PickPageState extends State<PickPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-                '库位：${pickStr(line, ['allocBinCode', 'alloc_bin_code'])} · 批次：${pickStr(line, ['allocBatchNo', 'alloc_batch_no'])}',
-                style: PdaStyles.sub),
+              '库位：${pickStr(line, ['allocBinCode', 'alloc_bin_code'])} · 批次：${pickStr(line, ['allocBatchNo', 'alloc_batch_no'])}',
+              style: PdaStyles.sub),
             const SizedBox(height: 12),
             TextField(
               controller: qtyCtrl,
@@ -294,13 +386,185 @@ class _PickPageState extends State<PickPage>
                 ),
                 successMsg: '已登记拣货',
               );
-              if (r != null) _load();
+              if (r != null) _refreshDetail();
             },
             child: const Text('确认拣货'),
           ),
         ],
       ),
     );
+  }
+
+  /// 缺货上报：缺货数量可空（整行），原因必填。
+  Future<void> _shortDialog(Map<String, dynamic> line) async {
+    final qtyCtrl = TextEditingController();
+    final reasonCtrl = TextEditingController();
+    String? error;
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          backgroundColor: PdaTheme.surface,
+          title: const Text('缺货上报'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(pickStr(line, ['goodsName', 'goods_name']),
+                  style: PdaStyles.title),
+              const SizedBox(height: 10),
+              TextField(
+                controller: qtyCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: '缺货数量（空=按整行未拣计）'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: reasonCtrl,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: '缺货原因 *', hintText: '例如：库位无货、破损'),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!,
+                    style: const TextStyle(
+                        fontSize: 13, color: PdaTheme.danger)),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+            ElevatedButton(
+              onPressed: () async {
+                if (reasonCtrl.text.trim().isEmpty) {
+                  setDialog(() => error = '请填写缺货原因');
+                  return;
+                }
+                final shortQty = num.tryParse(qtyCtrl.text.trim());
+                Navigator.pop(ctx);
+                final r = await runWithBusy(
+                  context,
+                  () => _svc.pickShort(
+                    detailId: line['detailId'].toString(),
+                    shortQty: shortQty,
+                    reason: reasonCtrl.text.trim(),
+                  ),
+                  successMsg: '已上报缺货',
+                );
+                if (r != null) _refreshDetail();
+              },
+              child: const Text('提交上报'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 跳过商品：不改明细状态，仅异常单留痕，原因必填。
+  Future<void> _skipDialog(Map<String, dynamic> line) async {
+    final reasonCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: PdaTheme.surface,
+        title: const Text('跳过商品'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(pickStr(line, ['goodsName', 'goods_name']),
+                style: PdaStyles.title),
+            const SizedBox(height: 10),
+            TextField(
+              controller: reasonCtrl,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                  labelText: '跳过原因 *', hintText: '例如：找不到商品，留待后续处理'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              if (reasonCtrl.text.trim().isEmpty) {
+                toast(ctx, '请填写跳过原因', error: true);
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('确认跳过'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      if (!mounted) return;
+      final r = await runWithBusy(
+        context,
+        () => _svc.pickSkip(
+          detailId: line['detailId'].toString(),
+          reason: reasonCtrl.text.trim(),
+        ),
+        successMsg: '已登记跳过',
+      );
+      if (r != null) _refreshDetail();
+    }
+  }
+
+  /// 转交：目标人必须启用且绑定当前仓（后端裁决）。
+  Future<void> _transferDialog() async {
+    final userCtrl = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: PdaTheme.surface,
+        title: const Text('转交拣货任务'),
+        content: TextField(
+          controller: userCtrl,
+          decoration: const InputDecoration(
+            labelText: '接收人工号 / 账号 *',
+            hintText: '对方必须已绑定当前仓库',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              if (userCtrl.text.trim().isEmpty) {
+                toast(ctx, '请填写接收人', error: true);
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('确认转交'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      if (!mounted) return;
+      final r = await runWithBusy(
+        context,
+        () => _svc.pickTransfer(
+          taskId: _detail!['taskId'].toString(),
+          toAssignee: userCtrl.text.trim(),
+        ),
+        successMsg: '任务已转交',
+      );
+      if (r != null) {
+        setState(() => _detail = null);
+        _loadList();
+      }
+    }
   }
 
   String _statusText(String s) {

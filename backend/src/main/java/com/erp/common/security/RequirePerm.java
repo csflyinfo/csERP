@@ -32,4 +32,15 @@ public @interface RequirePerm {
 
     /** 功能类型：BUTTON / ACTION / API，默认 BUTTON。 */
     String type() default "BUTTON";
+
+    /**
+     * 同端点「按载荷分派」的额外功能码（PRD-28 卡片9，PDA 多动作共用端点场景）。
+     *
+     * <p>这些功能码只注册进 sys_func_meta（可在角色配置页授权、按钮可裁剪），
+     * <b>不被拦截器自动校验</b>；方法体内必须用 {@link PermissionService#hasFunc(String)}
+     * 按请求参数逐分支裁决（无权限抛 {@link PermissionDeniedException}）。
+     * 例如 /wms/app/inbound/receive 按入库类型分派 receive.scan / receive_return.scan，
+     * 短拣/超收/改放库位等子动作同端点按参数裁决，均在此声明。
+     */
+    String[] alsoRegister() default {};
 }

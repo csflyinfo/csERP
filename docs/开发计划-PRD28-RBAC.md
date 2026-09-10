@@ -159,12 +159,14 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 9 ｜ `feat/rbac-8-pda-login`（M3，V107，约 5d）
 
-- [ ] `POST /wms/app/login`：工号+密码+选仓；JWT 带 `appType=WMS_PDA/warehouseId`；未带该 appType 的旧 token 访问 `/wms/app/*` 返回 401
-- [ ] `WmsAppController` 全部操作改读 CurrentUser，create_by/operator 落到自然人
-- [ ] PDA 菜单/按钮按 §7.2 矩阵裁剪（60+ 按钮逐项核对 perm-inventory）
-- [ ] 仓库强制隔离（所有查询带当前仓）、复检防自检（参数 WMS_RECHECK_SELF_NG）
-- [ ] Flutter 登录页 + 首页按 menus 渲染 + `hasPermission` 包装
-- [ ] PDA 验收 PDA-001~007
+- [x] `POST /wms/app/login`：工号+密码+选仓；JWT 带 `appType=WMS_PDA/warehouseId`；未带该 appType 的旧 token 访问 `/wms/app/*` 返回 401
+- [x] `WmsAppController` 全部操作改读 CurrentUser，create_by/operator 落到自然人
+- [x] PDA 菜单/按钮按 §7.2 矩阵裁剪（60+ 按钮逐项核对 perm-inventory）
+- [x] 仓库强制隔离（所有查询带当前仓）、复检防自检（参数 WMS_RECHECK_SELF_NG）
+- [x] Flutter 登录页 + 首页按 menus 渲染 + `hasPermission` 包装
+- [x] PDA 验收 PDA-001~007
+
+> 落地（2026-09-10）：V107 仅补 R_WMS_LEADER 的 VIEW_COST/VIEW_COST_AMOUNT 字段授权，六角色功能点授权改由 `PermissionRegistry.PDA_ROLE_FUNCS` 启动幂等对账（199 行，矩阵外收回/缺失补齐）。登录两步选仓（0 仓拒绝/单仓直发/多仓 needWarehouse，选非绑定仓 400），JWT `sub`=工号、带 userId/displayName/roleCodes/appType=WMS_PDA/warehouseId/employeeId；`PdaAppGuardInterceptor` 对 ERP/DRIVER 旧令牌访问 /wms/app/** 一律 401。58 个 PDA 端点 57 个挂 @RequirePerm（/login 豁免），同端点多动作用 alsoRegister + checkPerm 分支裁决；WmsWarehouseResolver 按仓库名硬隔离、跨仓操作拒绝；WMS_RECHECK_SELF_NG='1'（默认）防自检。Flutter 端 65 个功能码常量与后端逐字相等、53 处按钮闸门、菜单仅 view/view_self 派生、异常/绩效首页卡仅管理者可见（作业员走「我的」入口）。PDA-001~007 共 46 条断言全绿，详见《优化记录-PRD28-RBAC.md》卡片9 节。
 
 ### 卡片 10 ｜ `feat/rbac-9-driver-login`（M3，V108，约 5d，与卡片 9 可并行）
 

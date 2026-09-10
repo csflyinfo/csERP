@@ -33,10 +33,13 @@ public class WmsContainerService {
 
     private final JdbcTemplate jdbc;
     private final BillNoGenerator billNo;
+    private final WmsWarehouseResolver warehouseResolver;
 
-    public WmsContainerService(JdbcTemplate jdbc, BillNoGenerator billNo) {
+    public WmsContainerService(JdbcTemplate jdbc, BillNoGenerator billNo,
+                               WmsWarehouseResolver warehouseResolver) {
         this.jdbc = jdbc;
         this.billNo = billNo;
+        this.warehouseResolver = warehouseResolver;
     }
 
     /** 容器列表，按仓库/状态/关键字过滤。 */
@@ -47,6 +50,9 @@ public class WmsContainerService {
                 FROM wms_container WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        // PRD-28 卡片9：PDA 强制当前作业仓
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) warehouse = pdaWh;
         if (warehouse != null && !warehouse.isBlank()) {
             sql.append(" AND warehouse = ?"); args.add(warehouse);
         }
@@ -76,6 +82,8 @@ public class WmsContainerService {
             throw new IllegalArgumentException("容器 " + containerCode + " 未建档，请先在 PC 端建档或点击【新建容器】");
         }
         Map<String, Object> c = rows.get(0);
+        // PRD-28 卡片9：禁止 PDA 扫描别仓容器（PDA-007）
+        warehouseResolver.assertIfPda(TmsUtil.str(c.get("warehouse")));
         // 当前任务里的收货明细（已收）
         String currentTaskId = TmsUtil.str(c.get("currentTaskId"));
         if (!currentTaskId.isBlank()) {
@@ -97,6 +105,8 @@ public class WmsContainerService {
     @Transactional
     public Map<String, Object> create(String code, String type, String warehouse,
                                       String zoneCode, String binCode, String remark, String operator) {
+        // PRD-28 卡片9：PDA 建档强推当前登录仓
+        if (warehouseResolver.isPda()) warehouse = warehouseResolver.currentWarehouseName();
         String finalCode = (code == null || code.isBlank())
                 ? billNo.nextNo(BillNoGenerator.BillType.WMS_INBOUND, "wms_container", "container_code")
                         .replace("RK", "RQ")
@@ -105,7 +115,7 @@ public class WmsContainerService {
                 "SELECT COUNT(*) FROM wms_container WHERE container_code = ?",
                 Integer.class, finalCode);
         if (exists != null && exists > 0) {
-            throw new IllegalStateException("容器编号已存在：" + finalCode);
+            throw new IllegalArgumentException("容器编号已存在：" + finalCode);
         }
         String id = "CT" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String finalType = (type == null || type.isBlank()) ? "TOTE" : type;
@@ -121,6 +131,11 @@ public class WmsContainerService {
 
     /** 容器内的收货项（PDA 扫容器后展示用）。 */
     public List<Map<String, Object>> taskContents(String containerCode) {
+        // PDA 仓隔离：容器归属仓必须是当前登录仓
+        List<String> whRows = jdbc.queryForList(
+                "SELECT warehouse FROM wms_container WHERE container_code = ?", String.class, containerCode);
+        if (whRows.isEmpty()) throw new IllegalArgumentException("容器不存在：" + containerCode);
+        warehouseResolver.assertIfPda(whRows.get(0));
         return TmsUtil.queryCamel(jdbc, """
                 SELECT d.goods_code, d.goods_name, d.spec, d.unit_name, d.batch_no, d.production_date,
                        d.container_code, SUM(COALESCE(d.received_qty,0)) AS qty
@@ -144,13 +159,17 @@ public class WmsContainerService {
     /** 手工释放容器（仅 IN_USE 可释放，用于异常场景；整单上架完会自动释放）。 */
     @Transactional
     public Map<String, Object> release(String containerCode, String operator) {
+        List<Map<String, Object>> h = jdbc.queryForList(
+                "SELECT warehouse FROM wms_container WHERE container_code = ?", containerCode);
+        if (h.isEmpty()) throw new IllegalArgumentException("容器不存在：" + containerCode);
+        warehouseResolver.assertIfPda(TmsUtil.str(h.get(0).get("warehouse")));
         int n = jdbc.update("""
                 UPDATE wms_container SET status='EMPTY', current_task_id=NULL, current_task_no=NULL,
                     bound_at=NULL, bound_by=NULL
                 WHERE container_code = ? AND status = 'IN_USE'
                 """, containerCode);
         if (n == 0) {
-            throw new IllegalStateException("容器 " + containerCode + " 当前不是使用中状态，不能释放");
+            throw new IllegalArgumentException("容器 " + containerCode + " 当前不是使用中状态，不能释放");
         }
         Map<String, Object> r = new LinkedHashMap<>();
         r.put("containerCode", containerCode);

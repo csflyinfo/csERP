@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../theme/pda_theme.dart';
 
 /// 顶部带图标的大扫码区。PDA 扫码枪以键盘输入方式工作，这里就是一个
@@ -304,6 +305,7 @@ class PdaScaffold extends StatelessWidget {
   final List<Widget>? actions;
   final List<Widget>? bottomButtons;
   final Future<void> Function()? onRefresh;
+  final Widget? floatingActionButton;
   const PdaScaffold({
     super.key,
     required this.title,
@@ -311,6 +313,7 @@ class PdaScaffold extends StatelessWidget {
     this.actions,
     this.bottomButtons,
     this.onRefresh,
+    this.floatingActionButton,
   });
 
   @override
@@ -335,6 +338,7 @@ class PdaScaffold extends StatelessWidget {
         actions: actions,
       ),
       body: SafeArea(child: content),
+      floatingActionButton: floatingActionButton,
       bottomNavigationBar: bottomButtons == null
           ? null
           : Container(
@@ -395,7 +399,7 @@ Future<T?> runWithBusy<T>(
   } catch (e) {
     if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
     if (context.mounted) {
-      toast(context, '❌ $e', error: true);
+      toast(context, ApiService.friendlyError(e), error: true);
     }
     return null;
   }

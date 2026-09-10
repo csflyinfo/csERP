@@ -1,5 +1,6 @@
 package com.erp.wms;
 
+import com.erp.common.security.CurrentUser;
 import com.erp.tms.TmsUtil;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -34,9 +35,21 @@ import java.util.Map;
 public class WmsBindingService {
 
     private final JdbcTemplate jdbc;
+    private final WmsWarehouseResolver warehouseResolver;
 
-    public WmsBindingService(JdbcTemplate jdbc) {
+    public WmsBindingService(JdbcTemplate jdbc, WmsWarehouseResolver warehouseResolver) {
         this.jdbc = jdbc;
+        this.warehouseResolver = warehouseResolver;
+    }
+
+    /**
+     * 操作人解析（PRD-28 卡片9）：PDA 请求只信令牌上的自然人，忽略 body.operator
+     * （防止伪造成「管理员」）；PC 请求沿用 body 传入值，缺省取当前登录用户。
+     */
+    private String resolveOperator(Map<String, Object> req) {
+        CurrentUser.Principal p = CurrentUser.get();
+        if (warehouseResolver.isPda() && p != null) return p.username();
+        return strOr(req.get("operator"), TmsUtil.currentUser());
     }
 
     /** 绑定列表（可按仓库/库区/库位/商品筛选）。 */
@@ -53,6 +66,9 @@ public class WmsBindingService {
                 WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        // PRD-28 卡片9：PDA 强制当前作业仓（PDA-007），忽略 body 仓库参数
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) warehouse = pdaWh;
         if (notBlank(warehouse))   { sql.append(" AND b.warehouse = ?");  args.add(warehouse); }
         if (notBlank(zoneCode))    { sql.append(" AND b.zone_code = ?");  args.add(zoneCode); }
         if (notBlank(binCode))     { sql.append(" AND b.bin_code = ?");   args.add(binCode); }
@@ -71,7 +87,8 @@ public class WmsBindingService {
     /** 绑定（或在已存在记录上重新激活 + 更新阈值）。 */
     @Transactional
     public Map<String, Object> bind(Map<String, Object> req) {
-        String warehouse = str(req.get("warehouse"));
+        String warehouse = warehouseResolver.isPda()
+                ? warehouseResolver.currentWarehouseName() : str(req.get("warehouse"));
         String zoneCode  = str(req.get("zoneCode"));
         String binCode   = str(req.get("binCode"));
         String goodsCode = str(req.get("goodsCode"));
@@ -101,7 +118,7 @@ public class WmsBindingService {
                     """,
                     id, warehouse, zoneCode, binCode, goodsCode, str(req.get("goodsName")), bindingType,
                     bd(req.get("minQty")), bd(req.get("maxQty")), bd(req.get("replenishToQty")),
-                    str(req.get("remark")), strOr(req.get("operator"), TmsUtil.currentUser()));
+                    str(req.get("remark")), resolveOperator(req));
         } else {
             id = existing;
             jdbc.update("""
@@ -126,6 +143,7 @@ public class WmsBindingService {
                 "SELECT warehouse, bin_code, goods_code FROM wms_bin_goods_binding WHERE binding_id=?", id);
         if (rows.isEmpty()) throw new IllegalArgumentException("绑定不存在：" + id);
         Map<String, Object> r = rows.get(0);
+        warehouseResolver.assertIfPda(str(r.get("warehouse")));
         jdbc.update("UPDATE wms_bin_goods_binding SET active_flag='N', updated_at=CURRENT_TIMESTAMP WHERE binding_id=?", id);
         writeLog(str(r.get("warehouse")), str(r.get("goods_code")),
                 str(r.get("bin_code")), "", "UNBIND", req);
@@ -138,7 +156,8 @@ public class WmsBindingService {
      */
     @Transactional
     public Map<String, Object> transfer(Map<String, Object> req) {
-        String warehouse = str(req.get("warehouse"));
+        String warehouse = warehouseResolver.isPda()
+                ? warehouseResolver.currentWarehouseName() : str(req.get("warehouse"));
         String goodsCode = str(req.get("goodsCode"));
         String fromBin   = str(req.get("fromBin"));
         String toBin     = str(req.get("toBin"));
@@ -173,7 +192,7 @@ public class WmsBindingService {
                     (binding_id, warehouse, zone_code, bin_code, goods_code, binding_type, active_flag, bound_by)
                     VALUES (?, ?, ?, ?, ?, ?, 'Y', ?)
                     """, existingId, warehouse, toZone, toBin, goodsCode, bindingType,
-                    strOr(req.get("operator"), TmsUtil.currentUser()));
+                    resolveOperator(req));
         } else {
             jdbc.update("""
                     UPDATE wms_bin_goods_binding SET active_flag='Y', zone_code=?, updated_at=CURRENT_TIMESTAMP
@@ -189,6 +208,10 @@ public class WmsBindingService {
     public Map<String, Object> updateThresholds(Map<String, Object> req) {
         String id = str(req.get("bindingId"));
         if (id.isBlank()) throw new IllegalArgumentException("bindingId 不能为空");
+        List<Map<String, Object>> exists = jdbc.queryForList(
+                "SELECT warehouse FROM wms_bin_goods_binding WHERE binding_id=?", id);
+        if (exists.isEmpty()) throw new IllegalArgumentException("绑定不存在：" + id);
+        warehouseResolver.assertIfPda(str(exists.get(0).get("warehouse")));
         jdbc.update("""
                 UPDATE wms_bin_goods_binding
                    SET min_qty=?, max_qty=?, replenish_to_qty=?, remark=?, updated_at=CURRENT_TIMESTAMP
@@ -207,6 +230,9 @@ public class WmsBindingService {
 
     /** PDA 快速查询：扫库位/商品得到当前绑定，用于确认与改绑。 */
     public List<Map<String, Object>> lookup(String warehouse, String binCode, String goodsCode) {
+        // PRD-28 卡片9：PDA 扫码核对强制当前仓
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) warehouse = pdaWh;
         StringBuilder sql = new StringBuilder("""
                 SELECT binding_id, warehouse, zone_code, bin_code, goods_code, goods_name,
                        binding_type, min_qty, max_qty, replenish_to_qty, active_flag
@@ -242,7 +268,7 @@ public class WmsBindingService {
                 """,
                 "BL" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
                 warehouse, goodsCode, emptyToNull(fromBin), emptyToNull(toBin), changeType,
-                strOr(req.get("operator"), TmsUtil.currentUser()), source, str(req.get("remark")));
+                resolveOperator(req), source, str(req.get("remark")));
     }
 
     private static boolean notBlank(String s) { return s != null && !s.isBlank(); }

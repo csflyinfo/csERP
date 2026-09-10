@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../config/pda_perms.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
@@ -12,15 +15,6 @@ const Map<String, String> _inboundTypeLabels = {
   'OTHER': '其他入库',
 };
 
-const List<Map<String, String>> _typeTabs = [
-  {'key': '', 'label': '全部'},
-  {'key': 'PURCHASE', 'label': '采购'},
-  {'key': 'SALES_RETURN', 'label': '退货'},
-  {'key': 'TRANSFER', 'label': '调拨'},
-  {'key': 'REJECT', 'label': '拒收'},
-  {'key': 'OTHER', 'label': '其他'},
-];
-
 Color _typeColor(String t) => switch (t) {
       'PURCHASE' => PdaTheme.primary,
       'SALES_RETURN' => PdaTheme.warning,
@@ -30,18 +24,48 @@ Color _typeColor(String t) => switch (t) {
     };
 
 /// 收货任务列表：类型 TAB + 搜索框（供应商/单据号/商品名/条码）。
+///
+/// [fixedType] 非空时从「退货收货 / 其他入库」独立菜单进入：锁定入库类型、
+/// 隐藏类型 TAB，标题随类型变化。TAB 与手工建单按钮按功能点裁剪（§7.2.1）。
 class ReceivePage extends StatefulWidget {
-  const ReceivePage({super.key});
+  /// ''=采购收货菜单（多 TAB）；SALES_RETURN=退货收货；OTHER=其他入库。
+  final String fixedType;
+  const ReceivePage({super.key, this.fixedType = ''});
+
   @override
   State<ReceivePage> createState() => _ReceivePageState();
 }
 
 class _ReceivePageState extends State<ReceivePage> {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   final _searchCtrl = TextEditingController();
-  String _type = '';
+  late String _type = widget.fixedType;
   List<dynamic> _tasks = const [];
   bool _loading = true;
+
+  bool get _fixed => widget.fixedType.isNotEmpty;
+
+  String get _title {
+    if (!_fixed) return '收货作业';
+    return _inboundTypeLabels[widget.fixedType] ?? '收货作业';
+  }
+
+  /// 按功能点过滤后的类型 TAB：无类型查询（"全部"）与采购 TAB 需 receive.view；
+  /// 退货/拒收需 receive_return.view；调拨/其他需 other_inbound.view。
+  List<Map<String, String>> get _allowedTabs {
+    final canPurchase = _auth.can(PdaPerm.receiveView);
+    final canReturn = _auth.can(PdaPerm.returnView);
+    final canOther = _auth.can(PdaPerm.otherView);
+    return [
+      if (canPurchase) {'key': '', 'label': '全部'},
+      if (canPurchase) {'key': 'PURCHASE', 'label': '采购'},
+      if (canReturn) {'key': 'SALES_RETURN', 'label': '退货'},
+      if (canOther) {'key': 'TRANSFER', 'label': '调拨'},
+      if (canReturn) {'key': 'REJECT', 'label': '拒收'},
+      if (canOther) {'key': 'OTHER', 'label': '其他'},
+    ];
+  }
 
   @override
   void initState() {
@@ -64,7 +88,9 @@ class _ReceivePageState extends State<ReceivePage> {
         keyword: _searchCtrl.text.trim(),
       );
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) {
+        toast(context, ApiService.friendlyError(e), error: true);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -74,7 +100,15 @@ class _ReceivePageState extends State<ReceivePage> {
   Widget build(BuildContext context) {
     // 不用 PdaScaffold：它会把 body 包进 ListView，与内部 Expanded 冲突导致列表空白。
     return Scaffold(
-      appBar: AppBar(title: const Text('收货作业')),
+      appBar: AppBar(title: Text(_title)),
+      floatingActionButton:
+          (widget.fixedType == 'OTHER' && _auth.can(PdaPerm.otherAdd))
+              ? FloatingActionButton.extended(
+                  onPressed: _showManualCreate,
+                  icon: const Icon(Icons.add),
+                  label: const Text('手工建单'),
+                )
+              : null,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -83,10 +117,11 @@ class _ReceivePageState extends State<ReceivePage> {
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
               child: _searchBar(),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: _typeTabBar(),
-            ),
+            if (!_fixed && _allowedTabs.length > 1)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: _typeTabBar(),
+              ),
             const SizedBox(height: 8),
             Expanded(
               child: RefreshIndicator(
@@ -98,6 +133,214 @@ class _ReceivePageState extends State<ReceivePage> {
           ],
         ),
       ),
+    );
+  }
+
+  /// 其他入库手工建单（other_inbound.add）：明细至少一行且应收数量 > 0。
+  Future<void> _showManualCreate() async {
+    final remarkCtrl = TextEditingController();
+    final partnerCtrl = TextEditingController();
+    final rows = <Map<String, TextEditingController>>[
+      _newManualRow(),
+    ];
+    String? error;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: PdaTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('其他入库建单', style: PdaStyles.title),
+              const SizedBox(height: 10),
+              TextField(
+                controller: partnerCtrl,
+                decoration: const InputDecoration(
+                  labelText: '往来单位 / 来源说明（可空）',
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (var i = 0; i < rows.length; i++)
+                      _manualRowCard(i, rows[i], () {
+                        if (rows.length > 1) {
+                          setSheet(() => rows.removeAt(i));
+                        }
+                      }),
+                  ],
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加商品行'),
+                  onPressed: () => setSheet(() => rows.add(_newManualRow())),
+                ),
+              ),
+              TextField(
+                controller: remarkCtrl,
+                decoration: const InputDecoration(
+                  labelText: '备注（可空）',
+                  isDense: true,
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!,
+                    style: const TextStyle(
+                        fontSize: 13, color: PdaTheme.danger)),
+              ],
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('提交建单'),
+                onPressed: () async {
+                  final details = <Map<String, dynamic>>[];
+                  for (final r in rows) {
+                    final qty = num.tryParse(r['qty']!.text.trim()) ?? 0;
+                    final goodsCode = r['goodsCode']!.text.trim();
+                    if (goodsCode.isEmpty || qty <= 0) {
+                      setSheet(() => error = '每行必须填写商品编码且数量大于 0');
+                      return;
+                    }
+                    details.add({
+                      'goodsCode': goodsCode,
+                      'goodsName': r['goodsName']!.text.trim(),
+                      'unitName': r['unit']!.text.trim(),
+                      'expectedQty': qty,
+                      'batchNo': r['batchNo']!.text.trim(),
+                      'productionDate': r['prodDate']!.text.trim(),
+                      'expiryDate': r['expiryDate']!.text.trim(),
+                    });
+                  }
+                  try {
+                    await _svc.inboundCreate(
+                      inboundType: 'OTHER',
+                      supplierName: partnerCtrl.text.trim(),
+                      remark: remarkCtrl.text.trim(),
+                      details: details,
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    if (!mounted) return;
+                    toast(context, '建单成功');
+                    _load();
+                  } catch (e) {
+                    setSheet(() =>
+                        error = ApiService.friendlyError(e));
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Map<String, TextEditingController> _newManualRow() => {
+        'goodsCode': TextEditingController(),
+        'goodsName': TextEditingController(),
+        'unit': TextEditingController(text: '件'),
+        'qty': TextEditingController(text: '1'),
+        'batchNo': TextEditingController(),
+        'prodDate': TextEditingController(),
+        'expiryDate': TextEditingController(),
+      };
+
+  Widget _manualRowCard(
+      int i, Map<String, TextEditingController> r, VoidCallback onRemove) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: PdaTheme.surface2,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: PdaTheme.border),
+      ),
+      child: Column(children: [
+        Row(children: [
+          Text('商品 ${i + 1}', style: PdaStyles.label),
+          const Spacer(),
+          if (i > 0)
+            GestureDetector(
+              onTap: onRemove,
+              child: const Icon(Icons.delete_outline,
+                  size: 20, color: PdaTheme.danger),
+            ),
+        ]),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: r['goodsCode'],
+              decoration: const InputDecoration(
+                  labelText: '商品编码 *', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: r['qty'],
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration:
+                  const InputDecoration(labelText: '数量 *', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 72,
+            child: TextField(
+              controller: r['unit'],
+              decoration:
+                  const InputDecoration(labelText: '单位', isDense: true),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        TextField(
+          controller: r['goodsName'],
+          decoration:
+              const InputDecoration(labelText: '商品名称（可空）', isDense: true),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: r['batchNo'],
+              decoration:
+                  const InputDecoration(labelText: '批次号', isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: r['prodDate'],
+              decoration: const InputDecoration(
+                  labelText: '生产日期', hintText: 'YYYY-MM-DD', isDense: true),
+            ),
+          ),
+        ]),
+      ]),
     );
   }
 
@@ -148,14 +391,15 @@ class _ReceivePageState extends State<ReceivePage> {
   }
 
   Widget _typeTabBar() {
+    final tabs = _allowedTabs;
     return SizedBox(
       height: 34,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _typeTabs.length,
+        itemCount: tabs.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
-          final t = _typeTabs[i];
+          final t = tabs[i];
           final selected = _type == t['key'];
           return ChoiceChip(
             label: Text(t['label']!, style: const TextStyle(fontSize: 13)),
@@ -310,11 +554,22 @@ class ReceiveDetailPage extends StatefulWidget {
 class _ReceiveDetailPageState extends State<ReceiveDetailPage>
     with SingleTickerProviderStateMixin {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   final _goodsSearchCtrl = TextEditingController();
   late final TabController _tab = TabController(length: 2, vsync: this);
   Map<String, dynamic>? _detail;
   String _currentContainer = '';
   bool _loading = true;
+
+  /// 按任务实际入库类型裁决功能点（不信列表入参，后端同口径）。
+  String get _taskType =>
+      pickStr(_detail ?? const {}, ['inboundType', 'inbound_type'], 'PURCHASE');
+  bool get _canScan => _auth.can(PdaPerm.receiveGroupScan(_taskType));
+  bool get _canFinish =>
+      _auth.can(PdaPerm.receiveGroupConfirm(_taskType));
+  bool get _canContainer => _auth.can(PdaPerm.receiveScan);
+  bool get _canContainerCreate => _auth.can(PdaPerm.receiveStart);
+  bool get _canRecheck => _auth.can(PdaPerm.receiveRecheck);
 
   @override
   void initState() {
@@ -343,7 +598,7 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
       }
       _currentContainer = c;
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -376,11 +631,18 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
       appBar: AppBar(
         title: Text(widget.taskNo.isEmpty ? '收货详情' : widget.taskNo),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.inventory_2_outlined),
-            tooltip: '容器收货',
-            onPressed: _showContainerSheet,
-          ),
+          if (_detail != null && _canRecheck)
+            IconButton(
+              icon: const Icon(Icons.fact_check_outlined),
+              tooltip: '收货复检',
+              onPressed: _showRecheckSheet,
+            ),
+          if (_detail != null && _canContainer)
+            IconButton(
+              icon: const Icon(Icons.inventory_2_outlined),
+              tooltip: '容器收货',
+              onPressed: _showContainerSheet,
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
@@ -414,7 +676,7 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                 ),
               ]),
             ),
-      bottomNavigationBar: _detail == null
+      bottomNavigationBar: (_detail == null || (!_canContainer && !_canFinish))
           ? null
           : Container(
               padding: const EdgeInsets.all(12),
@@ -423,24 +685,26 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                 border: Border(top: BorderSide(color: PdaTheme.border)),
               ),
               child: Row(children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.qr_code_2, size: 20),
-                    label: Text(_currentContainer.isEmpty
-                        ? '绑定容器'
-                        : '容器：$_currentContainer'),
-                    onPressed: _showContainerSheet,
+                if (_canContainer)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.qr_code_2, size: 20),
+                      label: Text(_currentContainer.isEmpty
+                          ? '绑定容器'
+                          : '容器：$_currentContainer'),
+                      onPressed: _showContainerSheet,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('完成收货'),
-                    onPressed: _finish,
+                if (_canContainer && _canFinish) const SizedBox(width: 10),
+                if (_canFinish)
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('完成收货'),
+                      onPressed: _finish,
+                    ),
                   ),
-                ),
               ]),
             ),
     );
@@ -588,7 +852,7 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
 
     return InkWell(
       borderRadius: BorderRadius.circular(PdaSpacing.radius),
-      onTap: received
+      onTap: (received || !_canScan)
           ? null
           : () async {
               await Navigator.push(
@@ -598,6 +862,10 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                     detail: l,
                     taskId: widget.taskId,
                     defaultContainer: _currentContainer,
+                    inboundType: _taskType,
+                    canOverReceive:
+                        _auth.can(PdaPerm.receiveOver),
+                    canPrintLabel: _auth.can(PdaPerm.receivePrint),
                   ),
                 ),
               );
@@ -742,6 +1010,91 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
     if (mounted) Navigator.pop(context);
   }
 
+  // ---------- 收货复检 ----------
+  /// WMS_RECHECK_SELF_NG=1 时后端拒绝复检本人收货单（"不能复检本人收货单"），
+  /// 前端不预判，统一展示后端中文报错。
+  Future<void> _showRecheckSheet() async {
+    bool passed = true;
+    final remarkCtrl = TextEditingController();
+    String? error;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: PdaTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('收货复检', style: PdaStyles.title),
+              const SizedBox(height: 10),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('复检通过')),
+                  ButtonSegment(value: false, label: Text('复检不通过')),
+                ],
+                selected: {passed},
+                onSelectionChanged: (s) =>
+                    setSheet(() => passed = s.first),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: remarkCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  labelText: passed ? '备注（可空）' : '不通过原因（必填）',
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 8),
+                Text(error!,
+                    style: const TextStyle(
+                        fontSize: 13, color: PdaTheme.danger)),
+              ],
+              const SizedBox(height: 12),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('提交复检'),
+                onPressed: () async {
+                  final remark = remarkCtrl.text.trim();
+                  if (!passed && remark.isEmpty) {
+                    setSheet(() => error = '复检不通过必须填写原因');
+                    return;
+                  }
+                  try {
+                    await _svc.inboundRecheck(
+                      taskId: widget.taskId,
+                      passed: passed,
+                      remark: remark,
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.pop(ctx);
+                    if (!mounted) return;
+                    toast(context, '复检已提交');
+                    _load();
+                  } catch (e) {
+                    setSheet(
+                        () => error = ApiService.friendlyError(e));
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ---------- 容器收货 ----------
   Future<void> _showContainerSheet() async {
     final codeCtrl = TextEditingController(text: _currentContainer);
@@ -768,7 +1121,7 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
         });
       } catch (e) {
         setSheet(() {
-          error = '$e';
+          error = ApiService.friendlyError(e);
           loading = false;
         });
       }
@@ -825,17 +1178,18 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                     ),
                   ]),
                   const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.add_circle_outline, size: 18),
-                      label: const Text('新容器建档'),
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await _showCreateContainer();
-                      },
+                  if (_canContainerCreate)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.add_circle_outline, size: 18),
+                        label: const Text('新容器建档'),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          await _showCreateContainer();
+                        },
+                      ),
                     ),
-                  ),
                   if (loading)
                     const Padding(
                       padding: EdgeInsets.all(16),
@@ -1009,7 +1363,6 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                       final r = await _svc.containerCreate(
                         containerCode: codeCtrl.text.trim(),
                         containerType: type,
-                        warehouse: pickStr(_detail!, ['warehouse'], '总仓'),
                       );
                       if (!ctx.mounted) return;
                       Navigator.pop(ctx);
@@ -1017,7 +1370,9 @@ class _ReceiveDetailPageState extends State<ReceiveDetailPage>
                       setState(() => _currentContainer = code);
                       if (mounted) toast(context, '容器 $code 建档成功');
                     } catch (e) {
-                      if (ctx.mounted) toast(ctx, '$e', error: true);
+                      if (ctx.mounted) {
+                        toast(ctx, ApiService.friendlyError(e), error: true);
+                      }
                     }
                   },
                 ),
@@ -1045,11 +1400,22 @@ class ReceiveLinePage extends StatefulWidget {
   final Map<String, dynamic> detail;
   final String taskId;
   final String defaultContainer;
+
+  /// 任务实际入库类型，用于按组裁决扫码/确认功能点。
+  final String inboundType;
+
+  /// 超收（receive.over_receive）与打印箱签（receive.print_label）载荷权限。
+  final bool canOverReceive;
+  final bool canPrintLabel;
+
   const ReceiveLinePage({
     super.key,
     required this.detail,
     required this.taskId,
     this.defaultContainer = '',
+    this.inboundType = 'PURCHASE',
+    this.canOverReceive = false,
+    this.canPrintLabel = false,
   });
 
   @override
@@ -1058,16 +1424,29 @@ class ReceiveLinePage extends StatefulWidget {
 
 class _ReceiveLinePageState extends State<ReceiveLinePage> {
   final _svc = WmsAppService.instance;
+  final _auth = AuthService.instance;
   late final TextEditingController _qtyCtrl;
   final _batchCtrl = TextEditingController();
   final _remarkCtrl = TextEditingController();
   final _containerCtrl = TextEditingController();
+  final _overReasonCtrl = TextEditingController();
 
   DateTime? _productionDate;
   DateTime? _expiryDate;
   bool _batchManuallyEdited = false;
   String? _dateError;
   bool _submitting = false;
+  bool _printLabel = false;
+
+  /// 本类型扫码收货所需功能点（OTHER/TRANSFER 走 other_inbound.confirm）。
+  bool get _canSubmit =>
+      _auth.can(PdaPerm.receiveGroupScan(widget.inboundType));
+  bool get _canOver => widget.canOverReceive;
+  num get _remaining {
+    final expected = pickNum(widget.detail, ['expectedQty', 'expected_qty']);
+    final got = pickNum(widget.detail, ['receivedQty', 'received_qty']);
+    return expected - got;
+  }
 
   int get _shelfLifeDays =>
       pickNum(widget.detail, ['shelfLifeDays', 'shelf_life_days']).toInt();
@@ -1101,6 +1480,7 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
     _batchCtrl.dispose();
     _remarkCtrl.dispose();
     _containerCtrl.dispose();
+    _overReasonCtrl.dispose();
     super.dispose();
   }
 
@@ -1190,6 +1570,19 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
       toast(context, _dateError!, error: true);
       return;
     }
+    // 超收双控：功能点 + 必填原因（后端 service 还会按容差再裁一次）。
+    final overReason = _overReasonCtrl.text.trim();
+    final isOver = qty > _remaining;
+    if (isOver) {
+      if (!_canOver) {
+        toast(context, '实收数量超过应收数量，你没有超收权限', error: true);
+        return;
+      }
+      if (overReason.isEmpty) {
+        toast(context, '超收必须填写超收原因', error: true);
+        return;
+      }
+    }
     setState(() => _submitting = true);
     try {
       await _svc.inboundReceive(
@@ -1203,13 +1596,15 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
             _expiryDate == null ? '' : _fmtDate(_expiryDate!),
         containerCode: _containerCtrl.text.trim(),
         goodsRemark: _remarkCtrl.text.trim(),
+        printLabel: _printLabel,
+        overReceiveReason: isOver ? overReason : '',
       );
       if (mounted) {
         toast(context, '✅ 收货成功');
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) toast(context, '$e', error: true);
+      if (mounted) toast(context, ApiService.friendlyError(e), error: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -1369,6 +1764,32 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
               ]),
               const SizedBox(height: 14),
 
+              // 打印箱签（receive.print_label）
+              if (widget.canPrintLabel)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  activeThumbColor: PdaTheme.primary,
+                  title: const Text('收货后打印箱签',
+                      style: TextStyle(fontSize: 14)),
+                  value: _printLabel,
+                  onChanged: (v) => setState(() => _printLabel = v),
+                ),
+
+              // 超收原因（receive.over_receive）：录入数大于待收时必填
+              if (_canOver) ...[
+                const Text('超收原因（超收时必填）', style: PdaStyles.label),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: _overReasonCtrl,
+                  style: const TextStyle(
+                      fontSize: 14, color: PdaTheme.textPrimary),
+                  decoration: const InputDecoration(
+                    hintText: '例如：供应商多送 2 件，已现场确认',
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
               // 备注
               const Text('收货备注（可空）', style: PdaStyles.label),
               const SizedBox(height: 6),
@@ -1411,8 +1832,9 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.check),
-              label: const Text('确认收货'),
-              onPressed: _submitting ? null : _submit,
+              label: Text(_canSubmit ? '确认收货' : '无收货权限'),
+              onPressed:
+                  (_submitting || !_canSubmit) ? null : _submit,
             ),
           ),
         ]),

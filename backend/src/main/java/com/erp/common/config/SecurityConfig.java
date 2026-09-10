@@ -60,7 +60,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                     .requestMatchers("/auth/login", "/auth/logout", "/actuator/**", "/h2-console/**").permitAll()
-                    .requestMatchers("/tms/app/login").permitAll()
+                    .requestMatchers("/tms/app/login", "/wms/app/login").permitAll()
                     // 危险端点（冒烟清库 / 业务流程跑批）仅 SYS_ADMIN，防止司机端 888888 登录后越权
                     .requestMatchers("/testing/**", "/flow/**").hasRole("SYS_ADMIN")
                     // 自助查询：任何登录用户只能取「自己的」菜单/权限（服务端按 CurrentUser 过滤），

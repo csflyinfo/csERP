@@ -1,5 +1,6 @@
 package com.erp.wms;
 
+import com.erp.common.security.PermissionService;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.common.util.BillNoGenerator.BillType;
 import com.erp.inventory.service.InventoryCostService;
@@ -37,22 +38,30 @@ import java.util.UUID;
 @Service
 public class WmsInboundService {
 
+    /** 超收授权功能点（PRD-28 §7.2.1：仅 KEEPER/LEADER）。 */
+    public static final String FUNC_OVER_RECEIVE = "wms_pda.receive.over_receive";
+
     private final JdbcTemplate jdbc;
     private final BillNoGenerator billNo;
     private final SysParamService params;
     private final PurchaseController purchaseController;
     private final InventoryCostService inventoryCost;
     private final SalesReturnController salesReturnController;
+    private final WmsWarehouseResolver warehouseResolver;
+    private final PermissionService permissionService;
 
     public WmsInboundService(JdbcTemplate jdbc, BillNoGenerator billNo, SysParamService params,
                              PurchaseController purchaseController, InventoryCostService inventoryCost,
-                             @Autowired(required = false) @Lazy SalesReturnController salesReturnController) {
+                             @Autowired(required = false) @Lazy SalesReturnController salesReturnController,
+                             WmsWarehouseResolver warehouseResolver, PermissionService permissionService) {
         this.jdbc = jdbc;
         this.billNo = billNo;
         this.params = params;
         this.purchaseController = purchaseController;
         this.inventoryCost = inventoryCost;
         this.salesReturnController = salesReturnController;
+        this.warehouseResolver = warehouseResolver;
+        this.permissionService = permissionService;
     }
 
     // ==================== 入库任务列表 / 明细 ====================
@@ -69,6 +78,12 @@ public class WmsInboundService {
                 FROM wms_inbound_task t WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        // PRD-28 卡片9：PDA 查询强制带登录仓，杜绝跨仓看单（PDA-007）
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        if (pdaWh != null) {
+            sql.append(" AND t.warehouse = ?");
+            args.add(pdaWh);
+        }
         if (status != null && !status.isBlank()) {
             sql.append(" AND t.status = ?");
             args.add(status);
@@ -108,6 +123,7 @@ public class WmsInboundService {
                 SELECT * FROM wms_inbound_task WHERE task_id = ?
                 """, taskId);
         if (h.isEmpty()) throw new IllegalArgumentException("入库任务不存在");
+        warehouseResolver.assertIfPda(TmsUtil.str(h.get(0).get("warehouse")));
         Map<String, Object> data = new LinkedHashMap<>(h.get(0));
         // 明细联查商品档案：规格、条码、存储属性、保质期天数，用于 PDA 详情与扫码收货页展示与校验
         List<Map<String, Object>> details = TmsUtil.queryCamel(jdbc, """
@@ -138,6 +154,29 @@ public class WmsInboundService {
         data.put("skuReceived", receivedSku);
         data.put("skuPending", totalSku - receivedSku);
         return data;
+    }
+
+    /**
+     * 按任务头取入库类型（PRD-28 卡片9：PDA 按入库类型分派功能点，
+     * 采购收货 / 退货收货 / 其他入库三组功能码）。任务不存在抛 IllegalArgumentException。
+     */
+    public String inboundTypeOfTask(String taskId) {
+        List<String> r = jdbc.queryForList(
+                "SELECT inbound_type FROM wms_inbound_task WHERE task_id = ?", String.class, taskId);
+        if (r.isEmpty()) throw new IllegalArgumentException("入库任务不存在");
+        String t = r.get(0);
+        return (t == null || t.isBlank()) ? "PURCHASE" : t;
+    }
+
+    /** 按明细行反查入库任务类型（PDA 扫码收货按类型裁决 receive/receive_return/other_inbound）。 */
+    public String inboundTypeOfDetail(String detailId) {
+        List<String> r = jdbc.queryForList(
+                "SELECT t.inbound_type FROM wms_inbound_task t "
+                        + "JOIN wms_inbound_task_detail d ON d.task_id = t.task_id WHERE d.detail_id = ?",
+                String.class, detailId);
+        if (r.isEmpty()) throw new IllegalArgumentException("入库明细不存在");
+        String t = r.get(0);
+        return (t == null || t.isBlank()) ? "PURCHASE" : t;
     }
 
     // ==================== 从来源单生成入库任务 ====================
@@ -285,7 +324,9 @@ public class WmsInboundService {
     @Transactional
     public Map<String, Object> createManual(Map<String, Object> req, String operator) {
         String inboundType = strOr(req.get("inboundType"), "OTHER");
-        String warehouse = strOr(req.get("warehouse"), "总仓");
+        // PDA 端仓库以登录仓为准，不信请求体（PDA-007）
+        String pdaWh = warehouseResolver.pdaWarehouseNameOrNull();
+        String warehouse = pdaWh != null ? pdaWh : strOr(req.get("warehouse"), "总仓");
         String taskId = "IT" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String taskNo = billNo.nextNo(BillType.WMS_INBOUND, "wms_inbound_task", "task_no");
 
@@ -339,23 +380,35 @@ public class WmsInboundService {
                                        LocalDate productionDate, LocalDate expiryDate,
                                        BigDecimal actualWeight, String operator) {
         return receive(detailId, qty, batchNo, productionDate, expiryDate, actualWeight,
-                null, null, operator);
+                null, null, operator, null);
+    }
+
+    /** PC 逐行收货（无容器/备注/超收原因）。 */
+    @Transactional
+    public Map<String, Object> receive(String detailId, BigDecimal qty, String batchNo,
+                                       LocalDate productionDate, LocalDate expiryDate,
+                                       BigDecimal actualWeight, String containerCode,
+                                       String goodsRemark, String operator) {
+        return receive(detailId, qty, batchNo, productionDate, expiryDate, actualWeight,
+                containerCode, goodsRemark, operator, null);
     }
 
     /**
-     * PDA 扫码收货（V86 增强）：
+     * PDA 扫码收货（V86 增强，PRD-28 卡片9 加超收授权）：
      * <ul>
      *   <li>保质期校验：商品 shelf_life_days&gt;0 强制生产日期，过期直接拦截；生产日期不允许晚于今天</li>
      *   <li>批次号：前端传了用前端的（用户手输不覆盖）；前端没传但有生产日期则按 yyyyMMdd 兜底</li>
      *   <li>容器收货：containerCode 非空时绑定到当前任务，后续上架按容器整箱上架</li>
      *   <li>行级备注：goodsRemark 记在 wms_inbound_task_detail.goods_remark</li>
+     *   <li>超收：累计超过应收+容差时，必须具备 wms_pda.receive.over_receive 功能点且填写原因，
+     *       放行同时写 wms_exception 留痕（异常中心可追踪）；无权限按原口径拒绝</li>
      * </ul>
      */
     @Transactional
     public Map<String, Object> receive(String detailId, BigDecimal qty, String batchNo,
                                        LocalDate productionDate, LocalDate expiryDate,
                                        BigDecimal actualWeight, String containerCode,
-                                       String goodsRemark, String operator) {
+                                       String goodsRemark, String operator, String overReceiveReason) {
         if (qty == null || qty.signum() <= 0) throw new IllegalArgumentException("收货数量必须大于 0");
         List<Map<String, Object>> dd = TmsUtil.queryCamel(jdbc, """
                 SELECT d.detail_id, d.task_id, d.goods_code, d.goods_name, d.expected_qty,
@@ -373,9 +426,10 @@ public class WmsInboundService {
                 detail.get("taskId"));
         if (th.isEmpty()) throw new IllegalArgumentException("入库任务不存在");
         Map<String, Object> task = th.get(0);
+        warehouseResolver.assertIfPda(TmsUtil.str(task.get("warehouse")));
         String status = (String) task.get("status");
         if (!"PENDING".equals(status) && !"RECEIVING".equals(status)) {
-            throw new IllegalStateException("当前状态[" + status + "]不允许收货");
+            throw new IllegalArgumentException("当前状态[" + status + "]不允许收货");
         }
 
         BigDecimal expected = toBd(detail.get("expectedQty"));
@@ -383,7 +437,16 @@ public class WmsInboundService {
         BigDecimal tolPct = toBd(task.get("overTolerance"));
         BigDecimal maxAllowed = expected.multiply(BigDecimal.ONE.add(tolPct.divide(BigDecimal.valueOf(100))));
         if (received.add(qty).compareTo(maxAllowed) > 0) {
-            throw new IllegalStateException("超收：累计收货 " + received.add(qty) + " 超过应收+容差上限 " + maxAllowed);
+            // PRD-28 卡片9：超容差须有超收授权功能点 + 强制录原因并写异常单留痕；否则按原口径拒绝
+            if (!permissionService.hasFunc(FUNC_OVER_RECEIVE)) {
+                throw new com.erp.common.security.PermissionDeniedException(
+                        "无超收权限：累计收货 " + received.add(qty) + " 超过应收+容差上限 " + maxAllowed);
+            }
+            if (overReceiveReason == null || overReceiveReason.isBlank()) {
+                throw new IllegalArgumentException("超收必须填写原因");
+            }
+            recordInboundOverReceive(task, detail, received.add(qty).subtract(maxAllowed),
+                    overReceiveReason, operator);
         }
 
         // ========== 保质期校验 ==========
@@ -462,6 +525,25 @@ public class WmsInboundService {
     }
 
     /**
+     * 超收授权留痕（PRD-28 卡片9）：写 wms_exception（异常中心可追踪），不阻断收货。
+     * wave_no 记入库任务号，供异常中心按 wms_inbound_task 关联回仓库做隔离。
+     */
+    private void recordInboundOverReceive(Map<String, Object> task, Map<String, Object> detail,
+                                          BigDecimal excessQty, String reason, String operator) {
+        String exNo = billNo.nextNo(BillType.WMS_EXCEPTION, "wms_exception", "exception_no");
+        jdbc.update("""
+                INSERT INTO wms_exception
+                (exception_id, exception_no, wave_no, source_order_no, goods_code, exception_type,
+                 qty, status, description, reporter, source_type, source_bill, priority, created_at)
+                VALUES (?, ?, ?, ?, ?, 'OTHER', ?, 'OPEN', ?, ?, 'INBOUND', ?, 'MEDIUM', CURRENT_TIMESTAMP)
+                """, "EX" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
+                exNo, TmsUtil.str(task.get("taskNo")), TmsUtil.str(task.get("taskNo")),
+                TmsUtil.str(detail.get("goodsCode")), excessQty,
+                "超收授权：" + safe(reason) + "（超出容差 " + excessQty + "）",
+                operator, TmsUtil.str(task.get("taskNo")));
+    }
+
+    /**
      * 把容器绑定到当前收货任务（首次）或追加记录（已绑同一任务）。
      * 容器状态 EMPTY → IN_USE；若已被别的任务占用则拒绝。写 wms_container_record 流水。
      */
@@ -507,6 +589,7 @@ public class WmsInboundService {
     @Transactional
     public Map<String, Object> finishReceive(String taskId, String operator) {
         Map<String, Object> task = mustGetTask(taskId);
+        warehouseResolver.assertIfPda(TmsUtil.str(task.get("warehouse")));
         String status = (String) task.get("status");
         if (!"RECEIVING".equals(status) && !"PENDING".equals(status)) {
             throw new IllegalStateException("当前状态不允许结束收货");
@@ -557,7 +640,16 @@ public class WmsInboundService {
     @Transactional
     public Map<String, Object> recheck(String taskId, boolean passed, String remark, String operator) {
         Map<String, Object> task = mustGetTask(taskId);
-        if (!"RECHECK".equals(task.get("status"))) throw new IllegalStateException("当前状态不允许复检");
+        warehouseResolver.assertIfPda(TmsUtil.str(task.get("warehouse")));
+        if (!"RECHECK".equals(task.get("status"))) throw new IllegalArgumentException("当前状态不允许复检");
+        // PRD-28 PDA-005：WMS_RECHECK_SELF_NG=1（默认）禁止复检本人收货的单
+        if (warehouseResolver.isPda()
+                && params.getInt("WMS_RECHECK_SELF_NG", 1, 0, 1) == 1) {
+            String receiver = TmsUtil.str(task.get("receiver"));
+            if (!receiver.isBlank() && receiver.equals(operator)) {
+                throw new IllegalArgumentException("不能复检本人收货单");
+            }
+        }
         if (!passed) {
             // 不合格：记录未合格数量，转 EXCEPTION；不自动过账
             jdbc.update("UPDATE wms_inbound_task SET status = 'EXCEPTION', rechecker = ?, remark = ? WHERE task_id = ?",
@@ -676,6 +768,7 @@ public class WmsInboundService {
                 WHERE 1=1
                 """);
         List<Object> args = new ArrayList<>();
+        if (warehouseResolver.isPda()) { sql.append(" AND p.warehouse = ?"); args.add(warehouseResolver.currentWarehouseName()); }
         if (status != null && !status.isBlank()) { sql.append(" AND p.status = ?"); args.add(status); }
         if (assignee != null && !assignee.isBlank()) { sql.append(" AND (p.assignee = ? OR p.assignee IS NULL)"); args.add(assignee); }
         sql.append(" ORDER BY p.created_at DESC");
@@ -687,6 +780,8 @@ public class WmsInboundService {
      * 维度：库位 + 生产日期 + 批次；qty > 0 才返回。
      */
     public List<Map<String, Object>> binStockByGoods(String goodsCode, String warehouse) {
+        // PDA 端仓库强制取登录仓，忽略入参（PDA-007）
+        if (warehouseResolver.isPda()) warehouse = warehouseResolver.currentWarehouseName();
         StringBuilder sql = new StringBuilder("""
                 SELECT s.bin_code, s.batch_no, s.production_date, s.expiry_date,
                        s.container_code, s.qty, s.locked_qty, s.updated_at,
@@ -750,6 +845,10 @@ public class WmsInboundService {
 
     @Transactional
     public Map<String, Object> claimPutaway(String putawayId, String operator) {
+        List<Map<String, Object>> pre = TmsUtil.queryCamel(jdbc,
+                "SELECT warehouse, status FROM wms_putaway_task WHERE putaway_id = ?", putawayId);
+        if (pre.isEmpty()) throw new IllegalArgumentException("上架任务不存在");
+        warehouseResolver.assertIfPda(TmsUtil.str(pre.get(0).get("warehouse")));
         int n = jdbc.update("""
                 UPDATE wms_putaway_task SET assignee = ?, status = 'PUTTING', started_at = CURRENT_TIMESTAMP
                 WHERE putaway_id = ? AND (assignee IS NULL OR assignee = '' OR assignee = ?)
@@ -768,8 +867,9 @@ public class WmsInboundService {
                 "SELECT * FROM wms_putaway_task WHERE putaway_id = ?", putawayId);
         if (rows.isEmpty()) throw new IllegalArgumentException("上架任务不存在");
         Map<String, Object> p = rows.get(0);
-        if ("DONE".equals(p.get("status"))) throw new IllegalStateException("任务已完成");
-        if ("CANCELLED".equals(p.get("status"))) throw new IllegalStateException("任务已取消");
+        warehouseResolver.assertIfPda(TmsUtil.str(p.get("warehouse")));
+        if ("DONE".equals(p.get("status"))) throw new IllegalArgumentException("任务已完成");
+        if ("CANCELLED".equals(p.get("status"))) throw new IllegalArgumentException("任务已取消");
         String bin = actualBin == null || actualBin.isBlank() ? TmsUtil.str(p.get("recommendBin")) : actualBin;
         if (bin.isBlank()) throw new IllegalArgumentException("必须指定上架库位");
 

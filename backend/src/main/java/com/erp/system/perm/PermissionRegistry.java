@@ -48,8 +48,98 @@ public class PermissionRegistry {
     private static final String[][] ALL_ACTIONS_NAME = {
             {"view", "查看"}, {"add", "新增"}, {"edit", "编辑"}, {"delete", "删除"},
             {"audit", "审核"}, {"unaudit", "反审核"}, {"close", "关闭/作废"},
-            {"import", "导入"}, {"export", "导出"}, {"print", "打印"}, {"log", "日志"}
+            {"import", "导入"}, {"export", "导出"}, {"print", "打印"}, {"log", "日志"},
+            // PRD-28 卡片9：PDA 作业动作（§7.2.1）
+            {"scan", "扫码作业"}, {"confirm", "确认"}, {"start", "开始/领取"},
+            {"recheck", "复检"}, {"print_label", "打印标签"}, {"over_receive", "超收授权"},
+            {"free_bin", "改放库位"}, {"split", "拆分上架"}, {"urgent", "加急补货"},
+            {"short_pick", "缺货上报"}, {"skip", "跳过商品"}, {"transfer", "任务转交"},
+            {"exception", "差异上报"}, {"pack", "打包封箱"}, {"input", "录入实盘数"},
+            {"submit", "提交盘点"}, {"view_cost", "查看成本金额"}, {"view_batch", "查看批次"},
+            {"report", "上报异常"}, {"handle", "处理异常"}, {"assign", "分派"},
+            {"recall", "撤回"}, {"view_self", "查看个人工作量"}, {"view_team", "查看全仓绩效"},
+            {"switch_warehouse", "切换仓库"}, {"change_pwd", "修改密码"}
     };
+
+    /**
+     * PDA 六内置角色功能点矩阵（方案 §7.2.1，PRD-28 卡片9）。
+     * key=role_id，value=该角色拥有的 wms_pda.* 功能点全集；菜单由功能点前缀自动派生
+     * （另含 PDA 根目录）。每次同步按矩阵对账：矩阵外的 wms_pda 授权收回、缺失的补齐，
+     * 保证代码即唯一授权来源；非 wms_pda 授权与其他角色不受影响。
+     * 注：putaway.start（领取上架任务）为矩阵落地补齐项——receive/pick 均有 start，
+     * 方案表漏列，已在方案文档同步补行（PUTAWAY/KEEPER/LEADER）。
+     */
+    private static final Map<String, List<String>> PDA_ROLE_FUNCS = new LinkedHashMap<>();
+    static {
+        // 全员共有：首页、库存数量/批次查询、异常查看与上报、个人绩效、我的
+        String[] common = {
+                "wms_pda.home.view", "wms_pda.home.scan",
+                "wms_pda.stock_query.view", "wms_pda.stock_query.view_batch",
+                "wms_pda.exception.view", "wms_pda.exception.report",
+                "wms_pda.performance.view_self",
+                "wms_pda.profile.view", "wms_pda.profile.switch_warehouse", "wms_pda.profile.change_pwd"
+        };
+        PDA_ROLE_FUNCS.put("R_WMS_RECEIVER", concat(common,
+                "wms_pda.receive.view", "wms_pda.receive.start", "wms_pda.receive.scan",
+                "wms_pda.receive.confirm", "wms_pda.receive.print_label", "wms_pda.receive.recheck",
+                "wms_pda.receive_return.view", "wms_pda.receive_return.scan", "wms_pda.receive_return.confirm",
+                "wms_pda.other_inbound.view", "wms_pda.other_inbound.confirm"));
+        PDA_ROLE_FUNCS.put("R_WMS_PUTAWAY", concat(common,
+                "wms_pda.putaway.view", "wms_pda.putaway.start", "wms_pda.putaway.scan",
+                "wms_pda.putaway.confirm", "wms_pda.putaway.free_bin", "wms_pda.putaway.split",
+                "wms_pda.replenish.view", "wms_pda.replenish.confirm",
+                "wms_pda.move.confirm"));
+        PDA_ROLE_FUNCS.put("R_WMS_PICKER", concat(common,
+                "wms_pda.replenish.view", "wms_pda.replenish.urgent", "wms_pda.replenish.confirm",
+                "wms_pda.pick.view", "wms_pda.pick.start", "wms_pda.pick.scan",
+                "wms_pda.pick.confirm", "wms_pda.pick.short_pick", "wms_pda.pick.skip"));
+        PDA_ROLE_FUNCS.put("R_WMS_CHECKER", concat(common,
+                "wms_pda.check.view", "wms_pda.check.scan", "wms_pda.check.confirm",
+                "wms_pda.check.exception", "wms_pda.check.pack",
+                "wms_pda.load.view", "wms_pda.load.scan", "wms_pda.load.confirm"));
+        // 仓管员（多面手）= 收货/上架/拣货/复核/装车/盘点(无审核)/移库/报损(无审核)  union，含超收
+        PDA_ROLE_FUNCS.put("R_WMS_KEEPER", concat(common,
+                "wms_pda.receive.view", "wms_pda.receive.start", "wms_pda.receive.scan",
+                "wms_pda.receive.confirm", "wms_pda.receive.print_label", "wms_pda.receive.recheck",
+                "wms_pda.receive.over_receive",
+                "wms_pda.receive_return.view", "wms_pda.receive_return.scan", "wms_pda.receive_return.confirm",
+                "wms_pda.other_inbound.view", "wms_pda.other_inbound.add", "wms_pda.other_inbound.confirm",
+                "wms_pda.putaway.view", "wms_pda.putaway.start", "wms_pda.putaway.scan",
+                "wms_pda.putaway.confirm", "wms_pda.putaway.free_bin", "wms_pda.putaway.split",
+                "wms_pda.replenish.view", "wms_pda.replenish.urgent", "wms_pda.replenish.confirm",
+                "wms_pda.pick.view", "wms_pda.pick.start", "wms_pda.pick.scan",
+                "wms_pda.pick.confirm", "wms_pda.pick.short_pick", "wms_pda.pick.skip",
+                "wms_pda.pick.transfer",
+                "wms_pda.check.view", "wms_pda.check.scan", "wms_pda.check.confirm",
+                "wms_pda.check.exception", "wms_pda.check.pack",
+                "wms_pda.load.view", "wms_pda.load.scan", "wms_pda.load.confirm",
+                "wms_pda.stocktake.view", "wms_pda.stocktake.scan", "wms_pda.stocktake.input",
+                "wms_pda.stocktake.submit",
+                "wms_pda.move.view", "wms_pda.move.add", "wms_pda.move.confirm",
+                "wms_pda.damage.view", "wms_pda.damage.add"));
+        // 主管 = 多面手 + 盘点/报损审核 + 异常处理分派 + 任务分派 + 全仓绩效/导出 + 成本查看
+        PDA_ROLE_FUNCS.put("R_WMS_LEADER", concat(PDA_ROLE_FUNCS.get("R_WMS_KEEPER"),
+                "wms_pda.stocktake.audit",
+                "wms_pda.damage.audit",
+                "wms_pda.exception.handle", "wms_pda.exception.assign",
+                "wms_pda.task_assign.view", "wms_pda.task_assign.assign", "wms_pda.task_assign.recall",
+                "wms_pda.performance.view_team", "wms_pda.performance.export",
+                "wms_pda.stock_query.view_cost"));
+    }
+
+    private static List<String> concat(String[] base, String... extra) {
+        List<String> all = new ArrayList<>(base.length + extra.length);
+        for (String s : base) all.add(s);
+        for (String s : extra) all.add(s);
+        return all;
+    }
+
+    private static List<String> concat(List<String> base, String... extra) {
+        List<String> all = new ArrayList<>(base.size() + extra.length);
+        all.addAll(base);
+        for (String s : extra) all.add(s);
+        return all;
+    }
 
     private final JdbcTemplate jdbc;
     private final MenuCatalog catalog;
@@ -81,10 +171,10 @@ public class PermissionRegistry {
     public void syncOnStartup() {
         try {
             Map<String, Object> stats = sync();
-            log.info("权限同步完成：菜单 {}（新增{} 停用{}），功能点 {}（新增{} 停用{}），字段 {} 项全部对拍通过",
+            log.info("权限同步完成：菜单 {}（新增{} 停用{}），功能点 {}（新增{} 停用{}），字段 {} 项全部对拍通过，PDA 六角色授权 {} 行",
                     stats.get("menuTotal"), stats.get("menuInserted"), stats.get("menuStopped"),
                     stats.get("funcTotal"), stats.get("funcInserted"), stats.get("funcStopped"),
-                    stats.get("fieldCount"));
+                    stats.get("fieldCount"), stats.get("pdaRoleGrantCount"));
         } catch (Exception e) {
             // 元数据同步失败不能静默，否则授权页面/拦截器行为无依据
             log.error("权限元数据同步失败", e);
@@ -99,6 +189,7 @@ public class PermissionRegistry {
         int[] menuStats = syncMenus();
         int[] funcStats = syncFuncs(scan.funcs());
         ensureSuperAdminGrants();
+        int pdaGrants = ensurePdaRoleGrants();
 
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("menuTotal", catalog.all().size());
@@ -109,6 +200,7 @@ public class PermissionRegistry {
         stats.put("funcStopped", funcStats[1]);
         stats.put("fieldCount", fields.fieldCodes().size());
         stats.put("unguardedWriteCount", scan.unguardedWrites().size());
+        stats.put("pdaRoleGrantCount", pdaGrants);
         this.lastSyncStats = stats;
 
         int changed = menuStats[0] + menuStats[1] + funcStats[0] + funcStats[1];
@@ -304,6 +396,13 @@ public class PermissionRegistry {
                             require.global() ? "GLOBAL" : "MODULE",
                             require.type(), httpMethod, path));
                 }
+                // 同端点按载荷分派的额外功能码（PDA 多动作共用端点）：只注册，拦截器不自动执行，
+                // 由方法体内 PermissionService.hasFunc 逐分支裁决（alsoRegister 不支持 GLOBAL）
+                for (String extra : require.alsoRegister()) {
+                    if (extra != null && !extra.isBlank() && seenCodes.add(extra)) {
+                        funcs.add(new FuncDecl(extra, actionName(extra), "MODULE", "ACTION", httpMethod, path));
+                    }
+                }
             } else if (!programmatic && isWriteMethod(httpMethod) && !isExemptPath(path)) {
                 unguarded.add(new WriteEndpoint(httpMethod, path,
                         hm.getBeanType().getSimpleName() + "#" + hm.getMethod().getName()));
@@ -327,6 +426,7 @@ public class PermissionRegistry {
                 || path.startsWith("/system/todo/")
                 || path.startsWith("/actuator/")
                 || path.startsWith("/tms/app/")
+                || path.equals("/wms/app/login")
                 || path.startsWith("/operation-log/")
                 || path.startsWith("/error");
     }
@@ -369,6 +469,72 @@ public class PermissionRegistry {
                 "FROM sys_field_meta f WHERE f.status = 'NORMAL' AND NOT EXISTS (" +
                 "SELECT 1 FROM sys_role_field_rel x WHERE x.role_id = ? AND x.field_id = f.field_id)",
                 roleId, roleId);
+    }
+
+    // ==================== PDA 六角色矩阵授权（方案 §7.2.1） ====================
+
+    /**
+     * 按 {@link #PDA_ROLE_FUNCS} 矩阵对账下发六角色的 PDA 菜单/功能点授权。
+     * 在菜单与功能点同步完成之后执行（此时 wms_pda.* 元数据均已存在）。
+     *
+     * @return 六角色当前持有的 wms_pda 功能点授权总行数
+     */
+    private int ensurePdaRoleGrants() {
+        int granted = 0;
+        for (Map.Entry<String, List<String>> e : PDA_ROLE_FUNCS.entrySet()) {
+            String roleId = e.getKey();
+            List<String> codes = e.getValue();
+            Integer roleExists = jdbc.queryForObject(
+                    "SELECT COUNT(1) FROM sys_role_runtime WHERE role_id = ? AND status = 'NORMAL'",
+                    Integer.class, roleId);
+            if (roleExists == null || roleExists == 0) continue;
+
+            // 菜单派生（与方案 §7.2.1 菜单列对拍）：仅"查看类"功能点派生页面菜单——
+            // 通用 view；绩效页主功能点为 view_self（矩阵无 view）。另含 PDA 根目录
+            // （根目录授权保证菜单树根可见）。仅持动作点（如 PUTAWAY 仅持 move.confirm、
+            // PICKER 仅持 replenish.urgent/confirm）不派生该页菜单，避免首页出现
+            // "看得见卡片却打不开列表"的越界入口（PDA-002）。
+            Set<String> menuCodes = new LinkedHashSet<>();
+            menuCodes.add("wms_pda");
+            for (String code : codes) {
+                int dot = code.lastIndexOf('.');
+                String action = code.substring(dot + 1);
+                if ("view".equals(action) || "view_self".equals(action)) {
+                    menuCodes.add(code.substring(0, dot));
+                }
+            }
+
+            // 对账：先收回矩阵外既有的 wms_pda 授权（管理员手工给这六个内置角色加的
+            // wms_pda 授权会被代码矩阵覆盖；非 wms_pda 授权不动），再幂等补齐矩阵内授权
+            jdbc.update("DELETE FROM sys_role_func_rel WHERE role_id = ? AND func_id IN (" +
+                    "SELECT func_id FROM sys_func_meta WHERE func_code LIKE 'wms_pda.%')", roleId);
+            jdbc.update("DELETE FROM sys_role_menu_rel WHERE role_id = ? AND menu_id IN (" +
+                    "SELECT menu_id FROM sys_menu_meta WHERE menu_code LIKE 'wms_pda%')", roleId);
+
+            for (String code : codes) {
+                jdbc.update("INSERT INTO sys_role_func_rel(id, role_id, func_id, created_at) " +
+                        "SELECT 'RF' || SUBSTRING(REPLACE(CAST(RANDOM_UUID() AS VARCHAR),'-',''),1,14), " +
+                        "?, f.func_id, CURRENT_TIMESTAMP " +
+                        "FROM sys_func_meta f WHERE f.func_code = ? AND f.status = 'NORMAL' " +
+                        "AND NOT EXISTS (SELECT 1 FROM sys_role_func_rel x " +
+                        "WHERE x.role_id = ? AND x.func_id = f.func_id)",
+                        roleId, code, roleId);
+            }
+            for (String menuCode : menuCodes) {
+                jdbc.update("INSERT INTO sys_role_menu_rel(id, role_id, menu_id, created_at) " +
+                        "SELECT 'RM' || SUBSTRING(REPLACE(CAST(RANDOM_UUID() AS VARCHAR),'-',''),1,14), " +
+                        "?, m.menu_id, CURRENT_TIMESTAMP " +
+                        "FROM sys_menu_meta m WHERE m.menu_code = ? AND m.status = 'NORMAL' " +
+                        "AND NOT EXISTS (SELECT 1 FROM sys_role_menu_rel x " +
+                        "WHERE x.role_id = ? AND x.menu_id = m.menu_id)",
+                        roleId, menuCode, roleId);
+            }
+            Integer cnt = jdbc.queryForObject(
+                    "SELECT COUNT(1) FROM sys_role_func_rel r JOIN sys_func_meta f ON f.func_id = r.func_id " +
+                            "WHERE r.role_id = ? AND f.func_code LIKE 'wms_pda.%'", Integer.class, roleId);
+            granted += cnt == null ? 0 : cnt;
+        }
+        return granted;
     }
 
     // ==================== 工具 ====================
