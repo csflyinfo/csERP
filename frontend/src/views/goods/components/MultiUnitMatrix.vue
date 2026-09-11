@@ -44,7 +44,8 @@ async function loadPriceGroups() {
     console.warn('加载价格组失败', e)
     realPriceGroups.value = []
   } finally {
-    priceLoading.value = false
+    // 修笔误：ref 名是 priceGroupsLoading（旧写 priceLoading 会在收尾时抛 ReferenceError）
+    priceGroupsLoading.value = false
   }
 }
 

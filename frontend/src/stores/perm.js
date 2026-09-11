@@ -37,7 +37,9 @@ export const usePermStore = defineStore('perm', () => {
 
   /** 拉取权限集；并发复用同一 Promise。force=true 用于角色配置变更后重拉。 */
   function ensure(force = false) {
-    if (!force && loaded) return Promise.resolve()
+    // 注意：setup store 闭包内 loaded 是 Ref（直接写 if(loaded) 永远 truthy，
+    // 会导致首屏永不拉取）；必须取 .value。promise 是普通 let，按原值判断。
+    if (!force && loaded.value) return Promise.resolve()
     if (!force && promise) return promise
     promise = get('/system/perm/mine')
       .then((d) => applyMine(d))

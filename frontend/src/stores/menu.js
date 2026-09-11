@@ -44,7 +44,9 @@ export const useMenuStore = defineStore('menu', () => {
 
   /** 拉取用户菜单树；并发复用同一 Promise。force=true 用于授权变更后重拉。 */
   function ensure(force = false) {
-    if (!force && loaded) return Promise.resolve()
+    // 注意：setup store 闭包内 loaded 是 Ref（直接写 if(loaded) 永远 truthy，
+    // 会导致首屏永不拉取、侧边栏空白）；必须取 .value。promise 是普通 let。
+    if (!force && loaded.value) return Promise.resolve()
     if (!force && promise) return promise
     promise = get('/system/menu/user-tree')
       .then((d) => applyServer(d))

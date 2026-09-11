@@ -357,3 +357,14 @@
 - 新增 `docs/上线手册-PRD28-RBAC.md`：prod 短信网关前置（sms.webhook-url 必填 http(s)、webhook 报文契约、缺配置拒启文案）、备份、tag 发布与 Flyway 自动迁移、启动成功日志判据（192/1699/26/199/104）、放流量前脚本核对+三端人工冒烟（含真实验证码与 5 次锁定）、首日补授权口径（自定义角色复制裁剪，不改内置移动角色 driver.%/wms_pda.% 授权——重启会被矩阵收回）、回滚（全增量变更，旧 jar 可直接回退）。
 - 验证：脚本在卡片10 验收前 H2 副本库（E:/tmp 临时拷贝，用后即删）实测全部语法可执行，32 项 PASS；唯一 FAIL=C1（本地开发库缺 SALES_MANAGER 内置角色，系历史手工删除，V102 种子在正式库保证存在，预发快照演练兜底）。该本地缺口已在开发计划卡片11 落地注记与本记录中留痕，未擅自对用户运行中的库做写入修补。
 - 卡片11 其余三项（预发快照演练、首日现场授权/公告、prod 短信通道确认）依赖预发环境与用户，不在开发侧；卡片12 V109 清旧仍按计划等上线观察 ≥2 周。
+
+
+### 2026-09-11 热修：admin（及全部 ERP 用户）登录后侧边栏空白、按钮全隐（fix/rbac-menu-ensure-ref，无迁移）
+
+> 现象：admin 登录后看不到任何菜单。根因是卡片8 引入的两个 Pinia setup store 首屏加载守卫写错——**对所有 ERP Web 用户生效**（不仅 admin）：菜单树与功能点/字段集首屏从不拉取，侧边栏空白、v-permission 按空集 fail-closed 隐藏全部按钮；后端权限本身一直正常（直接调 /system/menu/user-tree 返回 10 根 147 页完整树，/system/perm/mine 返回 superAdmin=true）。
+
+- 根因：`frontend/src/stores/perm.js` 与 `frontend/src/stores/menu.js` 的 `ensure(force)` 首行写成 `if (!force && loaded) return Promise.resolve()`。setup store 的 setup 闭包内 `loaded` 是 **Ref 对象（布尔上下文永远 truthy）**，ref 只在 store 代理（消费侧）上自动解包、闭包内必须取 `loaded.value`。因此路由守卫（router/index.js beforeEach）与 AppShell.onMounted 的 `ensure()` 全部立即空转返回，请求不发出、loaded 永为 false；store 因 loaded=false 也永不走「已加载复用」，`ensure(true)` 因短路两个判断反而正常——这解释了此前各类手工/强制刷新路径看不出问题。
+- 修复：两处判断改 `loaded.value`（`promise` 是普通 let 维持原值），并加注释防止回退；`reset()`/`applyXxx()` 原本就用 `.value`，无需改。
+- 顺带修一个验收途中发现的独立笔误：`views/goods/components/MultiUnitMatrix.vue` 价格组加载 finally 误写不存在的 `priceLoading.value`（正确 `priceGroupsLoading`），收尾抛 ReferenceError；该标志模板未使用，数据仍加载，但会在商品页留未捕获异常，一并修正。
+- 验证（Edge headless + CDP 驱动真实 UI 登录，非仅 API）：修复后 admin 真实表单登录，menu store mSrc=server、tree=10 根，侧边栏一级 10 项；/goods、/purchase-order、/gl-voucher、/user 四页依次跳转不被页面级守卫回跳，内容与操作按钮全部渲染（采购订单「新建/保存草稿/审核/反审核/终止/删除/导入/导出/打印」等在列，证明 v-permission 经 superAdmin 短路放行），侧边栏二级数 23/8/16/14 与服务端树一致；控制台零异常。`npm --prefix frontend run build` 通过（5.79s）。非管理员裁剪路径与修复前同代码，后端裁剪已由卡片8~10 验收覆盖，本次不另造写库夹具。
+- 教训：setup store 闭包内读 ref 必须 `.value`，此类「Ref 对象恒 truthy」错误不会抛异常、只会静默短路，纯 API 验收发现不了，UI 验收必须以真实登录驱动页面。
