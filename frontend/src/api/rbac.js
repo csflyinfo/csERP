@@ -53,6 +53,13 @@ export const menuManageApi = {
   sort: (items) => put('/system/menu-manage/sort', items),
   resetOne: (menuId) => post(`/system/menu-manage/${menuId}/reset`, {}),
   resetAll: () => post('/system/menu-manage/reset-all?confirm=true', {}),
+  /** 新建自定义目录（一级/二级） */
+  createDir: (appType, name, parentId = null) =>
+    post('/system/menu-manage/dir', { appType, name, parentId }),
+  /** 设置是否启用（停用级联子树，启用仅自身） */
+  setEnabled: (menuId, enabled) => put(`/system/menu-manage/${menuId}/enabled`, { enabled }),
+  /** 删除空的自定义目录 */
+  deleteDir: (menuId) => post(`/system/menu-manage/${menuId}/delete`, {}),
 }
 
 // ---------------- 个人中心 ----------------

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- PRD-28 RBAC 上线核对脚本（卡片11 交付物）
 --
--- 用途：V102~V108 迁移 + 应用首次启动权限同步完成后执行，全部结果应为 PASS。
+-- 用途：V102~V109 迁移 + 应用首次启动权限同步完成后执行，全部结果应为 PASS。
 -- 只读：本脚本不含任何 INSERT/UPDATE/DELETE，可重复执行。
 --
 -- 运行方式（二选一）：
@@ -14,12 +14,12 @@
 --      （语法仅用标准 SQL + information_schema，两库通用；布尔列 success=TRUE
 --        在 MySQL 中等价 =1。）
 --
--- 判读：任何 FAIL 先不要放流量，按各项注释排查；期望值对应 V108 代码基线
+-- 判读：任何 FAIL 先不要放流量，按各项注释排查；期望值对应 V109 代码基线
 --       （功能点 1699 / 代码菜单 192 + _global_ 占位 = 193 / 字段 26）。
 --       管理员自建菜单(is_system=FALSE)与自定义角色不在固定期望内，属正常。
 -- ============================================================================
 
--- A. Flyway 迁移记录：RBAC 占用 V102/V103/V104/V107/V108（V105/V106 空出允许跳号）
+-- A. Flyway 迁移记录：RBAC 占用 V102/V103/V104/V107/V108/V109（V105/V106 空出允许跳号）
 SELECT 'A. Flyway 迁移' AS section;
 SELECT chk, expected, actual, CASE WHEN actual = expected THEN 'PASS' ELSE 'FAIL' END AS result FROM (
   SELECT 'A1 V102 RBAC 建表与种子' chk, 1 expected,
@@ -34,6 +34,8 @@ SELECT chk, expected, actual, CASE WHEN actual = expected THEN 'PASS' ELSE 'FAIL
     (SELECT COUNT(*) FROM flyway_schema_history WHERE script LIKE 'V108%' AND success = TRUE)
   UNION ALL SELECT 'A6 失败迁移记录必须为 0', 0,
     (SELECT COUNT(*) FROM flyway_schema_history WHERE success = FALSE)
+  UNION ALL SELECT 'A7 V109 菜单启用开关/自定义目录', 1,
+    (SELECT COUNT(*) FROM flyway_schema_history WHERE script LIKE 'V109%' AND success = TRUE)
 ) t;
 
 -- B. 权限元数据总量（与启动日志「菜单 192 / 功能点 1699 / 字段 26」对齐）
@@ -47,6 +49,8 @@ SELECT chk, expected, actual, CASE WHEN actual = expected THEN 'PASS' ELSE 'FAIL
     (SELECT COUNT(*) FROM sys_func_meta WHERE status = 'NORMAL')
   UNION ALL SELECT 'B4 字段权限字典', 26,
     (SELECT COUNT(*) FROM sys_field_meta)
+  UNION ALL SELECT 'B5 存量系统菜单 V109 回填后全部启用（193；全新库预期=1，全新部署不适用本项）', 193,
+    (SELECT COUNT(*) FROM sys_menu_meta WHERE is_system = TRUE AND status = 'NORMAL' AND enabled = TRUE)
 ) t;
 
 -- C. 21 个内置角色必须存在且启用（缺任一会导致对应岗位登录后无授权）

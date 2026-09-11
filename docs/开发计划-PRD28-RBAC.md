@@ -16,7 +16,7 @@
 | W5 | M2 | rbac-7-inv-fin-base → rbac-10-frontend | V106 | 2.5d | 1.5d（指令/动态路由收口） | 1d |
 | W6 | **M3 三端闭环** | rbac-8-pda-login → rbac-9-driver-login | V107、V108 | 4d | APP 5d（可与 W4 起并行） | 3d |
 | W7 | 缓冲/回归 | 缺陷修复、存量角色授权演练、上线演练 | — | — | — | — |
-| 上线后 ≥2 周 | **M4 清理** | chore/rbac-cleanup-legacy | V109 | 1d | 1d | 1d |
+| 上线后 ≥2 周 | **M4 清理** | chore/rbac-cleanup-legacy | V110 | 1d | 1d | 1d |
 
 > 单人全栈串行时按"后端+前端+测试"列纵向相加，约 7~8 周；后端 1 人 + 前端/APP 1 人并行约 6 周。APP 工程师在 W4 即可介入（先做登录页，不阻塞后端）。
 
@@ -31,7 +31,7 @@ git checkout main && git pull
 ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大迁移号
 ```
 
-1. 本计划版本号基于 **V101**，RBAC 占 **V102–V109**（V103 为卡片4 种子修复，后续顺延）；开工任一带迁移的分支前必须重新确认最大号，被占则顺延并改《方案》+本文件；
+1. 本计划版本号基于 **V101**，RBAC 占 **V102–V110**（V103 为卡片4 种子修复，后续顺延；**V109 于 2026-09-11 被模块菜单管理增强需求占用**——enabled 开关+自定义目录，见《优化记录》同日条目，卡片12 清理卡顺延 V110）；开工任一带迁移的分支前必须重新确认最大号，被占则顺延并改《方案》+本文件；
 2. 在 PRD 索引表登记 PRD-28 与占用区段（项目全局串行资源规则）；
 3. 默认串行开发：同一时间只开一个含 Flyway 迁移的分支；
 4. 涉及 H2 验证前备份 `data/erp-v1.mv.db`；冒烟测试会按单号前缀删单据（见仓库记忆）；
@@ -97,7 +97,7 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 4 ｜ `feat/rbac-4-data-scope`（M2，实际新增 V103 修复迁移，约 3d）
 
-> 落地补充（2026-09-09）：实现类为 `DataScopeService`/`FieldMasker`；新增 `V103__rbac_field_grant_fix.sql`——V102 内置角色字段授权种子误用 `f.field_id IN ('VIEW_*')`（VIEW_* 是 field_code）致 10 组授权 0 行，V103 按 field_code 补齐。后续迁移号整体顺延：卡片5→V104、卡片6→V105、卡片7→V106、卡片9→V107、卡片10→V108、卡片12→V109（RBAC 占用 V102–V109）。
+> 落地补充（2026-09-09）：实现类为 `DataScopeService`/`FieldMasker`；新增 `V103__rbac_field_grant_fix.sql`——V102 内置角色字段授权种子误用 `f.field_id IN ('VIEW_*')`（VIEW_* 是 field_code）致 10 组授权 0 行，V103 按 field_code 补齐。后续迁移号整体顺延：卡片5→V104、卡片6→V105、卡片7→V106、卡片9→V107、卡片10→V108、卡片12→V110（V109 于 2026-09-11 被模块菜单管理增强占用：sys_menu_meta.enabled + 自定义目录；RBAC 占用 V102–V110）。
 
 **前置**：卡片 2（CurrentUser）。可与卡片 3 后半并行。
 
@@ -188,7 +188,9 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 > 落地（2026-09-11，离线可做部分）：新增 `development/07-deployment/prd28-rbac-launch-checks.sql`（只读、H2/MySQL 通用，33 项 PASS/FAIL：Flyway 五版本、元数据 193 菜单/1699 功能/26 字段、21 内置角色齐备、三端授权矩阵 46/10/48 与 PDA 199、超管 1699、九类孤儿=0、账号角色、短信三列）与 `docs/上线手册-PRD28-RBAC.md`（前置短信配置/备份/发布/核对/首日操作/回滚）。脚本已在 H2 副本库实测：本地开发库暴露 1 项 FAIL——缺 SALES_MANAGER 内置角色（历史手工删除，正式库由 V102 种子保证存在，预发演练会兜底）。其余 3 项（预发快照演练、首日现场授权、prod 短信通道）依赖用户与预发环境，不在开发侧。
 
-### 卡片 12 ｜ `chore/rbac-cleanup-legacy`（M4，V109，上线观察 ≥2 周后）
+### 卡片 12 ｜ `chore/rbac-cleanup-legacy`（M4，V110，上线观察 ≥2 周后）
+
+> 版本注记（2026-09-11）：V109 已被模块菜单管理增强占用（`sys_menu_meta.enabled` 启停开关 + 自定义一/二级目录，见《优化记录-PRD28-RBAC》同日条目），本卡顺延 V110；开工前仍须重新 `ls migration/` 确认。
 
 - [ ] 删 `SystemController` 硬编码菜单树与分支逻辑、前端 `fallback-menus.js`
 - [ ] 评估并下线 `sys_user_runtime.role_name`、`sys_role_runtime.menu_scope/field_scope/data_scope` 冗余列（**H2 不支持 DROP COLUMN IF EXISTS，先确认两库语法，宁可保留不删**）

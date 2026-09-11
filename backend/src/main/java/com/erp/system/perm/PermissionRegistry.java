@@ -315,13 +315,15 @@ public class PermissionRegistry {
                     "SELECT menu_id, parent_id, name_customized, parent_customized, sort_customized " +
                     "FROM sys_menu_meta WHERE menu_code = ?", node.getCode());
             if (exists.isEmpty()) {
+                // enabled=FALSE：发版新增的代码菜单默认不启用（新开发模块默认不启用），
+                // 由管理员在模块菜单管理中显式勾选；存量行由 V109 回填 TRUE，UPDATE 分支不碰 enabled。
                 jdbc.update("INSERT INTO sys_menu_meta(menu_id, parent_id, app_type, menu_code, menu_name, " +
                                 "menu_type, route_path, component_path, icon, sort_order, visible, admin_only, " +
-                                "name_customized, parent_customized, sort_customized, is_system, status) " +
-                                "VALUES (?,?,?,?,?,?,?,?,?,?,TRUE,?,FALSE,FALSE,FALSE,TRUE,'NORMAL')",
+                                "name_customized, parent_customized, sort_customized, is_system, status, enabled) " +
+                                "VALUES (?,?,?,?,?,?,?,?,?,?,TRUE,?,FALSE,FALSE,FALSE,TRUE,'NORMAL',?)",
                         menuIdOf(node.getCode()), parentId, node.getAppType(), node.getCode(), node.getName(),
                         node.getType().name(), node.getRoutePath(), node.getComponentPath(), node.getIcon(),
-                        node.getSortOrder(), node.isAdminOnly());
+                        node.getSortOrder(), node.isAdminOnly(), node.isEnabledByDefault());
                 inserted++;
             } else {
                 Map<String, Object> row = exists.get(0);

@@ -27,6 +27,11 @@ public class MenuNode {
     private boolean adminOnly;
     /** 显式声明该页面有状态机（自动派生 audit/unaudit/close 功能点）。 */
     private boolean stateMachine;
+    /**
+     * 代码新菜单首次入库时是否默认启用。默认 false——「新开发模块默认不启用」，
+     * 由管理员在模块菜单管理中显式勾选；只对首次 INSERT 生效，之后以库内 enabled 为准。
+     */
+    private boolean enabledByDefault;
     private int sortOrder;
 
     private MenuNode parent;
@@ -103,6 +108,12 @@ public class MenuNode {
         return this;
     }
 
+    /** 标记该菜单代码首次注册入库即启用（默认不启用，见字段说明）。 */
+    public MenuNode enabledByDefault() {
+        this.enabledByDefault = true;
+        return this;
+    }
+
     private void addChild(MenuNode child) {
         int parentLevel = level();
         if (child.type == Type.PAGE && parentLevel > 2) {
@@ -142,6 +153,7 @@ public class MenuNode {
     public String getAppType() { return appType; }
     public boolean isAdminOnly() { return adminOnly; }
     public boolean isStateMachine() { return stateMachine; }
+    public boolean isEnabledByDefault() { return enabledByDefault; }
     public int getSortOrder() { return sortOrder; }
     public MenuNode getParent() { return parent; }
     public List<MenuNode> getChildren() { return children; }

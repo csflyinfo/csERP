@@ -47,19 +47,26 @@ public class MenuMetaService {
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT menu_id, parent_id, app_type, menu_code, menu_name, menu_type, route_path, " +
                 "component_path, icon, sort_order, visible, admin_only, name_customized, " +
-                "parent_customized, sort_customized, status FROM sys_menu_meta " +
+                "parent_customized, sort_customized, is_system, status, enabled FROM sys_menu_meta " +
                 "WHERE app_type = ? ORDER BY status DESC, sort_order, menu_code", appType);
         return buildTree(rows, true);
     }
 
-    /** 角色授权树：排除 admin_only 与 STOPPED，并剪掉无授权子项的空目录（§9.4）。 */
+    /**
+     * 角色授权树：排除 admin_only、STOPPED 与未启用（enabled=FALSE）菜单，
+     * 并剪掉无授权子项的空目录（§9.4；不启用的菜单不允许出现在用户设置里）。
+     */
     public List<Map<String, Object>> grantTree(String appType) {
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT menu_id, parent_id, app_type, menu_code, menu_name, menu_type, route_path, " +
                 "icon, sort_order, admin_only, status FROM sys_menu_meta " +
-                "WHERE app_type = ? AND status = 'NORMAL' AND admin_only = FALSE ORDER BY sort_order, menu_code",
+                "WHERE app_type = ? AND status = 'NORMAL' AND admin_only = FALSE AND enabled = TRUE " +
+                "ORDER BY sort_order, menu_code",
                 appType);
-        return buildTree(rows, true);
+        List<Map<String, Object>> tree = buildTree(rows, true);
+        // buildTree 驼峰节点同样以 menuType/children 表达结构，复用空目录裁剪
+        pruneEmptyDirs(tree);
+        return tree;
     }
 
     /**
@@ -73,6 +80,7 @@ public class MenuMetaService {
 
         List<Map<String, Object>> rows;
         if (user.isSuperAdmin()) {
+            // 超管不过滤 enabled：停用的模块仍对超管可见，便于预览与在菜单管理中重新启用
             rows = jdbc.queryForList(
                     "SELECT menu_id, parent_id, menu_code, menu_name, menu_type, route_path, sort_order, " +
                     "visible, status FROM sys_menu_meta " +
@@ -87,7 +95,7 @@ public class MenuMetaService {
                     "m.route_path, m.sort_order, m.visible, m.status FROM sys_menu_meta m " +
                     "JOIN sys_role_menu_rel rm ON rm.menu_id = m.menu_id " +
                     "JOIN sys_role_runtime r ON r.role_id = rm.role_id " +
-                    "WHERE m.app_type = ? AND m.status = 'NORMAL' AND m.visible = TRUE " +
+                    "WHERE m.app_type = ? AND m.status = 'NORMAL' AND m.visible = TRUE AND m.enabled = TRUE " +
                     "AND m.admin_only = FALSE AND r.status = 'NORMAL' AND r.role_code IN (" + ph + ") " +
                     "ORDER BY m.sort_order, m.menu_code",
                     prepend(appType, codes));
@@ -205,15 +213,19 @@ public class MenuMetaService {
         if (targetLevel + nodeDepth > 3) {
             throw new IllegalArgumentException("移动后菜单超过三级层级上限");
         }
-        // 规则 2：DIR 只能在 1/2 层；PAGE 只能在 2/3 层
+        // 规则 2：DIR 只能在 1/2 层；PAGE 可挂 1/2/3 层（需求：页面可自定义挂在一级或二级）
         if ("DIR".equals(str(node.get("menu_type"))) && targetLevel + 1 > 2) {
             throw new IllegalArgumentException("目录只能放在第 1、2 层");
         }
-        if ("PAGE".equals(str(node.get("menu_type"))) && (targetLevel + 1 < 2 || targetLevel + 1 > 3)) {
-            throw new IllegalArgumentException("页面只能放在第 2、3 层");
+        if ("PAGE".equals(str(node.get("menu_type"))) && targetLevel + 1 > 3) {
+            throw new IllegalArgumentException("页面最多挂到第三层");
         }
         if (target != null && !"DIR".equals(str(target.get("menu_type")))) {
             throw new IllegalArgumentException("上级菜单必须是目录");
+        }
+        // 启用开关一致性：未启用的目录不允许再移入子菜单，否则用户树裁剪会出现层级错配
+        if (target != null && !Boolean.TRUE.equals(target.get("enabled"))) {
+            throw new IllegalArgumentException("上级菜单「" + str(target.get("menu_name")) + "」未启用，请先启用后再移入");
         }
         // 规则 3：防环——不能移到自己或自己的后代下
         if (target != null && (eqId(str(target.get("menu_id")), menuId) || isDescendant(menuId, newParentId))) {
@@ -293,6 +305,9 @@ public class MenuMetaService {
     @Transactional
     public Map<String, Object> resetOne(String menuId) {
         Map<String, Object> node = mustFind(menuId);
+        if (!Boolean.TRUE.equals(node.get("is_system"))) {
+            throw new IllegalArgumentException("自定义目录没有代码默认值，请直接删除该目录");
+        }
         String code = str(node.get("menu_code"));
         jdbc.update("UPDATE sys_menu_meta SET name_customized = FALSE, parent_customized = FALSE, " +
                 "sort_customized = FALSE, updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?", menuId);
@@ -302,14 +317,37 @@ public class MenuMetaService {
         return Map.of("warning", "");
     }
 
-    /** 整树恢复默认：清全部标志，触发一次同步按代码重算（需二次确认，由前端保证）。 */
+    /**
+     * 整树恢复默认：清全部标志，触发一次同步按代码重算（需二次确认，由前端保证）。
+     * 同步后代码页面全部回到代码声明的上级，自定义目录（is_system=FALSE）会逐层变空，
+     * 这里自底向上一并删除（连角色授权关系），避免残留永远不可见的空目录。
+     */
     @Transactional
     public Map<String, Object> resetAll() {
         jdbc.update("UPDATE sys_menu_meta SET name_customized = FALSE, parent_customized = FALSE, " +
                 "sort_customized = FALSE WHERE is_system = TRUE");
         Map<String, Object> stats = registry.sync();
-        audit(null, "ALL", "RESET_ALL", "{}", "整树恢复代码默认（清除全部名称/上级/排序自定义）");
+        int removedDirs = 0;
+        for (int guard = 0; guard < 10; guard++) {
+            List<String> leafCustomIds = jdbc.queryForList(
+                    "SELECT menu_id FROM sys_menu_meta WHERE is_system = FALSE AND menu_id NOT IN (" +
+                    "SELECT parent_id FROM sys_menu_meta WHERE parent_id IS NOT NULL)", String.class);
+            if (leafCustomIds.isEmpty()) break;
+            int n = leafCustomIds.size();
+            jdbc.update("DELETE FROM sys_role_menu_rel WHERE menu_id IN (" + placeholders(n) + ")",
+                    leafCustomIds.toArray());
+            jdbc.update("DELETE FROM sys_menu_meta WHERE menu_id IN (" + placeholders(n) + ")",
+                    leafCustomIds.toArray());
+            removedDirs += n;
+        }
+        audit(null, "ALL", "RESET_ALL", "{\"removedCustomDirs\":" + removedDirs + "}",
+                "整树恢复代码默认（清除全部名称/上级/排序自定义，删除自定义目录 " + removedDirs + " 个）");
         return stats;
+    }
+
+    private String placeholders(int n) {
+        if (n <= 0) return "''";
+        return String.join(",", java.util.Collections.nCopies(n, "?"));
     }
 
     /** 按代码声明重取单个菜单的名称/上级/排序（reset 后立即生效，不等重启）。 */
@@ -321,6 +359,177 @@ public class MenuMetaService {
                 "updated_at = CURRENT_TIMESTAMP WHERE menu_code = ?",
                 node.getName(), parentId, node.getSortOrder(), code);
         return 1;
+    }
+
+    // ==================== 自定义目录 / 启停 ====================
+
+    /**
+     * 新建自定义目录（is_system=FALSE）：parentId 为空=一级目录，挂在一级目录下=二级目录。
+     * 页面只能由代码注册（发版新增，默认不启用），不支持凭空新建页面；
+     * 已注册页面可通过「换上级」挂到一级或二级。
+     */
+    @Transactional
+    public Map<String, Object> createDir(String appType, String newName, String parentId) {
+        if (!"ERP".equals(appType) && !"WMS_PDA".equals(appType) && !"DRIVER".equals(appType)) {
+            throw new IllegalArgumentException("端标识非法：" + appType);
+        }
+        String name = newName == null ? "" : newName.trim();
+        if (name.isEmpty()) throw new IllegalArgumentException("目录名称不能为空");
+        if (name.length() > 100) throw new IllegalArgumentException("目录名称不能超过 100 字");
+
+        String pid = parentId == null || parentId.isBlank() ? null : parentId;
+        if (pid != null) {
+            Map<String, Object> parent = mustFind(pid);
+            if (!appType.equals(str(parent.get("app_type")))) {
+                throw new IllegalArgumentException("上级目录不属于当前端，不能挂载");
+            }
+            if (!"DIR".equals(str(parent.get("menu_type")))) {
+                throw new IllegalArgumentException("上级菜单必须是目录");
+            }
+            if ("STOPPED".equals(str(parent.get("status")))) {
+                throw new IllegalArgumentException("上级目录已停用（代码已删除），不能在其下新建");
+            }
+            if (!Boolean.TRUE.equals(parent.get("enabled"))) {
+                throw new IllegalArgumentException("上级目录未启用，请先启用后再新建子目录");
+            }
+            if (levelOf(parent) >= 2) {
+                throw new IllegalArgumentException("目录最多两级，不能在二级目录下再建目录");
+            }
+        }
+
+        Integer dup = pid == null
+                ? jdbc.queryForObject(
+                        "SELECT COUNT(1) FROM sys_menu_meta WHERE parent_id IS NULL AND app_type = ? AND menu_name = ?",
+                        Integer.class, appType, name)
+                : jdbc.queryForObject(
+                        "SELECT COUNT(1) FROM sys_menu_meta WHERE parent_id = ? AND menu_name = ?",
+                        Integer.class, pid, name);
+        if (dup != null && dup > 0) throw new IllegalArgumentException("同一上级下已存在同名目录：" + name);
+
+        String menuId = uniqueId("SELECT COUNT(1) FROM sys_menu_meta WHERE menu_id = ?",
+                "M_C" + uuidHex(12));
+        String code = uniqueCode();
+        Integer maxSort = pid == null
+                ? jdbc.queryForObject(
+                        "SELECT COALESCE(MAX(sort_order),0) FROM sys_menu_meta WHERE parent_id IS NULL AND app_type = ?",
+                        Integer.class, appType)
+                : jdbc.queryForObject(
+                        "SELECT COALESCE(MAX(sort_order),0) FROM sys_menu_meta WHERE parent_id = ?",
+                        Integer.class, pid);
+        int sortOrder = (maxSort == null ? 0 : maxSort) + 10;
+        jdbc.update("INSERT INTO sys_menu_meta(menu_id, parent_id, app_type, menu_code, menu_name, menu_type, " +
+                        "route_path, component_path, icon, sort_order, visible, admin_only, name_customized, " +
+                        "parent_customized, sort_customized, is_system, status, enabled) " +
+                        "VALUES (?,?,?,?,?,'DIR',NULL,NULL,NULL,?,TRUE,FALSE,TRUE,TRUE,TRUE,FALSE,'NORMAL',TRUE)",
+                menuId, pid, appType, code, name, sortOrder);
+        audit(menuId, code, "CREATE_DIR",
+                "{\"appType\":\"" + escape(appType) + "\",\"parentId\":\"" + escape(nullToEmpty(pid)) + "\"}",
+                "新建自定义目录「" + name + "」（" + appType + (pid == null ? "，一级" : "") + "）");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("menuId", menuId);
+        out.put("warning", "");
+        return out;
+    }
+
+    /**
+     * 设置菜单是否启用。停用：级联停用整棵子树（取消上级勾选后下级自动取消）；
+     * 启用：只改自身（下级保持原状，需逐个显式启用），且要求上级已启用。
+     */
+    @Transactional
+    public Map<String, Object> setEnabled(String menuId, boolean enabled) {
+        Map<String, Object> node = mustFind(menuId);
+        if ("STOPPED".equals(str(node.get("status")))) {
+            throw new IllegalArgumentException("已停用（代码已删除）的菜单无需启停");
+        }
+        boolean before = Boolean.TRUE.equals(node.get("enabled"));
+        if (before == enabled) return Map.of("affected", 0);
+
+        if (enabled) {
+            String pid = node.get("parent_id") == null ? null : str(node.get("parent_id"));
+            if (pid != null) {
+                Map<String, Object> parent = mustFind(pid);
+                if (!Boolean.TRUE.equals(parent.get("enabled"))) {
+                    throw new IllegalArgumentException("上级菜单「" + str(parent.get("menu_name"))
+                            + "」未启用，请先启用上级后再启用本菜单");
+                }
+            }
+            jdbc.update("UPDATE sys_menu_meta SET enabled = TRUE, updated_at = CURRENT_TIMESTAMP WHERE menu_id = ?",
+                    menuId);
+            audit(menuId, str(node.get("menu_code")), "ENABLE", "{\"affected\":1}",
+                    "启用菜单「" + str(node.get("menu_name")) + "」");
+            return Map.of("affected", 1);
+        }
+
+        List<String> ids = subtreeIds(menuId);
+        jdbc.update("UPDATE sys_menu_meta SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP " +
+                "WHERE menu_id IN (" + placeholders(ids.size()) + ")", ids.toArray());
+        audit(menuId, str(node.get("menu_code")), "DISABLE", "{\"affected\":" + ids.size() + "}",
+                "停用菜单「" + str(node.get("menu_name")) + "」并级联停用子菜单 " + (ids.size() - 1) + " 个");
+        return Map.of("affected", ids.size());
+    }
+
+    /** 删除空的自定义目录；内置菜单只允许随代码删版自动停用，不允许物理删除。 */
+    @Transactional
+    public Map<String, Object> deleteCustomDir(String menuId) {
+        Map<String, Object> node = mustFind(menuId);
+        if (Boolean.TRUE.equals(node.get("is_system"))) {
+            throw new IllegalArgumentException("内置菜单不允许删除；代码删版后会自动标记为「已停用」");
+        }
+        if (!"DIR".equals(str(node.get("menu_type")))) {
+            throw new IllegalArgumentException("仅自定义目录可以删除");
+        }
+        Integer kids = jdbc.queryForObject(
+                "SELECT COUNT(1) FROM sys_menu_meta WHERE parent_id = ?", Integer.class, menuId);
+        if (kids != null && kids > 0) {
+            throw new IllegalArgumentException("目录下还有 " + kids + " 个子菜单（含已停用），请先移走后再删除");
+        }
+        jdbc.update("DELETE FROM sys_role_menu_rel WHERE menu_id = ?", menuId);
+        jdbc.update("DELETE FROM sys_menu_meta WHERE menu_id = ?", menuId);
+        audit(menuId, str(node.get("menu_code")), "DELETE_DIR", "{}",
+                "删除自定义目录「" + str(node.get("menu_name")) + "」");
+        return Map.of("warning", "");
+    }
+
+    /** 收集含根节点在内的整棵子树 menu_id（BFS，带环保护）。 */
+    private List<String> subtreeIds(String rootId) {
+        List<String> all = new ArrayList<>();
+        List<String> frontier = new ArrayList<>(List.of(rootId));
+        Set<String> guard = new LinkedHashSet<>();
+        guard.add(rootId);
+        while (!frontier.isEmpty()) {
+            all.addAll(frontier);
+            List<String> next = new ArrayList<>(jdbc.queryForList(
+                    "SELECT menu_id FROM sys_menu_meta WHERE parent_id IN (" + placeholders(frontier.size()) + ")",
+                    String.class, frontier.toArray()));
+            next.removeIf(id -> !guard.add(id));
+            frontier = next;
+        }
+        return all;
+    }
+
+    private String uniqueCode() {
+        for (int i = 0; i < 5; i++) {
+            String code = "custom.dir." + uuidHex(16);
+            Integer cnt = jdbc.queryForObject(
+                    "SELECT COUNT(1) FROM sys_menu_meta WHERE menu_code = ?", Integer.class, code);
+            if (cnt == null || cnt == 0) return code;
+        }
+        throw new IllegalStateException("自定义目录编码生成冲突，请重试");
+    }
+
+    /** 候选 id 已存在时追加随机串重试（正常一次即过）。 */
+    private String uniqueId(String existsSql, String candidate) {
+        String id = candidate;
+        for (int i = 0; i < 5; i++) {
+            Integer cnt = jdbc.queryForObject(existsSql, Integer.class, id);
+            if (cnt == null || cnt == 0) return id;
+            id = candidate + uuidHex(6);
+        }
+        throw new IllegalStateException("自定义目录主键生成冲突，请重试");
+    }
+
+    private String uuidHex(int len) {
+        return java.util.UUID.randomUUID().toString().replace("-", "").substring(0, len).toUpperCase();
     }
 
     // ==================== 校验/树工具 ====================
@@ -373,8 +582,8 @@ public class MenuMetaService {
 
     private Map<String, Object> mustFind(String menuId) {
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT menu_id, parent_id, menu_code, menu_name, menu_type, sort_order, visible, " +
-                "admin_only, status FROM sys_menu_meta WHERE menu_id = ?", menuId);
+                "SELECT menu_id, parent_id, app_type, menu_code, menu_name, menu_type, sort_order, visible, " +
+                "admin_only, is_system, status, enabled FROM sys_menu_meta WHERE menu_id = ?", menuId);
         if (rows.isEmpty()) throw new IllegalArgumentException("菜单不存在：" + menuId);
         return rows.get(0);
     }
@@ -492,7 +701,9 @@ public class MenuMetaService {
         putCamel(out, "nameCustomized", row.get("name_customized"));
         putCamel(out, "parentCustomized", row.get("parent_customized"));
         putCamel(out, "sortCustomized", row.get("sort_customized"));
+        putCamel(out, "isSystem", row.get("is_system"));
         putCamel(out, "status", row.get("status"));
+        putCamel(out, "enabled", row.get("enabled"));
         // 功能点/字段行附带的列（同名键不冲突时直接补）
         putCamel(out, "funcId", row.get("func_id"));
         putCamel(out, "funcCode", row.get("func_code"));

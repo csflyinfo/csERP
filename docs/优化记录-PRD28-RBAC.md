@@ -368,3 +368,26 @@
 - 顺带修一个验收途中发现的独立笔误：`views/goods/components/MultiUnitMatrix.vue` 价格组加载 finally 误写不存在的 `priceLoading.value`（正确 `priceGroupsLoading`），收尾抛 ReferenceError；该标志模板未使用，数据仍加载，但会在商品页留未捕获异常，一并修正。
 - 验证（Edge headless + CDP 驱动真实 UI 登录，非仅 API）：修复后 admin 真实表单登录，menu store mSrc=server、tree=10 根，侧边栏一级 10 项；/goods、/purchase-order、/gl-voucher、/user 四页依次跳转不被页面级守卫回跳，内容与操作按钮全部渲染（采购订单「新建/保存草稿/审核/反审核/终止/删除/导入/导出/打印」等在列，证明 v-permission 经 superAdmin 短路放行），侧边栏二级数 23/8/16/14 与服务端树一致；控制台零异常。`npm --prefix frontend run build` 通过（5.79s）。非管理员裁剪路径与修复前同代码，后端裁剪已由卡片8~10 验收覆盖，本次不另造写库夹具。
 - 教训：setup store 闭包内读 ref 必须 `.value`，此类「Ref 对象恒 truthy」错误不会抛异常、只会静默短路，纯 API 验收发现不了，UI 验收必须以真实登录驱动页面。
+
+
+### 2026-09-11 模块菜单管理增强：自建目录 + 是否启用开关 + 三端 TAB 修复（feat/menu-manage-dirs-enabled，V109）
+
+> 用户需求（原话）：「菜单模块管理：1、要可以增加 1、2 级菜单目录，可以把页面自定义挂在一级或二级。2、菜单增加【是否启用】（勾选=启用，不勾选=不启用）。现在菜单默认启用，新开发模块默认不启用。不启用的菜单用户设置时不显示该菜单页面。取消上级菜单勾选后下级菜单自动取消勾选。3、ERP 端、仓储 PDA、司机端三个 TAB 切换时显示菜单也跟着显示，现在切换无效。」
+
+**需求 3｜TAB 切换无效（纯前端 BUG，根因一行）**：`MenuManage.vue#switchTab` 在拉树之前引用了组件里根本不存在的 `editForm.name`（实际只有 editName/editParentId），ReferenceError 直接中断函数，`await loadTree(t)` 永远不执行。删除幽灵引用并顺带复位编辑态/新建表单。CDP 实测切换后三端树根分别为「基础资料… / 仓库PDA·我的任务·收货作业 / 司机APP·首页当前任务·装车确认」，切回 ERP 完整还原。
+
+**需求 1｜自定义一/二级目录、页面挂一级或二级**：
+- 新增写接口（均挂 `/system/menu-manage/**`，超管硬校验，审计 system.menu）：`POST /dir`（body appType/name/parentId，空=一级目录）、`POST /{id}/delete`（仅空的自定义目录可删，内置菜单拒绝物理删除）；页面沿用 `PUT /{id}/parent` 换上级，校验由「PAGE 只能 2/3 层」放宽为「页面可挂 1/2/3 层、最多三级」，DIR 仍限 1/2 层。
+- 自定义目录落库 is_system=FALSE、menu_type=DIR、menu_code=`custom.dir.<随机>`、menu_id=`M_C<随机>`（VARCHAR(32) 内）、enabled=TRUE；校验：端匹配、上级必须是启用中的 DIR、二级目录下不许再建目录、同级同名拒绝。空目录删除前检查全部子行（含 STOPPED），并清 sys_role_menu_rel 残留授权。
+- 「整树恢复默认」语义补全：代码页面同步回代码上级后，自底向上循环删除已变空的自定义目录（含授权关系），审计带 removedCustomDirs 数量；单节点「恢复默认」对自定义目录拒绝（无代码默认值，提示直接删除）。
+- 侧边栏零改动兼容：AppShell 一级节点点击走 firstPageCode，叶子（一级页面）返回自身编码，直接导航；空目录本就被用户树裁剪。
+
+**需求 2｜是否启用（enabled）**：
+- V109 给 sys_menu_meta 加 `enabled BOOLEAN DEFAULT TRUE` 并全量回填 TRUE——存量环境升级后行为零变化；三端授权树（角色「用户设置」）与普通用户用户树 SQL 过滤 `enabled=TRUE`，未启用菜单不出现；**SYS_ADMIN 用户树不过滤**，超管仍能预览未启用模块并在管理页启用（与 admin_only 同口径）。
+- 「新开发模块默认不启用」落在 PermissionRegistry：代码菜单**首次 INSERT** 的 enabled 取菜单声明（默认 FALSE，MenuNode 可链式 `enabledByDefault()` 例外声明）；存量行走 UPDATE 永不碰 enabled，管理员状态只由管理页改变。全新库冒烟实测 192 菜单全部 enabled=FALSE、grant-tree 为空、超管 user-tree 完整。
+- 级联规则：停用=BFS 整棵子树一并停用（一条 IN 批量更新，审计 affected 数）；启用=只改自身且要求上级已启用（防止用户树父缺失把页面顶成根）。move() 同步加「禁止移入未启用目录」。前端行内复选框停用需 confirm（提示级联数量与影响面），行显示「未启用」黄标/灰字，已停用（STOPPED）复选框禁用。
+- 管理树 SELECT 补 enabled/is_system 两列并透传驼峰（前端自建标签、删除按钮、复选框据此渲染）。
+
+**验证（全新库隔离环境 8081 + 5174，未碰用户 8080/5173）**：V109 在全新 Flyway 链路（107 支迁移）成功；接口验收 36/36（建目录 11 条正反用例、启用链、级联 affected=子树精确值、授权树随启用状态显隐、超管绕过、页面移一级、移入停用目录拒、内置删除拒/非空删除拒/空目录删除、reset-all 清自建目录并还原上级、CREATE_DIR/ENABLE/DISABLE/DELETE_DIR 审计齐全）；Edge headless CDP 真实表单登录后 UI 验收：TAB 三端切换、新建目录（自建标+勾选态）、勾选/取消勾选级联与「未启用」标、经 Vite 代理的授权树显隐与超管绕过，控制台零异常。`mvn -o compile/package` 与 `npm run build`（5.77s）均通过。验证用临时库/临时 Edge profile 用后即删。
+
+**版本号说明**：本需求占用 V109（开工前 ls 确认最大为 V108）；原规划卡片12「清旧」（chore/rbac-cleanup-legacy）顺延 V110，开工时仍须重新 ls 确认。

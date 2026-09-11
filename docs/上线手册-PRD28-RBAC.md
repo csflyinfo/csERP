@@ -2,7 +2,7 @@
 
 > 配套：方案《docs/系统用户及权限管理方案.md》、计划《docs/开发计划-PRD28-RBAC.md》、
 > 核对脚本《development/07-deployment/prd28-rbac-launch-checks.sql》。
-> 生产部署只从 tag 出，不从分支出。本手册对应迁移版本 **V102 / V103 / V104 / V107 / V108**（V105/V106 空出，允许跳号）。
+> 生产部署只从 tag 出，不从分支出。本手册对应迁移版本 **V102 / V103 / V104 / V107 / V108 / V109**（V105/V106 空出，允许跳号；V109=菜单启用开关+自定义目录，存量菜单回填启用，行为零变化）。
 
 ## 1. 上线前置条件（不满足不发布）
 
@@ -29,7 +29,7 @@
 2. 备份数据库（第 2 节）；
 3. 部署 tag 构建的新 jar（`mvn clean package -DskipTests` 产物 `erp-wms-tms-backend-0.1.0-SNAPSHOT.jar`，生产由 tag 出包）；
 4. 以 `prod` profile 启动（无 Redis 的环境继续用 `--spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration,org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration`）；
-5. Flyway 随启动自动执行 V102~V108，无需手工跑 SQL；V102 建表+种子最长，关注启动日志中 flyway 段无 FAIL；
+5. Flyway 随启动自动执行 V102~V109，无需手工跑 SQL；V102 建表+种子最长，关注启动日志中 flyway 段无 FAIL；
 6. 启动成功标志日志（ApplicationReadyEvent 后一行）：
 
    ```
@@ -42,10 +42,10 @@
 
 ## 4. 上线后核对（放流量前）
 
-执行只读脚本 `development/07-deployment/prd28-rbac-launch-checks.sql`（H2 Shell / mysql CLI 均可，脚本头有用法），33 项全部 `PASS`：
+执行只读脚本 `development/07-deployment/prd28-rbac-launch-checks.sql`（H2 Shell / mysql CLI 均可，脚本头有用法），35 项全部 `PASS`：
 
-- A. Flyway 5 个版本成功、无失败记录；
-- B. 系统内置菜单 193 行（代码 192 + `_global_` 占位 1）、功能点 1699、字段 26；
+- A. Flyway 6 个版本成功（含 V109）、无失败记录；
+- B. 系统内置菜单 193 行（代码 192 + `_global_` 占位 1）、功能点 1699、字段 26、**B5 存量菜单回填后全部启用**（全新部署库 B5 不适用，以 B1 为准）；
 - C. 21 个内置角色齐备且 NORMAL；**若 C1 FAIL**，用脚本内注释的定位语句查出缺失角色，从 V102 种子补回角色行及其授权后再继续；
 - D. 授权矩阵：司机 46/10/48 功能点、菜单 16/5/16，PDA 六角色功能点合计 199，超管功能点 1699；
 - E. 九类孤儿关系全 0；
@@ -67,7 +67,7 @@
 
 ## 6. 回滚
 
-- V102~V108 **全部为新增表/新增列/种子数据，不删旧列、不改旧语义**，旧版本 jar 可直接回退启动；
+- V102~V109 **全部为新增表/新增列/种子数据，不删旧列、不改旧语义**（V109 仅给 sys_menu_meta 加 enabled 列并回填 TRUE），旧版本 jar 可直接回退启动；
 - 回退顺序：停新应用 → 恢复第 2 节备份（或直接用旧 jar，旧代码不读新表新列）→ 验证登录；
 - 已通过新版登录产生的 `sys_sms_code`、自动开通的司机用户行不影响旧代码；如需彻底清除按卡片12 思路处理（当前阶段保留）；
 - 短信 webhook 配置对旧版本无害，回滚后旧版固定 888888 逻辑恢复（仅限非 prod 构建）。
@@ -77,4 +77,5 @@
 - V102 是长脚本（12 张新表 + 21 角色 + 菜单/功能/字段种子 + 存量映射），生产库须先在快照演练并记录耗时，避免在业务高峰执行；
 - 应用启动即做权限元数据对账：内置角色的 `driver.%`/`wms_pda.%` 授权会被矩阵覆盖（收回矩阵外、补齐矩阵内），**手工给内置移动角色加的同前缀授权不保留**；自定义角色不受影响；
 - prod 启动强校验短信配置，配置变更后需重启生效；
-- 本手册不覆盖卡片12（V109 清旧：SystemController 硬编码菜单树、fallback-menus.js、冗余列评估），该卡在上线观察 ≥2 周后另行执行。
+- 本手册不覆盖卡片12（顺延 V110 清旧：SystemController 硬编码菜单树、fallback-menus.js、冗余列评估），该卡在上线观察 ≥2 周后另行执行。
+- V109 启用开关行为：升级库存量菜单全部回填启用，升级后用户侧无任何变化；此后**发版新增的代码菜单默认未启用**，需系统管理员在【模块菜单管理】勾选后才进入角色授权树与普通用户侧边栏（停用上级级联停用下级、启用仅自身）。上线首日若有新模块随版发布，记得在本页启用。

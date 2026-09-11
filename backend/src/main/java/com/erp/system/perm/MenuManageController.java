@@ -68,6 +68,41 @@ public class MenuManageController {
         return ApiResponse.ok(menuMetaService.sort(items));
     }
 
+    /**
+     * 新建自定义目录（一级或二级）。
+     * body: {"appType":"ERP|WMS_PDA|DRIVER", "name":"目录名", "parentId":"M_xxx 或 null"}
+     */
+    @PostMapping("/dir")
+    public ApiResponse<Map<String, Object>> createDir(@RequestBody Map<String, Object> body) {
+        requireSuperAdmin();
+        if (body == null) throw new IllegalArgumentException("请求体为空");
+        String appType = String.valueOf(body.get("appType"));
+        String name = body.get("name") == null ? "" : String.valueOf(body.get("name"));
+        Object pid = body.get("parentId");
+        String parentId = pid == null || String.valueOf(pid).isBlank() ? null : String.valueOf(pid);
+        return ApiResponse.ok(menuMetaService.createDir(appType, name, parentId));
+    }
+
+    /**
+     * 设置菜单是否启用。停用级联整棵子树；启用仅自身且要求上级已启用。
+     * body: {"enabled":true/false}
+     */
+    @PutMapping("/{menuId}/enabled")
+    public ApiResponse<Map<String, Object>> setEnabled(@PathVariable String menuId,
+                                                       @RequestBody Map<String, Object> body) {
+        requireSuperAdmin();
+        Object enabled = body == null ? null : body.get("enabled");
+        boolean on = Boolean.TRUE.equals(enabled) || "true".equalsIgnoreCase(String.valueOf(enabled));
+        return ApiResponse.ok(menuMetaService.setEnabled(menuId, on));
+    }
+
+    /** 删除空的自定义目录（内置菜单拒绝删除）。 */
+    @PostMapping("/{menuId}/delete")
+    public ApiResponse<Map<String, Object>> deleteDir(@PathVariable String menuId) {
+        requireSuperAdmin();
+        return ApiResponse.ok(menuMetaService.deleteCustomDir(menuId));
+    }
+
     /** 单个菜单恢复代码默认（名称/上级/排序三个自定义标志一并清除并重取）。 */
     @PostMapping("/{menuId}/reset")
     public ApiResponse<Map<String, Object>> resetOne(@PathVariable String menuId) {

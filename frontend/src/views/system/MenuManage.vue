@@ -36,9 +36,14 @@ async function loadTree(appType = appTab.value) {
 }
 
 async function switchTab(t) {
+  if (appTab.value === t) return
   appTab.value = t
   selectedId.value = ''
-  editForm.name = ''
+  editName.value = ''
+  editParentId.value = ''
+  creating.value = false
+  createName.value = ''
+  createParentId.value = ''
   await loadTree(t)
 }
 
@@ -92,10 +97,15 @@ function selectNode(node) {
   editParentId.value = node.parentId || ''
 }
 
-/** 换上级候选：根 + 所有目录；排除自身与子孙（防环前端兜底）；深层目录标注层级。 */
+/**
+ * 换上级候选：根 + 所有目录；排除自身与子孙（防环前端兜底）。
+ * 规则：目录只能放 1/2 层（DIR 候选只开到一级目录）；页面可挂 1/2/3 层；
+ * 已停用/未启用的目录不可作为新上级（启用状态下不能把子菜单塞进停用目录）。
+ */
 const parentOptions = computed(() => {
   const node = selected.value
   if (!node) return []
+  const isDir = node.menuType === 'DIR'
   const descendantIds = new Set()
   const collect = (n) => {
     descendantIds.add(n.menuId)
@@ -107,11 +117,14 @@ const parentOptions = computed(() => {
     for (const n of nodes) {
       if (n.menuType !== 'DIR') continue
       const isSelf = descendantIds.has(n.menuId)
+      const disabled = isSelf || n.status === 'STOPPED' || n.enabled === false
+        || (isDir && depth >= 1)
+      const suffix = n.enabled === false ? '（未启用）' : ''
       opts.push({
         menuId: n.menuId,
-        label: '　'.repeat(depth) + n.name,
+        label: '　'.repeat(depth) + n.name + suffix,
         depth,
-        disabled: isSelf || n.status === 'STOPPED',
+        disabled,
       })
       if (n.children?.length) walk(n.children, depth + 1)
     }
@@ -119,6 +132,85 @@ const parentOptions = computed(() => {
   walk(tree.value, 0)
   return opts
 })
+
+// ================= 新增自定义目录 =================
+const creating = ref(false)
+const createName = ref('')
+const createParentId = ref('')
+const creatingSubmit = ref(false)
+
+/** 新目录只能建一级（根）或挂在一级目录下成二级，故候选只有一级目录。 */
+const createParentOptions = computed(() => tree.value
+  .filter(n => n.menuType === 'DIR' && n.status !== 'STOPPED' && n.enabled !== false)
+  .map(n => ({ menuId: n.menuId, name: n.name })))
+
+async function submitCreateDir() {
+  const name = createName.value.trim()
+  if (!name) { alert('目录名称不能为空'); return }
+  creatingSubmit.value = true
+  try {
+    const r = await menuManageApi.createDir(appTab.value, name, createParentId.value || null)
+    creating.value = false
+    createName.value = ''
+    createParentId.value = ''
+    await loadTree()
+    if (r?.menuId) {
+      const fresh = findNode(r.menuId)
+      if (fresh) selectNode(fresh)
+    }
+  } catch (e) {
+    alert('新建目录失败：' + (e.message || e))
+  } finally {
+    creatingSubmit.value = false
+  }
+}
+
+// ================= 是否启用（停用级联） =================
+function subtreeSize(node) {
+  let n = 1
+  for (const c of node.children || []) n += subtreeSize(c)
+  return n
+}
+
+async function toggleEnabled(node, checked) {
+  if (node.status === 'STOPPED') return
+  if (!checked) {
+    const total = subtreeSize(node)
+    const tip = total > 1
+      ? `其下 ${total - 1} 个子菜单将一并自动取消勾选（停用）。`
+      : '该菜单下没有子菜单。'
+    if (!window.confirm(
+      `确认停用菜单「${node.name}」？\n${tip}\n\n停用后：角色「用户设置」中不显示该菜单，普通用户侧边栏立即不可见（超管仍可在本页看到并重新启用）。`
+    )) return
+  }
+  try {
+    await menuManageApi.setEnabled(node.menuId, checked)
+    await loadTree()
+    const fresh = findNode(node.menuId)
+    if (fresh) selectedId.value = fresh.menuId
+  } catch (e) {
+    alert((checked ? '启用' : '停用') + '失败：' + (e.message || e))
+    await loadTree()
+  }
+}
+
+// ================= 删除自定义目录 =================
+const deleting = ref(false)
+async function deleteSelectedDir() {
+  const node = selected.value
+  if (!node || node.isSystem !== false) return
+  if (!window.confirm(`确认删除自定义目录「${node.name}」？\n要求目录下没有任何子菜单（含已停用）；删除不可恢复。`)) return
+  deleting.value = true
+  try {
+    await menuManageApi.deleteDir(node.menuId)
+    selectedId.value = ''
+    await loadTree()
+  } catch (e) {
+    alert('删除目录失败：' + (e.message || e))
+  } finally {
+    deleting.value = false
+  }
+}
 
 // ================= 改名 =================
 async function saveName() {
@@ -244,9 +336,29 @@ onMounted(() => loadTree('ERP'))
           >{{ t.label }}</button>
         </div>
         <div class="head-tools">
-          <span class="muted">改名/移动/排序立即对所有用户生效；代码升级后保留自定义（恢复默认除外）</span>
+          <span class="muted">勾选启用立即对所有用户生效；改名/移动/排序在代码升级后保留（恢复默认除外）</span>
+          <button class="btn primary" @click="creating = true">＋ 新增目录</button>
           <button class="btn danger" @click="resetAll">整树恢复默认</button>
         </div>
+      </div>
+
+      <!-- 新增自定义目录（一级/二级） -->
+      <div v-if="creating" class="create-bar">
+        <input
+          v-model="createName" maxlength="100"
+          :placeholder="`在${APP_TABS.find(t => t.value === appTab)?.label || ''}新建目录名称（同级不可重名）`"
+          @keyup.enter="submitCreateDir"
+        />
+        <select v-model="createParentId">
+          <option value="">作为一级目录</option>
+          <option v-for="o in createParentOptions" :key="o.menuId" :value="o.menuId">
+            挂到一级目录：{{ o.name }}
+          </option>
+        </select>
+        <button class="btn primary" :disabled="creatingSubmit" @click="submitCreateDir">
+          {{ creatingSubmit ? '创建中…' : '创建' }}
+        </button>
+        <button class="btn" @click="creating = false">取消</button>
       </div>
 
       <div v-if="loading" class="empty-hint">菜单树加载中…</div>
@@ -255,10 +367,21 @@ onMounted(() => loadTree('ERP'))
         <div
           v-for="row in flatRows" :key="row.node.menuId"
           class="tree-row"
-          :class="{ selected: row.node.menuId === selectedId, stopped: row.node.status === 'STOPPED' }"
+          :class="{
+            selected: row.node.menuId === selectedId,
+            stopped: row.node.status === 'STOPPED',
+            off: row.node.status !== 'STOPPED' && row.node.enabled === false,
+          }"
           :style="{ paddingLeft: row.depth * 20 + 10 + 'px' }"
           @click="selectNode(row.node)"
         >
+          <input
+            class="enable-check" type="checkbox" title="是否启用（停用上级会级联停用全部下级）"
+            :checked="row.node.enabled !== false"
+            :disabled="row.node.status === 'STOPPED'"
+            @click.stop
+            @change="toggleEnabled(row.node, $event.target.checked)"
+          />
           <span
             class="twisty"
             :class="{ hidden: !row.node.children?.length }"
@@ -268,8 +391,10 @@ onMounted(() => loadTree('ERP'))
           <span class="tag" :class="row.node.menuType === 'DIR' ? 'tag-dir' : 'tag-page'">
             {{ TYPE_LABELS[row.node.menuType] || row.node.menuType }}
           </span>
+          <span v-if="row.node.isSystem === false" class="tag tag-self">自建</span>
           <span v-if="row.node.adminOnly" class="tag tag-admin">超管专属</span>
           <span v-if="row.node.status === 'STOPPED'" class="tag tag-stopped">已停用</span>
+          <span v-else-if="row.node.enabled === false" class="tag tag-off">未启用</span>
           <span
             v-if="row.node.nameCustomized || row.node.parentCustomized || row.node.sortCustomized"
             class="tag tag-custom" title="名称/上级/排序存在自定义"
@@ -295,8 +420,10 @@ onMounted(() => loadTree('ERP'))
     <div class="card menu-right">
       <div v-if="!selected" class="empty-hint big">
         选择左侧菜单进行编辑。<br/><br/>
-        菜单由代码注册，本页只支持改名、换上级、同层排序与恢复默认；<br/>
-        新增/删除菜单需发版（被删菜单显示为「已停用」）。
+        ① 点「＋ 新增目录」可建一级/二级自定义目录，页面通过「所属上级」挂到任意一级或二级；<br/>
+        ② 勾选「是否启用」控制菜单是否出现在角色用户设置与用户侧边栏，停用上级自动停用全部下级；<br/>
+        ③ 顶部三个 TAB 切换 ERP 端 / 仓储 PDA / 司机端的菜单树。<br/>
+        页面本身由发版注册（新版块默认未启用，在此勾选上线），代码删除的页面显示为「已停用」。
       </div>
       <template v-else>
         <div class="panel-head">
@@ -336,7 +463,28 @@ onMounted(() => loadTree('ERP'))
               :value="o.menuId" :disabled="o.disabled"
             >{{ o.label }}</option>
           </select>
-          <div class="muted hint">最多三级：目录只能在第 1/2 层，页面只能在第 2/3 层；移动后原目录若变空将对所有用户隐藏（会二次确认）。</div>
+          <div class="muted hint">目录只能放在第 1/2 层，页面可挂第 1/2/3 层；不能移入未启用的目录；移动后原目录若变空将对所有用户隐藏（会二次确认）。</div>
+        </div>
+
+        <!-- 是否启用 -->
+        <div class="panel-section">
+          <div class="section-label">是否启用</div>
+          <label class="enable-line">
+            <input
+              type="checkbox"
+              :checked="selected.enabled !== false"
+              :disabled="selected.status === 'STOPPED'"
+              @change="toggleEnabled(selected, $event.target.checked)"
+            />
+            <span>
+              <b>{{ selected.enabled === false ? '未启用' : '已启用' }}</b>
+              <span class="muted">（勾选=启用；停用上级会自动停用全部下级，启用只改自身）</span>
+            </span>
+          </label>
+          <div class="muted hint">
+            未启用的菜单不会出现在角色「用户设置」授权树中，普通用户侧边栏也不显示；
+            超管账号不受影响，便于上线前预览。新开发模块发版后默认未启用。
+          </div>
         </div>
 
         <!-- 只读元数据 -->
@@ -344,6 +492,7 @@ onMounted(() => loadTree('ERP'))
           <div class="section-label">菜单元数据（只读）</div>
           <div class="meta-grid">
             <label>类型</label><span>{{ TYPE_LABELS[selected.menuType] || selected.menuType }}</span>
+            <label>来源</label><span>{{ selected.isSystem === false ? '自建（自定义目录）' : '内置（代码注册）' }}</span>
             <label>编码</label><span class="mono">{{ selected.code }}</span>
             <label>路由</label><span class="mono">{{ selected.path || '—' }}</span>
             <label>组件</label><span class="mono">{{ selected.componentPath || '—' }}</span>
@@ -358,10 +507,18 @@ onMounted(() => loadTree('ERP'))
         </div>
 
         <div class="panel-foot">
-          <button class="btn" :disabled="resetting" @click="resetOne">
-            {{ resetting ? '恢复中…' : '恢复该菜单默认' }}
-          </button>
-          <span class="muted">清除该节点的名称/上级/排序自定义，立即按代码默认重算</span>
+          <template v-if="selected.isSystem === false">
+            <button class="btn danger" :disabled="deleting" @click="deleteSelectedDir">
+              {{ deleting ? '删除中…' : '删除该自定义目录' }}
+            </button>
+            <span class="muted">仅空目录可删除；内置菜单不支持删除，代码删版后自动标为「已停用」</span>
+          </template>
+          <template v-else>
+            <button class="btn" :disabled="resetting" @click="resetOne">
+              {{ resetting ? '恢复中…' : '恢复该菜单默认' }}
+            </button>
+            <span class="muted">清除该节点的名称/上级/排序自定义，立即按代码默认重算（不影响启用状态）</span>
+          </template>
         </div>
       </template>
     </div>
@@ -389,6 +546,27 @@ onMounted(() => loadTree('ERP'))
 .tree-row.selected { background: #eaf4ff; }
 .tree-row.stopped { color: #94a3b8; }
 .tree-row.stopped .tree-name { text-decoration: line-through; }
+.tree-row.off { color: #b08a4a; }
+.tree-row.off .tree-name { color: #a16207; }
+.enable-check { flex: none; margin: 0 2px 0 0; cursor: pointer; accent-color: var(--primary); }
+.enable-check:disabled { cursor: not-allowed; }
+.tag-self { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
+.tag-off { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
+.create-bar {
+  display: flex; gap: 8px; align-items: center; padding: 8px 14px;
+  border-bottom: 1px solid var(--line); background: #f8fbff;
+}
+.create-bar input {
+  flex: 1; min-width: 160px; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
+}
+.create-bar select {
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; background: #fff; max-width: 220px;
+}
+.create-bar .btn { height: 30px; padding: 0 12px; }
+.enable-line { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.enable-line input { accent-color: var(--primary); }
 .twisty { width: 16px; color: #94a3b8; text-align: center; flex: none; }
 .twisty.hidden { visibility: hidden; }
 .tree-name { color: #1f2d3d; font-weight: 600; }
