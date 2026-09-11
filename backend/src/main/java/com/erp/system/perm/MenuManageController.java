@@ -96,11 +96,11 @@ public class MenuManageController {
         return ApiResponse.ok(menuMetaService.setEnabled(menuId, on));
     }
 
-    /** 删除空的自定义目录（内置菜单拒绝删除）。 */
+    /** 删除一/二级空目录（子树无页面即可；含空二级目录时级联删除，页面必须先移走）。 */
     @PostMapping("/{menuId}/delete")
     public ApiResponse<Map<String, Object>> deleteDir(@PathVariable String menuId) {
         requireSuperAdmin();
-        return ApiResponse.ok(menuMetaService.deleteCustomDir(menuId));
+        return ApiResponse.ok(menuMetaService.deleteEmptyDir(menuId));
     }
 
     /** 单个菜单恢复代码默认（名称/上级/排序三个自定义标志一并清除并重取）。 */

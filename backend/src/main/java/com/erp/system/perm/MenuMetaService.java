@@ -468,36 +468,60 @@ public class MenuMetaService {
         return Map.of("affected", ids.size());
     }
 
-    /** 删除空的自定义目录；内置菜单只允许随代码删版自动停用，不允许物理删除。 */
+    /**
+     * 删除一/二级空目录：整棵子树中不存在任何 PAGE 即可删除（只含空二级目录的一级目录
+     * 级联一并删除）。页面（PAGE，含 STOPPED 占位行）必须先移走，避免删出孤儿页面。
+     * 自建目录物理删除；内置目录同样可删，但下次代码同步时若代码仍声明它，会以「未启用」
+     * 状态重新注册（与"新开发模块默认不启用"同一口径，不会静默回到用户菜单）。
+     */
     @Transactional
-    public Map<String, Object> deleteCustomDir(String menuId) {
+    public Map<String, Object> deleteEmptyDir(String menuId) {
         Map<String, Object> node = mustFind(menuId);
-        if (Boolean.TRUE.equals(node.get("is_system"))) {
-            throw new IllegalArgumentException("内置菜单不允许删除；代码删版后会自动标记为「已停用」");
-        }
         if (!"DIR".equals(str(node.get("menu_type")))) {
-            throw new IllegalArgumentException("仅自定义目录可以删除");
+            throw new IllegalArgumentException("页面不能删除（页面由代码注册）；不希望展示请取消「是否启用」");
         }
-        Integer kids = jdbc.queryForObject(
-                "SELECT COUNT(1) FROM sys_menu_meta WHERE parent_id = ?", Integer.class, menuId);
-        if (kids != null && kids > 0) {
-            throw new IllegalArgumentException("目录下还有 " + kids + " 个子菜单（含已停用），请先移走后再删除");
+        // 收集整棵子树（含自身）的类型；任意非 DIR（页面/分组/STOPPED 占位）都阻断删除
+        List<Map<String, Object>> subtree = subtreeRows(menuId);
+        int pages = 0;
+        for (Map<String, Object> r : subtree) {
+            if (!"DIR".equals(str(r.get("menu_type")))) pages++;
         }
-        jdbc.update("DELETE FROM sys_role_menu_rel WHERE menu_id = ?", menuId);
-        jdbc.update("DELETE FROM sys_menu_meta WHERE menu_id = ?", menuId);
-        audit(menuId, str(node.get("menu_code")), "DELETE_DIR", "{}",
-                "删除自定义目录「" + str(node.get("menu_name")) + "」");
-        return Map.of("warning", "");
+        if (pages > 0) {
+            throw new IllegalArgumentException("目录下还有 " + pages + " 个页面（含已停用），请先移走后再删除");
+        }
+        List<String> ids = subtree.stream().map(r -> str(r.get("menu_id"))).toList();
+        jdbc.update("DELETE FROM sys_role_menu_rel WHERE menu_id IN (" + placeholders(ids.size()) + ")",
+                ids.toArray());
+        jdbc.update("DELETE FROM sys_menu_meta WHERE menu_id IN (" + placeholders(ids.size()) + ")",
+                ids.toArray());
+        boolean custom = !Boolean.TRUE.equals(node.get("is_system"));
+        audit(menuId, str(node.get("menu_code")), "DELETE_DIR",
+                "{\"removed\":" + ids.size() + ",\"custom\":" + custom + "}",
+                (custom ? "删除自建目录「" : "删除内置空目录「") + str(node.get("menu_name"))
+                        + "」（级联 " + (ids.size() - 1) + " 个空子目录）");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("removed", ids.size());
+        out.put("warning", "");
+        return out;
     }
 
     /** 收集含根节点在内的整棵子树 menu_id（BFS，带环保护）。 */
     private List<String> subtreeIds(String rootId) {
-        List<String> all = new ArrayList<>();
+        return new ArrayList<>(subtreeRows(rootId).stream().map(r -> str(r.get("menu_id"))).toList());
+    }
+
+    /** 收集含根节点在内的整棵子树行（menu_id/menu_type），BFS 带环保护。 */
+    private List<Map<String, Object>> subtreeRows(String rootId) {
+        List<Map<String, Object>> all = new ArrayList<>();
         List<String> frontier = new ArrayList<>(List.of(rootId));
         Set<String> guard = new LinkedHashSet<>();
         guard.add(rootId);
         while (!frontier.isEmpty()) {
-            all.addAll(frontier);
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                    "SELECT menu_id, menu_type FROM sys_menu_meta " +
+                    "WHERE menu_id IN (" + placeholders(frontier.size()) + ")",
+                    frontier.toArray());
+            all.addAll(rows);
             List<String> next = new ArrayList<>(jdbc.queryForList(
                     "SELECT menu_id FROM sys_menu_meta WHERE parent_id IN (" + placeholders(frontier.size()) + ")",
                     String.class, frontier.toArray()));

@@ -391,3 +391,19 @@
 **验证（全新库隔离环境 8081 + 5174，未碰用户 8080/5173）**：V109 在全新 Flyway 链路（107 支迁移）成功；接口验收 36/36（建目录 11 条正反用例、启用链、级联 affected=子树精确值、授权树随启用状态显隐、超管绕过、页面移一级、移入停用目录拒、内置删除拒/非空删除拒/空目录删除、reset-all 清自建目录并还原上级、CREATE_DIR/ENABLE/DISABLE/DELETE_DIR 审计齐全）；Edge headless CDP 真实表单登录后 UI 验收：TAB 三端切换、新建目录（自建标+勾选态）、勾选/取消勾选级联与「未启用」标、经 Vite 代理的授权树显隐与超管绕过，控制台零异常。`mvn -o compile/package` 与 `npm run build`（5.77s）均通过。验证用临时库/临时 Edge profile 用后即删。
 
 **版本号说明**：本需求占用 V109（开工前 ls 确认最大为 V108）；原规划卡片12「清旧」（chore/rbac-cleanup-legacy）顺延 V110，开工时仍须重新 ls 确认。
+
+
+### 2026-09-11 跟进修复：菜单管理按钮显示、停用报错排障、空目录删除放宽（fix/menu-manage-followup，无迁移）
+
+> 用户反馈（原话）：「1、新建目录/恢复默认按钮现在显示不全请修复。确保按钮显示得体。2、取消勾选菜单报错【停用失败：系统繁忙，请稍后重试】。3、没有下级页面的一/二级菜单可删除」
+
+**问题 1｜按钮文字显示不全（纯 CSS）**：根因是全局 `styles/app.css` 的 `.btn{height:30px;padding:0 12px}` 没有 `white-space:nowrap`，头部 `.head-tools` 与新建条 `.create-bar` 在 flex 剩余空间变窄时按钮被压缩、中文文字裁切。修复（MenuManage.vue 作用域内）：页头/工具区/新建条/面板底全部允许 `flex-wrap:wrap`，按钮加 `flex:none;white-space:nowrap;padding:0 14px`，提示文案占弹性剩余宽度并可收缩（`flex:1 1 220px;min-width`），页签 `white-space:nowrap` 不被挤断；头部提示语缩短为「勾选启用立即生效；自定义在升级后保留」。1600×900 下 CDP 实测「＋ 新增目录」99px、「整树恢复默认」108px、「创建/取消」56px，高度均 30px、单行不裁切（scrollWidth≤clientWidth）。
+
+**问题 2｜停用报「系统繁忙，请稍后重试」（非代码 BUG，旧后端未重启）**：新前端（Vite 热更新）调用的是本期新接口 `PUT /system/menu-manage/{id}/enabled`，而用户运行中的 8080 后端进程启动于新 jar 构建之前，不存在该路由，请求落到全局异常兜底，`GlobalExceptionHandler` 对未知异常统一返回 HTTP 200 + code='500'「系统繁忙，请稍后重试」，前端按 failure 弹出「停用失败：系统繁忙，请稍后重试」。同期新建目录/删除目录的新接口在旧后端上同样会失败。处置：接口本身经隔离环境（全新库 8081）接口级 12 条断言与 CDP 真实 UI 双重验证通过；**用户需重启 IDE 中的 8080 后端**（重启时 Flyway 自动执行 V109，存量库 enabled 全量回填 TRUE，行为零变化）。
+
+**问题 3｜空目录删除放宽**：原实现仅允许删除「空的自定义目录」，内置目录一律拒绝。按用户口径改为「**整棵子树中不存在任何 PAGE 即可删除**」：
+- `MenuMetaService.deleteCustomDir` 重命名/重写为 `deleteEmptyDir`：新增 `subtreeRows(rootId)`（BFS，带环保护）取整棵子树，子树存在任意 PAGE（含 STOPPED 占位行）即拒绝并提示精确数量「目录下还有 N 个页面（含已停用），请先移走后再删除」；无页面则物理删除整棵子树（一级目录下只挂空二级目录时级联删除，一次清空 sys_role_menu_rel + sys_menu_meta）。PAGE 节点本身永远不可删（提示「页面不能删除（页面由代码注册）；不希望展示请取消『是否启用』」），避免删出孤儿页面。
+- **内置目录也允许删**，但下次启动 PermissionRegistry 代码同步时若代码仍声明该目录，会按"新开发模块默认不启用"口径以 `enabled=FALSE` 重新注册——不会静默回到用户菜单；删除确认框与按钮提示均向管理员明示这一点。审计沿用 DELETE_DIR，detail 记 removed 数与 custom 标志。
+- 前端：右面板底部「删除空目录」按钮对所有 DIR 显示，子树含页面时禁用并带 tooltip/灰字「目录下还有 N 个页面，移走后才能删除」；「恢复默认」按钮仅内置节点显示；确认文案区分自建（不可恢复、授权同清）与内置（重启以未启用状态回归）两种后果，并提示级联空目录数。
+
+**验证（隔离环境 8081 + 5174 + Edge headless CDP 9222，全新 H2 库，未碰用户 8080/5173 进程）**：后端 `mvn -o -DskipTests package` rc=0，前端 `npm run build` 通过（4.01s）；接口验收 12/12（级联删 L1+空 L2 removed=2、含 1 个页面的目录拒绝且文案含数量、PAGE 删除拒绝、移走页面后可删、内置非空目录被"页面数"校验拦截而非 isSystem 拦截、停用 affected=子树 24/23 精确、启用 affected=1、DELETE_DIR 审计）；CDP 真实 UI：头部/新建条/面板按钮全部 fit 不裁切、UI 建 L1+空 L2 后删 L1 两行同消、取消勾选基础资料级联停用（子节点 base.goods 同步取消、行变灰挂「未启用」黄标）、重新勾选只启用自身（子节点保持未启用）、全程零 alert 零控制台异常。临时库 E:/tmp/menu2 与临时 Edge profile 用后即删。

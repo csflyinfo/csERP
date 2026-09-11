@@ -194,12 +194,28 @@ async function toggleEnabled(node, checked) {
   }
 }
 
-// ================= 删除自定义目录 =================
+// ================= 删除空目录（自建/内置均可，子树无页面即可） =================
 const deleting = ref(false)
+/** 子树中的页面数量（含已停用占位页面）；>0 时目录不可删，必须先移走页面。 */
+function pageDescendantCount(node) {
+  let n = 0
+  for (const c of node.children || []) {
+    if (c.menuType !== 'DIR') n++
+    n += pageDescendantCount(c)
+  }
+  return n
+}
+
 async function deleteSelectedDir() {
   const node = selected.value
-  if (!node || node.isSystem !== false) return
-  if (!window.confirm(`确认删除自定义目录「${node.name}」？\n要求目录下没有任何子菜单（含已停用）；删除不可恢复。`)) return
+  if (!node || node.menuType !== 'DIR' || pageDescendantCount(node) > 0) return
+  const nestedEmpty = subtreeSize(node) - 1
+  const builtIn = node.isSystem !== false
+  const tip = builtIn
+    ? '该目录为代码内置：删除后本次运行内不再出现；若代码仍声明它，重启同步时会以「未启用」状态重新注册，不会直接回到用户菜单。'
+    : '删除后不可恢复（授权关系一并清除）。'
+  const cascade = nestedEmpty > 0 ? `\n其下 ${nestedEmpty} 个空的子目录将一并删除。` : ''
+  if (!window.confirm(`确认删除空目录「${node.name}」？${cascade}\n${tip}`)) return
   deleting.value = true
   try {
     await menuManageApi.deleteDir(node.menuId)
@@ -336,7 +352,7 @@ onMounted(() => loadTree('ERP'))
           >{{ t.label }}</button>
         </div>
         <div class="head-tools">
-          <span class="muted">勾选启用立即对所有用户生效；改名/移动/排序在代码升级后保留（恢复默认除外）</span>
+          <span class="muted">勾选启用立即生效；自定义在升级后保留</span>
           <button class="btn primary" @click="creating = true">＋ 新增目录</button>
           <button class="btn danger" @click="resetAll">整树恢复默认</button>
         </div>
@@ -507,18 +523,30 @@ onMounted(() => loadTree('ERP'))
         </div>
 
         <div class="panel-foot">
-          <template v-if="selected.isSystem === false">
-            <button class="btn danger" :disabled="deleting" @click="deleteSelectedDir">
-              {{ deleting ? '删除中…' : '删除该自定义目录' }}
-            </button>
-            <span class="muted">仅空目录可删除；内置菜单不支持删除，代码删版后自动标为「已停用」</span>
-          </template>
-          <template v-else>
-            <button class="btn" :disabled="resetting" @click="resetOne">
-              {{ resetting ? '恢复中…' : '恢复该菜单默认' }}
-            </button>
-            <span class="muted">清除该节点的名称/上级/排序自定义，立即按代码默认重算（不影响启用状态）</span>
-          </template>
+          <!-- 目录：子树无页面即可删除（自建/内置均可；含空二级目录时级联删除） -->
+          <button
+            v-if="selected.menuType === 'DIR'"
+            class="btn danger"
+            :disabled="deleting || pageDescendantCount(selected) > 0"
+            :title="pageDescendantCount(selected) > 0 ? '目录下还有页面，请先把页面移到其他目录' : ''"
+            @click="deleteSelectedDir"
+          >{{ deleting ? '删除中…' : '删除空目录' }}</button>
+          <!-- 内置菜单可恢复代码默认；自建目录没有代码默认值 -->
+          <button
+            v-if="selected.isSystem !== false"
+            class="btn"
+            :disabled="resetting"
+            @click="resetOne"
+          >{{ resetting ? '恢复中…' : '恢复默认' }}</button>
+          <span class="muted" v-if="selected.menuType === 'DIR' && pageDescendantCount(selected) > 0">
+            目录下还有 {{ pageDescendantCount(selected) }} 个页面，移走后才能删除
+          </span>
+          <span class="muted" v-else-if="selected.isSystem !== false">
+            恢复默认重算名称/上级/排序（不影响启用状态）
+          </span>
+          <span class="muted" v-else>
+            自建空目录可直接删除；内置目录删除后会在下次代码同步时以「未启用」状态回来
+          </span>
         </div>
       </template>
     </div>
@@ -530,13 +558,15 @@ onMounted(() => loadTree('ERP'))
 .menu-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0; }
 .page-head {
   display: flex; justify-content: space-between; align-items: center;
+  flex-wrap: wrap; row-gap: 8px;
   padding: 10px 14px; border-bottom: 1px solid var(--line); gap: 12px;
 }
-.app-tabs { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.app-tab { border: 0; background: #fff; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #475569; }
+.app-tabs { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex: none; }
+.app-tab { border: 0; background: #fff; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #475569; white-space: nowrap; }
 .app-tab.active { background: var(--primary); color: #fff; }
-.head-tools { display: flex; align-items: center; gap: 10px; }
-.head-tools .btn { height: 30px; padding: 0 12px; }
+.head-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.head-tools .muted { flex: 1 1 220px; min-width: 180px; text-align: right; line-height: 1.4; }
+.head-tools .btn { height: 30px; padding: 0 14px; flex: none; white-space: nowrap; }
 .tree-scroll { flex: 1; overflow-y: auto; padding: 8px; min-height: 0; }
 .tree-row {
   display: flex; align-items: center; gap: 8px; height: 32px;
@@ -553,18 +583,18 @@ onMounted(() => loadTree('ERP'))
 .tag-self { background: #ecfeff; color: #0e7490; border: 1px solid #a5f3fc; }
 .tag-off { background: #fefce8; color: #a16207; border: 1px solid #fde68a; }
 .create-bar {
-  display: flex; gap: 8px; align-items: center; padding: 8px 14px;
+  display: flex; gap: 8px; align-items: center; padding: 8px 14px; flex-wrap: wrap;
   border-bottom: 1px solid var(--line); background: #f8fbff;
 }
 .create-bar input {
-  flex: 1; min-width: 160px; padding: 6px 10px;
+  flex: 1 1 200px; min-width: 160px; padding: 6px 10px;
   border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
 }
 .create-bar select {
-  padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
-  font-size: 13px; background: #fff; max-width: 220px;
+  flex: 0 1 240px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px;
+  font-size: 13px; background: #fff;
 }
-.create-bar .btn { height: 30px; padding: 0 12px; }
+.create-bar .btn { height: 30px; padding: 0 14px; flex: none; white-space: nowrap; }
 .enable-line { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .enable-line input { accent-color: var(--primary); }
 .twisty { width: 16px; color: #94a3b8; text-align: center; flex: none; }
@@ -594,9 +624,9 @@ onMounted(() => loadTree('ERP'))
 .section-label { font-size: 13px; font-weight: 700; color: #12385f; display: flex; align-items: center; gap: 6px; }
 .inline-edit { display: flex; gap: 8px; }
 .inline-edit input {
-  flex: 1; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
+  flex: 1; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
 }
-.inline-edit .btn { height: 32px; }
+.inline-edit .btn { height: 32px; flex: none; white-space: nowrap; padding: 0 14px; }
 .panel-section select {
   padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; background: #fff;
 }
@@ -607,8 +637,10 @@ onMounted(() => loadTree('ERP'))
 .hint { line-height: 1.6; }
 .panel-foot {
   margin-top: auto; border-top: 1px solid var(--line-soft, #eef3f8); padding-top: 12px;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 }
+.panel-foot .btn { flex: none; white-space: nowrap; padding: 0 14px; }
+.panel-foot .muted { flex: 1 1 180px; min-width: 160px; line-height: 1.5; }
 .muted { color: #94a3b8; font-size: 12px; }
 .mono { font-family: var(--font-mono); }
 </style>
