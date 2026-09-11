@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.sales.RejectInboundController;
 import com.erp.tms.service.TmsNotifyService;
@@ -68,6 +69,7 @@ public class TmsCustomerRejectController {
      */
     @PostMapping("/tms/app/customer-reject/create")
     @Transactional
+    @RequirePerm("driver.sign.reject")
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
@@ -200,6 +202,7 @@ public class TmsCustomerRejectController {
     /** 上传客户拒收留证照片（URL 数组，APP 端先调 /tms/app/upload/image 上传）。 */
     @PostMapping("/tms/app/customer-reject/upload-photo")
     @Transactional
+    @RequirePerm("driver.sign.photo")
     public ApiResponse<Map<String, Object>> uploadPhoto(@RequestBody Map<String, Object> body) {
         String rejectId = TmsUtil.str(body.get("rejectId"));
         if (rejectId.isEmpty()) return ApiResponse.fail("400", "rejectId 不能为空");
@@ -222,6 +225,7 @@ public class TmsCustomerRejectController {
 
     /** 本司机待返仓客户拒收单列表。 */
     @PostMapping("/tms/app/customer-reject/list")
+    @RequirePerm("driver.sign.view")
     public ApiResponse<Map<String, Object>> list(@RequestBody(required = false) Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, """
@@ -249,6 +253,7 @@ public class TmsCustomerRejectController {
      */
     @PostMapping("/tms/app/customer-reject/confirm")
     @Transactional
+    @RequirePerm("driver.sign.reject")
     public ApiResponse<Map<String, Object>> confirm(@RequestBody Map<String, Object> body) {
         List<String> ids = new ArrayList<>();
         Object single = body.get("rejectId");

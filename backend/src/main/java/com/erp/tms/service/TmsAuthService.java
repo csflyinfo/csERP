@@ -11,16 +11,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 司机端鉴权：手机号 + 验证码登录（开发期验证码固定 888888），签发 JWT。
+ * 司机端公共查询服务（PRD-28 卡片10 起不再负责登录签发）。
  *
- * 复用现有 JwtUtil（secret/expiration 走 jwt.* 配置）。
- * token claim：subject=driverId（employee_id），displayName=司机姓名，roleCode=DRIVER。
- * Controller 通过 SecurityContext.getName() 拿到 driverId。
+ * <p>登录/自动开通/令牌签发已迁到 {@link TmsDriverAuthService}（多角色 appType=DRIVER 令牌、
+ * 短信风控、首次登录自动开通账号）。本类保留 APP 参数快照（PRD-26 §5.5）与司机档案查询，
+ * 供登录响应与 /tms/app/params、/tms/app/profile 共用。
  */
 @Service
 public class TmsAuthService {
-
-    private static final String DEV_VERIFY_CODE = "888888";
 
     private final JdbcTemplate jdbcTemplate;
     private final JwtUtil jwtUtil;
@@ -30,49 +28,6 @@ public class TmsAuthService {
         this.jdbcTemplate = jdbcTemplate;
         this.jwtUtil = jwtUtil;
         this.sysParamService = sysParamService;
-    }
-
-    /**
-     * 司机登录。
-     * @param mobile    手机号
-     * @param verifyCode 验证码（开发期固定 888888）
-     * @return 含 token 与司机基础信息
-     */
-    public Map<String, Object> login(String mobile, String verifyCode) {
-        if (mobile == null || mobile.isBlank()) {
-            throw new IllegalArgumentException("请输入手机号");
-        }
-        if (!DEV_VERIFY_CODE.equals(verifyCode)) {
-            throw new IllegalArgumentException("验证码错误");
-        }
-        // 查 base_employee，is_deliveryman=TRUE
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT employee_id, employee_code, employee_name, mobile, department, position
-                FROM base_employee
-                WHERE is_deliveryman = TRUE AND status = 'NORMAL'
-                  AND (mobile = ? OR employee_code = ?)
-                """, mobile, mobile);
-        if (rows.isEmpty()) {
-            throw new IllegalArgumentException("未找到在职司机：" + mobile);
-        }
-        Map<String, Object> row = TmsUtil.camelize(rows.get(0));
-        String driverId = TmsUtil.str(row.get("employeeId"));
-        String driverName = TmsUtil.str(row.get("employeeName"));
-
-        String token = jwtUtil.generateToken(driverId, driverId, driverName, "DRIVER");
-
-        // 用 LinkedHashMap 而非 Map.of：参数快照是嵌套结构且后续可能扩展可空字段，
-        // Map.of 不可变且不接受 null，加字段会直接 NPE
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("token", token);
-        result.put("driverId", driverId);
-        result.put("driverCode", TmsUtil.str(row.get("employeeCode")));
-        result.put("driverName", driverName);
-        result.put("mobile", TmsUtil.str(row.get("mobile")));
-        result.put("roleCode", "DRIVER");
-        // 登录即下发参数快照（PRD-26 §5.5）：APP 不直连参数表，避免每个页面单独请求
-        result.put("params", appParamSnapshot());
-        return result;
     }
 
     /**

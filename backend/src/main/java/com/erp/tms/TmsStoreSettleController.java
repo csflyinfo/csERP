@@ -1,6 +1,9 @@
 package com.erp.tms;
 
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.PermissionDeniedException;
+import com.erp.common.security.PermissionService;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.finance.FinanceController;
 import com.erp.sales.SalesReturnController;
@@ -50,12 +53,15 @@ public class TmsStoreSettleController {
     private final FinanceController financeController;
     private final com.erp.system.SysParamService sysParamService;
     private final TransactionTemplate nestedTx;
+    private final PermissionService permissionService;
 
     public TmsStoreSettleController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                                     SalesReturnController salesReturnController,
                                     FinanceController financeController,
                                     com.erp.system.SysParamService sysParamService,
-                                    PlatformTransactionManager txManager) {
+                                    PlatformTransactionManager txManager,
+                                    PermissionService permissionService) {
+        this.permissionService = permissionService;
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.salesReturnController = salesReturnController;
@@ -75,6 +81,7 @@ public class TmsStoreSettleController {
      * APP 此时只显示【挂账】，不会把钱记到别人账上。
      */
     @PostMapping("/accounts")
+    @RequirePerm("driver.settlement.select_account")
     public ApiResponse<Map<String, Object>> accounts() {
         String driverId = TmsUtil.currentDriverId();
         if (driverId.isEmpty()) return ApiResponse.fail("401", "请重新登录");
@@ -166,6 +173,13 @@ public class TmsStoreSettleController {
         return ApiResponse.ok(Map.of("driverId", driverId, "saved", saved));
     }
 
+    /** 载荷功能点裁决：无权限抛 403（全局处理器转 HTTP 403）。 */
+    private void checkPerm(String code) {
+        if (!permissionService.hasFunc(code)) {
+            throw new PermissionDeniedException("无操作权限：" + code);
+        }
+    }
+
     /**
      * 宽松真值判断。前端可能传 true / "Y" / 1 / "true" 中的任意一种，
      * 只认死一种写法会让「设为默认」在某些调用方静默失效。
@@ -184,6 +198,9 @@ public class TmsStoreSettleController {
      *       + creditOnly（是否强制挂账：净额 <= 0 或全是退货单）
      */
     @PostMapping("/preview")
+    @RequirePerm(value = "driver.settlement.view", name = "门店结算",
+            alsoRegister = {"driver.settlement.settle", "driver.settlement.merge",
+                    "driver.settlement.on_credit", "driver.settlement.select_account"})
     public ApiResponse<Map<String, Object>> preview(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         if (driverId.isEmpty()) return ApiResponse.fail("401", "请重新登录");
@@ -209,6 +226,9 @@ public class TmsStoreSettleController {
      */
     @PostMapping("/submit")
     @Transactional
+    @RequirePerm(value = "driver.settlement.settle", name = "门店结算/收款",
+            alsoRegister = {"driver.settlement.merge", "driver.settlement.on_credit",
+                    "driver.settlement.photo", "driver.settlement.select_account"})
     public ApiResponse<Map<String, Object>> submit(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         if (driverId.isEmpty()) return ApiResponse.fail("401", "请重新登录");
@@ -256,17 +276,19 @@ public class TmsStoreSettleController {
         List<Map<String, Object>> bills = loadBills(driverId, customerCode, detailIds);
         if (bills.isEmpty()) return ApiResponse.fail("400", "没有可结算的单据");
 
-        // 合并结算兜底校验（PRD-26 §P0119，TMS_RETURN_MERGE_SETTLE）。
-        //
-        // 关闭时「退货单不可与送货单一起勾选结算」。APP 端已在勾选阶段拦住
-        // （_canCheckWith / _limitCheckedToOneType），这里是服务端兜底：旧版本 APP
-        // 不认这个参数，直接调接口同样能绕过端上限制。
+        // 合并结算双重控制（§7.3 功能点 + PRD-26 §P0119 参数 TMS_RETURN_MERGE_SETTLE）。
         // 用 bills 而非入参 draftBills 判类型：billType 取自 tms_dispatch_detail，
         // 是服务端口径，端上传什么都篡改不了。
-        if (!sysParamService.getBool("TMS_RETURN_MERGE_SETTLE", true)) {
-            boolean hasReturn = bills.stream().anyMatch(b -> "RETURN".equals(TmsUtil.str(b.get("billType"))));
-            boolean hasReceipt = bills.stream().anyMatch(b -> !"RETURN".equals(TmsUtil.str(b.get("billType"))));
-            if (hasReturn && hasReceipt) {
+        boolean hasReturn = bills.stream().anyMatch(b -> "RETURN".equals(TmsUtil.str(b.get("billType"))));
+        boolean hasReceipt = bills.stream().anyMatch(b -> !"RETURN".equals(TmsUtil.str(b.get("billType"))));
+        if (hasReturn && hasReceipt) {
+            // 功能点：无「合并结算」授权的裁剪角色（如新手司机）直接 403，
+            // 即使绕过 APP 按钮勾选、直接打接口也不行
+            checkPerm("driver.settlement.merge");
+            // 参数：关闭时「退货单不可与送货单一起勾选结算」。APP 端已在勾选阶段拦住
+            // （_canCheckWith / _limitCheckedToOneType），这里是服务端兜底：旧版本 APP
+            // 不认这个参数，直接调接口同样能绕过端上限制。
+            if (!sysParamService.getBool("TMS_RETURN_MERGE_SETTLE", true)) {
                 return ApiResponse.fail("400", "当前设置不允许退货单与送货单合并结算，请分开提交");
             }
         }
@@ -292,6 +314,11 @@ public class TmsStoreSettleController {
         List<Map<String, Object>> accounts = mapList(body.get("accounts"));
         BigDecimal received = BigDecimal.ZERO;
         for (Map<String, Object> a : accounts) received = received.add(TmsUtil.toBd(a.get("amount")));
+
+        // 功能点裁决（§7.3）：挂账金额>0 需「挂账结算」，有钱款收讫需「选择收款账户」；
+        // 「不收款司机」角色在矩阵层被整体裁掉这组功能点
+        if (credit.signum() > 0) checkPerm("driver.settlement.on_credit");
+        if (received.signum() > 0) checkPerm("driver.settlement.select_account");
 
         // 净额 <= 0（退货多于发货）时不允许收钱，只能挂账，由后台走退款流程
         if (settleAmount.signum() <= 0 && received.signum() > 0) {

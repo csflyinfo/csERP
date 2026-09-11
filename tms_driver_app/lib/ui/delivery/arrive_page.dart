@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/driver_perms.dart';
+import '../../services/auth_service.dart';
 import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../providers/delivery_provider.dart';
@@ -292,12 +294,18 @@ class _ArrivePageState extends ConsumerState<ArrivePage> {
         ],
 
         const SizedBox(height: 18),
-        _submitting
-            ? const Center(child: CircularProgressIndicator())
-            : TmsButton.primary(
-                _hasFix ? '确认到店打卡' : '无定位打卡（仅记时间）',
-                onPressed: () => _submit(cfg),
-              ),
+        if (!AuthService.hasPerm(DriverPerms.arriveConfirm))
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(child: Text('当前账号无到店打卡权限', style: TextStyle(fontSize: 12, color: TmsTheme.muted))),
+          )
+        else if (_submitting)
+          const Center(child: CircularProgressIndicator())
+        else
+          TmsButton.primary(
+            _hasFix ? '确认到店打卡' : '无定位打卡（仅记时间）',
+            onPressed: () => _submit(cfg),
+          ),
         const SizedBox(height: 8),
         TmsButton.outline('稍后再打卡',
             onPressed: _submitting ? null : () => Navigator.pop(context, false)),

@@ -58,7 +58,16 @@ public class PermissionRegistry {
             {"submit", "提交盘点"}, {"view_cost", "查看成本金额"}, {"view_batch", "查看批次"},
             {"report", "上报异常"}, {"handle", "处理异常"}, {"assign", "分派"},
             {"recall", "撤回"}, {"view_self", "查看个人工作量"}, {"view_team", "查看全仓绩效"},
-            {"switch_warehouse", "切换仓库"}, {"change_pwd", "修改密码"}
+            {"switch_warehouse", "切换仓库"}, {"change_pwd", "修改密码"},
+            // PRD-28 卡片10：司机 APP 作业动作（§7.3）
+            {"accept", "接单"}, {"refuse", "拒单"}, {"confirm_point", "按点确认"},
+            {"confirm_all", "批量装车"}, {"view_bills", "查看单据商品"}, {"return_point", "退回调度池"},
+            {"navigation", "导航到店"}, {"normal", "正常签收"}, {"partial", "部分签收"},
+            {"save_draft", "离线暂存"}, {"settle", "门店结算/收款"}, {"merge", "合并结算"},
+            {"on_credit", "挂账结算"}, {"select_account", "选择收款账户"},
+            {"submit", "提交"}, {"onsite", "现场开退货单"}, {"warehouse", "返仓交接"},
+            {"team_view", "查看本组任务"}, {"change_server", "切换服务器"}, {"logout", "退出登录"},
+            {"mileage", "里程留痕"}, {"append_accept", "接受在途追加"}, {"esign", "电子签名"}
     };
 
     /**
@@ -127,6 +136,71 @@ public class PermissionRegistry {
                 "wms_pda.stock_query.view_cost"));
     }
 
+    /**
+     * 司机 APP 三内置角色功能点矩阵（方案 §7.3，PRD-28 卡片10）。
+     * key=role_id，value=该角色拥有的 driver.* 功能点全集；每次同步按矩阵对账：
+     * 矩阵外的 driver.* 授权收回、缺失的补齐。非 driver.* 授权与其他角色不受影响。
+     * 「不收款司机」「新手司机」等是管理员在角色管理页复制 TMS_DRIVER 后裁剪的自定义角色，
+     * 不在此表（与 PDA 矩阵同一口径）。
+     */
+    private static final Map<String, List<String>> DRIVER_ROLE_FUNCS = new LinkedHashMap<>();
+    static {
+        // 普通司机：首页/装车/发车/配送/签收/门店结算/交账/退货/异常/历史/消息/我的全流程
+        String[] driverCommon = {
+                "driver.home.view", "driver.home.accept", "driver.home.refuse",
+                "driver.loading.view", "driver.loading.confirm_point", "driver.loading.confirm_all",
+                "driver.loading.view_bills", "driver.loading.return_point", "driver.loading.scan",
+                "driver.depart.confirm", "driver.depart.mileage", "driver.depart.append_accept",
+                "driver.delivering.view", "driver.delivering.navigation",
+                "driver.arrive.confirm",
+                "driver.sign.view", "driver.sign.normal", "driver.sign.partial", "driver.sign.reject",
+                "driver.sign.photo", "driver.sign.esign", "driver.sign.save_draft",
+                "driver.settlement.view", "driver.settlement.settle", "driver.settlement.merge",
+                "driver.settlement.on_credit", "driver.settlement.photo", "driver.settlement.select_account",
+                "driver.handover.view", "driver.handover.submit", "driver.handover.esign", "driver.handover.print",
+                "driver.return.view", "driver.return.onsite", "driver.return.confirm",
+                "driver.return.warehouse", "driver.return.photo",
+                "driver.exception.view", "driver.exception.report",
+                "driver.history.view",
+                "driver.collect_records.view",
+                "driver.store_location.edit",
+                "driver.notification.view",
+                "driver.profile.view", "driver.profile.change_pwd",
+                "driver.profile.change_server", "driver.profile.logout"
+        };
+        DRIVER_ROLE_FUNCS.put("R_TMS_DRIVER", concat(driverCommon));
+        // 装车员：只参与仓内装车环节（含开始装车=进入逐点核对），不接单/不发车/不签收/不结算。
+        // home.view 是 APP 首屏（今日任务/概览只读）的入场券，不授予则登录即 403 卡死；
+        // notification.view 让装车员能收到装车上车的任务通知。两者都是只读，不放大写权限。
+        DRIVER_ROLE_FUNCS.put("R_TMS_LOADER", concat(new String[]{
+                "driver.home.view",
+                "driver.loading.view", "driver.loading.confirm_point", "driver.loading.confirm_all",
+                "driver.loading.view_bills", "driver.loading.scan",
+                "driver.notification.view",
+                "driver.profile.view", "driver.profile.change_pwd",
+                "driver.profile.change_server", "driver.profile.logout"
+        }));
+        // 带班组长：普通司机 + 收款流水导出 + 本组任务查看（数据范围在查询处扩到同部门）
+        DRIVER_ROLE_FUNCS.put("R_TMS_LEADER", concat(driverCommon,
+                "driver.collect_records.export", "driver.profile.team_view"));
+    }
+
+    /**
+     * 矩阵中有授权意义但当前没有独立 HTTP 端点的司机功能点（端侧纯本地行为，或在共用端点内
+     * 由 alsoRegister 覆盖不到的）。仍须注册进 sys_func_meta：角色配置页可授予/收回，
+     * APP 按 funcs 裁剪按钮；后端约束随对应端点上线即生效。
+     */
+    private static final String[] DRIVER_RESERVED_FUNCS = {
+            "driver.home.refuse",            // 拒单录原因（当前 APP 版本无此按钮，先占码）
+            "driver.depart.append_accept",   // 接受在途追加（追加任务自动并入，显式接受待 APP 补）
+            "driver.delivering.navigation",  // 跳第三方导航，纯端侧行为
+            "driver.sign.save_draft",        // 离线草稿只写本地队列，提交时才打后端
+            "driver.handover.print",         // 交账单打印（蓝牙打印待 APP 补）
+            "driver.profile.change_server",  // 服务器地址配置，纯端侧
+            "driver.profile.logout",         // 退出登录（清本地会话，无后端端点）
+            "driver.profile.team_view"       // 本组任务：数据范围扩权码，查询处按角色生效
+    };
+
     private static List<String> concat(String[] base, String... extra) {
         List<String> all = new ArrayList<>(base.length + extra.length);
         for (String s : base) all.add(s);
@@ -171,10 +245,11 @@ public class PermissionRegistry {
     public void syncOnStartup() {
         try {
             Map<String, Object> stats = sync();
-            log.info("权限同步完成：菜单 {}（新增{} 停用{}），功能点 {}（新增{} 停用{}），字段 {} 项全部对拍通过，PDA 六角色授权 {} 行",
+            log.info("权限同步完成：菜单 {}（新增{} 停用{}），功能点 {}（新增{} 停用{}），字段 {} 项全部对拍通过，PDA 六角色授权 {} 行，司机三角色授权 {} 行",
                     stats.get("menuTotal"), stats.get("menuInserted"), stats.get("menuStopped"),
                     stats.get("funcTotal"), stats.get("funcInserted"), stats.get("funcStopped"),
-                    stats.get("fieldCount"), stats.get("pdaRoleGrantCount"));
+                    stats.get("fieldCount"), stats.get("pdaRoleGrantCount"),
+                    stats.get("driverRoleGrantCount"));
         } catch (Exception e) {
             // 元数据同步失败不能静默，否则授权页面/拦截器行为无依据
             log.error("权限元数据同步失败", e);
@@ -184,12 +259,16 @@ public class PermissionRegistry {
 
     public synchronized Map<String, Object> sync() {
         ScanResult scan = scanMappings();
-        validateFuncPrefixes(scan.funcs());
+        // 司机 APP 占码功能点（暂无独立端点）与注解扫描结果合并后一起校验/注册
+        List<FuncDecl> allDecls = new ArrayList<>(scan.funcs());
+        allDecls.addAll(reservedDriverDecls());
+        validateFuncPrefixes(allDecls);
 
         int[] menuStats = syncMenus();
-        int[] funcStats = syncFuncs(scan.funcs());
+        int[] funcStats = syncFuncs(allDecls);
         ensureSuperAdminGrants();
         int pdaGrants = ensurePdaRoleGrants();
+        int driverGrants = ensureDriverRoleGrants();
 
         Map<String, Object> stats = new LinkedHashMap<>();
         stats.put("menuTotal", catalog.all().size());
@@ -201,6 +280,7 @@ public class PermissionRegistry {
         stats.put("fieldCount", fields.fieldCodes().size());
         stats.put("unguardedWriteCount", scan.unguardedWrites().size());
         stats.put("pdaRoleGrantCount", pdaGrants);
+        stats.put("driverRoleGrantCount", driverGrants);
         this.lastSyncStats = stats;
 
         int changed = menuStats[0] + menuStats[1] + funcStats[0] + funcStats[1];
@@ -425,7 +505,14 @@ public class PermissionRegistry {
                 || path.startsWith("/system/notification/")
                 || path.startsWith("/system/todo/")
                 || path.startsWith("/actuator/")
-                || path.startsWith("/tms/app/")
+                // 司机端：只有登录免功能点授权；其余 /tms/app/** 写接口必须挂 @RequirePerm，
+                // 登录态/端类型由 DriverAppGuardInterceptor 保证，纯自助写操作在下方逐条豁免
+                || path.equals("/tms/app/login")
+                || path.equals("/tms/app/params")
+                || path.startsWith("/tms/app/location/")
+                || path.startsWith("/tms/app/notification/read")
+                || path.equals("/tms/app/notification/register-token")
+                || path.equals("/tms/app/upload/image")
                 || path.equals("/wms/app/login")
                 || path.startsWith("/operation-log/")
                 || path.startsWith("/error");
@@ -532,6 +619,77 @@ public class PermissionRegistry {
             Integer cnt = jdbc.queryForObject(
                     "SELECT COUNT(1) FROM sys_role_func_rel r JOIN sys_func_meta f ON f.func_id = r.func_id " +
                             "WHERE r.role_id = ? AND f.func_code LIKE 'wms_pda.%'", Integer.class, roleId);
+            granted += cnt == null ? 0 : cnt;
+        }
+        return granted;
+    }
+
+    // ==================== 司机三角色矩阵授权（方案 §7.3） ====================
+
+    /** 司机端占码功能点：暂无独立端点，但要进 sys_func_meta 供授权与 APP 裁剪。 */
+    private List<FuncDecl> reservedDriverDecls() {
+        List<FuncDecl> list = new ArrayList<>(DRIVER_RESERVED_FUNCS.length);
+        for (String code : DRIVER_RESERVED_FUNCS) {
+            list.add(new FuncDecl(code, actionName(code), "MODULE", "ACTION", null, null));
+        }
+        return list;
+    }
+
+    /**
+     * 按 {@link #DRIVER_ROLE_FUNCS} 矩阵对账下发三内置角色（R_TMS_DRIVER/R_TMS_LOADER/
+     * R_TMS_LEADER）的司机端菜单/功能点授权。在菜单与功能点同步完成之后执行。
+     *
+     * <p>菜单派生口径与 PDA 不同：司机端 15 个菜单是流程页面（如"发车/到店打卡"只有
+     * confirm 动作点、没有 view），持动作点即必须能进入对应页面，因此按功能点前缀
+     * （driver.&lt;页面&gt;）全量派生，另含 driver 根目录；装车员持有前缀天然只覆盖
+     * loading/profile，不需要特判。
+     *
+     * @return 三角色当前持有的 driver.* 功能点授权总行数
+     */
+    private int ensureDriverRoleGrants() {
+        int granted = 0;
+        for (Map.Entry<String, List<String>> e : DRIVER_ROLE_FUNCS.entrySet()) {
+            String roleId = e.getKey();
+            List<String> codes = e.getValue();
+            Integer roleExists = jdbc.queryForObject(
+                    "SELECT COUNT(1) FROM sys_role_runtime WHERE role_id = ? AND status = 'NORMAL'",
+                    Integer.class, roleId);
+            if (roleExists == null || roleExists == 0) continue;
+
+            Set<String> menuCodes = new LinkedHashSet<>();
+            menuCodes.add("driver");
+            for (String code : codes) {
+                menuCodes.add(code.substring(0, code.lastIndexOf('.')));
+            }
+
+            // 对账：收回矩阵外既有的 driver.* 授权（管理员手工给这三个内置角色加的
+            // driver.* 授权会被代码矩阵覆盖；非 driver.* 授权与自定义角色均不动）
+            jdbc.update("DELETE FROM sys_role_func_rel WHERE role_id = ? AND func_id IN (" +
+                    "SELECT func_id FROM sys_func_meta WHERE func_code LIKE 'driver.%')", roleId);
+            jdbc.update("DELETE FROM sys_role_menu_rel WHERE role_id = ? AND menu_id IN (" +
+                    "SELECT menu_id FROM sys_menu_meta WHERE menu_code LIKE 'driver%')", roleId);
+
+            for (String code : codes) {
+                jdbc.update("INSERT INTO sys_role_func_rel(id, role_id, func_id, created_at) " +
+                        "SELECT 'RF' || SUBSTRING(REPLACE(CAST(RANDOM_UUID() AS VARCHAR),'-',''),1,14), " +
+                        "?, f.func_id, CURRENT_TIMESTAMP " +
+                        "FROM sys_func_meta f WHERE f.func_code = ? AND f.status = 'NORMAL' " +
+                        "AND NOT EXISTS (SELECT 1 FROM sys_role_func_rel x " +
+                        "WHERE x.role_id = ? AND x.func_id = f.func_id)",
+                        roleId, code, roleId);
+            }
+            for (String menuCode : menuCodes) {
+                jdbc.update("INSERT INTO sys_role_menu_rel(id, role_id, menu_id, created_at) " +
+                        "SELECT 'RM' || SUBSTRING(REPLACE(CAST(RANDOM_UUID() AS VARCHAR),'-',''),1,14), " +
+                        "?, m.menu_id, CURRENT_TIMESTAMP " +
+                        "FROM sys_menu_meta m WHERE m.menu_code = ? AND m.status = 'NORMAL' " +
+                        "AND NOT EXISTS (SELECT 1 FROM sys_role_menu_rel x " +
+                        "WHERE x.role_id = ? AND x.menu_id = m.menu_id)",
+                        roleId, menuCode, roleId);
+            }
+            Integer cnt = jdbc.queryForObject(
+                    "SELECT COUNT(1) FROM sys_role_func_rel r JOIN sys_func_meta f ON f.func_id = r.func_id " +
+                            "WHERE r.role_id = ? AND f.func_code LIKE 'driver.%'", Integer.class, roleId);
             granted += cnt == null ? 0 : cnt;
         }
         return granted;

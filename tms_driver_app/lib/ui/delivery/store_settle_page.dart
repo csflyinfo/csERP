@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/param_service.dart';
 import '../../services/photo_service.dart';
@@ -78,10 +80,16 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
   /// 结算现场照片是否必填（PRD-26 TMS_SETTLE_PHOTO_REQUIRED，默认 N 不强制）。
   bool get _photoRequired => ParamService.instance.current.settlePhotoRequired;
 
-  /// 是否允许送货单与退货单合并结算（PRD-26 TMS_RETURN_MERGE_SETTLE，默认 Y 允许）。
+  /// 是否允许送货单与退货单合并结算。
+  ///
+  /// 双控（PRD-28 卡片10）：系统参数 TMS_RETURN_MERGE_SETTLE 与功能码
+  /// driver.settlement.merge 同时满足才允许，缺功能码时前端就按不允许勾选
+  /// 两类单据处理（后端提交处同样先查功能码再查参数）。
   ///
   /// 默认值保持 Y，所以不改参数时勾选行为与 PRD-25 完全一致，没有回归风险。
-  bool get _mergeSettle => ParamService.instance.current.returnMergeSettle;
+  bool get _mergeSettle =>
+      ParamService.instance.current.returnMergeSettle &&
+      AuthService.hasPerm(DriverPerms.settlementMerge);
 
   /// 合并结算关闭时：新勾的单据类型必须与已勾选的一致。
   bool _canCheckWith(_SettleBill b) {
@@ -331,10 +339,16 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
         _billsCard(),
         const SizedBox(height: 8),
         _amountCard(),
-        const SizedBox(height: 8),
-        _payCard(),
-        const SizedBox(height: 8),
-        _photoCard(),
+        // 收款账户分配需 select_account；无此权（不收款角色）只能挂账，
+        // 不显示账户区，避免司机填完金额提交时才吃 403。
+        if (AuthService.hasPerm(DriverPerms.settlementSelectAccount)) ...[
+          const SizedBox(height: 8),
+          _payCard(),
+        ],
+        if (AuthService.hasPerm(DriverPerms.settlementPhoto)) ...[
+          const SizedBox(height: 8),
+          _photoCard(),
+        ],
         const SizedBox(height: 8),
         _infoCard(),
       ],
@@ -741,11 +755,20 @@ class _StoreSettlePageState extends ConsumerState<StoreSettlePage> {
               ],
             ),
           ),
-          SizedBox(
-            width: 150,
-            child: TmsButton.primary(_submitting ? '提交中...' : '确认结算',
-                onPressed: _submitting ? null : _submit),
-          ),
+          // 无结算提交权（不收款角色）时明示原因，而不是放一个必然后端 403 的按钮。
+          if (AuthService.hasPerm(DriverPerms.settlementSettle))
+            SizedBox(
+              width: 150,
+              child: TmsButton.primary(_submitting ? '提交中...' : '确认结算',
+                  onPressed: _submitting ? null : _submit),
+            )
+          else
+            const SizedBox(
+              width: 150,
+              child: Text('当前账号无结算权限',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+            ),
         ],
       ),
     );

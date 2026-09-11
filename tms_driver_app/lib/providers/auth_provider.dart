@@ -25,6 +25,12 @@ class AuthNotifier extends StateNotifier<Driver?> {
     await PushService.instance.onLogin();
   }
 
+  /// 工号 + 密码登录（装车员等管理员预建账号，PRD-28 卡片10）。
+  Future<void> loginByPassword(String employeeCode, String password) async {
+    state = await AuthService.instance.loginByPassword(employeeCode, password);
+    await PushService.instance.onLogin();
+  }
+
   Future<void> logout() async {
     // 退出登录必须停止 GPS 采集，否则后台 Timer 继续耗电且上报无归属
     LocationService.instance.stop();

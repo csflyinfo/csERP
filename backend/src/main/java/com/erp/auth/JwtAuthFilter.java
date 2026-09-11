@@ -28,6 +28,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final Set<String> PUBLIC_PREFIXES = Set.of(
             "/auth/login",
             "/auth/logout",
+            "/auth/sms/send",
             "/actuator/health",
             "/tms/app/login",
             "/wms/app/login"

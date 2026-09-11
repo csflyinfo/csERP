@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -63,6 +64,7 @@ public class TmsSettlementController {
      *       returnAmount, returnQty, creditAmount, submitAmount（应交回 = 实收现金）
      */
     @PostMapping("/tms/app/settlement/summary")
+    @RequirePerm("driver.handover.view")
     public ApiResponse<Map<String, Object>> summary(@RequestBody(required = false) Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String dispatchId = body != null ? TmsUtil.str(body.get("dispatchId")) : "";
@@ -177,6 +179,8 @@ public class TmsSettlementController {
      */
     @PostMapping("/tms/app/settlement/submit")
     @Transactional
+    @RequirePerm(value = "driver.handover.submit", name = "提交交账",
+            alsoRegister = "driver.handover.esign")
     public ApiResponse<Map<String, Object>> submit(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
@@ -358,6 +362,7 @@ public class TmsSettlementController {
     /** 上传结算照片（提交后补传，URL 数组）。 */
     @PostMapping("/tms/app/settlement/upload-photo")
     @Transactional
+    @RequirePerm("driver.handover.view")
     public ApiResponse<Map<String, Object>> uploadPhoto(@RequestBody Map<String, Object> body) {
         String settlementId = TmsUtil.str(body.get("settlementId"));
         if (settlementId.isEmpty()) return ApiResponse.fail("400", "settlementId 不能为空");

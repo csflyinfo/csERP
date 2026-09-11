@@ -1,6 +1,8 @@
 package com.erp.tms;
 
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.PermissionService;
+import com.erp.common.security.RequirePerm;
 import com.erp.tms.service.TmsAuthService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,23 +57,37 @@ public class TmsAppController {
 
     private final JdbcTemplate jdbcTemplate;
     private final TmsAuthService authService;
+    private final com.erp.tms.service.TmsDriverAuthService driverAuthService;
     private final com.erp.sales.SalesReturnController salesReturnController;
     private final com.erp.system.SysParamService sysParamService;
+    private final PermissionService permissionService;
 
     public TmsAppController(JdbcTemplate jdbcTemplate, TmsAuthService authService,
+                            com.erp.tms.service.TmsDriverAuthService driverAuthService,
                             com.erp.sales.SalesReturnController salesReturnController,
-                            com.erp.system.SysParamService sysParamService) {
+                            com.erp.system.SysParamService sysParamService,
+                            PermissionService permissionService) {
         this.jdbcTemplate = jdbcTemplate;
         this.authService = authService;
+        this.driverAuthService = driverAuthService;
         this.salesReturnController = salesReturnController;
         this.sysParamService = sysParamService;
+        this.permissionService = permissionService;
     }
 
+    /**
+     * 司机登录（PRD-28 卡片10）：手机号+短信验证码（首次登录自动开通账号绑 TMS_DRIVER），
+     * 或工号+密码（装车员等管理员预建账号）。认证/签发/自动开通见 {@link TmsDriverAuthService}。
+     */
     @PostMapping("/login")
-    public ApiResponse<Map<String, Object>> login(@RequestBody Map<String, Object> body) {
-        String mobile = TmsUtil.str(body.get("mobile"));
-        String verifyCode = TmsUtil.str(body.get("verifyCode"));
-        return ApiResponse.ok(authService.login(mobile, verifyCode));
+    public ApiResponse<Map<String, Object>> login(@RequestBody Map<String, Object> body,
+                                                  jakarta.servlet.http.HttpServletRequest httpReq) {
+        return ApiResponse.ok(driverAuthService.login(
+                TmsUtil.str(body.get("mobile")),
+                TmsUtil.str(body.get("verifyCode")),
+                TmsUtil.str(body.get("employeeCode")),
+                TmsUtil.str(body.get("password")),
+                httpReq));
     }
 
     /**
@@ -90,6 +106,7 @@ public class TmsAppController {
     }
 
     @PostMapping("/profile")
+    @RequirePerm("driver.profile.view")
     public ApiResponse<Map<String, Object>> profile() {
         Map<String, Object> info = new LinkedHashMap<>(authService.getDriverInfo(TmsUtil.currentDriverId()));
         // 附带调度中心联系方式（参数化配置）：系统内无「司机→调度员」归属关系表，
@@ -133,9 +150,13 @@ public class TmsAppController {
      * 漏掉它会让任务在「点了接单」之后立刻从列表消失，是最容易踩的坑。
      */
     @PostMapping("/today-tasks")
+    @RequirePerm(value = "driver.home.view", alsoRegister = "driver.profile.team_view")
     public ApiResponse<Map<String, Object>> todayTasks(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
+        // 数据范围：普通司机只看本人；持 driver.profile.team_view 的带班组长可看同部门任务（§7.3）
+        List<String> scopeIds = currentDriverScope(driverId);
+        String driverIn = String.join(",", java.util.Collections.nCopies(scopeIds.size(), "?"));
         // 默认包含历史积压；显式传 false 才只看当天
         boolean includeOverdue = params.get("includeOverdue") == null
                 || !"false".equalsIgnoreCase(TmsUtil.str(params.get("includeOverdue")));
@@ -146,9 +167,10 @@ public class TmsAppController {
                 SELECT dispatch_id, dispatch_no, dispatch_date, route_line, vehicle_plate, status,
                        loaded_qty, return_qty, store_count, accept_time
                 FROM tms_dispatch d
-                WHERE driver_id = ? AND status IN ('ASSIGNED','ACCEPTED','LOADED','DEPARTED','DELIVERING')
-                  -- V77：该司机对应日期已提交/已审核交账，则当日任务不再算作「进行中」，
-                  -- 首页统计与待办卡片都应消失，交账=当日作业闭环。
+                WHERE driver_id IN (""" + driverIn + ") AND status IN ('ASSIGNED','ACCEPTED','LOADED','DEPARTED','DELIVERING')\n" +
+                // V77：该司机对应日期已提交/已审核交账，则当日任务不再算作「进行中」，
+                // 首页统计与待办卡片都应消失，交账=当日作业闭环。
+                """
                   AND NOT EXISTS (
                       SELECT 1 FROM tms_settlement s
                       WHERE s.driver_id = d.driver_id
@@ -156,7 +178,7 @@ public class TmsAppController {
                         AND s.status IN ('PENDING','APPROVED'))
                 """ + dateFilter + """
                 ORDER BY dispatch_date, dispatch_no
-                """, driverId);
+                """, scopeIds.toArray());
         int totalStore = 0;
         BigDecimal totalQty = BigDecimal.ZERO;
         List<Map<String, Object>> allDetails = new ArrayList<>();
@@ -224,6 +246,7 @@ public class TmsAppController {
      * 昨天的钱昨天已经交过，混进来会让司机以为自己少交了。
      */
     @PostMapping("/home/overview")
+    @RequirePerm(value = "driver.home.view", alsoRegister = "driver.profile.team_view")
     public ApiResponse<Map<String, Object>> homeOverview() {
         String driverId = TmsUtil.currentDriverId();
 
@@ -425,6 +448,26 @@ public class TmsAppController {
     }
 
     /**
+     * 任务数据范围（PRD-28 §7.3 司机数据隔离）：默认只含本人 employeeId；
+     * 持有 driver.profile.team_view 的带班组长扩大到同部门全部在职配送员。
+     * 查不到部门（档案未维护部门）时安全回落为仅本人，不放大范围。
+     */
+    private List<String> currentDriverScope(String self) {
+        if (self == null || self.isBlank() || !permissionService.hasFunc("driver.profile.team_view")) {
+            return List.of(self == null ? "" : self);
+        }
+        List<String> mates = jdbcTemplate.queryForList("""
+                SELECT e2.employee_id
+                FROM base_employee e1
+                JOIN base_employee e2
+                  ON COALESCE(e2.department, '') = COALESCE(e1.department, '')
+                 AND e2.is_deliveryman = TRUE AND e2.status = 'NORMAL'
+                WHERE e1.employee_id = ? AND COALESCE(e1.department, '') <> ''
+                """, String.class, self);
+        return mates.isEmpty() ? List.of(self) : mates;
+    }
+
+    /**
      * 为首页调度单卡片补充统计：配送点数、发货单数、退货单数、件数、代收货款。
      *
      * 为什么不直接用主表快照：
@@ -533,6 +576,7 @@ public class TmsAppController {
      *      summary.doneStore 仍然给出数量，进度条不会因此失真。
      */
     @PostMapping("/delivering/stores")
+    @RequirePerm("driver.delivering.view")
     public ApiResponse<Map<String, Object>> deliveringStores(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
@@ -712,6 +756,7 @@ public class TmsAppController {
      * 不传则列出该司机名下该门店的全部在途单据。
      */
     @PostMapping("/delivering/store-bills")
+    @RequirePerm("driver.sign.view")
     public ApiResponse<Map<String, Object>> deliveringStoreBills(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
@@ -813,6 +858,7 @@ public class TmsAppController {
      * 入参：days（可选，统计窗口天数，默认 0 表示不限期即累计至今）
      */
     @PostMapping("/driver/stats")
+    @RequirePerm("driver.profile.view")
     public ApiResponse<Map<String, Object>> driverStats(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
@@ -885,6 +931,7 @@ public class TmsAppController {
 
     /** 调度单详情（APP 用，只返回当前司机可见的）。 */
     @PostMapping("/dispatch/detail")
+    @RequirePerm("driver.home.view")
     public ApiResponse<Map<String, Object>> dispatchDetail(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -907,6 +954,7 @@ public class TmsAppController {
 
     /** 退货单明细：逐商品退货数量，供 APP 录入实收。 */
     @PostMapping("/return/detail")
+    @RequirePerm("driver.return.view")
     public ApiResponse<Map<String, Object>> returnDetail(@RequestBody Map<String, Object> body) {
         String applyNo = TmsUtil.str(body.get("applyNo"));
         if (applyNo.isEmpty()) return ApiResponse.fail("400", "applyNo 不能为空");
@@ -939,6 +987,7 @@ public class TmsAppController {
      */
     @PostMapping("/return/sign")
     @Transactional
+    @RequirePerm("driver.return.confirm")
     public ApiResponse<Map<String, Object>> returnSign(@RequestBody Map<String, Object> body) {
         String applyNo = TmsUtil.str(body.get("applyNo"));
         String customerSigner = TmsUtil.str(body.get("customerSigner"));
@@ -1079,6 +1128,7 @@ public class TmsAppController {
      * 出参：{records, pageNo, pageSize, total, summary:{tripCount, storeSum, qtySum, amountSum}}
      */
     @PostMapping("/trip/history")
+    @RequirePerm("driver.history.view")
     public ApiResponse<Map<String, Object>> tripHistory(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
@@ -1189,6 +1239,7 @@ public class TmsAppController {
      * 入参：days（默认 30）/ dateFrom / dateTo / payMethod / pageNo / pageSize
      */
     @PostMapping("/collect/records")
+    @RequirePerm("driver.collect_records.view")
     public ApiResponse<Map<String, Object>> collectRecords(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> params = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();

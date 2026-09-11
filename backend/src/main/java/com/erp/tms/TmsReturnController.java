@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.sales.SalesReturnController;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -62,6 +63,7 @@ public class TmsReturnController {
      *   B. 已回收待返仓：tms_driver_return.driver_id=当前司机 且 status=PENDING（本趟已回收，待返仓交接）
      */
     @PostMapping("/tms/app/return/list")
+    @RequirePerm("driver.return.view")
     public ApiResponse<Map<String, Object>> returnList(@RequestBody(required = false) Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
 
@@ -111,6 +113,7 @@ public class TmsReturnController {
      */
     @PostMapping("/tms/app/return/create")
     @Transactional
+    @RequirePerm(value = "driver.return.onsite", name = "现场开退货单")
     public ApiResponse<Map<String, Object>> createReturn(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         // 查询司机姓名
@@ -261,6 +264,7 @@ public class TmsReturnController {
      */
     @PostMapping("/tms/app/return/upload-photo")
     @Transactional
+    @RequirePerm("driver.return.photo")
     public ApiResponse<Map<String, Object>> uploadPhoto(@RequestBody Map<String, Object> body) {
         String driverReturnId = TmsUtil.str(body.get("driverReturnId"));
         if (driverReturnId.isEmpty()) return ApiResponse.fail("400", "driverReturnId 不能为空");
@@ -298,6 +302,7 @@ public class TmsReturnController {
      * 且按批次 JOIN 会把同一商品扇出成多行。
      */
     @PostMapping("/tms/app/return/goods-search")
+    @RequirePerm("driver.return.onsite")
     public ApiResponse<List<Map<String, Object>>> goodsSearch(@RequestBody Map<String, Object> body) {
         String keyword = TmsUtil.str(body.get("keyword"));
         if (keyword.length() < 1) return ApiResponse.ok(List.of());
@@ -329,6 +334,7 @@ public class TmsReturnController {
      * 返回：[{customerCode, customerName, address, distanceKm?}]
      */
     @PostMapping("/tms/app/return/customer-search")
+    @RequirePerm("driver.return.onsite")
     public ApiResponse<List<Map<String, Object>>> customerSearch(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> b = body == null ? Map.of() : body;
         String keyword = TmsUtil.str(b.get("keyword"));
@@ -395,6 +401,7 @@ public class TmsReturnController {
      * 返回：[{warehouseCode, warehouseName, warehouseType}]，提交时仍用 warehouseName。
      */
     @PostMapping("/tms/app/return/warehouse-list")
+    @RequirePerm(value = "driver.return.onsite", alsoRegister = "driver.return.warehouse")
     public ApiResponse<List<Map<String, Object>>> warehouseList() {
         List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate,
                 "SELECT warehouse_code, warehouse_name, warehouse_type "
@@ -421,6 +428,7 @@ public class TmsReturnController {
      * 返回当前司机所有 status=PENDING 的 tms_driver_return（含明细）。
      */
     @PostMapping("/tms/app/warehouse-return/list")
+    @RequirePerm("driver.return.view")
     public ApiResponse<Map<String, Object>> warehouseReturnList(@RequestBody(required = false) Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         List<Map<String, Object>> heads = TmsUtil.queryCamel(jdbcTemplate, """
@@ -464,6 +472,7 @@ public class TmsReturnController {
      */
     @PostMapping("/tms/app/warehouse-return/confirm")
     @Transactional
+    @RequirePerm("driver.return.warehouse")
     public ApiResponse<Map<String, Object>> warehouseReturnConfirm(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         List<String> ids = new ArrayList<>();

@@ -1,6 +1,9 @@
 package com.erp.tms;
 
 import com.erp.common.api.ApiResponse;
+import com.erp.common.security.PermissionDeniedException;
+import com.erp.common.security.PermissionService;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +51,7 @@ public class TmsDeliveryAppController {
 
     private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.SysParamService sysParamService;
+    private final PermissionService permissionService;
 
     /**
      * 明细「已处理」与调度单「未发车」两套口径，直接复用 TmsAppController 的定义。
@@ -60,9 +64,18 @@ public class TmsDeliveryAppController {
     static final Set<String> BEFORE_DEPART = TmsAppController.DISPATCH_BEFORE_DEPART;
 
     public TmsDeliveryAppController(JdbcTemplate jdbcTemplate,
-                                    com.erp.system.SysParamService sysParamService) {
+                                    com.erp.system.SysParamService sysParamService,
+                                    PermissionService permissionService) {
         this.jdbcTemplate = jdbcTemplate;
         this.sysParamService = sysParamService;
+        this.permissionService = permissionService;
+    }
+
+    /** 载荷功能点裁决：无权限抛 403（全局处理器转 HTTP 403）。 */
+    private void checkPerm(String code) {
+        if (!permissionService.hasFunc(code)) {
+            throw new PermissionDeniedException("无操作权限：" + code);
+        }
     }
 
     // ==================== 接单 ====================
@@ -85,6 +98,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/accept")
     @Transactional
+    @RequirePerm("driver.home.accept")
     public ApiResponse<Map<String, Object>> accept(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -149,6 +163,7 @@ public class TmsDeliveryAppController {
      *   门店序号，才能保证「门店顺序」与「明细顺序」不会互相打脸。
      */
     @PostMapping("/loading/stores")
+    @RequirePerm("driver.loading.view")
     public ApiResponse<Map<String, Object>> loadingStores(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -279,6 +294,7 @@ public class TmsDeliveryAppController {
      * 否则前端规格列恒空；退货申请明细自带 spec/unit_name，直接取。
      */
     @PostMapping("/loading/point-bills")
+    @RequirePerm("driver.loading.view_bills")
     public ApiResponse<Map<String, Object>> loadingPointBills(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         String detailId = TmsUtil.str(body.get("detailId"));
@@ -371,6 +387,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/loading/return-point")
     @Transactional
+    @RequirePerm("driver.loading.return_point")
     public ApiResponse<Map<String, Object>> returnPoint(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         String reason = TmsUtil.str(body.get("reason"));
@@ -521,6 +538,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/loading/sort")
     @Transactional
+    @RequirePerm("driver.loading.confirm_point")
     public ApiResponse<Map<String, Object>> loadingSort(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -610,6 +628,7 @@ public class TmsDeliveryAppController {
      *   而剩余待装的点被挤到列表底部。配送中列表会接管这些点。
      */
     @PostMapping("/loading/items")
+    @RequirePerm("driver.loading.scan")
     public ApiResponse<Map<String, Object>> loadingItems(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -723,6 +742,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/loading/start")
     @Transactional
+    @RequirePerm("driver.loading.view")
     public ApiResponse<Map<String, Object>> loadingStart(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -749,6 +769,7 @@ public class TmsDeliveryAppController {
     /** 装车扫码核对：逐商品录入实装数量，写 tms_loading_check。 */
     @PostMapping("/loading/scan")
     @Transactional
+    @RequirePerm("driver.loading.scan")
     public ApiResponse<Map<String, Object>> loadingScan(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         String sourceBillNo = TmsUtil.str(body.get("sourceBillNo"));
@@ -792,6 +813,8 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/loading/confirm")
     @Transactional
+    @RequirePerm(value = "driver.loading.confirm_point", name = "按点确认装车",
+            alsoRegister = "driver.loading.confirm_all")
     public ApiResponse<Map<String, Object>> loadingConfirm(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -812,6 +835,11 @@ public class TmsDeliveryAppController {
                 if (!s.isEmpty()) detailIds.add(s);
             }
         }
+
+        // 载荷裁决：detailIds 为空 = 「全部装车」，需独立的 confirm_all 功能点（§7.3）
+        checkPerm(detailIds.isEmpty()
+                ? "driver.loading.confirm_all"
+                : "driver.loading.confirm_point");
 
         Timestamp now = Timestamp.valueOf(TmsUtil.now());
         int updated;
@@ -895,6 +923,8 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/depart")
     @Transactional
+    @RequirePerm(value = "driver.depart.confirm", name = "确认发车",
+            alsoRegister = "driver.depart.mileage")
     public ApiResponse<Map<String, Object>> depart(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         if (dispatchId.isEmpty()) return ApiResponse.fail("400", "dispatchId 不能为空");
@@ -1081,6 +1111,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/arrive")
     @Transactional
+    @RequirePerm("driver.arrive.confirm")
     public ApiResponse<Map<String, Object>> arrive(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         String detailId = TmsUtil.str(body.get("detailId"));
@@ -1187,6 +1218,7 @@ public class TmsDeliveryAppController {
      * 参数在 ERP「系统参数」页维护，无需改代码即可调整策略。
      */
     @PostMapping("/arrive/config")
+    @RequirePerm("driver.arrive.confirm")
     public ApiResponse<Map<String, Object>> arriveConfig() {
         ArriveConfig cfg = loadArriveConfig();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -1256,6 +1288,7 @@ public class TmsDeliveryAppController {
      *   requiredQty, signedQty, rejectQty, amount, collectAmount, payMethod, items:[{ goodsCode, goodsName, unitName, requiredQty, signedQty }]
      */
     @PostMapping("/sign/items")
+    @RequirePerm("driver.sign.view")
     public ApiResponse<Map<String, Object>> signItems(@RequestBody Map<String, Object> body) {
         String detailId = TmsUtil.str(body.get("detailId"));
         if (detailId.isEmpty()) return ApiResponse.fail("400", "detailId 不能为空");
@@ -1354,6 +1387,8 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/sign")
     @Transactional
+    @RequirePerm(value = "driver.sign.normal", name = "正常签收",
+            alsoRegister = {"driver.sign.partial", "driver.sign.reject", "driver.sign.esign"})
     public ApiResponse<Map<String, Object>> sign(@RequestBody Map<String, Object> body) {
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
         String detailId = TmsUtil.str(body.get("detailId"));
@@ -1431,6 +1466,13 @@ public class TmsDeliveryAppController {
             signType = "NORMAL";
             newDetailStatus = "DELIVERED";
         }
+        // 载荷裁决：正常/部分/拒收三类签收按服务端复算出的 signType 分别要功能点（§7.3），
+        // 「不收款/新手」等裁剪角色即使绕过 APP 按钮直接打接口也会被 403 拦下
+        checkPerm(switch (signType) {
+            case "REJECT" -> "driver.sign.reject";
+            case "PARTIAL" -> "driver.sign.partial";
+            default -> "driver.sign.normal";
+        });
 
         BigDecimal collectAmount = TmsUtil.toBd(body.get("collectAmount"));
         String payMethod = TmsUtil.str(body.get("payMethod"));
@@ -1510,6 +1552,7 @@ public class TmsDeliveryAppController {
      */
     @PostMapping("/sign/upload-photo")
     @Transactional
+    @RequirePerm("driver.sign.photo")
     public ApiResponse<Map<String, Object>> uploadPhoto(@RequestBody Map<String, Object> body) {
         String signId = TmsUtil.str(body.get("signId"));
         if (signId.isEmpty()) return ApiResponse.fail("400", "signId 不能为空");
@@ -1706,9 +1749,19 @@ public class TmsDeliveryAppController {
 
     /** 加载调度单并校验司机权限。 */
     private Map<String, Object> loadDispatch(String dispatchId, String driverId) {
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT * FROM tms_dispatch WHERE dispatch_id=? AND driver_id=?", dispatchId, driverId);
-        if (rows.isEmpty()) throw new IllegalArgumentException("调度单不存在或非本人");
+        // 装车员（R_TMS_LOADER）在仓内替任意当班司机装车，调度单不归属本人——
+        // 装载环节（stores/items/scan/sort/confirm/start）对其放开 driver_id 归属过滤；
+        // 接单/发车/到店/签收等非装载端点在 @RequirePerm 层就已 403，到不了这里（§7.3）。
+        com.erp.common.security.CurrentUser.Principal p = com.erp.common.security.CurrentUser.get();
+        boolean loader = p != null && p.hasRole("TMS_LOADER");
+        List<Map<String, Object>> rows = loader
+                ? jdbcTemplate.queryForList(
+                        "SELECT * FROM tms_dispatch WHERE dispatch_id=?", dispatchId)
+                : jdbcTemplate.queryForList(
+                        "SELECT * FROM tms_dispatch WHERE dispatch_id=? AND driver_id=?", dispatchId, driverId);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException(loader ? "调度单不存在" : "调度单不存在或非本人");
+        }
         Map<String, Object> d = TmsUtil.camelize(rows.get(0));
         // 查关联行程
         List<Map<String, Object>> trips = jdbcTemplate.queryForList(

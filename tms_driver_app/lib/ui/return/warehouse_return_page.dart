@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
+import '../../services/auth_service.dart';
 import '../../models/driver_return.dart';
 import '../../models/reschedule_reject.dart';
 import '../../models/task.dart';
@@ -189,10 +191,16 @@ class _DriverReturnTabState extends ConsumerState<_DriverReturnTab>
             Text('已选 ${_checked.length} / ${list.length} 单', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
           const SizedBox(height: 10),
-          TmsButton.primary(
-            _submitting ? '处理中...' : '确认返仓交接（${_checked.length} 单）',
-            onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
-          ),
+          if (AuthService.hasPerm(DriverPerms.returnWarehouse))
+            TmsButton.primary(
+              _submitting ? '处理中...' : '确认返仓交接（${_checked.length} 单）',
+              onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Center(child: Text('当前账号无返仓确认权限', style: TextStyle(fontSize: 12, color: TmsTheme.muted))),
+            ),
         ]),
       ),
     );
@@ -385,10 +393,16 @@ class _RescheduleReturnTabState extends ConsumerState<_RescheduleReturnTab>
             Text('已选 ${_checked.length} / ${list.length} 单', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
           const SizedBox(height: 10),
-          TmsButton.warn(
-            _submitting ? '处理中...' : '司机返仓确认（${_checked.length} 单）',
-            onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
-          ),
+          if (AuthService.hasPerm(DriverPerms.returnWarehouse))
+            TmsButton.warn(
+              _submitting ? '处理中...' : '司机返仓确认（${_checked.length} 单）',
+              onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Center(child: Text('当前账号无返仓确认权限', style: TextStyle(fontSize: 12, color: TmsTheme.muted))),
+            ),
         ]),
       ),
     );
@@ -570,10 +584,16 @@ class _CustomerRejectTabState extends ConsumerState<_CustomerRejectTab>
             Text('已选 ${_checked.length} / ${list.length} 单', style: const TextStyle(fontSize: 12, color: TmsTheme.muted)),
           ]),
           const SizedBox(height: 10),
-          TmsButton.danger(
-            _submitting ? '处理中...' : '司机返仓确认（${_checked.length} 单）',
-            onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
-          ),
+          if (AuthService.hasPerm(DriverPerms.signReject))
+            TmsButton.danger(
+              _submitting ? '处理中...' : '司机返仓确认（${_checked.length} 单）',
+              onPressed: (_submitting || _checked.isEmpty) ? null : _confirm,
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Center(child: Text('当前账号无拒收确认权限', style: TextStyle(fontSize: 12, color: TmsTheme.muted))),
+            ),
         ]),
       ),
     );

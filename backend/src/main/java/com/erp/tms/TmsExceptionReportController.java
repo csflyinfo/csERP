@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -85,6 +86,7 @@ public class TmsExceptionReportController {
      * 统一走 POST（参见 /tms/app/arrive/config 同样是纯读配置）。
      */
     @PostMapping("/tms/app/exception/options")
+    @RequirePerm(value = "driver.exception.view", alsoRegister = "driver.exception.report")
     public ApiResponse<Map<String, Object>> options() {
         ExceptionConfig cfg = loadConfig();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -107,6 +109,7 @@ public class TmsExceptionReportController {
      */
     @PostMapping("/tms/app/exception/create")
     @Transactional
+    @RequirePerm("driver.exception.report")
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String exceptionType = TmsUtil.str(body.get("exceptionType")).toUpperCase();
@@ -241,6 +244,7 @@ public class TmsExceptionReportController {
      * 下次还是会先打电话，异常上报功能等于白做。
      */
     @PostMapping("/tms/app/exception/list")
+    @RequirePerm("driver.exception.view")
     public ApiResponse<Map<String, Object>> list(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> b = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/task_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/launch_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/param_service.dart';
@@ -43,6 +45,13 @@ class StoreDetailPage extends ConsumerWidget {
   StoreBillsArgs get _args =>
       StoreBillsArgs(dispatchId: dispatchId, customerCode: customerCode);
 
+  /// 门店操作折叠区是否有任何可见动作（改派返仓 / 定位修改 / 现场退货）。
+  bool get _hasStoreActions =>
+      AuthService.hasPerm(DriverPerms.loadingReturnPoint) ||
+      AuthService.hasPerm(DriverPerms.storeLocationEdit) ||
+      (AuthService.hasPerm(DriverPerms.returnOnsite) &&
+          ParamService.instance.current.onsiteReturnEnabled);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(storeBillsProvider(_args));
@@ -80,7 +89,9 @@ class StoreDetailPage extends ConsumerWidget {
                     const SizedBox(height: 8),
                     // 打卡提示压成一行（提示条 + 小按钮）：原来是「整条警示 + 整宽橙色大按钮」，
                     // 加上下方的门店操作区要吃掉大半屏，司机得滚动才看得到单据。
-                    if (!d.hasArrived) ...[
+                    // 无到达打卡权限（如装车员）不提示。
+                    if (!d.hasArrived &&
+                        AuthService.hasPerm(DriverPerms.arriveConfirm)) ...[
                       _arriveHint(context, ref, d),
                       const SizedBox(height: 8),
                     ],
@@ -99,7 +110,8 @@ class StoreDetailPage extends ConsumerWidget {
                           child: _billCard(context, ref, b),
                         )),
                     const SizedBox(height: 2),
-                    _actionCard(context, ref, d),
+                    // 三类门店级动作都无权限时整块折叠区不渲染
+                    if (_hasStoreActions) _actionCard(context, ref, d),
                   ],
                 ),
         ),
@@ -119,7 +131,11 @@ class StoreDetailPage extends ConsumerWidget {
       future: LocalDbService.instance.getSignDrafts(customerCode),
       builder: (ctx, snap) {
         final n = snap.data?.length ?? 0;
-        if (n == 0) return const SizedBox.shrink();
+        // 无结算权限（装车员/不收款角色）不显示结算栏，草稿只留在本地，
+        // 由有收款权限的账号处理——真正的提交拦截在服务端。
+        if (n == 0 || !AuthService.hasPerm(DriverPerms.settlementView)) {
+          return const SizedBox.shrink();
+        }
         return Container(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
           decoration: const BoxDecoration(
@@ -243,9 +259,11 @@ class StoreDetailPage extends ConsumerWidget {
           const Divider(height: 16),
           Row(
             children: [
-              Expanded(
-                  child: _btn('🧭 导航', TmsTheme.accent, () => _navigate(context, d))),
-              const SizedBox(width: 8),
+              if (AuthService.hasPerm(DriverPerms.deliveringNavigation)) ...[
+                Expanded(
+                    child: _btn('🧭 导航', TmsTheme.accent, () => _navigate(context, d))),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: _btn('📞 呼叫', TmsTheme.ok,
                     d.hasPhone ? () => _call(context, d) : null),
@@ -302,6 +320,10 @@ class StoreDetailPage extends ConsumerWidget {
   // 门店级动作
   // ==========================================================================
 
+  /// 单据行能否点进签收：发货单要 sign.view，取退单要 return.confirm。
+  bool _canOpenBill(DispatchDetail b) => AuthService.hasPerm(
+      b.isReturn ? DriverPerms.returnConfirm : DriverPerms.signView);
+
   /// 门店级动作区（默认折叠）。
   ///
   /// 改派返仓 / 定位修改 / 现场退货都是低频异常处理，之前三个整宽按钮
@@ -309,6 +331,11 @@ class StoreDetailPage extends ConsumerWidget {
   /// 收起状态只占一行标题高度，展开后动作与原来完全一致。
   Widget _actionCard(BuildContext context, WidgetRef ref, StoreBills d) {
     final reschedulable = d.reschedulable;
+    final canReschedule = AuthService.hasPerm(DriverPerms.loadingReturnPoint);
+    final canFixLocation = AuthService.hasPerm(DriverPerms.storeLocationEdit);
+    // 现场退货：功能码 + TMS_ONSITE_RETURN_ENABLED 双控
+    final canOnsiteReturn = AuthService.hasPerm(DriverPerms.returnOnsite) &&
+        ParamService.instance.current.onsiteReturnEnabled;
     return MCard(
       padding: EdgeInsets.zero,
       child: Theme(
@@ -325,44 +352,49 @@ class StoreDetailPage extends ConsumerWidget {
           children: [
             // 改派返仓置顶：这是「整店送不了」的出口，司机进店发现关门时第一时间要找到它。
             // 全部待签收发货单一次性改派，避免同店多单逐张重复填原因和拍照。
-            SizedBox(
-              width: double.infinity,
-              child: TmsButton.purple(
-                reschedulable.length > 1
-                    ? '🔄 改派返仓（全部 ${reschedulable.length} 张）'
-                    : '🔄 改派返仓',
-                onPressed: reschedulable.isEmpty
-                    ? null
-                    : () => _reschedule(context, ref, d, reschedulable),
+            if (canReschedule) ...[
+              SizedBox(
+                width: double.infinity,
+                child: TmsButton.purple(
+                  reschedulable.length > 1
+                      ? '🔄 改派返仓（全部 ${reschedulable.length} 张）'
+                      : '🔄 改派返仓',
+                  onPressed: reschedulable.isEmpty
+                      ? null
+                      : () => _reschedule(context, ref, d, reschedulable),
+                ),
               ),
-            ),
-            if (reschedulable.isEmpty) ...[
-              const SizedBox(height: 4),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text('无待签收发货单，无需改派',
-                    style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+              if (reschedulable.isEmpty) ...[
+                const SizedBox(height: 4),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('无待签收发货单，无需改派',
+                      style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+                ),
+              ],
+            ],
+            if (canFixLocation || canOnsiteReturn) ...[
+              if (canReschedule) const SizedBox(height: 8),
+              // 现场退货入口同时受 TMS_ONSITE_RETURN_ENABLED 控制（PRD-26 §3.2）。
+              // 关掉/无权限时让「定位修改」独占整行，而不是留半行空白。
+              Row(
+                children: [
+                  if (canFixLocation)
+                    Expanded(
+                      child: TmsButton.outline('📌 定位修改',
+                          onPressed: () => _fixLocation(context, ref, d)),
+                    ),
+                  if (canOnsiteReturn) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TmsButton.outline('📦 现场退货',
+                          color: TmsTheme.accent2,
+                          onPressed: () => _createReturn(context, ref, d)),
+                    ),
+                  ],
+                ],
               ),
             ],
-            const SizedBox(height: 8),
-            // 现场退货入口受 TMS_ONSITE_RETURN_ENABLED 控制（PRD-26 §3.2）。
-            // 关掉时让「定位修改」独占整行，而不是留半行空白。
-            Row(
-              children: [
-                Expanded(
-                  child: TmsButton.outline('📌 定位修改',
-                      onPressed: () => _fixLocation(context, ref, d)),
-                ),
-                if (ParamService.instance.current.onsiteReturnEnabled) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TmsButton.outline('📦 现场退货',
-                        color: TmsTheme.accent2,
-                        onPressed: () => _createReturn(context, ref, d)),
-                  ),
-                ],
-              ],
-            ),
           ],
         ),
       ),
@@ -378,8 +410,8 @@ class StoreDetailPage extends ConsumerWidget {
     return MCard(
       leftBar: b.isReturn ? TmsTheme.returnPurple : (pending ? TmsTheme.accent : TmsTheme.ok),
       // 已处理的单不再允许进签收页：重复签收会再写一条签收流水，
-      // 造成交账金额和库存双重计数。
-      onTap: pending ? () => _openSign(context, ref, b) : null,
+      // 造成交账金额和库存双重计数。无签收权限（装车员/裁剪角色）同样不可点。
+      onTap: (pending && _canOpenBill(b)) ? () => _openSign(context, ref, b) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -429,7 +461,7 @@ class StoreDetailPage extends ConsumerWidget {
               ],
             ),
           ],
-          if (pending) ...[
+          if (pending && _canOpenBill(b)) ...[
             const SizedBox(height: 6),
             Text(b.isReturn ? '点击进入退货签收 ›' : '点击进入配送签收 ›',
                 style: const TextStyle(fontSize: 12, color: TmsTheme.accent)),

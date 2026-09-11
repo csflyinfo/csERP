@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/driver_perms.dart';
+import '../../services/auth_service.dart';
 import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/reschedule_reject.dart';
@@ -175,8 +177,10 @@ class _CustomerRejectPageState extends ConsumerState<CustomerRejectPage> {
           const SizedBox(height: 16),
           Row(children: [
             Expanded(child: TmsButton.outline('取消', color: TmsTheme.muted, onPressed: () => Navigator.pop(context))),
-            const SizedBox(width: 8),
-            Expanded(child: TmsButton.danger(_submitting ? '提交中...' : '确认客户拒收', onPressed: _submitting ? null : _submit)),
+            if (AuthService.hasPerm(DriverPerms.signReject)) ...[
+              const SizedBox(width: 8),
+              Expanded(child: TmsButton.danger(_submitting ? '提交中...' : '确认客户拒收', onPressed: _submitting ? null : _submit)),
+            ],
           ]),
           const SizedBox(height: 20),
         ],

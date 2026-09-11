@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-10 08:54:33
+> 生成时间：2026-09-11 18:22:15
 
 - 端点总数：793
-- 已挂 @RequirePerm：566
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：204
+- 已挂 @RequirePerm：620
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：150
 
 ## base
 
@@ -571,70 +571,70 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
-| POST | `/tms/app/accept` | TmsDeliveryAppController#accept | — | — | — | ❌ |
-| POST | `/tms/app/arrive` | TmsDeliveryAppController#arrive | — | — | — | ❌ |
-| POST | `/tms/app/arrive/config` | TmsDeliveryAppController#arriveConfig | — | — | — | ❌ |
-| POST | `/tms/app/collect/records` | TmsAppController#collectRecords | — | — | — | ❌ |
-| POST | `/tms/app/customer-reject/confirm` | TmsCustomerRejectController#confirm | — | — | — | ❌ |
-| POST | `/tms/app/customer-reject/create` | TmsCustomerRejectController#create | — | — | — | ❌ |
-| POST | `/tms/app/customer-reject/list` | TmsCustomerRejectController#list | — | — | — | ❌ |
-| POST | `/tms/app/customer-reject/upload-photo` | TmsCustomerRejectController#uploadPhoto | — | — | — | ❌ |
-| POST | `/tms/app/delivering/store-bills` | TmsAppController#deliveringStoreBills | — | — | — | ❌ |
-| POST | `/tms/app/delivering/stores` | TmsAppController#deliveringStores | — | — | — | ❌ |
-| POST | `/tms/app/depart` | TmsDeliveryAppController#depart | — | — | — | ❌ |
-| POST | `/tms/app/dispatch/detail` | TmsAppController#dispatchDetail | — | — | — | ❌ |
-| POST | `/tms/app/driver/stats` | TmsAppController#driverStats | — | — | — | ❌ |
-| POST | `/tms/app/exception/create` | TmsExceptionReportController#create | — | — | — | ❌ |
-| POST | `/tms/app/exception/list` | TmsExceptionReportController#list | — | — | — | ❌ |
-| POST | `/tms/app/exception/options` | TmsExceptionReportController#options | — | — | — | ❌ |
-| POST | `/tms/app/home/overview` | TmsAppController#homeOverview | — | — | — | ❌ |
-| POST | `/tms/app/loading/confirm` | TmsDeliveryAppController#loadingConfirm | — | — | — | ❌ |
-| POST | `/tms/app/loading/items` | TmsDeliveryAppController#loadingItems | — | — | — | ❌ |
-| POST | `/tms/app/loading/point-bills` | TmsDeliveryAppController#loadingPointBills | — | — | — | ❌ |
-| POST | `/tms/app/loading/return-point` | TmsDeliveryAppController#returnPoint | — | — | — | ❌ |
-| POST | `/tms/app/loading/scan` | TmsDeliveryAppController#loadingScan | — | — | — | ❌ |
-| POST | `/tms/app/loading/sort` | TmsDeliveryAppController#loadingSort | — | — | — | ❌ |
-| POST | `/tms/app/loading/start` | TmsDeliveryAppController#loadingStart | — | — | — | ❌ |
-| POST | `/tms/app/loading/stores` | TmsDeliveryAppController#loadingStores | — | — | — | ❌ |
+| POST | `/tms/app/accept` | TmsDeliveryAppController#accept | driver.home.accept | driver.home | accept | 方法：driver.home.accept |
+| POST | `/tms/app/arrive` | TmsDeliveryAppController#arrive | driver.arrive.confirm | driver.arrive | confirm | 方法：driver.arrive.confirm |
+| POST | `/tms/app/arrive/config` | TmsDeliveryAppController#arriveConfig | driver.arrive.confirm | driver.arrive | confirm | 方法：driver.arrive.confirm |
+| POST | `/tms/app/collect/records` | TmsAppController#collectRecords | driver.collect_records.view | driver.collect_records | view | 方法：driver.collect_records.view |
+| POST | `/tms/app/customer-reject/confirm` | TmsCustomerRejectController#confirm | driver.sign.reject | driver.sign | reject | 方法：driver.sign.reject |
+| POST | `/tms/app/customer-reject/create` | TmsCustomerRejectController#create | driver.sign.reject | driver.sign | reject | 方法：driver.sign.reject |
+| POST | `/tms/app/customer-reject/list` | TmsCustomerRejectController#list | driver.sign.view | driver.sign | view | 方法：driver.sign.view |
+| POST | `/tms/app/customer-reject/upload-photo` | TmsCustomerRejectController#uploadPhoto | driver.sign.photo | driver.sign | photo | 方法：driver.sign.photo |
+| POST | `/tms/app/delivering/store-bills` | TmsAppController#deliveringStoreBills | driver.sign.view | driver.sign | view | 方法：driver.sign.view |
+| POST | `/tms/app/delivering/stores` | TmsAppController#deliveringStores | driver.delivering.view | driver.delivering | view | 方法：driver.delivering.view |
+| POST | `/tms/app/depart` | TmsDeliveryAppController#depart | driver.depart.confirm | driver.depart | confirm | 方法：driver.depart.confirm |
+| POST | `/tms/app/dispatch/detail` | TmsAppController#dispatchDetail | driver.home.view | driver.home | view | 方法：driver.home.view |
+| POST | `/tms/app/driver/stats` | TmsAppController#driverStats | driver.profile.view | driver.profile | view | 方法：driver.profile.view |
+| POST | `/tms/app/exception/create` | TmsExceptionReportController#create | driver.exception.report | driver.exception | report | 方法：driver.exception.report |
+| POST | `/tms/app/exception/list` | TmsExceptionReportController#list | driver.exception.view | driver.exception | view | 方法：driver.exception.view |
+| POST | `/tms/app/exception/options` | TmsExceptionReportController#options | driver.exception.view | driver.exception | view | 方法：driver.exception.view |
+| POST | `/tms/app/home/overview` | TmsAppController#homeOverview | driver.home.view | driver.home | view | 方法：driver.home.view |
+| POST | `/tms/app/loading/confirm` | TmsDeliveryAppController#loadingConfirm | driver.loading.confirm_point | driver.loading | confirm_point | 方法：driver.loading.confirm_point |
+| POST | `/tms/app/loading/items` | TmsDeliveryAppController#loadingItems | driver.loading.scan | driver.loading | scan | 方法：driver.loading.scan |
+| POST | `/tms/app/loading/point-bills` | TmsDeliveryAppController#loadingPointBills | driver.loading.view_bills | driver.loading | view_bills | 方法：driver.loading.view_bills |
+| POST | `/tms/app/loading/return-point` | TmsDeliveryAppController#returnPoint | driver.loading.return_point | driver.loading | return_point | 方法：driver.loading.return_point |
+| POST | `/tms/app/loading/scan` | TmsDeliveryAppController#loadingScan | driver.loading.scan | driver.loading | scan | 方法：driver.loading.scan |
+| POST | `/tms/app/loading/sort` | TmsDeliveryAppController#loadingSort | driver.loading.confirm_point | driver.loading | confirm_point | 方法：driver.loading.confirm_point |
+| POST | `/tms/app/loading/start` | TmsDeliveryAppController#loadingStart | driver.loading.view | driver.loading | view | 方法：driver.loading.view |
+| POST | `/tms/app/loading/stores` | TmsDeliveryAppController#loadingStores | driver.loading.view | driver.loading | view | 方法：driver.loading.view |
 | POST | `/tms/app/location/batch-report` | TmsDeliveryAppController#batchReport | — | — | — | ❌ |
 | POST | `/tms/app/location/report` | TmsDeliveryAppController#locationReport | — | — | — | ❌ |
 | POST | `/tms/app/login` | TmsAppController#login | — | — | — | ❌ |
-| POST | `/tms/app/notification/list` | TmsNotificationController#appList | — | — | — | ❌ |
+| POST | `/tms/app/notification/list` | TmsNotificationController#appList | driver.notification.view | driver.notification | view | 方法：driver.notification.view |
 | POST | `/tms/app/notification/read` | TmsNotificationController#appRead | — | — | — | ❌ |
 | POST | `/tms/app/notification/read-all` | TmsNotificationController#appReadAll | — | — | — | ❌ |
 | POST | `/tms/app/notification/register-token` | TmsNotificationController#registerToken | — | — | — | ❌ |
-| POST | `/tms/app/notification/unread-count` | TmsNotificationController#appUnreadCount | — | — | — | ❌ |
+| POST | `/tms/app/notification/unread-count` | TmsNotificationController#appUnreadCount | driver.notification.view | driver.notification | view | 方法：driver.notification.view |
 | POST | `/tms/app/params` | TmsAppController#params | — | — | — | ❌ |
-| POST | `/tms/app/profile` | TmsAppController#profile | — | — | — | ❌ |
-| POST | `/tms/app/reschedule-return/confirm` | TmsRescheduleReturnController#confirm | — | — | — | ❌ |
-| POST | `/tms/app/reschedule-return/create` | TmsRescheduleReturnController#create | — | — | — | ❌ |
-| POST | `/tms/app/reschedule-return/list` | TmsRescheduleReturnController#list | — | — | — | ❌ |
-| POST | `/tms/app/reschedule-return/upload-photo` | TmsRescheduleReturnController#uploadPhoto | — | — | — | ❌ |
-| POST | `/tms/app/return/create` | TmsReturnController#createReturn | — | — | — | ❌ |
-| POST | `/tms/app/return/customer-search` | TmsReturnController#customerSearch | — | — | — | ❌ |
-| POST | `/tms/app/return/detail` | TmsAppController#returnDetail | — | — | — | ❌ |
-| POST | `/tms/app/return/goods-search` | TmsReturnController#goodsSearch | — | — | — | ❌ |
-| POST | `/tms/app/return/list` | TmsReturnController#returnList | — | — | — | ❌ |
-| POST | `/tms/app/return/sign` | TmsAppController#returnSign | — | — | — | ❌ |
-| POST | `/tms/app/return/upload-photo` | TmsReturnController#uploadPhoto | — | — | — | ❌ |
-| POST | `/tms/app/return/warehouse-list` | TmsReturnController#warehouseList | — | — | — | ❌ |
-| POST | `/tms/app/settle/accounts` | TmsStoreSettleController#accounts | — | — | — | ❌ |
+| POST | `/tms/app/profile` | TmsAppController#profile | driver.profile.view | driver.profile | view | 方法：driver.profile.view |
+| POST | `/tms/app/reschedule-return/confirm` | TmsRescheduleReturnController#confirm | driver.return.warehouse | driver.return | warehouse | 方法：driver.return.warehouse |
+| POST | `/tms/app/reschedule-return/create` | TmsRescheduleReturnController#create | driver.loading.return_point | driver.loading | return_point | 方法：driver.loading.return_point |
+| POST | `/tms/app/reschedule-return/list` | TmsRescheduleReturnController#list | driver.loading.view | driver.loading | view | 方法：driver.loading.view |
+| POST | `/tms/app/reschedule-return/upload-photo` | TmsRescheduleReturnController#uploadPhoto | driver.loading.return_point | driver.loading | return_point | 方法：driver.loading.return_point |
+| POST | `/tms/app/return/create` | TmsReturnController#createReturn | driver.return.onsite | driver.return | onsite | 方法：driver.return.onsite |
+| POST | `/tms/app/return/customer-search` | TmsReturnController#customerSearch | driver.return.onsite | driver.return | onsite | 方法：driver.return.onsite |
+| POST | `/tms/app/return/detail` | TmsAppController#returnDetail | driver.return.view | driver.return | view | 方法：driver.return.view |
+| POST | `/tms/app/return/goods-search` | TmsReturnController#goodsSearch | driver.return.onsite | driver.return | onsite | 方法：driver.return.onsite |
+| POST | `/tms/app/return/list` | TmsReturnController#returnList | driver.return.view | driver.return | view | 方法：driver.return.view |
+| POST | `/tms/app/return/sign` | TmsAppController#returnSign | driver.return.confirm | driver.return | confirm | 方法：driver.return.confirm |
+| POST | `/tms/app/return/upload-photo` | TmsReturnController#uploadPhoto | driver.return.photo | driver.return | photo | 方法：driver.return.photo |
+| POST | `/tms/app/return/warehouse-list` | TmsReturnController#warehouseList | driver.return.onsite | driver.return | onsite | 方法：driver.return.onsite |
+| POST | `/tms/app/settle/accounts` | TmsStoreSettleController#accounts | driver.settlement.select_account | driver.settlement | select_account | 方法：driver.settlement.select_account |
 | POST | `/tms/app/settle/driver-accounts/list` | TmsStoreSettleController#driverAccountList | — | — | — | ❌ |
 | POST | `/tms/app/settle/driver-accounts/save` | TmsStoreSettleController#driverAccountSave | — | — | — | ❌ |
-| POST | `/tms/app/settle/preview` | TmsStoreSettleController#preview | — | — | — | ❌ |
-| POST | `/tms/app/settle/submit` | TmsStoreSettleController#submit | — | — | — | ❌ |
-| POST | `/tms/app/settlement/submit` | TmsSettlementController#submit | — | — | — | ❌ |
-| POST | `/tms/app/settlement/summary` | TmsSettlementController#summary | — | — | — | ❌ |
-| POST | `/tms/app/settlement/upload-photo` | TmsSettlementController#uploadPhoto | — | — | — | ❌ |
-| POST | `/tms/app/sign` | TmsDeliveryAppController#sign | — | — | — | ❌ |
-| POST | `/tms/app/sign/items` | TmsDeliveryAppController#signItems | — | — | — | ❌ |
-| POST | `/tms/app/sign/upload-photo` | TmsDeliveryAppController#uploadPhoto | — | — | — | ❌ |
-| POST | `/tms/app/store-location/submit` | TmsStoreLocationController#submit | — | — | — | ❌ |
-| POST | `/tms/app/today-tasks` | TmsAppController#todayTasks | — | — | — | ❌ |
-| POST | `/tms/app/trip/history` | TmsAppController#tripHistory | — | — | — | ❌ |
+| POST | `/tms/app/settle/preview` | TmsStoreSettleController#preview | driver.settlement.view | driver.settlement | view | 方法：driver.settlement.view |
+| POST | `/tms/app/settle/submit` | TmsStoreSettleController#submit | driver.settlement.settle | driver.settlement | settle | 方法：driver.settlement.settle |
+| POST | `/tms/app/settlement/submit` | TmsSettlementController#submit | driver.handover.submit | driver.handover | submit | 方法：driver.handover.submit |
+| POST | `/tms/app/settlement/summary` | TmsSettlementController#summary | driver.handover.view | driver.handover | view | 方法：driver.handover.view |
+| POST | `/tms/app/settlement/upload-photo` | TmsSettlementController#uploadPhoto | driver.handover.view | driver.handover | view | 方法：driver.handover.view |
+| POST | `/tms/app/sign` | TmsDeliveryAppController#sign | driver.sign.normal | driver.sign | normal | 方法：driver.sign.normal |
+| POST | `/tms/app/sign/items` | TmsDeliveryAppController#signItems | driver.sign.view | driver.sign | view | 方法：driver.sign.view |
+| POST | `/tms/app/sign/upload-photo` | TmsDeliveryAppController#uploadPhoto | driver.sign.photo | driver.sign | photo | 方法：driver.sign.photo |
+| POST | `/tms/app/store-location/submit` | TmsStoreLocationController#submit | driver.store_location.edit | driver.store_location | edit | 方法：driver.store_location.edit |
+| POST | `/tms/app/today-tasks` | TmsAppController#todayTasks | driver.home.view | driver.home | view | 方法：driver.home.view |
+| POST | `/tms/app/trip/history` | TmsAppController#tripHistory | driver.history.view | driver.history | view | 方法：driver.history.view |
 | POST | `/tms/app/upload/image` | TmsUploadController#uploadImage | — | — | — | ❌ |
-| POST | `/tms/app/warehouse-return/confirm` | TmsReturnController#warehouseReturnConfirm | — | — | — | ❌ |
-| POST | `/tms/app/warehouse-return/list` | TmsReturnController#warehouseReturnList | — | — | — | ❌ |
+| POST | `/tms/app/warehouse-return/confirm` | TmsReturnController#warehouseReturnConfirm | driver.return.warehouse | driver.return | warehouse | 方法：driver.return.warehouse |
+| POST | `/tms/app/warehouse-return/list` | TmsReturnController#warehouseReturnList | driver.return.view | driver.return | view | 方法：driver.return.view |
 | POST | `/tms/customer-reject/page` | TmsCustomerRejectController#page | tms.customer_reject.view | tms.customer_reject | view | ❌ |
 | GET | `/tms/customer-reject/{id}` | TmsCustomerRejectController#detail | tms.customer_reject.view | tms.customer_reject | view | ❌ |
 | POST | `/tms/customer-reject/{id}/complete` | TmsCustomerRejectController#complete | tms.customer_reject.view | tms.customer_reject | view | ❌ |

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/task_provider.dart';
+import '../../services/auth_service.dart';
 import '../../services/launch_service.dart';
 import '../../widgets/common.dart';
 import 'arrive_page.dart';
@@ -200,25 +202,30 @@ class _StoreCard extends ConsumerWidget {
             ],
           ),
           const Divider(height: 16),
+          // 导航/到达按 funcs 裁剪（PRD-28 卡片10）；呼叫不打业务端点，恒保留。
           Row(
             children: [
-              Expanded(child: _btn('🧭 导航', TmsTheme.accent, () => _navigate(context))),
-              const SizedBox(width: 8),
+              if (AuthService.hasPerm(DriverPerms.deliveringNavigation)) ...[
+                Expanded(child: _btn('🧭 导航', TmsTheme.accent, () => _navigate(context))),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: _btn('📞 呼叫', TmsTheme.ok,
                     s.hasPhone ? () => _call(context) : null),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _btn(
-                  s.done ? '✅ 已完成' : '📍 到达',
-                  TmsTheme.accent2,
-                  // 已完成门店不再允许到达打卡：单据都处理完了还打卡，
-                  // 只会产生一条无对应业务动作的时间记录。
-                  s.done ? null : () => _arrive(context, ref),
-                  filled: true,
+              if (AuthService.hasPerm(DriverPerms.arriveConfirm)) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _btn(
+                    s.done ? '✅ 已完成' : '📍 到达',
+                    TmsTheme.accent2,
+                    // 已完成门店不再允许到达打卡：单据都处理完了还打卡，
+                    // 只会产生一条无对应业务动作的时间记录。
+                    s.done ? null : () => _arrive(context, ref),
+                    filled: true,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ],

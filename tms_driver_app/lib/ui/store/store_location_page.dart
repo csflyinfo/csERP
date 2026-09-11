@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/driver_perms.dart';
+import '../../services/auth_service.dart';
 import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/store_location.dart';
@@ -331,10 +333,16 @@ class _StoreLocationPageState extends ConsumerState<StoreLocationPage> {
           ),
           const SizedBox(height: 14),
 
-          TmsButton.primary(
-            _submitting ? '提交中...' : '提交修正申请',
-            onPressed: _submitting ? null : _submit,
-          ),
+          if (AuthService.hasPerm(DriverPerms.storeLocationEdit))
+            TmsButton.primary(
+              _submitting ? '提交中...' : '提交修正申请',
+              onPressed: _submitting ? null : _submit,
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Center(child: Text('当前账号无门店定位修改权限', style: TextStyle(fontSize: 12, color: TmsTheme.muted))),
+            ),
           const SizedBox(height: 20),
         ],
       ),

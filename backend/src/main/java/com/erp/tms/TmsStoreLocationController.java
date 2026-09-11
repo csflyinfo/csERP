@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -46,6 +47,7 @@ public class TmsStoreLocationController {
      */
     @PostMapping("/tms/app/store-location/submit")
     @Transactional
+    @RequirePerm("driver.store_location.edit")
     public ApiResponse<Map<String, Object>> submit(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String customerId = TmsUtil.str(body.get("customerId"));

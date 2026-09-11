@@ -1,11 +1,13 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_config.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/launch_service.dart';
 import '../../services/sync_service.dart';
 import '../common/api_base_dialog.dart';
@@ -47,23 +49,31 @@ class ProfilePage extends ConsumerWidget {
           Container(
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
             child: Column(children: [
-              _row(Icons.history, '配送历史', () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryPage()));
-              }),
-              const Divider(height: 1, indent: 56),
+              // 菜单项按 funcs 裁剪（PRD-28 卡片10）：装车员只看到联系调度/版本等
+              // 基础项，不出现历史/退货/收款入口。
+              if (AuthService.hasPerm(DriverPerms.historyView)) ...[
+                _row(Icons.history, '配送历史', () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryPage()));
+                }),
+                const Divider(height: 1, indent: 56),
+              ],
               // 退货回收从底部 Tab 收到这里：退货是配送中的一个动作，
               // 主路径已在配送点详情内完成，这里保留的是「跨门店查全部退货单」
               // 这个低频但必要的场景——否则退货列表页会没有总入口。
-              _row(Icons.recycling, '退货回收', () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const ReturnListPage()));
-              }),
-              const Divider(height: 1, indent: 56),
+              if (AuthService.hasPerm(DriverPerms.returnView)) ...[
+                _row(Icons.recycling, '退货回收', () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const ReturnListPage()));
+                }),
+                const Divider(height: 1, indent: 56),
+              ],
               // 收款记录独立入口：上面统计卡的「累计收款」只是个总数，
               // 跟调度对不上账时司机需要逐笔流水才能定位差额在哪家门店。
-              _row(Icons.receipt_long, '收款记录', () {
-                Navigator.push(context, MaterialPageRoute(builder: (_) => const CollectRecordsPage()));
-              }),
-              const Divider(height: 1, indent: 56),
+              if (AuthService.hasPerm(DriverPerms.collectRecordsView)) ...[
+                _row(Icons.receipt_long, '收款记录', () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const CollectRecordsPage()));
+                }),
+                const Divider(height: 1, indent: 56),
+              ],
               // 同步中心入口：离线队列里躺的是「司机已经干完、公司还没收到」的活。
               // 顶部横幅只在有异常时才出现，收工核对时司机需要一个稳定入口
               // 主动确认「我今天的单子都传上去了没有」。

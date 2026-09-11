@@ -170,12 +170,14 @@ ls backend/src/main/resources/db/migration/ | sort -V | tail -1   # 确认最大
 
 ### 卡片 10 ｜ `feat/rbac-9-driver-login`（M3，V108，约 5d，与卡片 9 可并行）
 
-- [ ] 司机登录增强：`base_employee(is_deliveryman=TRUE,status=NORMAL)` 首次登录自动建用户绑 TMS_DRIVER（§5.4）；离职/取消标记拒绝登录
-- [ ] 短信验证码表 `sys_sms_code`（5 分钟有效、5 次失败锁 15 分钟）；**dev 保留 888888 回落，prod 启动强制校验短信配置为空则拒启**
-- [ ] TMS 接口按 §7.3 矩阵控权（50+ 按钮：签收/拒收/现场退货/结算/退回调度/装车）
-- [ ] 司机数据隔离：只返回本人调度单；装车员、不收款司机角色
-- [ ] Flutter 登录响应增 permissions/menus，首页与按钮裁剪；权限+参数双控（如 TMS_ONSITE_RETURN_ENABLED）
-- [ ] DRIVER-001~007 验收
+- [x] 司机登录增强：`base_employee(is_deliveryman=TRUE,status=NORMAL)` 首次登录自动建用户绑 TMS_DRIVER（§5.4）；离职/取消标记拒绝登录
+- [x] 短信验证码表 `sys_sms_code`（5 分钟有效、5 次失败锁 15 分钟）；**dev 保留 888888 回落，prod 启动强制校验短信配置为空则拒启**
+- [x] TMS 接口按 §7.3 矩阵控权（50+ 按钮：签收/拒收/现场退货/结算/退回调度/装车）
+- [x] 司机数据隔离：只返回本人调度单；装车员、不收款司机角色
+- [x] Flutter 登录响应增 permissions/menus，首页与按钮裁剪；权限+参数双控（如 TMS_ONSITE_RETURN_ENABLED）
+- [x] DRIVER-001~007 验收
+
+> 落地（2026-09-11）：V108 给 `sys_sms_code` 加 fail_count/lock_until/send_ip 三列；三司机角色授权改由 `PermissionRegistry.DRIVER_ROLE_FUNCS` 启动幂等对账（菜单+功能 104 行：DRIVER 46 / LOADER 10 / LEADER 48 功能码，矩阵外收回、缺失补齐），功能点总数 1699（新增 33）。`TmsDriverAuthService` 双通道登录（手机号+验证码 / 工号+密码）：在职配送员双闸、首登按 §5.4 自动开通（16 位随机 BCrypt 密码、must_change_pwd=TRUE、created_by 系统自动开通）；JWT 带 appType=DRIVER、employeeId=driverId、username=工号。`DriverAppGuardInterceptor` 对 /tms/app/** 强制 DRIVER 令牌（ERP 含 SYS_ADMIN/WMS PDA/旧令牌 401，无令牌由 JwtAuthFilter 先行 401）。短信风控：5 分钟有效、60 秒限频、日 10 条、5 次错锁 15 分钟（锁定期发码/核验/888888 全拒），非 prod 888888 回落，prod 缺 sms.webhook-url 拒启。15 个 TMS Controller 全量挂 @RequirePerm；普通司机按 JWT employeeId 隔离调度单，装车员仅装车类端点放开归属，带班组长 team_view 放大到同部门；退回调度留痕（司机名/时间/原因写 remark，操作人只信 JWT）。Flutter 端功能码常量与后端逐字相等、14 页按钮按 funcs 裁剪、现场退货权限+参数双控，flutter analyze 零 issue。DRIVER-001~007 外加短信风控/端隔离共 97 条断言全绿，详见《优化记录-PRD28-RBAC.md》卡片10 节。
 
 ### 卡片 11 ｜ 上线准备（W7，无独立分支）
 

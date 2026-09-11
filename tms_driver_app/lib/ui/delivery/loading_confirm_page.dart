@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../config/tms_status.dart';
 import '../../models/delivery.dart';
@@ -9,6 +10,7 @@ import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/param_service.dart';
 import '../../services/photo_service.dart';
@@ -157,7 +159,12 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
                         detailId: r.detailId,
                         customerName: r.customerName,
                       ),
-                      onReturn: (isLoaded && canReturnPoint && !r.loaded && !_busy)
+                      onReturn: (isLoaded &&
+                              canReturnPoint &&
+                              !r.loaded &&
+                              !_busy &&
+                              // 装车员默认无「退回调度池」权（PRD-28 §7.3）
+                              AuthService.hasPerm(DriverPerms.loadingReturnPoint))
                           ? () => _confirmReturnPoint(d, r.detailId, r.customerName)
                           : null,
                     )),
@@ -270,10 +277,15 @@ class _LoadingConfirmPageState extends ConsumerState<LoadingConfirmPage> {
               ),
             ]),
             const SizedBox(height: 8),
-            TmsButton.warn(
-              _busy ? '处理中...' : '确认发车，开始配送',
-              onPressed: (_busy || !d.anyLoaded) ? null : () => _proceedDepart(d),
-            ),
+            // 发车是司机动作：装车员角色没有 depart.confirm，
+            // 这里改成提示语，避免点了必 403（PRD-28 卡片10）。
+            if (AuthService.hasPerm(DriverPerms.departConfirm))
+              TmsButton.warn(
+                _busy ? '处理中...' : '确认发车，开始配送',
+                onPressed: (_busy || !d.anyLoaded) ? null : () => _proceedDepart(d),
+              )
+            else
+              const Alert.info('✅ 装车完成后请通知司机核对发车'),
           ],
           if (isDeparted) ...[
             const Alert.ok('✅ 已全部发车，可返回首页查看配送任务'),

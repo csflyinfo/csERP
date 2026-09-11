@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/app_config.dart';
@@ -7,7 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../common/api_base_dialog.dart';
 
-/// 司机登录页（对齐原型 screen-login）。
+/// 司机登录页（对齐原型 screen-login；PRD-28 卡片10 起支持短信/工号两种方式）。
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -15,28 +18,121 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
+/// 登录方式：sms=手机号+短信验证码（主路径）；password=工号+密码（装车员等预建账号）。
+enum _LoginMode { sms, password }
+
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _mobileCtrl = TextEditingController(text: '');
-  final _codeCtrl = TextEditingController(text: AppConfig.devVerifyCode);
+  final _codeCtrl = TextEditingController(text: kDebugMode ? AppConfig.devVerifyCode : '');
+  final _pwdCtrl = TextEditingController(text: '');
+
+  _LoginMode _mode = _LoginMode.sms;
   bool _loading = false;
   bool _obscure = true;
+  bool _sendingCode = false;
+
+  /// 重发倒计时剩余秒数；>0 时「获取验证码」按钮禁用。
+  int _countdown = 0;
+  Timer? _timer;
 
   @override
   void dispose() {
+    _timer?.cancel();
     _mobileCtrl.dispose();
     _codeCtrl.dispose();
+    _pwdCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  /// 把后端/网络异常归一化成可直接展示的中文文案。
+  ///
+  /// 业务拦截器 reject 的 DioException 中文原因在 e.message 里，
+  /// 直接 toString 会带 "DioException [bad response]:" 前缀，司机看不懂。
+  String _errText(Object e) {
+    if (e is DioException) {
+      final msg = e.message?.trim();
+      if (msg != null && msg.isNotEmpty && msg != '请求失败') return msg;
+    }
+    return e.toString().replaceFirst('Exception: ', '');
+  }
+
+  /// 获取短信验证码：POST /auth/sms/send（匿名端点）。
+  ///
+  /// 频控（60 秒重发、日 10 次、5 次失败锁 15 分钟）全部在服务端，
+  /// 前端只做 60 秒倒计时与后端文案透传——频控规则以后端为准，不在前端复制。
+  Future<void> _sendCode() async {
     final mobile = _mobileCtrl.text.trim();
-    if (mobile.isEmpty) {
-      _toast('请输入手机号');
+    if (mobile.length != 11) {
+      _toast('请输入 11 位手机号');
       return;
     }
+    setState(() => _sendingCode = true);
+    try {
+      final data = await ApiService.instance.post('/auth/sms/send', body: {
+        'mobile': mobile,
+        'bizType': 'LOGIN',
+      }) as Map<String, dynamic>?;
+      final secs = (data?['expireSeconds'] ?? 300);
+      _toast('验证码已发送，$secs 秒内有效');
+      _startCountdown();
+    } catch (e) {
+      final isConnError = e is DioException &&
+          (e.type == DioExceptionType.connectionError ||
+              e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout ||
+              e.error.toString().contains('Connection refused'));
+      if (isConnError && mounted) {
+        _showConnErrorSnack(e);
+      } else {
+        // 典型文案：「验证码错误次数过多，请 15 分钟后再试」「今日发送次数已达上限」
+        _toast(_errText(e));
+      }
+    } finally {
+      if (mounted) setState(() => _sendingCode = false);
+    }
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
+    setState(() => _countdown = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() => _countdown -= 1);
+      if (_countdown <= 0) t.cancel();
+    });
+  }
+
+  Future<void> _login() async {
     setState(() => _loading = true);
     try {
-      await ref.read(authProvider.notifier).login(mobile, _codeCtrl.text.trim());
+      if (_mode == _LoginMode.sms) {
+        final mobile = _mobileCtrl.text.trim();
+        final code = _codeCtrl.text.trim();
+        if (mobile.isEmpty) {
+          _toast('请输入手机号');
+          return;
+        }
+        if (code.isEmpty) {
+          _toast('请输入验证码');
+          return;
+        }
+        await ref.read(authProvider.notifier).login(mobile, code);
+      } else {
+        final employeeCode = _mobileCtrl.text.trim();
+        final pwd = _pwdCtrl.text;
+        if (employeeCode.isEmpty) {
+          _toast('请输入工号');
+          return;
+        }
+        if (pwd.isEmpty) {
+          _toast('请输入密码');
+          return;
+        }
+        await ref.read(authProvider.notifier).loginByPassword(employeeCode, pwd);
+      }
     } catch (e) {
       // 连接层错误（超时/拒绝/无网）通常是地址或网络问题，直接引导去改服务器地址，
       // 比把 DioException 原文糊在屏幕上更有用——司机看到 "Connection refused, errno=111"
@@ -49,7 +145,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (isConnError && mounted) {
         _showConnErrorSnack(e);
       } else {
-        _toast('登录失败：${e.toString().replaceFirst("Exception: ", "")}');
+        _toast('登录失败：${_errText(e)}');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -141,14 +237,40 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _inputField('手机号 / 工号', _mobileCtrl, placeholder: '请输入手机号或司机工号'),
+                          _modeSwitch(),
+                          const SizedBox(height: 16),
+                          _inputField(
+                            _mode == _LoginMode.sms ? '手机号' : '工号',
+                            _mobileCtrl,
+                            placeholder: _mode == _LoginMode.sms
+                                ? '请输入手机号'
+                                : '请输入司机工号',
+                            keyboardType: _mode == _LoginMode.sms
+                                ? TextInputType.phone
+                                : TextInputType.text,
+                          ),
                           const SizedBox(height: 14),
-                          _inputField('验证码', _codeCtrl, placeholder: '请输入验证码（开发期固定 888888）', obscure: _obscure,
-                            suffix: IconButton(
-                              visualDensity: VisualDensity.compact,
-                              icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20, color: TmsTheme.muted),
-                              onPressed: () => setState(() => _obscure = !_obscure),
-                            )),
+                          if (_mode == _LoginMode.sms)
+                            _inputField('验证码', _codeCtrl,
+                                placeholder: '请输入 6 位验证码',
+                                obscure: _obscure,
+                                keyboardType: TextInputType.number,
+                                suffix: _codeSuffix())
+                          else
+                            _inputField('密码', _pwdCtrl,
+                                placeholder: '请输入密码',
+                                obscure: _obscure,
+                                suffix: IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20, color: TmsTheme.muted),
+                                  onPressed: () => setState(() => _obscure = !_obscure),
+                                )),
+                          // 开发/测试环境固定验证码提示；release 不显示，避免被当成真实后门。
+                          if (_mode == _LoginMode.sms && kDebugMode) ...[
+                            const SizedBox(height: 6),
+                            const Text('开发环境固定验证码：${AppConfig.devVerifyCode}',
+                                style: TextStyle(fontSize: 11, color: TmsTheme.muted)),
+                          ],
                           const Spacer(),
                           ElevatedButton(
                             onPressed: _loading ? null : _login,
@@ -170,7 +292,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 : const Text('登 录', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                           ),
                           const SizedBox(height: 10),
-                          const Text('首次登录需联系管理员开通账号', textAlign: TextAlign.center,
+                          const Text('首次登录将自动开通账号；装车员账号请由管理员预先开通', textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
                         ],
                       ),
@@ -185,7 +307,80 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _inputField(String label, TextEditingController ctrl, {String placeholder = '', bool obscure = false, Widget? suffix}) {
+  /// 短信登录 / 工号登录 切换。
+  Widget _modeSwitch() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: TmsTheme.bg,
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(children: [
+        _modeTab('短信登录', _LoginMode.sms),
+        _modeTab('工号登录', _LoginMode.password),
+      ]),
+    );
+  }
+
+  Widget _modeTab(String label, _LoginMode m) {
+    final selected = _mode == m;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => setState(() => _mode = m),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(7),
+            boxShadow: selected
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 4)]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? TmsTheme.accent : TmsTheme.muted,
+              )),
+        ),
+      ),
+    );
+  }
+
+  /// 验证码输入框尾部：密码眼 + 获取验证码/倒计时。
+  Widget _codeSuffix() {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      IconButton(
+        visualDensity: VisualDensity.compact,
+        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, size: 20, color: TmsTheme.muted),
+        onPressed: () => setState(() => _obscure = !_obscure),
+      ),
+      GestureDetector(
+        onTap: (_sendingCode || _countdown > 0) ? null : _sendCode,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Text(
+            _sendingCode
+                ? '发送中'
+                : (_countdown > 0 ? '${_countdown}s 后重发' : '获取验证码'),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: (_sendingCode || _countdown > 0) ? TmsTheme.muted : TmsTheme.accent,
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _inputField(String label, TextEditingController ctrl,
+      {String placeholder = '',
+      bool obscure = false,
+      Widget? suffix,
+      TextInputType? keyboardType}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -194,6 +389,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         TextField(
           controller: ctrl,
           obscureText: obscure,
+          keyboardType: keyboardType,
           decoration: InputDecoration(
             hintText: placeholder,
             filled: true,

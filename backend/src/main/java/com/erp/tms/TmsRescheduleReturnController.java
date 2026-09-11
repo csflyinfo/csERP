@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -61,6 +62,7 @@ public class TmsRescheduleReturnController {
      */
     @PostMapping("/tms/app/reschedule-return/create")
     @Transactional
+    @RequirePerm("driver.loading.return_point")
     public ApiResponse<Map<String, Object>> create(@RequestBody Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         String dispatchId = TmsUtil.str(body.get("dispatchId"));
@@ -197,6 +199,7 @@ public class TmsRescheduleReturnController {
     /** 上传改派返仓留证照片（URL 数组，APP 端先调 /tms/app/upload/image 上传）。 */
     @PostMapping("/tms/app/reschedule-return/upload-photo")
     @Transactional
+    @RequirePerm("driver.loading.return_point")
     public ApiResponse<Map<String, Object>> uploadPhoto(@RequestBody Map<String, Object> body) {
         String returnId = TmsUtil.str(body.get("returnId"));
         if (returnId.isEmpty()) return ApiResponse.fail("400", "returnId 不能为空");
@@ -219,6 +222,7 @@ public class TmsRescheduleReturnController {
 
     /** 本司机待返仓改派返仓单列表。 */
     @PostMapping("/tms/app/reschedule-return/list")
+    @RequirePerm("driver.loading.view")
     public ApiResponse<Map<String, Object>> list(@RequestBody(required = false) Map<String, Object> body) {
         String driverId = TmsUtil.currentDriverId();
         List<Map<String, Object>> rows = TmsUtil.queryCamel(jdbcTemplate, """
@@ -247,6 +251,7 @@ public class TmsRescheduleReturnController {
      */
     @PostMapping("/tms/app/reschedule-return/confirm")
     @Transactional
+    @RequirePerm("driver.return.warehouse")
     public ApiResponse<Map<String, Object>> confirm(@RequestBody Map<String, Object> body) {
         List<String> ids = new ArrayList<>();
         Object single = body.get("returnId");

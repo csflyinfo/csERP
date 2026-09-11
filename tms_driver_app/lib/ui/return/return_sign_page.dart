@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/driver_perms.dart';
+import '../../services/auth_service.dart';
 import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../models/return_order.dart';
@@ -206,8 +208,10 @@ class _ReturnSignPageState extends ConsumerState<ReturnSignPage> {
         const SizedBox(height: 16),
         Row(children: [
           Expanded(child: TmsButton.outline('稍后处理', color: TmsTheme.muted, onPressed: () => Navigator.pop(context))),
-          const SizedBox(width: 8),
-          Expanded(child: TmsButton.purple(_submitting ? '提交中...' : '确认回收', onPressed: _submitting ? null : () => _submit(order))),
+          if (AuthService.hasPerm(DriverPerms.returnConfirm)) ...[
+            const SizedBox(width: 8),
+            Expanded(child: TmsButton.purple(_submitting ? '提交中...' : '确认回收', onPressed: _submitting ? null : () => _submit(order))),
+          ],
         ]),
         const SizedBox(height: 20),
       ],

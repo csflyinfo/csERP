@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../config/driver_perms.dart';
+import '../../services/auth_service.dart';
 import '../../services/photo_service.dart';
 import '../../config/theme.dart';
 import '../../providers/exception_provider.dart';
@@ -369,14 +371,16 @@ class _ExceptionReportPageState extends ConsumerState<ExceptionReportPage> {
                 color: TmsTheme.muted,
                 onPressed: _submitting ? null : () => Navigator.pop(context)),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: urgent
-                ? TmsButton.danger(_submitting ? '上报中...' : '紧急上报',
-                    onPressed: _submitting ? null : () => _submit(cfg))
-                : TmsButton.warn(_submitting ? '上报中...' : '提交异常上报',
-                    onPressed: _submitting ? null : () => _submit(cfg)),
-          ),
+          if (AuthService.hasPerm(DriverPerms.exceptionReport)) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: urgent
+                  ? TmsButton.danger(_submitting ? '上报中...' : '紧急上报',
+                      onPressed: _submitting ? null : () => _submit(cfg))
+                  : TmsButton.warn(_submitting ? '上报中...' : '提交异常上报',
+                      onPressed: _submitting ? null : () => _submit(cfg)),
+            ),
+          ],
         ]),
         const SizedBox(height: 20),
       ],

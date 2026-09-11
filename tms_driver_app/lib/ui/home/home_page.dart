@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/connectivity_service.dart';
@@ -51,18 +53,27 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final driver = ref.watch(authProvider);
-    final pages = [
-      _TodayTab(driverName: driver?.driverName ?? '司机'),
-      const DeliveringPage(),
-      const HistoryPage(),
-      const ProfilePage(),
+    // 底部 Tab 按 funcs 裁剪（PRD-28 卡片10）：装车员没有「配送中/历史」，
+    // 登录后只看到「当前（装车任务）/ 我的」。页面顺序与 tab 索引共用这张表，
+    // 避免两套列表错位。
+    final tabs = <_TabDef>[
+      _TabDef('当前', '📋', false, _TodayTab(driverName: driver?.driverName ?? '司机')),
+      if (AuthService.hasPerm(DriverPerms.deliveringView))
+        _TabDef('配送中', '🚚', _deliveringBadge() > 0, const DeliveringPage()),
+      if (AuthService.hasPerm(DriverPerms.historyView))
+        _TabDef('历史', '📜', false, const HistoryPage()),
+      _TabDef('我的', '👤', false, const ProfilePage()),
     ];
+    // 角色刷新（重新登录）后 _tab 可能越界，夹回合法区间。
+    if (_tab >= tabs.length) _tab = 0;
+    final badgeIndex = tabs.indexWhere((t) => t.label == '配送中');
     return Scaffold(
-      body: pages[_tab],
+      body: tabs[_tab].page,
       bottomNavigationBar: _TmsBottomBar(
+        tabs: tabs,
         current: _tab,
         onChanged: (i) => setState(() => _tab = i),
-        deliveringBadge: _deliveringBadge(),
+        deliveringBadge: badgeIndex >= 0 ? _deliveringBadge() : 0,
       ),
     );
   }
@@ -132,32 +143,36 @@ class _NotifyBell extends ConsumerWidget {
   }
 }
 
-/// 底部 Tab 栏（当前 / 配送中 / 历史 / 我的）。
+/// 底部 Tab 定义（标签/图标/是否角标/页面实例），按角色 funcs 动态组装。
+class _TabDef {
+  final String label;
+  final String icon;
+  final bool badge;
+  final Widget page;
+  _TabDef(this.label, this.icon, this.badge, this.page);
+}
+
+/// 底部 Tab 栏（当前 / [配送中] / [历史] / 我的，方括号项按权限出现）。
 ///
 /// 【退货回收】不再占独立 Tab：退货是配送过程中的一个动作而非独立工作流，
 /// 单独立项会让司机在两个 Tab 间来回找同一家门店。
 /// 入口收到「我的」页与配送点详情内，跑店主路径保持单一。
 class _TmsBottomBar extends StatelessWidget {
+  final List<_TabDef> tabs;
   final int current;
   final ValueChanged<int> onChanged;
   final int deliveringBadge;
   const _TmsBottomBar(
-      {required this.current, required this.onChanged, required this.deliveringBadge});
+      {required this.tabs, required this.current, required this.onChanged, required this.deliveringBadge});
 
   @override
   Widget build(BuildContext context) {
-    final items = [
-      _TabItem('当前', '📋', false),
-      _TabItem('配送中', '🚚', deliveringBadge > 0),
-      _TabItem('历史', '📜', false),
-      _TabItem('我的', '👤', false),
-    ];
     return Container(
       decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: TmsTheme.rule))),
       padding: const EdgeInsets.only(top: 6, bottom: 10),
       child: Row(
-        children: List.generate(items.length, (i) {
-          final it = items[i];
+        children: List.generate(tabs.length, (i) {
+          final it = tabs[i];
           final on = i == current;
           return Expanded(
             child: GestureDetector(
@@ -188,13 +203,6 @@ class _TmsBottomBar extends StatelessWidget {
       ),
     );
   }
-}
-
-class _TabItem {
-  final String label;
-  final String icon;
-  final bool badge;
-  _TabItem(this.label, this.icon, this.badge);
 }
 
 /// 今日工作台内容。
@@ -229,7 +237,9 @@ class _TodayContent extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('当前任务'),
         actions: [
-          const _NotifyBell(),
+          // 无消息查看权限（如被裁剪的自定义角色）不显示铃铛：
+          // 点了也只会 403，不如不出现。
+          if (AuthService.hasPerm(DriverPerms.notificationView)) const _NotifyBell(),
           const SizedBox(width: 4),
           Padding(padding: const EdgeInsets.only(right: 16), child: Center(child: Text(driverName, style: const TextStyle(color: Colors.white, fontSize: 13)))),
         ],
@@ -284,68 +294,14 @@ class _TodayContent extends ConsumerWidget {
             //
             // 保留下面的快捷操作，是因为它们都不依赖某张具体单据：
             // 现场退货、返仓交接、异常上报在没有任务上下文时同样要能进。
-            // 快捷操作（现场退货 / 返仓交接）
+            // 快捷操作：现场退货 / 返仓交接 / 异常上报 / 我的上报。
             //
-            // 现场退货入口受 TMS_ONSITE_RETURN_ENABLED 控制（PRD-26 §3.2）：
-            // 部分企业要求退货必须走后台开单、司机不得现场创建，关掉后这个入口消失。
+            // 双重控制（PRD-28 卡片10）：
+            //   · 功能权限 driver.* —— 装车员等被裁剪角色直接看不到入口；
+            //   · 系统参数 TMS_ONSITE_RETURN_ENABLED —— 现场退货还受企业策略控制，
+            //     部分企业要求退货必须走后台开单、司机不得现场创建。
             // 关掉时不留占位按钮——留一个点了报错的按钮，比没有更让司机困惑。
-            Row(children: [
-              if (ParamService.instance.current.onsiteReturnEnabled) ...[
-                Expanded(child: _QuickAction(
-                  icon: '🔄',
-                  label: '现场退货',
-                  color: TmsTheme.returnPurple,
-                  onTap: () {
-                    final navigator = Navigator.of(context);
-                    navigator.push(MaterialPageRoute(
-                      builder: (_) => const DriverReturnCreatePage(),
-                    )).then((changed) => _maybeRefresh(ref, changed));
-                  },
-                )),
-                const SizedBox(width: 8),
-              ],
-              Expanded(child: _QuickAction(
-                icon: '🏭',
-                label: '返仓交接',
-                color: TmsTheme.accent2,
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  navigator.push(MaterialPageRoute(
-                    builder: (_) => const WarehouseReturnPage(),
-                  )).then((changed) => _maybeRefresh(ref, changed));
-                },
-              )),
-            ]),
-            const SizedBox(height: 8),
-            // 异常上报入口放在快捷操作区而非只挂在任务卡上：
-            // 出车前检查发现车辆故障、途中被交警拦下时还没有任何门店任务上下文，
-            // 若只能从任务卡进入，最需要上报的场景反而进不去。
-            Row(children: [
-              Expanded(child: _QuickAction(
-                icon: '⚠️',
-                label: '异常上报',
-                color: TmsTheme.bad,
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  navigator.push(MaterialPageRoute(
-                    builder: (_) => const ExceptionReportPage(),
-                  ));
-                },
-              )),
-              const SizedBox(width: 8),
-              Expanded(child: _QuickAction(
-                icon: '📋',
-                label: '我的上报',
-                color: TmsTheme.muted,
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  navigator.push(MaterialPageRoute(
-                    builder: (_) => const ExceptionListPage(),
-                  ));
-                },
-              )),
-            ]),
-            const SizedBox(height: 8),
+            ..._quickActionRows(context, ref),
             if (details.isEmpty)
               const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('暂无待办任务', style: TextStyle(color: TmsTheme.muted)))),
           ],
@@ -355,6 +311,73 @@ class _TodayContent extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// 快捷操作区：按 funcs + 系统参数过滤后两两一排。
+  /// 一个可见入口都没有时（如装车员）返回空列表，不留空白行。
+  List<Widget> _quickActionRows(BuildContext context, WidgetRef ref) {
+    final actions = <Widget>[
+      if (AuthService.hasPerm(DriverPerms.returnOnsite) &&
+          ParamService.instance.current.onsiteReturnEnabled)
+        _QuickAction(
+          icon: '🔄',
+          label: '现场退货',
+          color: TmsTheme.returnPurple,
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const DriverReturnCreatePage(),
+            )).then((changed) => _maybeRefresh(ref, changed));
+          },
+        ),
+      if (AuthService.hasPerm(DriverPerms.returnWarehouse))
+        _QuickAction(
+          icon: '🏭',
+          label: '返仓交接',
+          color: TmsTheme.accent2,
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const WarehouseReturnPage(),
+            )).then((changed) => _maybeRefresh(ref, changed));
+          },
+        ),
+      // 异常上报入口放在快捷操作区而非只挂在任务卡上：
+      // 出车前检查发现车辆故障、途中被交警拦下时还没有任何门店任务上下文，
+      // 若只能从任务卡进入，最需要上报的场景反而进不去。
+      if (AuthService.hasPerm(DriverPerms.exceptionReport))
+        _QuickAction(
+          icon: '⚠️',
+          label: '异常上报',
+          color: TmsTheme.bad,
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ExceptionReportPage(),
+            ));
+          },
+        ),
+      if (AuthService.hasPerm(DriverPerms.exceptionView))
+        _QuickAction(
+          icon: '📋',
+          label: '我的上报',
+          color: TmsTheme.muted,
+          onTap: () {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => const ExceptionListPage(),
+            ));
+          },
+        ),
+    ];
+    if (actions.isEmpty) return const [];
+    final rows = <Widget>[];
+    for (var i = 0; i < actions.length; i += 2) {
+      final pair = <Widget>[Expanded(child: actions[i])];
+      if (i + 1 < actions.length) {
+        pair.add(const SizedBox(width: 8));
+        pair.add(Expanded(child: actions[i + 1]));
+      }
+      rows.add(Row(children: pair));
+      rows.add(const SizedBox(height: 8));
+    }
+    return rows;
   }
 
   /// 概览条的日期文案。
@@ -536,7 +559,9 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
         if (o.currentDispatchId.isNotEmpty && o.pendingDispatches.isEmpty)
           _currentCard(o),
         if (o.nextStore != null) _nextStoreCard(o.nextStore!),
-        _settlementCard(o),
+        // 交账入口：无 handover.view（装车员/不收款角色）整卡隐藏，
+        // 否则点进去拉 summary 就 403。
+        if (AuthService.hasPerm(DriverPerms.handoverView)) _settlementCard(o),
       ]),
     );
   }
@@ -618,25 +643,33 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
             ),
           ),
           const SizedBox(width: 8),
-          Expanded(
-            child: canAccept
-                ? _MiniAction(
-                    label: !flowEnabled ? '流程已关闭' : (_busy ? '处理中…' : '接单'),
-                    icon: Icons.assignment_turned_in,
-                    color: !flowEnabled ? TmsTheme.muted : TmsTheme.accent2,
-                    onTap: (_busy || !flowEnabled) ? null : () => _accept(d.dispatchId),
-                  )
-                : _MiniAction(
-                    // 已装车时不在首页直接发车：发车是不可逆动作，
-                    // 必须先进装车页过一遍漏装校验。
-                    label: d.status == 'LOADED' ? '核对并发车' : '开始装车',
-                    icon: d.status == 'LOADED'
-                        ? Icons.local_shipping
-                        : Icons.inventory_2,
-                    color: TmsTheme.accent,
-                    onTap: () => _openLoading(d.dispatchId),
-                  ),
-          ),
+          // 按角色裁剪（PRD-28 卡片10）：
+          // 司机（有 home.accept）在待接单状态看到「接单」；
+          // 装车员没有接单权，但可直接进装车页「开始装车」（/loading/start 仅需 loading.view）；
+          // 既不能接单也不能装车的自定义角色留空位，不放点了必 403 的按钮。
+          if (canAccept && AuthService.hasPerm(DriverPerms.homeAccept))
+            Expanded(
+              child: _MiniAction(
+                label: !flowEnabled ? '流程已关闭' : (_busy ? '处理中…' : '接单'),
+                icon: Icons.assignment_turned_in,
+                color: !flowEnabled ? TmsTheme.muted : TmsTheme.accent2,
+                onTap: (_busy || !flowEnabled) ? null : () => _accept(d.dispatchId),
+              ),
+            )
+          else if (AuthService.hasPerm(DriverPerms.loadingView))
+            Expanded(
+              child: _MiniAction(
+                // 待接单状态装车员看到的文案是「开始装车」；已接单后按状态显示。
+                label: d.status == 'LOADED' ? '核对并发车' : '开始装车',
+                icon: d.status == 'LOADED'
+                    ? Icons.local_shipping
+                    : Icons.inventory_2,
+                color: TmsTheme.accent,
+                onTap: () => _openLoading(d.dispatchId),
+              ),
+            )
+          else
+            const Expanded(child: SizedBox.shrink()),
         ]),
       ]),
     );
@@ -671,7 +704,9 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
   /// 只有一个动作是合法的，多摆一个按钮等于引导司机去点必然报错的操作。
   Widget _currentCard(HomeOverview o) {
     final loaded = o.currentStatus == 'LOADED';
-    final canAct = o.currentStatus == 'ACCEPTED' || loaded;
+    // 无装车权限（被裁剪的自定义角色）时只展示状态，不给出入口。
+    final canAct = (o.currentStatus == 'ACCEPTED' || loaded)
+        && AuthService.hasPerm(DriverPerms.loadingView);
     return MCard(
       leftBar: TmsTheme.accent,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -728,13 +763,17 @@ class _HomeWorkflowState extends ConsumerState<_HomeWorkflow> {
           ],
           const SizedBox(height: 8),
           Row(children: [
-            Expanded(child: _MiniAction(
-              label: '导航前往',
-              icon: Icons.navigation,
-              color: TmsTheme.accent,
-              onTap: () => _navigate(s),
-            )),
-            const SizedBox(width: 8),
+            // 导航是纯端侧行为，用保留功能码 delivering.navigation 控制；
+            // 呼叫门店不打业务端点，不设功能码。
+            if (AuthService.hasPerm(DriverPerms.deliveringNavigation)) ...[
+              Expanded(child: _MiniAction(
+                label: '导航前往',
+                icon: Icons.navigation,
+                color: TmsTheme.accent,
+                onTap: () => _navigate(s),
+              )),
+              const SizedBox(width: 8),
+            ],
             Expanded(child: _MiniAction(
               label: s.hasPhone ? '呼叫门店' : '无电话',
               icon: Icons.phone,

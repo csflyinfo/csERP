@@ -131,8 +131,21 @@ public final class TmsUtil {
         return "管理员";
     }
 
-    /** 当前司机 ID（APP 端，登录时 subject=driverId）。 */
+    /**
+     * 当前司机 ID（APP 端）。
+     *
+     * <p>PRD-28 卡片10 起：司机令牌 sub=工号、driverId 放在 JWT 的 employeeId claim，
+     * 由 JwtAuthFilter 填进 {@link com.erp.common.security.CurrentUser}，这里单点取数——
+     * 全模块 40+ 处调用无需改动即完成「按 employeeId 隔离」。
+     * 回落 SecurityContext.name 仅为兼容极端场景（非 DRIVER 令牌已由 DriverAppGuard 401 拦截）。
+     */
     public static String currentDriverId() {
+        try {
+            com.erp.common.security.CurrentUser.Principal p = com.erp.common.security.CurrentUser.get();
+            if (p != null && p.employeeId() != null && !p.employeeId().isBlank()) {
+                return p.employeeId();
+            }
+        } catch (Exception ignored) {}
         try {
             String name = SecurityContextHolder.getContext().getAuthentication().getName();
             if (name != null && !name.isBlank()) return name;

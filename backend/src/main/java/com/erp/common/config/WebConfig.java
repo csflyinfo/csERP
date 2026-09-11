@@ -1,5 +1,6 @@
 package com.erp.common.config;
 
+import com.erp.common.security.DriverAppGuardInterceptor;
 import com.erp.common.security.PdaAppGuardInterceptor;
 import com.erp.common.security.RequirePermInterceptor;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final RequirePermInterceptor requirePermInterceptor;
     private final PdaAppGuardInterceptor pdaAppGuardInterceptor;
+    private final DriverAppGuardInterceptor driverAppGuardInterceptor;
 
     @Value("${storage.type:local}")
     private String storageType;
@@ -27,9 +29,11 @@ public class WebConfig implements WebMvcConfigurer {
     private String urlPrefix;
 
     public WebConfig(RequirePermInterceptor requirePermInterceptor,
-                     PdaAppGuardInterceptor pdaAppGuardInterceptor) {
+                     PdaAppGuardInterceptor pdaAppGuardInterceptor,
+                     DriverAppGuardInterceptor driverAppGuardInterceptor) {
         this.requirePermInterceptor = requirePermInterceptor;
         this.pdaAppGuardInterceptor = pdaAppGuardInterceptor;
+        this.driverAppGuardInterceptor = driverAppGuardInterceptor;
     }
 
     @Override
@@ -38,6 +42,14 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(pdaAppGuardInterceptor)
                 .addPathPatterns("/wms/app/**")
                 .excludePathPatterns(PdaAppGuardInterceptor.LOGIN_PATH);
+        // PRD-28 卡片10：/tms/app/** 端类型隔离（登录端点除外），非 DRIVER 令牌一律 401
+        registry.addInterceptor(driverAppGuardInterceptor)
+                .addPathPatterns("/tms/app/**")
+                .excludePathPatterns(
+                        DriverAppGuardInterceptor.LOGIN_PATH,
+                        // 这两个是【ERP 后台】给司机配置收款账户的管理端点（历史遗留落在 /app 前缀下，
+                        // 当前无前端调用方），持 ERP 令牌访问，不能被司机端隔离拦截
+                        "/tms/app/settle/driver-accounts/**");
         // PRD-28：Controller 方法/类上的 @RequirePerm 功能权限校验
         registry.addInterceptor(requirePermInterceptor).addPathPatterns("/**");
     }

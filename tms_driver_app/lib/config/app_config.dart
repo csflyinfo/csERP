@@ -111,6 +111,10 @@ class AppConfig {
   static const String tokenKey = 'tms_driver_token';
   static const String driverIdKey = 'tms_driver_id';
   static const String driverNameKey = 'tms_driver_name';
+  // PRD-28 卡片10：登录态里的权限快照（与 token 同生命周期）
+  static const String driverFuncsKey = 'tms_driver_funcs';
+  static const String driverRolesKey = 'tms_driver_roles';
+  static const String driverSuperAdminKey = 'tms_driver_super_admin';
 
   /// 后端下发的运行参数快照缓存 key（PRD-26 §5.5）。
   ///

@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/photo_service.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/settlement.dart';
 import '../../providers/settlement_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/location_service.dart';
 import '../../services/param_service.dart';
 import '../../widgets/common.dart';
@@ -183,8 +185,9 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
         ),
         const SizedBox(height: 14),
 
-        // 电子签名（TMS_HANDOVER_ESIGN_REQUIRED 关闭时整块不渲染）
-        if (_esignRequired) ...[
+        // 电子签名（TMS_HANDOVER_ESIGN_REQUIRED 与 handover.esign 双控，
+        // 缺功能码时不渲染签名区）
+        if (_esignRequired && AuthService.hasPerm(DriverPerms.handoverEsign)) ...[
           MCard(
             leftBar: TmsTheme.accent,
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -251,11 +254,21 @@ class _SettlementPageState extends ConsumerState<SettlementPage> {
         ),
         const SizedBox(height: 14),
 
-        // 提交按钮
-        TmsButton.primary(
-          _submitting ? '提交中...' : '确认交账',
-          onPressed: _submitting ? null : _submit,
-        ),
+        // 提交按钮：无 handover.submit 的角色（装车员/裁剪角色）不可提交。
+        // 页面入口本身已按 handover.view 裁剪，这里是双保险。
+        if (AuthService.hasPerm(DriverPerms.handoverSubmit))
+          TmsButton.primary(
+            _submitting ? '提交中...' : '确认交账',
+            onPressed: _submitting ? null : _submit,
+          )
+        else
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Center(
+              child: Text('当前账号无交账权限，请联系管理员',
+                  style: TextStyle(fontSize: 12, color: TmsTheme.muted)),
+            ),
+          ),
         const SizedBox(height: 20),
       ],
     );

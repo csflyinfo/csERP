@@ -3,6 +3,7 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.common.security.RequirePerm;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -67,6 +68,7 @@ public class TmsNotificationController {
      * 上分页组件反而要多传 page/pageSize 且下拉加载逻辑复杂，收益为零。
      */
     @PostMapping("/tms/app/notification/list")
+    @RequirePerm("driver.notification.view")
     public ApiResponse<Map<String, Object>> appList(@RequestBody(required = false) Map<String, Object> body) {
         Map<String, Object> b = body == null ? Map.of() : body;
         String driverId = TmsUtil.currentDriverId();
@@ -107,6 +109,7 @@ public class TmsNotificationController {
      * 顺带下发间隔可让运维改参数后客户端自动生效，无需发版也无需额外请求。
      */
     @PostMapping("/tms/app/notification/unread-count")
+    @RequirePerm("driver.notification.view")
     public ApiResponse<Map<String, Object>> appUnreadCount() {
         String driverId = TmsUtil.currentDriverId();
         Map<String, Object> result = new LinkedHashMap<>();

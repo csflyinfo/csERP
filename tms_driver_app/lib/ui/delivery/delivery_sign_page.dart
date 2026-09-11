@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../services/photo_service.dart';
+import '../../config/driver_perms.dart';
 import '../../config/theme.dart';
 import '../../models/delivery.dart';
 import '../../models/task.dart';
 import '../../providers/delivery_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/launch_service.dart';
 import '../../services/local_db_service.dart';
 import '../../services/param_service.dart';
@@ -307,36 +309,37 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
           ]),
         ),
         const SizedBox(height: 8),
-        // 现场照片
-        MCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const Text('📸 现场照片', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
-              const SizedBox(width: 6),
-              Text(
-                _requirePhoto > 0
-                    ? '（至少 $_requirePhoto 张，已拍 $_photoTotal 张）'
-                    : '（选填，已拍 $_photoTotal 张）',
-                style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+        // 现场照片：无 sign.photo 的裁剪角色不显示拍照区（服务端仍会拦截上传/提交）。
+        if (AuthService.hasPerm(DriverPerms.signPhoto))
+          MCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('📸 现场照片', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
+                const SizedBox(width: 6),
+                Text(
+                  _requirePhoto > 0
+                      ? '（至少 $_requirePhoto 张，已拍 $_photoTotal 张）'
+                      : '（选填，已拍 $_photoTotal 张）',
+                  style: const TextStyle(fontSize: 11, color: TmsTheme.muted),
+                ),
+              ]),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ..._photos.asMap().entries.map((e) => _PhotoTile(
+                        photo: e.value,
+                        index: e.key + 1,
+                        onDelete: () => setState(() => _photos.removeAt(e.key)),
+                      )),
+                  if (_photoTotal < _maxPhoto) _AddPhotoTile(onTap: _pickPhoto),
+                ],
               ),
             ]),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ..._photos.asMap().entries.map((e) => _PhotoTile(
-                      photo: e.value,
-                      index: e.key + 1,
-                      onDelete: () => setState(() => _photos.removeAt(e.key)),
-                    )),
-                if (_photoTotal < _maxPhoto) _AddPhotoTile(onTap: _pickPhoto),
-              ],
-            ),
-          ]),
-        ),
-        const SizedBox(height: 8),
-        // 客户签名：签名画板受 TMS_SIGN_ESIGN_REQUIRED 控制，
+          ),
+        if (AuthService.hasPerm(DriverPerms.signPhoto)) const SizedBox(height: 8),
+        // 客户签名：签名画板受 TMS_SIGN_ESIGN_REQUIRED 与 sign.esign 双控，
         // 签收人姓名与电子签名无关（结算页要落 customer_signer），因此始终展示。
         MCard(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -344,7 +347,7 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: TmsTheme.ink)),
             const SizedBox(height: 6),
             _Field('签收人姓名（可选）', _signerCtrl, placeholder: '请输入签收人姓名'),
-            if (_esignRequired) ...[
+            if (_esignRequired && AuthService.hasPerm(DriverPerms.signEsign)) ...[
               const SizedBox(height: 6),
               SignaturePad(key: _sigKey, height: 120, placeholder: '客户确认签收'),
               const SizedBox(height: 4),
@@ -367,11 +370,20 @@ class _DeliverySignPageState extends ConsumerState<DeliverySignPage> {
         const SizedBox(height: 8),
         _Field('备注说明', _remarkCtrl, placeholder: '可选，如：少件/包装破损情况'),
         const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: TmsButton.outline('稍后处理', color: TmsTheme.muted, onPressed: () => Navigator.pop(context))),
-          const SizedBox(width: 8),
-          Expanded(child: TmsButton.primary(_submitting ? '提交中...' : '确认签收', onPressed: _submitting ? null : () => _submit(d))),
-        ]),
+        Builder(builder: (_) {
+          // 三类签收动作码全无（被裁剪角色）时不放提交按钮，
+          // 只留返回，避免必然后端 403。
+          final canSign = AuthService.hasPerm(DriverPerms.signNormal) ||
+              AuthService.hasPerm(DriverPerms.signPartial) ||
+              AuthService.hasPerm(DriverPerms.signReject);
+          return Row(children: [
+            Expanded(child: TmsButton.outline('稍后处理', color: TmsTheme.muted, onPressed: () => Navigator.pop(context))),
+            if (canSign) ...[
+              const SizedBox(width: 8),
+              Expanded(child: TmsButton.primary(_submitting ? '提交中...' : '确认签收', onPressed: _submitting ? null : () => _submit(d))),
+            ],
+          ]);
+        }),
         const SizedBox(height: 20),
       ],
     );

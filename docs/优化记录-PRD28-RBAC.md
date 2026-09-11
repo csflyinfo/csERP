@@ -317,3 +317,36 @@
 - 过程坑：卡片6/7 验收残留的 R6_SUP 孤儿收货任务（采购单已删、任务未删，仓库=总仓）占用了 RK/CGDD 当日 MAX+1 序号，导致本卡脚本按单号捞到旧任务误判 PDA-003；停服 H2 Shell 查明后精确删除孤儿任务与 S_C9 单据（先备份 backups/erp-v1.pre-cleanup-c9.*），重跑全绿。
 - 数据安全：操作前备份 H2；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；验收后停服精确清理 C9 夹具（用户/自定义角色/仓库/供应商/商品/单据/参数复位），tmp-card9-accept/ 与 tmp-card9-boot.log 用后即删。
 
+### 2026-09-11 卡片10 落地：司机短信登录 + 三角色权限矩阵 + 调度单本人隔离（feat/rbac-9-driver-login，V108）
+
+> M3 移动权限第二卡。司机端 15 个 Controller 全量纳管，短信验证码风控闭环，首登自动开通；启动同步日志「菜单 192 / 功能点 1699（新增 33）/ 司机三角色授权 104 行」。
+
+**后端**
+
+- `V108__sms_code_lock_and_driver_grants.sql`：`sys_sms_code`（V102 已建表）补 `fail_count`/`lock_until`/`send_ip` 三列；三司机内置角色（R_TMS_DRIVER/R_TMS_LOADER/R_TMS_LEADER）的菜单/功能授权不用 SQL 维护，统一由 `PermissionRegistry.DRIVER_ROLE_FUNCS` 静态矩阵启动时幂等对账（先收回三角色全部 driver.% 授权再补齐缺失，代码即唯一授权来源；非 driver.% 授权与自定义角色不动）。
+- `auth/sms/` 新包：`SmsCodeService`（发码/核验）、`SmsController`（POST /api/auth/sms/send，{sent:true,expireSeconds:300}）、`SmsConfig`（prod profile 启动强校验 `sms.webhook-url` 必须是 http(s)，缺失/非法直接抛异常拒启；非 prod 装配 LoggingSmsSender 日志通道）、`WebhookSmsSender`/`LoggingSmsSender` 两实现。风控口径：5 分钟有效、同手机号 60 秒限频、每自然日 10 条上限；同一待核验码连续错 5 次写 `lock_until=now+15min`，锁定期发码与核验（含非 prod 万能码 888888）一律拒绝并提示剩余分钟；非 prod 保留 888888 回落（仅不依赖短信网关，风控语义不打折）。
+- `TmsDriverAuthService` + `POST /tms/app/login` 双通道：`{mobile,verifyCode}` 短信登录、`{employeeCode,password}` 工号密码登录（装车员等管理员预建账号走此路）。人员双闸：`base_employee.status='NORMAL'` 且 `is_deliveryman=TRUE`，离职 400「该司机已离职，禁止登录」、非配送员 400「该人员未标记为配送员，禁止司机端登录」；**发码不校验人员**，不泄露账号存在性。首登自动开通 sys_user_runtime：username=工号、16 位随机密码（大写/小写/数字/特殊四类各至少 1 后洗牌，BCrypt 强度 10）、`must_change_pwd=TRUE`、created_by「系统自动开通」，绑 R_TMS_DRIVER；已开通账号后续登录走密码直签（888888 回落仍可用）；账号存在但无 DRIVER 端角色（appType DRIVER/ALL）时 400「账号未分配司机端角色，请联系管理员」。JWT 7 参：sub=userId、username=工号、appType=DRIVER、employeeId=driverId、warehouseId=null、roleCodes、displayName。登录载荷：token/user{userId,username,displayName,employeeId,roles,roleCodes,primaryRoleCode,mustChangePwd}/menus 树/funcs/fields/superAdmin/参数快照（TMS_ONSITE_RETURN_ENABLED 等），并保留旧版 driverId/driverCode/driverName/mobile/roleCode 兼容老 APP。
+- `DriverAppGuardInterceptor`：/tms/app/**（除 /login）只认 appType=DRIVER 令牌；ERP（含 SYS_ADMIN 服务端短路也不放行端类型）/WMS_PDA/V108 前无 appType 旧司机令牌一律 HTTP 401「请使用司机端重新登录」；无令牌在 JwtAuthFilter 即 401「登录已过期，请重新登录」（与卡片9 PDA 相同的两级文案，Flutter dio 对任一 401 清会话回登录页）。
+- 三角色矩阵（func 数 46/10/48）：R_TMS_DRIVER=driverCommon 全流程（首页/装车/发车/在途/到店/签收/结算/交账/退货/异常/历史/收款记录/门店定位/消息/我的 46 码）；R_TMS_LOADER 精确 10 码（home.view + loading.view/confirm_point/confirm_all/view_bills/scan + notification.view + profile.view/change_pwd/change_server/logout），**显式不给 loading.return_point**，无接单/发车/到店/签收/结算/退货/交账；R_TMS_LEADER=driverCommon + collect_records.export + profile.team_view。预留无端点功能点（home.refuse、depart.append_accept、delivering.navigation、sign.save_draft、handover.print、profile.change_server/logout/team_view）已注册进 sys_func_meta 并授权，后端有强制、本期 APP 无按钮，后续补入口直接按 funcs 裁剪。
+- 数据隔离：`TmsUtil.currentDriverId()` 改读 CurrentUser.employeeId（JWT）；今日任务/调度单详情等查询强制 driver_id=本人，非本人返回「调度单不存在或非本人」；TMS_LOADER 仅装车类端点（loading/stores 等）放开归属，可装任意司机的调度单；TMS_LEADER 持 team_view 时今日任务放大到同部门（base_employee.department 字符串相同）司机，仍不看全公司。
+- 15 个 Controller（TmsApp/TmsDeliveryApp/TmsSettlement/TmsStoreSettle/TmsReturn/TmsCustomerReject/TmsRescheduleReturn/TmsExceptionReport/TmsStoreLocation/TmsNotification 等）全量 @RequirePerm 化，同端点多动作用 alsoRegister + checkPerm 分支裁决；结算合并 settle 走「先权限后参数」顺序。DRIVER-007 留痕：/loading/return-point 从 JWT 取司机名（不信前端），`[时间 司机X 装车退回：原因]` 拼进 sales_receipt.remark（取退单写 sales_return_apply），操作日志 RETURN_POINT，明细删除后重算调度单门店/件数快照，空单调度单与行程置 CANCELLED。
+- **本卡 BUG 修复**：SmsCodeService 第 5 次校验失败分支误写 `lock_until=Instant.now()`（ensureNotLocked 的 `isAfter(now)` 立即为 false，15 分钟锁秒失效），改为 `now.plus(LOCK_DURATION)`；验收 SMS-07/SMS-08（锁定期万能码/发码双拒）专项兜住。
+
+**Flutter（tms_driver_app，无新依赖）**
+
+- 新增 `config/driver_perms.dart` 功能码常量，与后端矩阵逐字一致；AuthService 持久化 token/driverId/driverName/funcs/roleCodes/superAdmin 六键；`hasPerm` 静态闸门在未登录或老版本地恢复（无 funcs 快照 permsLoaded=false）时 fail-open，最终以后端 @RequirePerm 为边界。
+- 14 个页面按钮按 funcs 裁剪：到店打卡、异常上报（急/常两按钮）、客户拒收、改派返仓、门店定位修正、退货回收确认、返仓交接（双态三按钮）、现场退货等；现场退货为**权限+参数双控**（hasPerm(returnOnsite) && ParamService.onsiteReturnEnabled，参数来自登录快照），无权限时按钮位替换为「当前账号无 XX 权限」提示；`flutter analyze` 零 issue。
+
+**验收（E:/tmp/rbac10-accept.js，97 断言全绿，用后即删；夹具全部带 RBAC10 标识）**
+
+- 短信风控 14 条：非法手机号、60 秒限频、错误码计数提示「还可尝试 4/3/2/1 次」、第 5 次「已锁定 15 分钟」、锁定期 888888 与发码双拒（剩余分钟提示）、过期码/已用码、离职机发码成功但登录拒（不泄露存在性）、非配送员登录拒。
+- DRIVER-001（17）：A 首登 200，user.username=工号、绑 employeeId、mustChangePwd=TRUE、funcs/menus/params 齐、旧版字段兼容、10 个全流程功能码在集；二次登录幂等复用同一 userId；B 首登成功。
+- DRIVER-002（6）：A 今日只见 RBACDSP-A01 及明细 RBACSR001，B 只见 B01；A 直取 B 单详情「非本人」。
+- 端隔离（2）：匿名 401（JwtAuthFilter「登录已过期」口径，同卡片9）、ERP admin 令牌（含 SYS_ADMIN）打 /tms/app/** 401「请使用司机端重新登录」。
+- DRIVER-004（7）：复制 R_TMS_DRIVER 授权再删 F_driver_settlement_settle 的自定义角色 R10_NOCOLLECT（45 funcs，走真实"管理员复制后裁剪"路径，不动内置角色）登录后无 settle 码、直连 /settle/submit 403、其余司机功能保留、JWT 绑 employeeId、有权司机不被权限层拦、错密 400「账号或密码错误」。
+- DRIVER-005（21）：装车员工号登录，正/负功能码清单（10 码全在、sign/settle/depart/arrive/return/handover/accept 全无）、首页 view 准入、装车视图可开任意司机单且含明细、普通司机装他人单「非本人」、签收/结算/现场退货直连全 403。
+- DRIVER-006（5）：参数 Y 时权限通过进业务校验（空 body「客户不能为空」）、管理员关 TMS_ONSITE_RETURN_ENABLED 后重登快照 onsiteReturnEnabled=false、装车员在参数开关下都 403（参数只控入口显隐，服务端边界仍是功能权限）、收尾复位 Y。
+- LEADER（7）：组长首登仅 TMS_DRIVER 无 team_view；管理员追加 R_TMS_LEADER 后重登 funcs 含 team_view，今日任务同部门 A+B 全可见。
+- DRIVER-007（3）：A 整点退回 200 且返回体含 RBACSR001；sales_receipt.remark 实证含「时间+司机 Jia RBAC10+原因」（操作人取自 JWT）；空单 A01 置 CANCELLED 不再出现在待办。
+- 数据安全：验收前两版 H2 备份（backups/erp-v1.mv.db.bak-20260911-card10-before-accept / -before-rerun）；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；验收后停服 RunScript 精确清理 6 员工/2 调度/调度明细/发货单、5 个运行时账号（rbac10loader/rbac10nc/RBAC10A/B/L，含 user_role/pwd_history/user_data_scope/user_warehouse/双登录日志）、自定义角色四 rel+runtime、9 个测试手机号短信、操作日志（RETURN_POINT 与管理员建号/改号审计共按 biz_no 精确删）；15 张 TMS 业务表 + 5 张财务表 sweep 残留全 0；参数复位 Y；内置三角色授权对拍 46/10/48 完好。
+
