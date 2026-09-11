@@ -350,3 +350,10 @@
 - DRIVER-007（3）：A 整点退回 200 且返回体含 RBACSR001；sales_receipt.remark 实证含「时间+司机 Jia RBAC10+原因」（操作人取自 JWT）；空单 A01 置 CANCELLED 不再出现在待办。
 - 数据安全：验收前两版 H2 备份（backups/erp-v1.mv.db.bak-20260911-card10-before-accept / -before-rerun）；未打印密码哈希，夹具密码走 API 明文 'Passw0rd!'；验收后停服 RunScript 精确清理 6 员工/2 调度/调度明细/发货单、5 个运行时账号（rbac10loader/rbac10nc/RBAC10A/B/L，含 user_role/pwd_history/user_data_scope/user_warehouse/双登录日志）、自定义角色四 rel+runtime、9 个测试手机号短信、操作日志（RETURN_POINT 与管理员建号/改号审计共按 biz_no 精确删）；15 张 TMS 业务表 + 5 张财务表 sweep 残留全 0；参数复位 Y；内置三角色授权对拍 46/10/48 完好。
 
+
+### 2026-09-11 卡片11（部分）上线准备：只读核对脚本 + 上线手册（chore/rbac-11-launch-prep，无迁移）
+
+- 新增 `development/07-deployment/prd28-rbac-launch-checks.sql`：只读、H2（MODE=MySQL）与 MySQL 通用的上线核对脚本，33 项输出 期望/实际/PASS-FAIL（A6+B4+C2+D8+E9+F3+G1）——A Flyway V102/V103/V104/V107/V108 成功且零失败记录；B 元数据基线（系统内置菜单 NORMAL=193=代码 192+_global_ 占位、功能点 1699、字段 26）；C 21 个内置角色齐备且 NORMAL（附缺失角色定位语句）；D 三端矩阵（TMS 功能点 46/10/48、菜单 16/5/16，PDA 六角色功能点合计 199，超管功能点 1699）；E 九类孤儿关系（用户/角色/菜单/功能/字段/仓库各 rel）全 0；F 启用账号均有角色、admin 挂 R_SYS_ADMIN、超管未停用；G sys_sms_code 风控三列齐全。
+- 新增 `docs/上线手册-PRD28-RBAC.md`：prod 短信网关前置（sms.webhook-url 必填 http(s)、webhook 报文契约、缺配置拒启文案）、备份、tag 发布与 Flyway 自动迁移、启动成功日志判据（192/1699/26/199/104）、放流量前脚本核对+三端人工冒烟（含真实验证码与 5 次锁定）、首日补授权口径（自定义角色复制裁剪，不改内置移动角色 driver.%/wms_pda.% 授权——重启会被矩阵收回）、回滚（全增量变更，旧 jar 可直接回退）。
+- 验证：脚本在卡片10 验收前 H2 副本库（E:/tmp 临时拷贝，用后即删）实测全部语法可执行，32 项 PASS；唯一 FAIL=C1（本地开发库缺 SALES_MANAGER 内置角色，系历史手工删除，V102 种子在正式库保证存在，预发快照演练兜底）。该本地缺口已在开发计划卡片11 落地注记与本记录中留痕，未擅自对用户运行中的库做写入修补。
+- 卡片11 其余三项（预发快照演练、首日现场授权/公告、prod 短信通道确认）依赖预发环境与用户，不在开发侧；卡片12 V109 清旧仍按计划等上线观察 ≥2 周。
