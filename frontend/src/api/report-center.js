@@ -23,6 +23,11 @@ export const downloadExportTask = (taskNo) => downloadBlob('/report/center/expor
 export const recomputePurchaseDws = (body) => post('/report/center/admin/recompute-purchase', body)
 export const rebuildStockSnapshot = (body) => post('/report/center/admin/rebuild-snapshot', body)
 
+/** 报表17：商品综合分析 KPI/趋势/结构 */
+export const goodsAnalysisKpi = (body) => post('/report/center/goods-analysis/kpi', body)
+export const goodsAnalysisTrend = (body) => post('/report/center/goods-analysis/trend', body)
+export const goodsAnalysisStructure = (body) => post('/report/center/goods-analysis/structure', body)
+
 /** 仓库下拉（报表仓库筛选存的是名称，与数据范围口径一致） */
 export async function loadWarehouses() {
   const res = await post('/base/warehouse/page', { pageNo: 1, pageSize: 500, filters: {} })

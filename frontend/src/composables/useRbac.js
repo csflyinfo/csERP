@@ -52,6 +52,17 @@ const MODULE_MENU = {
   salesmanGoodsSummaryReport: 'report.salesman_goods_summary',
   salesOrderDetailReport: 'report.sales_order_detail',
   salesMoveReport: 'report.sales_move_detail',
+  // 报表中心三期：库存分析/综合分析/绩效/财务十表（菜单码与 MenuConfig P3 段严格一致）
+  shortageAnalysisReport: 'report.shortage_analysis',
+  goodsTurnoverReport: 'report.goods_turnover',
+  goodsAnalysisReport: 'report.goods_analysis',
+  wmsKeeperPerfReport: 'report.wms_keeper_perf',
+  driverDeliveryPerfReport: 'report.driver_delivery_perf',
+  arAgingReport: 'report.ar_aging',
+  apAgingReport: 'report.ap_aging',
+  customerArSummaryReport: 'report.customer_ar_summary',
+  supplierApSummaryReport: 'report.supplier_ap_summary',
+  fundJournalReport: 'report.fund_journal',
 
   // ===== 卡片7：基础档案 / 库存 / 财务 / 报表 =====
   // 基础档案
@@ -128,6 +139,17 @@ const MENU_ACTION_SET = {
   'report.salesman_goods_summary': ['view'],
   'report.sales_order_detail': ['view'],
   'report.sales_move_detail': ['view'],
+  // 报表中心三期十表：全部只读（导出走 global.export）
+  'report.shortage_analysis': ['view'],
+  'report.goods_turnover': ['view'],
+  'report.goods_analysis': ['view'],
+  'report.wms_keeper_perf': ['view'],
+  'report.driver_delivery_perf': ['view'],
+  'report.ar_aging': ['view'],
+  'report.ap_aging': ['view'],
+  'report.customer_ar_summary': ['view'],
+  'report.supplier_ap_summary': ['view'],
+  'report.fund_journal': ['view'],
 
   // ===== 卡片7（权威来源：后端各 Controller @RequirePerm 注解）=====
   // 基础档案
@@ -435,6 +457,47 @@ export function fieldForColumn(moduleCode, title) {
     if (/销售金额|退货金额|净销售额|签收金额|订单金额|客单价/.test(t)) return 'VIEW_SALE_AMOUNT'
     return null
   }
+
+  // ========== 报表中心三期·库存分析/综合分析（脱敏点与后端 maskOverrides 严格对齐） ==========
+  if (moduleCode === goodsTurnoverReport) {
+    if (/本期销售成本/.test(t)) return 'VIEW_COST_AMOUNT'
+    if (/毛利率/.test(t)) return 'VIEW_PROFIT'
+    if (/期间销售额/.test(t)) return 'VIEW_SALE_AMOUNT'
+    if (/金额/.test(t)) return 'VIEW_STOCK_COST' // 期初/入库/期末/平均库存金额
+    return null
+  }
+  if (moduleCode === goodsAnalysisReport) {
+    if (/采购金额/.test(t)) return 'VIEW_PURCHASE_AMOUNT'
+    if (/配比成本|成本/.test(t)) return 'VIEW_COST_AMOUNT'
+    if (/毛利/.test(t)) return 'VIEW_PROFIT'
+    if (/签收金额/.test(t)) return 'VIEW_SALE_AMOUNT'
+    if (/期末库存金额/.test(t)) return 'VIEW_STOCK_COST'
+    return null
+  }
+  if (moduleCode === wmsKeeperPerfReport) {
+    // 盘盈/盘亏金额按库存成本视角（后端按批次移动平均计价、VIEW_STOCK_COST 脱敏）
+    if (/盘盈金额|盘亏金额/.test(t)) return 'VIEW_STOCK_COST'
+    return null
+  }
+  if (moduleCode === driverDeliveryPerfReport) {
+    if (/代收货款|实际缴款|缴款差异/.test(t)) return 'VIEW_AR_BALANCE'
+    if (/配送货值/.test(t)) return 'VIEW_SALE_AMOUNT'
+    return null
+  }
+
+  // ========== 报表中心三期·财务五表（应收 VIEW_AR_BALANCE / 应付 VIEW_AP_BALANCE） ==========
+  if (moduleCode === arAgingReport || moduleCode === customerArSummaryReport) {
+    if (/单号/.test(t)) return null // 应收单号/来源单号是单据号不是金额
+    if (/应收|已核销|核销|回款|余额|未到期|逾期|信用额度|减免|抹零/.test(t)) return 'VIEW_AR_BALANCE'
+    return null
+  }
+  if (moduleCode === apAgingReport || moduleCode === supplierApSummaryReport) {
+    if (/单号/.test(t)) return null // 应付单号/来源单号是单据号不是金额
+    if (/应付|已付|付款|余额|未到期|逾期|收票|折让/.test(t)) return 'VIEW_AP_BALANCE'
+    return null
+  }
+  // #6 缺货分析、#22 现金日记账：无金额脱敏列（后端列定义 PERM 均为 null）
+  if (moduleCode === shortageAnalysisReport || moduleCode === fundJournalReport) return null
 
   // ========== 卡片7：报表（salesReport/purchaseReport 为 type=report，不进泛化分支） ==========
   if (moduleCode === 'salesReport') {

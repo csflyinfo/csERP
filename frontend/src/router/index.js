@@ -172,6 +172,17 @@ const routes = [
       { path: 'report/salesman-goods-summary', name: 'RptSalesmanGoodsSummary', component: () => import('@/views/report/SalesmanGoodsSummary.vue'), meta: { title: '业务员商品销售汇总表', module: 'salesmanGoodsSummaryReport' } },
       { path: 'report/sales-order-detail', name: 'RptSalesOrderDetail', component: () => import('@/views/report/SalesOrderDetail.vue'), meta: { title: '销售订单明细查询', module: 'salesOrderDetailReport' } },
       { path: 'report/sales-move', name: 'RptSalesMove', component: () => import('@/views/report/SalesMove.vue'), meta: { title: '商品销售明细表', module: 'salesMoveReport' } },
+      // 报表中心三期：库存分析/综合分析/绩效/财务 10 表
+      { path: 'report/shortage-analysis', name: 'RptShortageAnalysis', component: () => import('@/views/report/ShortageAnalysis.vue'), meta: { title: '缺货商品分析', module: 'shortageAnalysisReport' } },
+      { path: 'report/goods-turnover', name: 'RptGoodsTurnover', component: () => import('@/views/report/GoodsTurnover.vue'), meta: { title: '商品周转率分析', module: 'goodsTurnoverReport' } },
+      { path: 'report/goods-analysis', name: 'RptGoodsAnalysis', component: () => import('@/views/report/GoodsAnalysis.vue'), meta: { title: '商品综合分析', module: 'goodsAnalysisReport' } },
+      { path: 'report/wms-keeper-perf', name: 'RptWmsKeeperPerf', component: () => import('@/views/report/WmsKeeperPerf.vue'), meta: { title: '库管员绩效报表', module: 'wmsKeeperPerfReport' } },
+      { path: 'report/driver-delivery-perf', name: 'RptDriverDeliveryPerf', component: () => import('@/views/report/DriverDeliveryPerf.vue'), meta: { title: '司机配送绩效报表', module: 'driverDeliveryPerfReport' } },
+      { path: 'report/ar-aging', name: 'RptArAging', component: () => import('@/views/report/ArAging.vue'), meta: { title: '应收账款账龄分析表', module: 'arAgingReport' } },
+      { path: 'report/ap-aging', name: 'RptApAging', component: () => import('@/views/report/ApAging.vue'), meta: { title: '应付账款账龄分析表', module: 'apAgingReport' } },
+      { path: 'report/customer-ar-summary', name: 'RptCustomerArSummary', component: () => import('@/views/report/CustomerArSummary.vue'), meta: { title: '客户应收汇总表', module: 'customerArSummaryReport' } },
+      { path: 'report/supplier-ap-summary', name: 'RptSupplierApSummary', component: () => import('@/views/report/SupplierApSummary.vue'), meta: { title: '供应商应付汇总表', module: 'supplierApSummaryReport' } },
+      { path: 'report/fund-journal', name: 'RptFundJournal', component: () => import('@/views/report/FundJournal.vue'), meta: { title: '现金日记账', module: 'fundJournalReport' } },
       { path: 'report/export-center', name: 'RptExportCenter', component: () => import('@/views/report/ExportCenter.vue'), meta: { title: '报表导出中心', module: 'reportExportCenter' } },
       { path: 'report/admin', name: 'RptAdmin', component: () => import('@/views/report/ReportAdmin.vue'), meta: { title: '报表运维', module: 'reportAdmin', superAdmin: true } },
       // 运输管理（TMS）

@@ -179,7 +179,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import ReportFilterBar from '@/components/report/ReportFilterBar.vue'
 import { defaultRange } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows, fmtNum } from '@/components/report/report-table.js'
@@ -189,6 +189,7 @@ import { useRbac } from '@/composables/useRbac.js'
 const MODULE = 'purchaseForecastReport'
 const STORE_KEY = 'rpt:purchase_forecast:params'
 const router = useRouter()
+const route = useRoute()
 const { canViewColumn } = useRbac(MODULE)
 
 const dr = defaultRange()
@@ -265,6 +266,14 @@ const estimatedAmount = computed(() => {
 
 onMounted(() => {
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
+  // #6 缺货分析「建议补货量」钻取带入（仓库/期间 + 结果内商品关键字），不自动计算，点查询生效
+  if (route.query.drill === '1') {
+    if (route.query.start) start.value = String(route.query.start)
+    if (route.query.end) end.value = String(route.query.end)
+    if (route.query.warehouse) filters.value.warehouse = String(route.query.warehouse)
+    if (route.query.goods) displayKeyword.value = String(route.query.goods)
+    return
+  }
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}')
     if (saved.start) start.value = saved.start

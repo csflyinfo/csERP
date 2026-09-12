@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-12 13:39:53
+> 生成时间：2026-09-12 22:18:34
 
-- 端点总数：806
-- 已挂 @RequirePerm：627
+- 端点总数：809
+- 已挂 @RequirePerm：630
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
 
 ## base
@@ -419,6 +419,9 @@
 | POST | `/report/center/admin/recompute-sales` | ReportCenterController#recomputeSales | report.admin.view | report.admin | view | 方法：report.admin.view |
 | POST | `/report/center/export/download` | ReportCenterController#download | system.export_center.export | system.export_center | export | 方法：system.export_center.export |
 | POST | `/report/center/export/page` | ReportCenterController#exportPage | system.export_center.view | system.export_center | view | 方法：system.export_center.view |
+| POST | `/report/center/goods-analysis/kpi` | ReportCenterController#goodsAnalysisKpi | report.goods_analysis.view | report.goods_analysis | view | 方法：report.goods_analysis.view |
+| POST | `/report/center/goods-analysis/structure` | ReportCenterController#goodsAnalysisStructure | report.goods_analysis.view | report.goods_analysis | view | 方法：report.goods_analysis.view |
+| POST | `/report/center/goods-analysis/trend` | ReportCenterController#goodsAnalysisTrend | report.goods_analysis.view | report.goods_analysis | view | 方法：report.goods_analysis.view |
 | POST | `/report/center/purchase-forecast/compute` | ReportCenterController#forecast | report.purchase_forecast.view | report.purchase_forecast | view | 方法：report.purchase_forecast.view |
 | POST | `/report/center/purchase-forecast/generate` | ReportCenterController#generate | report.purchase_forecast.add | report.purchase_forecast | add | 方法：report.purchase_forecast.add |
 | POST | `/report/center/{code}/export` | ReportCenterController#export | — | — | — | ❌ |

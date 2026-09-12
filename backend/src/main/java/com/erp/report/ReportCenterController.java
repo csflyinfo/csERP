@@ -8,6 +8,7 @@ import com.erp.common.security.PermissionDeniedException;
 import com.erp.common.security.PermissionService;
 import com.erp.common.security.ProgrammaticPerm;
 import com.erp.common.security.RequirePerm;
+import com.erp.report.analysis.GoodsAnalysisService;
 import com.erp.report.export.ReportExportService;
 import com.erp.report.meta.ReportDefinition;
 import com.erp.report.meta.ReportQueryEngine;
@@ -46,12 +47,14 @@ public class ReportCenterController {
     private final FieldMasker fieldMasker;
     private final ReportDwsSnapshotTask snapshotTask;
     private final OperationLogService opLog;
+    private final GoodsAnalysisService goodsAnalysis;
 
     public ReportCenterController(ReportRegistry registry, ReportQueryEngine engine,
                                   ReportExportService exportService,
                                   PurchaseForecastService forecastService,
                                   PermissionService permissionService, FieldMasker fieldMasker,
-                                  ReportDwsSnapshotTask snapshotTask, OperationLogService opLog) {
+                                  ReportDwsSnapshotTask snapshotTask, OperationLogService opLog,
+                                  GoodsAnalysisService goodsAnalysis) {
         this.registry = registry;
         this.engine = engine;
         this.exportService = exportService;
@@ -60,6 +63,7 @@ public class ReportCenterController {
         this.fieldMasker = fieldMasker;
         this.snapshotTask = snapshotTask;
         this.opLog = opLog;
+        this.goodsAnalysis = goodsAnalysis;
     }
 
     @ProgrammaticPerm("报表 code → report.<code>.view（逐请求裁决）")
@@ -110,6 +114,64 @@ public class ReportCenterController {
     @PostMapping("/purchase-forecast/generate")
     public ApiResponse<Map<String, Object>> generate(@RequestBody Map<String, Object> body) {
         return ApiResponse.ok(forecastService.generateOrders(body));
+    }
+
+    // ========== 报表17：商品综合分析（图表专用端点；明细表走通用引擎 goods_analysis） ==========
+
+    @RequirePerm(value = "report.goods_analysis.view", name = "查看")
+    @PostMapping("/goods-analysis/kpi")
+    public ApiResponse<Map<String, Object>> goodsAnalysisKpi(@RequestBody Map<String, Object> body) {
+        Map<String, Object> data = goodsAnalysis.kpi(body);
+        fieldMasker.mask(data, kpiMaskOverrides());
+        return ApiResponse.ok(data);
+    }
+
+    @RequirePerm(value = "report.goods_analysis.view", name = "查看")
+    @PostMapping("/goods-analysis/trend")
+    public ApiResponse<List<Map<String, Object>>> goodsAnalysisTrend(@RequestBody Map<String, Object> body) {
+        String gran = body.get("granularity") == null ? "day" : String.valueOf(body.get("granularity"));
+        if (!"day".equals(gran) && !"month".equals(gran)) {
+            throw new IllegalArgumentException("趋势粒度只支持 day / month");
+        }
+        List<Map<String, Object>> rows = goodsAnalysis.trend(body, gran);
+        fieldMasker.mask(rows, Map.of(
+                "salesAmount", "VIEW_SALE_AMOUNT",
+                "purchaseAmount", "VIEW_PURCHASE_AMOUNT",
+                "costAmount", "VIEW_COST_AMOUNT",
+                "grossProfit", "VIEW_PROFIT"));
+        return ApiResponse.ok(rows);
+    }
+
+    @RequirePerm(value = "report.goods_analysis.view", name = "查看")
+    @PostMapping("/goods-analysis/structure")
+    public ApiResponse<Map<String, Object>> goodsAnalysisStructure(@RequestBody Map<String, Object> body) {
+        Map<String, Object> data = goodsAnalysis.structure(body);
+        fieldMasker.mask(data, Map.of(
+                "value", "VIEW_SALE_AMOUNT",
+                "salesAmount", "VIEW_SALE_AMOUNT",
+                "costAmount", "VIEW_COST_AMOUNT",
+                "grossProfit", "VIEW_PROFIT"));
+        return ApiResponse.ok(data);
+    }
+
+    /** KPI 含本期/上期/环比三套键，逐键声明脱敏码（环比为比率不脱敏）。 */
+    private static Map<String, String> kpiMaskOverrides() {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("purchaseAmount", "VIEW_PURCHASE_AMOUNT");
+        m.put("purchaseAmountPrev", "VIEW_PURCHASE_AMOUNT");
+        m.put("salesAmount", "VIEW_SALE_AMOUNT");
+        m.put("salesAmountPrev", "VIEW_SALE_AMOUNT");
+        m.put("costAmount", "VIEW_COST_AMOUNT");
+        m.put("costAmountPrev", "VIEW_COST_AMOUNT");
+        m.put("grossProfit", "VIEW_PROFIT");
+        m.put("grossProfitPrev", "VIEW_PROFIT");
+        m.put("grossProfitRate", "VIEW_PROFIT");
+        m.put("grossProfitRatePrev", "VIEW_PROFIT");
+        m.put("endStockAmount", "VIEW_STOCK_AMOUNT");
+        m.put("endStockAmountPrev", "VIEW_STOCK_AMOUNT");
+        m.put("avgBillAmount", "VIEW_SALE_AMOUNT");
+        m.put("avgBillAmountPrev", "VIEW_SALE_AMOUNT");
+        return m;
     }
 
     // ========== 异步导出中心 ==========
@@ -167,6 +229,8 @@ public class ReportCenterController {
         LocalDate date = body.get("date") == null ? LocalDate.now().minusDays(1)
                 : LocalDate.parse(String.valueOf(body.get("date")));
         int rows = snapshotTask.rebuildStockSnapshot(date);
+        opLog.log("report.admin", com.erp.system.OperationAction.UPDATE, date.toString(),
+                "手工重建库存日结快照：" + rows + " 行");
         return ApiResponse.ok(Map.of("date", date.toString(), "rows", rows));
     }
 

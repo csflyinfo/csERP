@@ -35,7 +35,7 @@
             <!-- 叶子行（rowClassFn：台账期初灰行/红冲行、勾稽差异行等页面级行样式） -->
             <tr v-else :class="['leaf-row', rowClass(item.row)]">
               <td v-for="col in columns" :key="col.key"
-                  :class="cellClass(col)"
+                  :class="[cellClass(col), col.cellClass ? col.cellClass(item.row) : '']"
                   :style="col.key === groupKeys[0] ? indentStyle(col, { level: item.level }) : null">
                 <a v-if="col.link" class="link-num" @click="$emit('link', { row: item.row, col })">{{ display(col, item.row) }}</a>
                 <a v-else-if="col.num && col.drill && nonEmpty(item.row[col.key])"
