@@ -651,6 +651,8 @@ const pageNo = ref(1)
 const pageSize = ref(100)
 const total = ref(0)
 const queryFilters = ref({})
+// 报表中心联查带入的筛选（QueryBar 一次性回显用；?rptFilters JSON，键为 QueryBar 中文筛选名）
+const reportPrefill = ref({})
 const sortField = ref('')
 const sortOrder = ref('')
 
@@ -1306,8 +1308,25 @@ watch(() => config.value, () => {
   if (moduleCode.value === 'supplier') { loadDeliveryMethodsForFilter(); loadBuyersForFilter() }
   if (moduleCode.value === 'customer') { loadCustomerFilters() }
   if (moduleCode.value === 'flyOrder') { loadFlyOrderFilters(); queryFilters.value = { dateFrom: oneMonthAgoStr(), dateTo: todayStr(), status: 'DRAFT' } }
+  applyReportPrefill()
   resetRows()
 }, { immediate: true })
+
+// 报表中心联查：?rptFilters=<encodeURIComponent(JSON)>，键与 QueryBar 回传键一致（中文筛选名）
+function applyReportPrefill() {
+  const raw = route.query?.rptFilters
+  if (!raw) {
+    reportPrefill.value = {}
+    return
+  }
+  try {
+    const prefill = JSON.parse(raw)
+    if (prefill && typeof prefill === 'object' && !Array.isArray(prefill)) {
+      reportPrefill.value = prefill
+      queryFilters.value = { ...queryFilters.value, ...prefill }
+    }
+  } catch { /* 非法联查参数忽略，按普通列表进入 */ }
+}
 
 // 抽屉保存后：全局 refreshSignal 递增 → 刷新当前页
 watch(() => app.refreshSignal, () => {
@@ -3035,7 +3054,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
         </template>
       </div>
 
-      <QueryBar :fields="dynamicFilters" :defaults="filterDefaults" :max-visible="moduleCode === 'priceChangeLog' ? 6 : 4" @query="handleQuery" @reset="handleReset" @more="handleMore">
+      <QueryBar :fields="dynamicFilters" :defaults="filterDefaults" :prefill="reportPrefill" :max-visible="moduleCode === 'priceChangeLog' ? 6 : 4" @query="handleQuery" @reset="handleReset" @more="handleMore">
         <template #after-reset>
           <template v-if="moduleCode === 'priceGroupItem'">
             <button

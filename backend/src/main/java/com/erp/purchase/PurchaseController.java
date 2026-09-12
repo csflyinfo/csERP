@@ -117,12 +117,13 @@ public class PurchaseController {
         if (!condition.isEmpty()) {
             qw.apply(toMpPlaceholders(condition), scopeArgs.toArray());
         }
-        var page = inboundService.page(
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(request.safePageNo(), request.safePageSize()),
-                qw
-        );
+        // 与采购订单/采购退货列表保持一致：数据范围在 SQL 层收敛，QueryBar 的中文业务筛选
+        // （入库单号/采购单号/供应商/仓库/状态/入库日期等）交给 PageResult 统一内存过滤——
+        // 旧实现走 MyBatis-Plus SQL 分页却完全不读 request.filters()，七个筛选条件静默失效，
+        // 报表中心联查落地后也筛不出目标入库单。
+        List<PurchaseInbound> inboundList = inboundService.list(qw);
         List<Map<String, Object>> mapped = new ArrayList<>();
-        for (PurchaseInbound in : page.getRecords()) {
+        for (PurchaseInbound in : inboundList) {
             Map<String, Object> row = new HashMap<>();
             row.put("inboundId", in.getInboundId());
             row.put("inboundNo", in.getInboundNo());
@@ -143,7 +144,7 @@ public class PurchaseController {
             mapped.add(row);
         }
         fieldMasker.mask(mapped, com.erp.common.security.MaskProfiles.PURCHASE_BILL);
-        return ApiResponse.ok(new PageResult<>(mapped, (int) page.getCurrent(), (int) page.getSize(), page.getTotal(), Map.of()));
+        return ApiResponse.ok(PageResult.of(mapped, request));
     }
 
     @RequirePerm(value="purchase.inbound.view", name="查看")

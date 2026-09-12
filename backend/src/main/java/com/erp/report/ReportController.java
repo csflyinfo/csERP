@@ -20,20 +20,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/report")
 public class ReportController {
     private final JdbcTemplate jdbcTemplate;
-    private final com.erp.system.OperationLogService opLog;
     private final DataScopeService dataScope;
     private final FieldMasker fieldMasker;
 
-    public ReportController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
+    public ReportController(JdbcTemplate jdbcTemplate,
                             DataScopeService dataScope, FieldMasker fieldMasker) {
         this.jdbcTemplate = jdbcTemplate;
-        this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
     }
@@ -43,8 +40,9 @@ public class ReportController {
     @RequirePerm(value = "dashboard.overview.view", name = "查看")
     @GetMapping("/dashboard/summary")
     public ApiResponse<Map<String, Object>> dashboardSummary() {
-        Map<String, Object> sales = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) salesAmount, COALESCE(SUM(unpaid_amount),0) unpaidAmount, COUNT(*) salesOrderCount FROM sales_order");
-        Map<String, Object> purchase = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) purchaseAmount, COUNT(*) purchaseOrderCount FROM pur_order");
+        Map<String, Object> sales = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) salesAmount, COALESCE(SUM(unpaid_amount),0) unpaidAmount, COUNT(*) salesOrderCount FROM sales_order WHERE status <> 'DELETED'");
+        // 报表中心一期：采购统计从废弃的 pur_order（仅飞单兼容写入）切回现行 purchase_order，口径与图表/采购报表一致（排除已作废）
+        Map<String, Object> purchase = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(amount),0) purchaseAmount, COUNT(*) purchaseOrderCount FROM purchase_order WHERE status <> 'CANCELLED'");
         Map<String, Object> stock = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(stock_amount),0) stockAmount, COALESCE(SUM(available_qty),0) availableQty FROM inv_stock_balance");
         Map<String, Object> finance = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unreceived_amount),0) arBalance, COUNT(*) arCount FROM fin_ar WHERE status <> 'VERIFIED'");
         Map<String, Object> ap = jdbcTemplate.queryForMap("SELECT COALESCE(SUM(unpaid_amount),0) apBalance, COUNT(*) apCount FROM fin_ap WHERE status <> 'VERIFIED'");
@@ -271,9 +269,10 @@ public class ReportController {
     @RequirePerm(value = "report.chart.view", name = "查看")
     @GetMapping("/chart/purchase-trend")
     public ApiResponse<List<Map<String, Object>>> purchaseTrend() {
+        // 报表中心一期：切回现行 purchase_order（pur_order 仅飞单兼容写入，标准采购单不入表）
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT bill_date date, COALESCE(SUM(amount),0) amount, COUNT(*) count
-                FROM pur_order WHERE status <> 'DELETED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
+                FROM purchase_order WHERE status <> 'CANCELLED' GROUP BY bill_date ORDER BY bill_date DESC LIMIT 30
                 """);
         fieldMasker.mask(rows, Map.of("amount", "VIEW_PURCHASE_AMOUNT"));
         return ApiResponse.ok(rows);
@@ -333,33 +332,6 @@ public class ReportController {
                 """);
         fieldMasker.mask(rows, Map.of("value", "VIEW_SALE_AMOUNT"));
         return ApiResponse.ok(rows);
-    }
-
-    @RequirePerm(value = "global.export", global = true, name = "导出", type = "ACTION")
-    @PostMapping("/export")
-    public ApiResponse<Map<String, Object>> exportReport(@RequestBody Map<String, Object> request) {
-        String taskId = "EXP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
-        String taskNo = "EXP" + System.currentTimeMillis();
-        String reportName = String.valueOf(request.getOrDefault("reportName", "报表导出"));
-        String moduleCode = String.valueOf(request.getOrDefault("moduleCode", "report"));
-        String filterText = String.valueOf(request.getOrDefault("filters", Map.of()));
-        String fileName = reportName + "_" + taskNo + ".xlsx";
-        jdbcTemplate.update("""
-                INSERT INTO sys_export_task_runtime(task_id, task_no, report_name, module_code, filter_text, file_name, status, created_at, finished_at)
-                VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, taskId, taskNo, reportName, moduleCode, filterText, fileName);
-        logExport(taskNo, reportName);
-        return ApiResponse.ok(GenericResult.row(
-                "taskNo", taskNo,
-                "status", "FINISHED",
-                "fileName", fileName,
-                "message", "报表导出任务已创建，请到导出中心下载"
-        ));
-    }
-
-    private void logExport(String taskNo, String reportName) {
-        // PRD-31 操作日志统一走 OperationLogService（真实操作人/IP/耗时/中文名）。
-        opLog.log("report.export", com.erp.system.OperationAction.EXPORT, taskNo, "导出报表：" + reportName);
     }
 
     /** H2 不带引号的别名会被拉成大写破坏驼峰，SQL 统一蛇形别名后由此转回驼峰。 */

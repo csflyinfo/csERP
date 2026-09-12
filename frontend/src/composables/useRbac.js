@@ -36,6 +36,12 @@ const MODULE_MENU = {
   // 报表中心（卡片6：销售/采购报表是业务数据旁路出口，菜单码与 MenuConfig/后端注解一致）
   salesReport: 'report.sales',
   purchaseReport: 'report.purchase',
+  // 报表中心一期：采购五表（菜单码与 MenuConfig.reportMenus 严格一致）
+  purchaseOrderDetailReport: 'report.purchase_order_detail',
+  purchaseMoveReport: 'report.purchase_move_detail',
+  purchaseGoodsSummaryReport: 'report.purchase_goods_summary',
+  purchaseSupplierSummaryReport: 'report.purchase_supplier_summary',
+  purchaseForecastReport: 'report.purchase_forecast',
 
   // ===== 卡片7：基础档案 / 库存 / 财务 / 报表 =====
   // 基础档案
@@ -96,6 +102,12 @@ const MENU_ACTION_SET = {
   // 报表只读：导出按钮走 global.export（codesForAction 特例），不落模块点
   'report.sales': ['view'],
   'report.purchase': ['view'],
+  // 报表中心一期：前四表只读；采购预测可生成待审核采购订单（add）
+  'report.purchase_order_detail': ['view'],
+  'report.purchase_move_detail': ['view'],
+  'report.purchase_goods_summary': ['view'],
+  'report.purchase_supplier_summary': ['view'],
+  'report.purchase_forecast': ['view', 'add'],
 
   // ===== 卡片7（权威来源：后端各 Controller @RequirePerm 注解）=====
   // 基础档案
@@ -366,6 +378,17 @@ export function fieldForColumn(moduleCode, title) {
   if (moduleCode === 'priceChangeLog' && /变价前|变价后/.test(t)) {
     return ['VIEW_SALE_PRICE', 'VIEW_PURCHASE_PRICE', 'VIEW_MIN_PRICE',
       'VIEW_SUGGEST_RETAIL_PRICE', 'VIEW_PRICE_GROUP']
+  }
+
+  // ========== 报表中心一期：采购五表（脱敏点与后端 maskOverrides/controller 严格对齐） ==========
+  if (moduleCode === 'purchaseOrderDetailReport'
+      || moduleCode === 'purchaseMoveReport'
+      || moduleCode === 'purchaseGoodsSummaryReport'
+      || moduleCode === 'purchaseSupplierSummaryReport'
+      || moduleCode === 'purchaseForecastReport') {
+    if (/单价|箱价|采购价/.test(t)) return 'VIEW_PURCHASE_PRICE'
+    if (/金额/.test(t)) return 'VIEW_PURCHASE_AMOUNT'
+    return null
   }
 
   // ========== 卡片7：报表（salesReport/purchaseReport 为 type=report，不进泛化分支） ==========

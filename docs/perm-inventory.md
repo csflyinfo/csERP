@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-11 19:21:42
+> 生成时间：2026-09-12 03:12:24
 
-- 端点总数：793
-- 已挂 @RequirePerm：620
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：150
+- 端点总数：804
+- 已挂 @RequirePerm：625
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
 
 ## base
 
@@ -413,6 +413,15 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
+| POST | `/report/center/admin/rebuild-snapshot` | ReportCenterController#rebuildSnapshot | report.admin.view | report.admin | view | 方法：report.admin.view |
+| POST | `/report/center/admin/recompute-purchase` | ReportCenterController#recomputePurchase | report.admin.view | report.admin | view | 方法：report.admin.view |
+| POST | `/report/center/export/download` | ReportCenterController#download | system.export_center.export | system.export_center | export | 方法：system.export_center.export |
+| POST | `/report/center/export/page` | ReportCenterController#exportPage | system.export_center.view | system.export_center | view | 方法：system.export_center.view |
+| POST | `/report/center/purchase-forecast/compute` | ReportCenterController#forecast | report.purchase_forecast.view | report.purchase_forecast | view | 方法：report.purchase_forecast.view |
+| POST | `/report/center/purchase-forecast/generate` | ReportCenterController#generate | report.purchase_forecast.add | report.purchase_forecast | add | 方法：report.purchase_forecast.add |
+| POST | `/report/center/{code}/export` | ReportCenterController#export | — | — | — | ❌ |
+| POST | `/report/center/{code}/page` | ReportCenterController#page | — | — | — | ❌ |
+| POST | `/report/center/{code}/summary` | ReportCenterController#summary | — | — | — | ❌ |
 | GET | `/report/chart/category-sales` | ReportController#categorySales | report.chart.view | report.chart | view | 方法：report.chart.view |
 | GET | `/report/chart/customer-sales` | ReportController#customerSales | report.chart.view | report.chart | view | 方法：report.chart.view |
 | GET | `/report/chart/finance-overview` | ReportController#financeOverview | report.chart.view | report.chart | view | 方法：report.chart.view |
@@ -420,7 +429,6 @@
 | GET | `/report/chart/sales-trend` | ReportController#salesTrend | report.chart.view | report.chart | view | 方法：report.chart.view |
 | GET | `/report/chart/stock-distribution` | ReportController#stockDistribution | report.chart.view | report.chart | view | 方法：report.chart.view |
 | GET | `/report/dashboard/summary` | ReportController#dashboardSummary | dashboard.overview.view | dashboard.overview | view | 方法：dashboard.overview.view |
-| POST | `/report/export` | ReportController#exportReport | global.export | global | export | 方法：global.export（GLOBAL） |
 | POST | `/report/finance/page` | ReportController#financeReport | report.finance.view | report.finance | view | 方法：report.finance.view |
 | POST | `/report/purchase/page` | ReportController#purchaseReport | report.purchase.view | report.purchase | view | 方法：report.purchase.view |
 | POST | `/report/sales/page` | ReportController#salesReport | report.sales.view | report.sales | view | 方法：report.sales.view |
@@ -512,8 +520,11 @@
 | POST | `/system/import-list/page` | SystemController#importListPage | system.import_list.view | system.import_list | view | 方法：system.import_list.view |
 | POST | `/system/login-log/export` | SystemLogController#loginLogExport | system.login_log.export | system.login_log | export | 方法：system.login_log.export |
 | POST | `/system/login-log/page` | SystemLogController#loginLogPage | system.login_log.view | system.login_log | view | 方法：system.login_log.view |
+| POST | `/system/menu-manage/dir` | MenuManageController#createDir | — | — | — | ❌ |
 | POST | `/system/menu-manage/reset-all` | MenuManageController#resetAll | — | — | — | ❌ |
 | PUT | `/system/menu-manage/sort` | MenuManageController#sort | — | — | — | ❌ |
+| POST | `/system/menu-manage/{menuId}/delete` | MenuManageController#deleteDir | — | — | — | ❌ |
+| PUT | `/system/menu-manage/{menuId}/enabled` | MenuManageController#setEnabled | — | — | — | ❌ |
 | PUT | `/system/menu-manage/{menuId}/name` | MenuManageController#rename | — | — | — | ❌ |
 | PUT | `/system/menu-manage/{menuId}/parent` | MenuManageController#move | — | — | — | ❌ |
 | POST | `/system/menu-manage/{menuId}/reset` | MenuManageController#resetOne | — | — | — | ❌ |

@@ -3,15 +3,19 @@ package com.erp.common.security.datascope;
 import com.erp.common.security.CurrentUser;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 数据范围解析与 SQL 拼装（PRD-28 §5.3，卡片4）。
@@ -433,6 +437,8 @@ public class DataScopeService {
         boolean brandRestricted;
         Set<String> categoryIds = Set.of();
         Set<String> brandIds = Set.of();
+        /** 规范化范围签名：输入的授权规则相同则签名相同（与账号无关），供报表结果缓存跨账号共享。 */
+        String signature;
         DimValues warehouse() { return dims.computeIfAbsent("WAREHOUSE", k -> new DimValues()); }
         DimValues customer() { return dims.computeIfAbsent("CUSTOMER", k -> new DimValues()); }
         DimValues supplier() { return dims.computeIfAbsent("SUPPLIER", k -> new DimValues()); }
@@ -513,8 +519,53 @@ public class DataScopeService {
             }
         }
 
+        r.signature = buildSignature(p, r);
+
         if (attrs != null) attrs.setAttribute(REQUEST_ATTR_SCOPE, r, RequestAttributes.SCOPE_REQUEST);
         return r;
+    }
+
+    /**
+     * 当前主体的数据范围签名（报表结果缓存跨账号共享用）：
+     * 超管统一 "admin"；其余账号按生效范围规则（维度标志/ID 集合/区域/分类品牌收窄/PDA 强制仓）
+     * 规范化哈希。规则中含 SELF 或一个维度都没配（DEFAULT DENY 落到本人建档）时，可见行与
+     * 账号本人绑定，签名纳入用户身份，绝不跨账号共享。
+     */
+    public String currentScopeSignature() {
+        CurrentUser.Principal p = CurrentUser.get();
+        if (p == null) return "anonymous";
+        if (p.isSuperAdmin()) return "admin";
+        return resolve(p).signature;
+    }
+
+    private static String buildSignature(CurrentUser.Principal p, Resolution r) {
+        StringBuilder sb = new StringBuilder("scope-v1|");
+        boolean identityBound = !r.configuredAny; // DEFAULT DENY：仅看本人建档
+        for (String type : sortedTypes(r.dims.keySet())) {
+            DimValues d = r.dims.get(type);
+            sb.append(type).append(':');
+            if (d.unconfigured) sb.append('U');
+            if (d.all) sb.append('A');
+            if (d.self) { sb.append('S'); identityBound = true; }
+            if (d.subTree) sb.append('T');
+            sb.append('I').append(new TreeSet<>(d.ids));
+            sb.append('R').append(new TreeSet<>(d.regions));
+            sb.append('|');
+        }
+        if (p.isPda() && p.warehouseId() != null && !p.warehouseId().isBlank()) {
+            sb.append("PDA=").append(p.warehouseId()).append('|');
+        }
+        if (identityBound) {
+            sb.append("UID=").append(p.userId())
+              .append("|NAME=").append(p.displayName()).append('|').append(p.username());
+        }
+        return DigestUtils.md5DigestAsHex(sb.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static List<String> sortedTypes(Set<String> types) {
+        List<String> out = new ArrayList<>(types);
+        Collections.sort(out);
+        return out;
     }
 
     /** 并集合并一段 scope_value（ALL 短路；SELF/SUB_TREE/REGION:id/逗号 ID）。 */

@@ -111,6 +111,12 @@ export const MENU_PATH = {
   'finance.gl.reconcile': '/gl-reconcile',
 
   // 报表中心
+  'report.purchase_order_detail': '/report/purchase-order-detail',
+  'report.purchase_move_detail': '/report/purchase-move',
+  'report.purchase_goods_summary': '/report/purchase-goods-summary',
+  'report.purchase_supplier_summary': '/report/purchase-supplier-summary',
+  'report.purchase_forecast': '/report/purchase-forecast',
+  'report.admin': '/report/admin',
   'report.chart': '/chart-report',
   'report.sales': '/sales-report',
   'report.purchase': '/purchase-report',

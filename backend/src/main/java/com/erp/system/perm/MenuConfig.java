@@ -150,7 +150,13 @@ public class MenuConfig {
     }
 
     private MenuNode reportMenus() {
-        return MenuNode.rootDir("report", "报表中心", "TrendCharts", "ERP")
+        // 报表中心一期：采购五表（统一元数据驱动，/report/center/{code} 入口）
+        MenuNode node = MenuNode.rootDir("report", "报表中心", "TrendCharts", "ERP")
+                .page("report.purchase_order_detail", "采购订单明细查询", "/report/purchase-order-detail")
+                .page("report.purchase_move_detail", "采购明细查询", "/report/purchase-move")
+                .page("report.purchase_goods_summary", "商品采购汇总表", "/report/purchase-goods-summary")
+                .page("report.purchase_supplier_summary", "供应商商品采购汇总表", "/report/purchase-supplier-summary")
+                .page("report.purchase_forecast", "商品采购预测分析", "/report/purchase-forecast")
                 .page("report.chart", "图表报表", "/report/chart")
                 .page("report.sales", "销售报表", "/report/sales")
                 .page("report.purchase", "采购报表", "/report/purchase")
@@ -161,6 +167,9 @@ public class MenuConfig {
                 .page("report.invoice_supplier", "供应商来票统计", "/report/invoice-supplier")
                 .page("report.invoice_unmatched", "未勾稽发票", "/report/invoice-unmatched")
                 .page("report.invoice_diff", "勾稽差异明细", "/report/invoice-diff");
+        // 报表运维（手工重算 DWS/快照）仅 SYS_ADMIN，不进角色授权树
+        node.adminPage("report.admin", "报表运维", "/report/admin");
+        return node;
     }
 
     private MenuNode systemMenus() {

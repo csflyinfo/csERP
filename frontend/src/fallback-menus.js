@@ -97,6 +97,12 @@ export const fallbackMenus = {
     { code: 'glReconcile', name: '业财对账' },
   ],
   报表中心: [
+    // 报表中心一期：采购五表（code 直接用后端菜单码，AppShell.navigate 经 MENU_PATH 定位）
+    { code: 'report.purchase_order_detail', name: '采购订单明细查询' },
+    { code: 'report.purchase_move_detail', name: '采购明细查询' },
+    { code: 'report.purchase_goods_summary', name: '商品采购汇总表' },
+    { code: 'report.purchase_supplier_summary', name: '供应商商品采购汇总表' },
+    { code: 'report.purchase_forecast', name: '商品采购预测分析' },
     { code: 'chartReport', name: '图表报表' },
     { code: 'salesReport', name: '销售报表' },
     { code: 'purchaseReport', name: '采购报表' },
@@ -107,6 +113,7 @@ export const fallbackMenus = {
     { code: 'invoiceSupplierReport', name: '供应商来票统计' },
     { code: 'invoiceUnmatchedReport', name: '未勾稽发票' },
     { code: 'invoiceDiffReport', name: '勾稽差异明细' },
+    { code: 'report.admin', name: '报表运维', adminOnly: true },
   ],
   系统管理: [
     { code: 'user', name: '用户管理' },

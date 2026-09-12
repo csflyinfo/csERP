@@ -8,12 +8,15 @@ const props = defineProps({
   fields: { type: Array, default: () => ['关键字', '状态'] },
   // 初始默认值 { fieldKey: value }；日期段用 keyFrom/keyTo 直接对应
   defaults: { type: Object, default: () => ({}) },
+  // 外部联查带入的一次性预填（如报表钻取到单据列表）：仅在字段集变化或预填内容变化时回显，
+  // 用户手动点「重置」不会再带出（区别于常驻 defaults）
+  prefill: { type: Object, default: () => ({}) },
   // 首屏显示的字段上限（超出可以塞进"展开更多"）
   maxVisible: { type: Number, default: 4 },
 })
 
 const emit = defineEmits(['query', 'reset', 'more'])
-const values = ref({ ...props.defaults })
+const values = ref({ ...props.defaults, ...props.prefill })
 
 function labelOf(f) { return typeof f === 'string' ? f : (f?.label || '') }
 function fieldKey(f) {
@@ -50,8 +53,14 @@ function reset() {
   emit('reset', buildFilters())
 }
 
+// 字段集（模块配置）变化时重建：常驻默认值 + 联查预填（预填随新模块上下文重新回显；
+// 用户手动点「重置」走 reset()，只保留 defaults）
+function syncOnFieldsChange() {
+  values.value = { ...props.defaults, ...(props.prefill || {}) }
+}
+
 // 全局约定：查询条件只在点击「查询」按钮时生效，不自动触发（CLAUDE.md）
-watch(() => props.fields, () => reset())
+watch(() => props.fields, syncOnFieldsChange)
 </script>
 
 <template>

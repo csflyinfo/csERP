@@ -2,15 +2,18 @@ package com.erp.common.security;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -125,6 +128,20 @@ public class PermissionService {
         if (p.isSuperAdmin()) return Set.of();
         if (p.roleCodes() == null || p.roleCodes().isEmpty()) return Set.of();
         return loadFieldCodes(p.roleCodes());
+    }
+
+    /**
+     * 当前用户敏感字段授权集合的规范化签名（报表结果缓存跨账号共享用）：
+     * 脱敏在缓存 loader 内已完成，字段授权集合相同的账号看到的结果一致，可共享同一缓存项；
+     * 集合不同则键不同，无金额权限者绝不会命中有权限者的结果。超管统一 "admin"。
+     */
+    public String currentFieldCodesSignature() {
+        CurrentUser.Principal p = CurrentUser.get();
+        if (p == null) return "anonymous";
+        if (p.isSuperAdmin()) return "admin";
+        Set<String> codes = currentFieldCodes();
+        String joined = codes.isEmpty() ? "" : String.join(",", new TreeSet<>(codes));
+        return DigestUtils.md5DigestAsHex(joined.getBytes(StandardCharsets.UTF_8));
     }
 
     // ============================ 权限快照（显式集 + 反向收窄） ============================

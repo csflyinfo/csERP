@@ -1,0 +1,173 @@
+/* 报表中心页面共享样式：页头、按钮、筛选项、钻取回条、分组维度选择等 */
+.rpt-page {
+  padding: 12px 14px 20px;
+}
+.rpt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+.rpt-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #303133;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rpt-help {
+  position: relative;
+  font-size: 12px;
+  font-weight: 400;
+}
+.rpt-help > summary {
+  cursor: pointer;
+  color: #409eff;
+  list-style: none;
+}
+.rpt-help > summary::-webkit-details-marker { display: none; }
+.rpt-help[open] .rpt-help-pop {
+  display: block;
+}
+.rpt-help-pop {
+  display: none;
+  position: absolute;
+  top: 20px;
+  left: 0;
+  z-index: 30;
+  width: 420px;
+  max-width: 70vw;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+  padding: 10px 12px;
+  color: #606266;
+  line-height: 1.7;
+  font-size: 12px;
+}
+.rpt-ops {
+  display: flex;
+  gap: 8px;
+}
+.btn-primary,
+.btn-plain {
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-primary {
+  background: #409eff;
+  border: 1px solid #409eff;
+  color: #fff;
+}
+.btn-primary:hover { background: #66b1ff; }
+.btn-primary:disabled {
+  background: #a0cfff;
+  border-color: #a0cfff;
+  cursor: not-allowed;
+}
+.btn-plain {
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  color: #606266;
+}
+.btn-plain:hover {
+  border-color: #409eff;
+  color: #409eff;
+}
+.btn-warn {
+  background: #fff;
+  border: 1px solid #e6a23c;
+  color: #e6a23c;
+}
+
+/* 筛选条插槽内的字段（与 ReportFilterBar 内置字段同构） */
+.ff {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #606266;
+}
+.ff input,
+.ff select {
+  height: 30px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 0 8px;
+  font-size: 13px;
+  color: #303133;
+  background: #fff;
+  min-width: 120px;
+}
+
+/* 钻取落点回条 */
+.rpt-drill-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fdf6ec;
+  border: 1px solid #f5dab1;
+  color: #b88230;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12.5px;
+  flex-wrap: wrap;
+}
+.rpt-drill-banner .banner-label {
+  font-weight: 700;
+  color: #e6a23c;
+}
+.rpt-drill-banner button {
+  margin-left: auto;
+}
+
+/* 汇总表分组维度选择 */
+.rpt-group-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: #606266;
+  margin-bottom: 10px;
+  background: #fff;
+  border-radius: 6px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+}
+.rpt-group-bar select {
+  height: 28px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 12.5px;
+  background: #fff;
+}
+.rpt-group-tip {
+  color: #909399;
+}
+
+/* 预测表参数条/编辑表格 */
+.rpt-forecast-grid input.num-input {
+  width: 90px;
+  height: 26px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 0 6px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.rpt-forecast-grid input.num-input.changed {
+  border-color: #e6a23c;
+  background: #fdf6ec;
+}
+.warn-text { color: #e6a23c; }
+.ok-text { color: #67c23a; }
+.muted { color: #909399; }

@@ -135,7 +135,7 @@ const routes = [
       { path: 'workflow', name: 'Workflow', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '审批流配置', module: 'workflow' } },
       { path: 'print-template', name: 'PrintTemplate', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '打印模板设置', module: 'printTemplate' } },
       { path: 'import-list', name: 'ImportList', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '导入列表', module: 'importList' } },
-      { path: 'export-center', name: 'ExportCenter', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '导出中心', module: 'exportCenter' } },
+      { path: 'export-center', name: 'ExportCenter', component: () => import('@/views/report/ExportCenter.vue'), meta: { title: '导出中心', module: 'exportCenter' } },
 
       // 客户价格
       { path: 'customer-price', name: 'CustomerPrice', component: () => import('@/views/CustomerPriceAdjust.vue'), meta: { title: '客户价格调整' } },
@@ -155,6 +155,15 @@ const routes = [
       { path: 'invoice-unmatched-report', name: 'InvoiceUnmatchedReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '未勾稽发票', module: 'invoiceUnmatchedReport' } },
       { path: 'invoice-diff-report', name: 'InvoiceDiffReport', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '勾稽差异明细', module: 'invoiceDiffReport' } },
       { path: 'chart-report', name: 'ChartReport', component: () => import('@/views/ReportChartPage.vue'), meta: { title: '图表报表', module: 'chartReport' } },
+
+      // 报表中心一期：采购五表 + 异步导出中心 + 运维
+      { path: 'report/purchase-order-detail', name: 'RptPurchaseOrderDetail', component: () => import('@/views/report/PurchaseOrderDetail.vue'), meta: { title: '采购订单明细查询', module: 'purchaseOrderDetailReport' } },
+      { path: 'report/purchase-move', name: 'RptPurchaseMove', component: () => import('@/views/report/PurchaseMove.vue'), meta: { title: '采购明细查询', module: 'purchaseMoveReport' } },
+      { path: 'report/purchase-goods-summary', name: 'RptPurchaseGoodsSummary', component: () => import('@/views/report/PurchaseGoodsSummary.vue'), meta: { title: '商品采购汇总表', module: 'purchaseGoodsSummaryReport' } },
+      { path: 'report/purchase-supplier-summary', name: 'RptPurchaseSupplierSummary', component: () => import('@/views/report/PurchaseSupplierSummary.vue'), meta: { title: '供应商商品采购汇总表', module: 'purchaseSupplierSummaryReport' } },
+      { path: 'report/purchase-forecast', name: 'RptPurchaseForecast', component: () => import('@/views/report/PurchaseForecast.vue'), meta: { title: '商品采购预测分析', module: 'purchaseForecastReport' } },
+      { path: 'report/export-center', name: 'RptExportCenter', component: () => import('@/views/report/ExportCenter.vue'), meta: { title: '报表导出中心', module: 'reportExportCenter' } },
+      { path: 'report/admin', name: 'RptAdmin', component: () => import('@/views/report/ReportAdmin.vue'), meta: { title: '报表运维', module: 'reportAdmin', superAdmin: true } },
       // 运输管理（TMS）
       { path: 'tms-dispatch-pool', name: 'TmsDispatchPool', component: () => import('@/views/tms/DispatchPool.vue'), meta: { title: '配送任务池', module: 'tms-dispatch-pool' } },
       { path: 'tms-dispatch-list', name: 'TmsDispatchList', component: () => import('@/views/tms/DispatchList.vue'), meta: { title: '调度单管理', module: 'tms-dispatch-list' } },
