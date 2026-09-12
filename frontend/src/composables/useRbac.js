@@ -459,14 +459,14 @@ export function fieldForColumn(moduleCode, title) {
   }
 
   // ========== 报表中心三期·库存分析/综合分析（脱敏点与后端 maskOverrides 严格对齐） ==========
-  if (moduleCode === goodsTurnoverReport) {
+  if (moduleCode === 'goodsTurnoverReport') {
     if (/本期销售成本/.test(t)) return 'VIEW_COST_AMOUNT'
     if (/毛利率/.test(t)) return 'VIEW_PROFIT'
     if (/期间销售额/.test(t)) return 'VIEW_SALE_AMOUNT'
     if (/金额/.test(t)) return 'VIEW_STOCK_COST' // 期初/入库/期末/平均库存金额
     return null
   }
-  if (moduleCode === goodsAnalysisReport) {
+  if (moduleCode === 'goodsAnalysisReport') {
     if (/采购金额/.test(t)) return 'VIEW_PURCHASE_AMOUNT'
     if (/配比成本|成本/.test(t)) return 'VIEW_COST_AMOUNT'
     if (/毛利/.test(t)) return 'VIEW_PROFIT'
@@ -474,30 +474,30 @@ export function fieldForColumn(moduleCode, title) {
     if (/期末库存金额/.test(t)) return 'VIEW_STOCK_COST'
     return null
   }
-  if (moduleCode === wmsKeeperPerfReport) {
+  if (moduleCode === 'wmsKeeperPerfReport') {
     // 盘盈/盘亏金额按库存成本视角（后端按批次移动平均计价、VIEW_STOCK_COST 脱敏）
     if (/盘盈金额|盘亏金额/.test(t)) return 'VIEW_STOCK_COST'
     return null
   }
-  if (moduleCode === driverDeliveryPerfReport) {
+  if (moduleCode === 'driverDeliveryPerfReport') {
     if (/代收货款|实际缴款|缴款差异/.test(t)) return 'VIEW_AR_BALANCE'
     if (/配送货值/.test(t)) return 'VIEW_SALE_AMOUNT'
     return null
   }
 
   // ========== 报表中心三期·财务五表（应收 VIEW_AR_BALANCE / 应付 VIEW_AP_BALANCE） ==========
-  if (moduleCode === arAgingReport || moduleCode === customerArSummaryReport) {
+  if (moduleCode === 'arAgingReport' || moduleCode === 'customerArSummaryReport') {
     if (/单号/.test(t)) return null // 应收单号/来源单号是单据号不是金额
     if (/应收|已核销|核销|回款|余额|未到期|逾期|信用额度|减免|抹零/.test(t)) return 'VIEW_AR_BALANCE'
     return null
   }
-  if (moduleCode === apAgingReport || moduleCode === supplierApSummaryReport) {
+  if (moduleCode === 'apAgingReport' || moduleCode === 'supplierApSummaryReport') {
     if (/单号/.test(t)) return null // 应付单号/来源单号是单据号不是金额
     if (/应付|已付|付款|余额|未到期|逾期|收票|折让/.test(t)) return 'VIEW_AP_BALANCE'
     return null
   }
   // #6 缺货分析、#22 现金日记账：无金额脱敏列（后端列定义 PERM 均为 null）
-  if (moduleCode === shortageAnalysisReport || moduleCode === fundJournalReport) return null
+  if (moduleCode === 'shortageAnalysisReport' || moduleCode === 'fundJournalReport') return null
 
   // ========== 卡片7：报表（salesReport/purchaseReport 为 type=report，不进泛化分支） ==========
   if (moduleCode === 'salesReport') {
