@@ -25,6 +25,12 @@ public interface ReportDefinition {
     /** true=汇总类（日期跨度护栏 2 年）；false=明细类（1 年）。 */
     boolean summaryReport();
 
+    /**
+     * 月结类报表（#8 进销存汇总 / #9 库存台账）无日期入参时默认自然月本月；
+     * 其余报表默认 K2「上月同日的前一天 ~ 昨天」。
+     */
+    default boolean naturalMonthDefault() { return false; }
+
     /** 列元数据（前端列、导出表头、敏感控制）。 */
     List<ReportColumnDef> columns();
 

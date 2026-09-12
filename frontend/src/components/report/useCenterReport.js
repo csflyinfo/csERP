@@ -21,8 +21,26 @@ export function defaultRange() {
   return { start: fmt(start), end: fmt(end) }
 }
 
-export function useCenterReport(code) {
-  const dr = defaultRange()
+/**
+ * 月结类报表默认期间（与后端 ReportDateRange.naturalMonthPeriod 严格一致）：
+ * 自然月本月 1 号至昨天；本月 1 号当天无已结账日期时退到上月整月。
+ */
+export function naturalMonthRange() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  let start = new Date(today.getFullYear(), today.getMonth(), 1)
+  let end = yesterday
+  if (start > end) {
+    start = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+    end = new Date(today.getFullYear(), today.getMonth(), 0)
+  }
+  return { start: fmt(start), end: fmt(end) }
+}
+
+export function useCenterReport(code, opts = {}) {
+  const dr = opts.naturalMonth ? naturalMonthRange() : defaultRange()
   const start = ref(dr.start)
   const end = ref(dr.end)
   const filters = ref({})
@@ -79,7 +97,7 @@ export function useCenterReport(code) {
   }
 
   function resetDate() {
-    const d = defaultRange()
+    const d = opts.naturalMonth ? naturalMonthRange() : defaultRange()
     start.value = d.start
     end.value = d.end
   }

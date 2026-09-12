@@ -162,6 +162,16 @@ const routes = [
       { path: 'report/purchase-goods-summary', name: 'RptPurchaseGoodsSummary', component: () => import('@/views/report/PurchaseGoodsSummary.vue'), meta: { title: '商品采购汇总表', module: 'purchaseGoodsSummaryReport' } },
       { path: 'report/purchase-supplier-summary', name: 'RptPurchaseSupplierSummary', component: () => import('@/views/report/PurchaseSupplierSummary.vue'), meta: { title: '供应商商品采购汇总表', module: 'purchaseSupplierSummaryReport' } },
       { path: 'report/purchase-forecast', name: 'RptPurchaseForecast', component: () => import('@/views/report/PurchaseForecast.vue'), meta: { title: '商品采购预测分析', module: 'purchaseForecastReport' } },
+      // 报表中心二期：库存两表 + 销售七表
+      { path: 'report/inventory-roll', name: 'RptInventoryRoll', component: () => import('@/views/report/InventoryRoll.vue'), meta: { title: '商品进销存汇总表', module: 'inventoryRollReport' } },
+      { path: 'report/stock-ledger', name: 'RptStockLedger', component: () => import('@/views/report/StockLedger.vue'), meta: { title: '商品库存台账', module: 'stockLedgerReport' } },
+      { path: 'report/sales-goods-summary', name: 'RptSalesGoodsSummary', component: () => import('@/views/report/SalesGoodsSummary.vue'), meta: { title: '商品销售汇总表', module: 'salesGoodsSummaryReport' } },
+      { path: 'report/customer-goods-summary', name: 'RptCustomerGoodsSummary', component: () => import('@/views/report/CustomerGoodsSummary.vue'), meta: { title: '客户商品销售汇总表', module: 'customerGoodsSummaryReport' } },
+      { path: 'report/customer-summary', name: 'RptCustomerSummary', component: () => import('@/views/report/CustomerSummary.vue'), meta: { title: '客户销售汇总表', module: 'customerSummaryReport' } },
+      { path: 'report/salesman-summary', name: 'RptSalesmanSummary', component: () => import('@/views/report/SalesmanSummary.vue'), meta: { title: '业务员销售汇总表', module: 'salesmanSummaryReport' } },
+      { path: 'report/salesman-goods-summary', name: 'RptSalesmanGoodsSummary', component: () => import('@/views/report/SalesmanGoodsSummary.vue'), meta: { title: '业务员商品销售汇总表', module: 'salesmanGoodsSummaryReport' } },
+      { path: 'report/sales-order-detail', name: 'RptSalesOrderDetail', component: () => import('@/views/report/SalesOrderDetail.vue'), meta: { title: '销售订单明细查询', module: 'salesOrderDetailReport' } },
+      { path: 'report/sales-move', name: 'RptSalesMove', component: () => import('@/views/report/SalesMove.vue'), meta: { title: '商品销售明细表', module: 'salesMoveReport' } },
       { path: 'report/export-center', name: 'RptExportCenter', component: () => import('@/views/report/ExportCenter.vue'), meta: { title: '报表导出中心', module: 'reportExportCenter' } },
       { path: 'report/admin', name: 'RptAdmin', component: () => import('@/views/report/ReportAdmin.vue'), meta: { title: '报表运维', module: 'reportAdmin', superAdmin: true } },
       // 运输管理（TMS）

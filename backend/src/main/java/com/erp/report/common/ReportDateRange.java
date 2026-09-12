@@ -30,9 +30,33 @@ public record ReportDateRange(LocalDate startDate, LocalDate endDate) {
         return new ReportDateRange(end.minusMonths(1).minusDays(1), end);
     }
 
+    /**
+     * 月结类报表默认期间（K2 例外）：自然月本月，1 号至昨天。
+     * 用于 #8 进销存汇总 / #9 库存台账（月底盘库、账簿打印习惯）。
+     */
+    public static ReportDateRange naturalMonthPeriod() {
+        LocalDate today = LocalDate.now();
+        LocalDate end = today.minusDays(1);
+        LocalDate start = today.withDayOfMonth(1);
+        if (start.isAfter(end)) {
+            // 本月 1 号当天（无已结账日期）：退到上月整月
+            start = today.minusMonths(1).withDayOfMonth(1);
+            end = today.withDayOfMonth(1).minusDays(1);
+        }
+        return new ReportDateRange(start, end);
+    }
+
     /** 从报表请求体解析（{@code {dateRange:{startDate,endDate}, filters:{...}}}）。 */
-    @SuppressWarnings("unchecked")
     public static ReportDateRange from(Map<String, Object> body) {
+        return from(body, false);
+    }
+
+    /**
+     * @param naturalMonthDefault 无任何日期入参时是否默认自然月本月（月结类报表），
+     *                            false 则按 K2 默认「上月同日的前一天 ~ 昨天」
+     */
+    @SuppressWarnings("unchecked")
+    public static ReportDateRange from(Map<String, Object> body, boolean naturalMonthDefault) {
         LocalDate start = null;
         LocalDate end = null;
         Object dr = body == null ? null : body.get("dateRange");
@@ -46,7 +70,9 @@ public record ReportDateRange(LocalDate startDate, LocalDate endDate) {
                 : (body.get("filters") instanceof Map<?, ?> f ? (Map<String, Object>) f : Map.of());
         if (start == null) start = parseDate(filters.get("startDate"));
         if (end == null) end = parseDate(filters.get("endDate"));
-        if (start == null && end == null) return defaultPeriod();
+        if (start == null && end == null) {
+            return naturalMonthDefault ? naturalMonthPeriod() : defaultPeriod();
+        }
         if (start == null) start = end.minusMonths(1).minusDays(1);
         if (end == null) end = LocalDate.now().minusDays(1);
         if (start.isAfter(end)) {

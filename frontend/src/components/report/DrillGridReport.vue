@@ -27,11 +27,13 @@
                 <a v-else-if="col.num && col.drill && item.sums[col.key] !== undefined"
                    class="drill-num"
                    @click="$emit('drill', { group: true, dims: item.dims, col })">{{ format(col, item.sums[col.key]) }}</a>
+                <!-- 比率列不可加：组小计 = 组毛利额 ÷ 组净销售额 -->
+                <span v-else-if="col.rate && nonEmpty(item.sums.grossProfit) && Number(item.sums.netAmount) !== 0">{{ fmtPercent(item.sums.grossProfit / item.sums.netAmount) }}</span>
                 <span v-else-if="col.num && item.sums[col.key] !== undefined">{{ format(col, item.sums[col.key]) }}</span>
               </td>
             </tr>
-            <!-- 叶子行 -->
-            <tr v-else class="leaf-row">
+            <!-- 叶子行（rowClassFn：台账期初灰行/红冲行、勾稽差异行等页面级行样式） -->
+            <tr v-else :class="['leaf-row', rowClass(item.row)]">
               <td v-for="col in columns" :key="col.key"
                   :class="cellClass(col)"
                   :style="col.key === groupKeys[0] ? indentStyle(col, { level: item.level }) : null">
@@ -77,7 +79,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { buildTreeRows, fmtNum } from './report-table.js'
+import { buildTreeRows, fmtNum, fmtPercent } from './report-table.js'
 
 /**
  * 报表钻取表格：明细报表（无分组键）与汇总报表（1~3 级分组）共用。
@@ -96,10 +98,18 @@ const props = defineProps({
   pageSize: { type: Number, default: 100 },
   sortField: { type: String, default: '' },
   sortOrder: { type: String, default: '' },
+  /** 叶子行自定义样式类（如期初行/红冲行/差异行），返回类名或空串 */
+  rowClassFn: { type: Function, default: null },
 })
 const emit = defineEmits(['page-change', 'size-change', 'sort', 'drill', 'link'])
 
-const numKeys = computed(() => props.columns.filter(c => c.num).map(c => c.key))
+// 比率列（毛利率/回款率等）不可加，不参与组小计累加；小计由分子/分母实时派生。
+// noSum 为其他不可加计数指标（如去重客户数），同样不累加。
+const numKeys = computed(() =>
+  props.columns.filter(c => c.num && !c.rate && !c.noSum).map(c => c.key))
+function rowClass(row) {
+  return props.rowClassFn ? props.rowClassFn(row) || '' : ''
+}
 const treeRows = computed(() => buildTreeRows(props.rows, props.groupKeys, numKeys.value))
 const totalPages = computed(() => Math.max(1, Math.ceil((props.total || 0) / props.pageSize)))
 const hasSummary = computed(() =>
@@ -121,10 +131,12 @@ function nonEmpty(v) {
 }
 function display(col, row) {
   const v = row[col.key]
+  if (col.bool) return v === true || v === 'true' ? '是' : ''
   return col.num ? format(col, v) : (v ?? '')
 }
 function format(col, v) {
   if (!nonEmpty(v)) return ''
+  if (col.percent) return fmtPercent(v)
   return fmtNum(v, col.money ? 'money' : 'qty')
 }
 function sortMark(key) {
@@ -193,6 +205,23 @@ function onSort(col) {
 }
 .leaf-row:hover td {
   background: #f5f9ff;
+}
+/* 台账期初虚拟行：灰底、不可钻 */
+.opening-row td {
+  background: #f4f4f5;
+  color: #909399;
+}
+.opening-row:hover td {
+  background: #eeeeef;
+}
+/* 红冲/作废回库行：负数红字 */
+.reversal-row td,
+.reversal-row td .drill-num {
+  color: #f56c6c;
+}
+/* 进销存对账差异行 */
+.diff-row td {
+  color: #e6a23c;
 }
 .subtotal-row td {
   background: #fafafa;

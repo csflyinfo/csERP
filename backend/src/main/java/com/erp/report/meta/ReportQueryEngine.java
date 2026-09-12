@@ -45,7 +45,7 @@ public class ReportQueryEngine {
 
     /** 页面分页查询（含总计）。 */
     public PageResult<Map<String, Object>> page(ReportDefinition def, Map<String, Object> body) {
-        ReportQueryRequest req = ReportQueryRequest.from(body);
+        ReportQueryRequest req = ReportQueryRequest.from(body, def.naturalMonthDefault());
         validateSpan(def, req);
         if (def.summaryReport()) {
             return summaryPage(def, body, req);
@@ -121,7 +121,7 @@ public class ReportQueryEngine {
 
     /** 只要总计（合计行独立接口）。 */
     public Map<String, Object> summary(ReportDefinition def, Map<String, Object> body) {
-        ReportQueryRequest req = ReportQueryRequest.from(body);
+        ReportQueryRequest req = ReportQueryRequest.from(body, def.naturalMonthDefault());
         validateSpan(def, req);
         return guard.run("rpt." + def.code() + ".summary", body, def.dws(), () -> {
             Plan plan = def.build(req);
@@ -140,7 +140,7 @@ public class ReportQueryEngine {
      */
     public int streamForExport(ReportDefinition def, Map<String, Object> body,
                                Consumer<List<Map<String, Object>>> batchConsumer) {
-        ReportQueryRequest req = ReportQueryRequest.from(body);
+        ReportQueryRequest req = ReportQueryRequest.from(body, def.naturalMonthDefault());
         validateSpan(def, req);
         // 导出在后台线程执行，不走交互式信号量/短缓存，但仍受 30s 单语句超时与只读池隔离保护
         Plan plan = def.build(req);
@@ -173,7 +173,7 @@ public class ReportQueryEngine {
 
     /** 导出用总计（与页面同口径，供 Excel 合计行）。 */
     public Map<String, Object> summaryForExport(ReportDefinition def, Map<String, Object> body) {
-        ReportQueryRequest req = ReportQueryRequest.from(body);
+        ReportQueryRequest req = ReportQueryRequest.from(body, def.naturalMonthDefault());
         validateSpan(def, req);
         Plan plan = def.build(req);
         if (plan.denyAll) return zeroSummary(def);
@@ -206,7 +206,8 @@ public class ReportQueryEngine {
             Map<String, Object> grow = reportJdbc.queryForMap(plan.grandSql, plan.grandArgs.toArray());
             return ReportCamel.camelize(grow);
         }
-        if (!plan.groupBy.isBlank() && !plan.summaryAliases.isEmpty()) {
+        // summaryAliases 对叶子行直接 SUM；无动态 GROUP BY 的键集透视报表（如 #8 进销存）同样适用
+        if (!plan.summaryAliases.isEmpty()) {
             StringBuilder sb = new StringBuilder("SELECT ");
             for (int i = 0; i < plan.summaryAliases.size(); i++) {
                 String a = plan.summaryAliases.get(i);

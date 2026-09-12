@@ -1489,7 +1489,10 @@ public class SalesReturnController {
                     // 行级入库仓库默认取退货单表头仓库（V29 起支持不同商品入不同仓）；
                     // 不预填的话审核必报「未指定入库仓库」，逼着每张单都先进抽屉点一遍
                     emptyToNull(warehouse),
-                    null, null,
+                    // 批次/生产日期必须从退货申请行透传，否则审核回库全落到空批次，
+                    // 库存台账批次分区结存与批次库存全部错位（空批次允许，本来就空时仍写 NULL）
+                    emptyToNull(str(pick(ad, "batch_no"))),
+                    parseDate(pick(ad, "production_date"), null),
                     strOrDefault(pick(ad, "return_mode"), "BY_BILL"),
                     emptyToNull(pick(ad, "source_outbound_no")),
                     emptyToNull(pick(ad, "source_detail_id")),
@@ -1696,14 +1699,19 @@ public class SalesReturnController {
         jdbcTemplate.update("""
                 INSERT INTO sales_return_apply_detail(detail_id, apply_id, goods_code, goods_name, spec, unit_name,
                     qty, price, amount, tax_rate, remark,
+                    batch_no, production_date,
                     return_mode, source_outbound_no, source_detail_id,
                     returnable_qty, cost_price, available_stock)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, detailId, applyId,
                 str(line.get("goodsCode")), str(line.get("goodsName")), str(line.get("spec")),
                 str(line.get("unitName")),
                 q, p, a,
                 strOrDefault(line.get("taxRate"), "13%"),
+                // 批次/生产日期必须随申请行落库：仓库抽屉与 pushWarehouse 生成都只读这张表，
+                // 以前这里漏写导致回库单批次恒为 NULL，台账按批次分区的结存全部错位
+                emptyToNull(line.get("batchNo")),
+                parseDate(line.get("productionDate"), null),
                 strOrDefault(line.get("returnMode"), "BY_BILL"),
                 emptyToNull(line.get("sourceOutboundNo")),
                 emptyToNull(line.get("sourceDetailId")),

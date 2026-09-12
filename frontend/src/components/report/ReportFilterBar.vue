@@ -39,10 +39,12 @@ import { ref } from 'vue'
 const props = defineProps({
   start: { type: String, required: true },
   end: { type: String, required: true },
+  /** 初始日期预设（月结类报表传 'thisMonth'，与后端自然月默认一致） */
+  initialPreset: { type: String, default: 'month' },
 })
 const emit = defineEmits(['update:start', 'update:end'])
 
-const preset = ref('month')
+const preset = ref(props.initialPreset)
 
 function fmt(d) {
   // 用本地时区，不能用 toISOString（UTC 在东八区会把日期往前拨一天）

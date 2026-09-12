@@ -170,6 +170,32 @@ public class ReportCenterController {
         return ApiResponse.ok(Map.of("date", date.toString(), "rows", rows));
     }
 
+    @RequirePerm("report.admin.view")
+    @PostMapping("/admin/recompute-sales")
+    public ApiResponse<Map<String, Object>> recomputeSales(@RequestBody Map<String, Object> body) {
+        LocalDate end = body.get("endDate") == null ? LocalDate.now()
+                : LocalDate.parse(String.valueOf(body.get("endDate")));
+        LocalDate start = body.get("startDate") == null ? end.minusDays(2)
+                : LocalDate.parse(String.valueOf(body.get("startDate")));
+        if (start.isAfter(end)) throw new IllegalArgumentException("开始日期不能晚于截止日期");
+        if (start.isBefore(end.minusDays(31))) {
+            throw new IllegalArgumentException("手工重算区间最长 31 天");
+        }
+        Map<String, Object> r = snapshotTask.recomputeSales(start, end);
+        opLog.log("report.admin", com.erp.system.OperationAction.UPDATE, start + "~" + end,
+                "手工重算销售 DWS：" + r);
+        return ApiResponse.ok(r);
+    }
+
+    @RequirePerm("report.admin.view")
+    @PostMapping("/admin/rebuild-stock-move")
+    public ApiResponse<Map<String, Object>> rebuildStockMove() {
+        int rows = snapshotTask.rebuildStockMoveAll();
+        opLog.log("report.admin", com.erp.system.OperationAction.UPDATE, "ALL",
+                "全量重建库存流水 DWS：" + rows + " 行");
+        return ApiResponse.ok(Map.of("rows", rows));
+    }
+
     private ReportDefinition requireView(String code) {
         ReportDefinition def = registry.require(code);
         if (!permissionService.hasFunc(def.viewPerm())) {

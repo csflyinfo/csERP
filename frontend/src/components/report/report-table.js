@@ -22,6 +22,14 @@ export function fmtDateTime(v) {
   return String(v).replace('T', ' ').slice(0, 19)
 }
 
+/** 小数比率 → 百分比展示（0.1234 → 12.34%，去尾零；空值留空）。 */
+export function fmtPercent(v, digits = 2) {
+  if (v === null || v === undefined || v === '') return ''
+  const n = Number(v)
+  if (!Number.isFinite(n)) return String(v)
+  return (n * 100).toFixed(digits).replace(/\.?0+$/, '') + '%'
+}
+
 /**
  * 按分组键把叶子行整理成「组小计 + 叶子」有序序列（遇即建组，保持服务端返回顺序：
  * 汇总默认按净额降序，先遇到的组即贡献最大的组）。
@@ -93,6 +101,12 @@ export function exportRowsXlsx({ reportName, filterText, columns, treeRows, summ
       const indent = '  '.repeat(item.level)
       const line = columns.map(c => {
         if (c.key === item.key) return `${indent}${item.value || '（空）'} 小计`
+        // 比率列不可加：组小计按组毛利额÷组净销售额派生
+        if (c.rate) {
+          return Number(item.sums.netAmount) === 0 || item.sums.grossProfit === undefined
+            ? '' : fmtPercent(item.sums.grossProfit / item.sums.netAmount)
+        }
+        if (c.percent && item.sums[c.key] !== undefined) return fmtPercent(item.sums[c.key])
         if (c.num && item.sums[c.key] !== undefined) return round(item.sums[c.key], c)
         return ''
       })
@@ -104,6 +118,9 @@ export function exportRowsXlsx({ reportName, filterText, columns, treeRows, summ
   if (summary) {
     aoa.push(columns.map(c => {
       if (c.key === columns[0].key) return '合计'
+      if (c.percent && summary[c.key] !== undefined && summary[c.key] !== null) {
+        return fmtPercent(summary[c.key])
+      }
       if (c.num && summary[c.key] !== undefined && summary[c.key] !== null) return round(summary[c.key], c)
       return ''
     }))
@@ -125,6 +142,8 @@ function XLSXReadableStamp() {
 
 function cellValue(v, col) {
   if (v === null || v === undefined) return ''
+  if (col.bool) return v === true || v === 'true' ? '是' : ''
+  if (col.percent) return fmtPercent(v)
   if (col.num) return round(v, col)
   return v
 }

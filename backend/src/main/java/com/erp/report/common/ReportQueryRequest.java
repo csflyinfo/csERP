@@ -39,10 +39,14 @@ public class ReportQueryRequest {
         this.sortOrder = sortOrder;
     }
 
-    @SuppressWarnings("unchecked")
     public static ReportQueryRequest from(Map<String, Object> body) {
+        return from(body, false);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static ReportQueryRequest from(Map<String, Object> body, boolean naturalMonthDefault) {
         Map<String, Object> b = body == null ? Map.of() : body;
-        ReportDateRange range = ReportDateRange.from(b);
+        ReportDateRange range = ReportDateRange.from(b, naturalMonthDefault);
         Map<String, Object> filters = b.get("filters") instanceof Map<?, ?> m
                 ? new LinkedHashMap<>((Map<String, Object>) m) : new LinkedHashMap<>();
         List<String> groupBy = new ArrayList<>();
@@ -84,6 +88,24 @@ public class ReportQueryRequest {
         if (v == null) return null;
         String s = String.valueOf(v).trim();
         return s.isEmpty() ? null : s;
+    }
+
+    /** filters 中取多值（数组/逗号分隔）；不存在/空列表返回空 List。 */
+    public List<String> texts(String key) {
+        Object v = filters.get(key);
+        List<String> out = new ArrayList<>();
+        if (v instanceof List<?> l) {
+            for (Object o : l) {
+                if (o != null && !String.valueOf(o).trim().isEmpty()) {
+                    out.add(String.valueOf(o).trim());
+                }
+            }
+        } else if (v != null && !String.valueOf(v).trim().isEmpty()) {
+            for (String s : String.valueOf(v).split(",")) {
+                if (!s.trim().isEmpty()) out.add(s.trim());
+            }
+        }
+        return out;
     }
 
     public BigDecimal decimal(String key) {

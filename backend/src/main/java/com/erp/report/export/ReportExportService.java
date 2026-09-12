@@ -112,7 +112,7 @@ public class ReportExportService {
                     + "WHERE task_no=?", taskNo);
             File file = new File(exportDir, taskNo + ".xlsx");
 
-            ReportQueryRequest req = ReportQueryRequest.from(body);
+            ReportQueryRequest req = ReportQueryRequest.from(body, def.naturalMonthDefault());
             List<ReportColumnDef> columns = def.columns().stream()
                     .filter(ReportColumnDef::defaultVisible).toList();
 

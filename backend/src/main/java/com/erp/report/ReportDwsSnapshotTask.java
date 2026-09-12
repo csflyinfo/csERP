@@ -4,6 +4,8 @@ import com.erp.report.common.ReportGuard;
 import com.erp.report.dws.PurchaseDwsService;
 import com.erp.report.dws.ReportDimGoodsService;
 import com.erp.report.dws.ReportDimPartnerService;
+import com.erp.report.dws.SalesDwsService;
+import com.erp.report.dws.StockMoveDwsService;
 import com.erp.report.dws.StockSnapshotService;
 import com.erp.report.export.ReportExportService;
 import org.slf4j.Logger;
@@ -33,16 +35,21 @@ public class ReportDwsSnapshotTask {
     private final ReportDimGoodsService dimGoods;
     private final ReportDimPartnerService dimPartner;
     private final PurchaseDwsService purchaseDws;
+    private final SalesDwsService salesDws;
+    private final StockMoveDwsService stockMoveDws;
     private final StockSnapshotService stockSnapshot;
     private final ReportGuard guard;
     private final ReportExportService exportService;
 
     public ReportDwsSnapshotTask(ReportDimGoodsService dimGoods, ReportDimPartnerService dimPartner,
-                                 PurchaseDwsService purchaseDws, StockSnapshotService stockSnapshot,
+                                 PurchaseDwsService purchaseDws, SalesDwsService salesDws,
+                                 StockMoveDwsService stockMoveDws, StockSnapshotService stockSnapshot,
                                  ReportGuard guard, ReportExportService exportService) {
         this.dimGoods = dimGoods;
         this.dimPartner = dimPartner;
         this.purchaseDws = purchaseDws;
+        this.salesDws = salesDws;
+        this.stockMoveDws = stockMoveDws;
         this.stockSnapshot = stockSnapshot;
         this.guard = guard;
         this.exportService = exportService;
@@ -56,6 +63,8 @@ public class ReportDwsSnapshotTask {
             dimPartner.refreshAll();
             LocalDate today = LocalDate.now();
             purchaseDws.refreshRange(today, today);
+            salesDws.refreshRange(today, today);
+            stockMoveDws.refreshRange(today, today);
         } catch (Exception e) {
             log.warn("报表当天增量刷新失败：{}", e.getMessage());
         }
@@ -73,6 +82,16 @@ public class ReportDwsSnapshotTask {
             Map<String, Object> recon = purchaseDws.reconcile(from, today);
             if (Boolean.FALSE.equals(recon.get("balanced"))) {
                 log.warn("采购 DWS 夜间对账不平：{}", recon);
+            }
+            salesDws.refreshRange(from, today);
+            Map<String, Object> salesRecon = salesDws.reconcile(from, today);
+            if (Boolean.FALSE.equals(salesRecon.get("balanced"))) {
+                log.warn("销售 DWS 夜间对账不平：{}", salesRecon);
+            }
+            stockMoveDws.refreshRange(from, today);
+            Map<String, Object> moveRecon = stockMoveDws.reconcile(from, today);
+            if (Boolean.FALSE.equals(moveRecon.get("balanced"))) {
+                log.warn("库存流水 DWS 夜间对账不平：{}", moveRecon);
             }
             // 前一日库存快照（凌晨执行时余额即前一日日结余额）
             stockSnapshot.rebuild(today.minusDays(1));
@@ -108,5 +127,21 @@ public class ReportDwsSnapshotTask {
 
     public int rebuildStockSnapshot(LocalDate date) {
         return stockSnapshot.rebuild(date);
+    }
+
+    /** 管理接口手工触发销售 DWS 重算闭区间 + 对账，结果原样返回。 */
+    public Map<String, Object> recomputeSales(LocalDate start, LocalDate end) {
+        dimGoods.refreshAll();
+        dimPartner.refreshAll();
+        int rows = salesDws.refreshRange(start, end);
+        Map<String, Object> recon = salesDws.reconcile(start, end);
+        Map<String, Object> r = new LinkedHashMap<>(recon);
+        r.put("recomputedRows", rows);
+        return r;
+    }
+
+    /** 管理接口手工触发库存流水 DWS 全量重建。 */
+    public int rebuildStockMoveAll() {
+        return stockMoveDws.rebuildAll();
     }
 }

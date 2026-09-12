@@ -42,6 +42,16 @@ const MODULE_MENU = {
   purchaseGoodsSummaryReport: 'report.purchase_goods_summary',
   purchaseSupplierSummaryReport: 'report.purchase_supplier_summary',
   purchaseForecastReport: 'report.purchase_forecast',
+  // 报表中心二期：库存两表 + 销售七表（菜单码与 MenuConfig P2 段严格一致）
+  inventoryRollReport: 'report.inventory_roll',
+  stockLedgerReport: 'report.stock_ledger',
+  salesGoodsSummaryReport: 'report.sales_goods_summary',
+  customerGoodsSummaryReport: 'report.customer_goods_summary',
+  customerSummaryReport: 'report.customer_summary',
+  salesmanSummaryReport: 'report.salesman_summary',
+  salesmanGoodsSummaryReport: 'report.salesman_goods_summary',
+  salesOrderDetailReport: 'report.sales_order_detail',
+  salesMoveReport: 'report.sales_move_detail',
 
   // ===== 卡片7：基础档案 / 库存 / 财务 / 报表 =====
   // 基础档案
@@ -108,6 +118,16 @@ const MENU_ACTION_SET = {
   'report.purchase_goods_summary': ['view'],
   'report.purchase_supplier_summary': ['view'],
   'report.purchase_forecast': ['view', 'add'],
+  // 报表中心二期九表：全部只读（导出走 global.export + 敏感列 global.data_export_sensitive）
+  'report.inventory_roll': ['view'],
+  'report.stock_ledger': ['view'],
+  'report.sales_goods_summary': ['view'],
+  'report.customer_goods_summary': ['view'],
+  'report.customer_summary': ['view'],
+  'report.salesman_summary': ['view'],
+  'report.salesman_goods_summary': ['view'],
+  'report.sales_order_detail': ['view'],
+  'report.sales_move_detail': ['view'],
 
   // ===== 卡片7（权威来源：后端各 Controller @RequirePerm 注解）=====
   // 基础档案
@@ -388,6 +408,31 @@ export function fieldForColumn(moduleCode, title) {
       || moduleCode === 'purchaseForecastReport') {
     if (/单价|箱价|采购价/.test(t)) return 'VIEW_PURCHASE_PRICE'
     if (/金额/.test(t)) return 'VIEW_PURCHASE_AMOUNT'
+    return null
+  }
+
+  // ========== 报表中心二期·库存两表（成本口径，与后端 VIEW_STOCK_COST 脱敏严格对齐） ==========
+  if (moduleCode === 'inventoryRollReport' || moduleCode === 'stockLedgerReport') {
+    // #8 期初/收入/调整/发出/期末成本金额，#9 单价/金额/结存金额，全部归库存成本视角
+    if (/单价|金额/.test(t)) return 'VIEW_STOCK_COST'
+    return null
+  }
+
+  // ========== 报表中心二期·销售七表（脱敏点与后端 maskOverrides 严格对齐） ==========
+  if (moduleCode === 'salesGoodsSummaryReport'
+      || moduleCode === 'customerGoodsSummaryReport'
+      || moduleCode === 'customerSummaryReport'
+      || moduleCode === 'salesmanSummaryReport'
+      || moduleCode === 'salesmanGoodsSummaryReport'
+      || moduleCode === 'salesOrderDetailReport'
+      || moduleCode === 'salesMoveReport') {
+    // 往来款先判，避免被通用金额吞掉（回款额/回款率/应收余额/逾期）
+    if (/回款|应收|逾期/.test(t)) return 'VIEW_AR_BALANCE'
+    if (/单价|箱价/.test(t)) return 'VIEW_SALE_PRICE'
+    if (/单位成本/.test(t)) return 'VIEW_COST'
+    if (/成本金额/.test(t)) return 'VIEW_COST_AMOUNT'
+    if (/毛利/.test(t)) return 'VIEW_PROFIT'
+    if (/销售金额|退货金额|净销售额|签收金额|订单金额|客单价/.test(t)) return 'VIEW_SALE_AMOUNT'
     return null
   }
 
