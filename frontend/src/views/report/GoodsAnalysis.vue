@@ -28,8 +28,19 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编码/名称" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
+      <template #more>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -89,6 +100,8 @@ import {
   loadWarehouses, goodsAnalysisKpi, goodsAnalysisTrend, goodsAnalysisStructure,
 } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'goodsAnalysisReport'
 const CODE = 'goods_analysis'
@@ -105,7 +118,9 @@ const structure = ref({ categoryPie: [], topGoods: [], topCustomers: [] })
 const trendEl = ref(null); const pieEl = ref(null); const goodsEl = ref(null); const custEl = ref(null)
 const charts = {}
 pageSize.value = 100000
-filters.value = { level: 'goods' }
+filters.value = { level: 'goods', categoryName: [] }
+const dicts = sharedReportDicts()
+const { brands, categoryTree } = dicts
 
 const KPI_CARDS = [
   { key: 'purchaseAmount', label: '采购额(入库净额)', money: true },
@@ -142,6 +157,7 @@ const visibleColumns = computed(() => ALL_COLUMNS.filter(c => canViewColumn(MODU
 
 onMounted(async () => {
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
+  dicts.load().catch(() => {})
   await loadAll()
   window.addEventListener('resize', onResize)
 })
@@ -176,7 +192,7 @@ function onSearch() {
   loadAll()
 }
 function onReset() {
-  filters.value = { level: 'goods' }
+  filters.value = { level: 'goods', categoryName: [] }
   sortField.value = ''; sortOrder.value = ''
   r.resetDate()
   loadAll()

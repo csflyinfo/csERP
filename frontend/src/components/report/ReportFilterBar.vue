@@ -1,49 +1,66 @@
 <template>
   <div class="rpt-filter-card">
     <div class="rpt-filter-row">
-      <div class="rpt-filter-field">
-        <label>日期预设</label>
-        <select v-model="preset" @change="onPreset">
-          <option value="month">最近一个月（截止昨天）</option>
-          <option value="today">今天</option>
-          <option value="7d">近 7 天</option>
-          <option value="30d">近 30 天</option>
-          <option value="thisMonth">本月</option>
-          <option value="lastMonth">上月</option>
-          <option value="custom">自定义</option>
-        </select>
-      </div>
-      <div class="rpt-filter-field">
-        <label>开始日期</label>
-        <input type="date" :value="start" @input="emit('update:start', $event.target.value); preset = 'custom'">
-      </div>
-      <div class="rpt-filter-field">
-        <label>截止日期</label>
-        <input type="date" :value="end" @input="emit('update:end', $event.target.value); preset = 'custom'">
-      </div>
+      <template v-if="!hideDates">
+        <div class="rpt-filter-field">
+          <label>日期预设</label>
+          <select v-model="preset" @change="onPreset">
+            <option value="month">最近一个月（截止昨天）</option>
+            <option value="today">今天</option>
+            <option value="7d">近 7 天</option>
+            <option value="30d">近 30 天</option>
+            <option value="thisMonth">本月</option>
+            <option value="lastMonth">上月</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="rpt-filter-field">
+          <label>开始日期</label>
+          <input type="date" :value="start" @input="emit('update:start', $event.target.value); preset = 'custom'">
+        </div>
+        <div class="rpt-filter-field">
+          <label>截止日期</label>
+          <input type="date" :value="end" @input="emit('update:end', $event.target.value); preset = 'custom'">
+        </div>
+      </template>
       <slot />
       <div class="rpt-filter-actions">
+        <button v-if="hasMore" type="button" class="btn-more" @click="expanded = !expanded">
+          {{ expanded ? '收起条件' : '展开更多条件' }}
+          <span :class="{ rotated: expanded }">▾</span>
+        </button>
         <slot name="actions" />
       </div>
+    </div>
+    <!-- 第二行及更多：默认折叠，避免筛选区占用过多纵向空间 -->
+    <div v-if="hasMore && expanded" class="rpt-filter-row rpt-filter-more">
+      <slot name="more" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, useSlots } from 'vue'
 
 /**
  * 报表统一筛选条：K2 口径日期预设（默认「最近一个月，截止昨天」）。
- * 各报表特有筛选走默认插槽，查询/重置走 actions 插槽。
+ * 默认插槽字段在第一行；条件较多时其余字段放 #more 插槽，默认折叠。
  */
 const props = defineProps({
   start: { type: String, required: true },
   end: { type: String, required: true },
   /** 初始日期预设（月结类报表传 'thisMonth'，与后端自然月默认一致） */
   initialPreset: { type: String, default: 'month' },
+  /** 默认展开更多条件（如时点报表） */
+  defaultExpanded: { type: Boolean, default: false },
+  /** 时点报表（账龄表）：隐藏期间日期字段，只展示截止日等自定义条件 */
+  hideDates: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:start', 'update:end'])
 
+const slots = useSlots()
+const hasMore = !!slots.more
+const expanded = ref(props.defaultExpanded)
 const preset = ref(props.initialPreset)
 
 function fmt(d) {
@@ -71,8 +88,7 @@ function onPreset() {
       if (e > yesterday) e = yesterday
       break
     case 'lastMonth': {
-      const first = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-      s = first
+      s = new Date(today.getFullYear(), today.getMonth() - 1, 1)
       e = new Date(today.getFullYear(), today.getMonth(), 0)
       break
     }
@@ -100,6 +116,11 @@ function onPreset() {
   gap: 10px 14px;
   align-items: flex-end;
 }
+.rpt-filter-more {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #ebeef5;
+}
 .rpt-filter-field {
   display: flex;
   flex-direction: column;
@@ -122,5 +143,12 @@ function onPreset() {
   margin-left: auto;
   display: flex;
   gap: 8px;
+  align-items: center;
 }
+.btn-more {
+  border: none; background: none; color: #409eff; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 2px;
+}
+.btn-more span { display: inline-block; transition: transform .15s; }
+.btn-more span.rotated { transform: rotate(180deg); }
 </style>

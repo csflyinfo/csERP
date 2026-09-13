@@ -18,35 +18,39 @@
       </div>
     </div>
 
-    <div class="rpt-filter-card">
-      <div class="rpt-filter-row">
-        <div class="rpt-filter-field">
-          <label>截止日期</label>
-          <input type="date" v-model="filters.cutoff">
-        </div>
-        <div class="rpt-filter-field">
-          <label>视图</label>
-          <select v-model="filters.viewMode">
-            <option value="supplier">按供应商汇总</option>
-            <option value="bill">按单据明细</option>
-          </select>
-        </div>
-        <div class="rpt-filter-field"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
-        <div class="rpt-filter-field"><label>采购员</label><input v-model="filters.buyer" @keyup.enter="onSearch"></div>
-        <div class="rpt-filter-field"><label>结算方式</label><input v-model="filters.settlementMethod" @keyup.enter="onSearch"></div>
-        <div class="rpt-filter-field"><label>最低未付余额</label><input v-model="filters.minOutstanding" type="number" @keyup.enter="onSearch"></div>
+    <ReportFilterBar v-model:start="start" v-model:end="end" hide-dates default-expanded>
+      <div class="ff">
+        <label>截止日期</label>
+        <input type="date" v-model="filters.cutoff">
+      </div>
+      <div class="ff">
+        <label>视图</label>
+        <select v-model="filters.viewMode">
+          <option value="supplier">按供应商汇总</option>
+          <option value="bill">按单据明细</option>
+        </select>
+      </div>
+      <div class="ff"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
+      <div class="ff">
+        <label>采购员</label>
+        <select v-model="filters.buyer">
+          <option value="">全部</option>
+          <option v-for="b in buyers" :key="b" :value="b">{{ b }}</option>
+        </select>
+      </div>
+      <template #more>
+        <div class="ff"><label>结算方式</label><input v-model="filters.settlementMethod" @keyup.enter="onSearch"></div>
+        <div class="ff"><label>最低未付余额</label><input v-model="filters.minOutstanding" type="number" @keyup.enter="onSearch"></div>
         <label class="rpt-check"><input type="checkbox" v-model="includeSettled" @change="onSearch">含已结清</label>
         <label class="rpt-check"><input type="checkbox" :checked="filters.onlyOverdue === '1'" @change="onOnlyOverdue">仅看逾期</label>
-        <div class="rpt-filter-actions">
-          <button class="btn-primary" @click="onSearch">查询</button>
-          <button class="btn-plain" @click="onReset">重置</button>
-        </div>
-      </div>
-    </div>
+      </template>
+      <template #actions>
+        <button class="btn-primary" @click="onSearch">查询</button>
+        <button class="btn-plain" @click="onReset">重置</button>
+      </template>
+    </ReportFilterBar>
 
-    <div class="rpt-chart-card">
-      <AgingBucketChart :buckets="bucketData" title="应付账龄分布（合计行口径）" />
-    </div>
+    <AgingBucketChart :buckets="bucketData" title="应付账龄分布（合计行口径）" />
 
     <DrillGridReport
       :columns="visibleColumns"
@@ -68,6 +72,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import DrillGridReport from '@/components/report/DrillGridReport.vue'
 import AgingBucketChart from '@/components/report/AgingBucketChart.vue'
+import ReportFilterBar from '@/components/report/ReportFilterBar.vue'
 import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.js'
 import { useRbac } from '@/composables/useRbac.js'
@@ -82,7 +87,7 @@ const today = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 const r = useCenterReport(CODE)
-const { filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
+const { start, end, filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
 const includeSettled = ref(false)
 filters.value = { cutoff: today(), viewMode: 'supplier' }
 pageSize.value = 100000

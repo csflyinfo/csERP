@@ -398,9 +398,10 @@ public class PurchaseForecastService {
             args.add("%" + p.supplier + "%");
             args.add("%" + p.supplier + "%");
         }
-        if (p.category != null) {
-            sql.append(" AND g.category_name = ? ");
-            args.add(p.category);
+        if (p.categories != null && !p.categories.isEmpty()) {
+            String marks = String.join(",", java.util.Collections.nCopies(p.categories.size(), "?"));
+            sql.append(" AND g.category_name IN (").append(marks).append(") ");
+            args.addAll(p.categories);
         }
         if (p.brand != null) {
             sql.append(" AND g.brand_name = ? ");
@@ -445,7 +446,7 @@ public class PurchaseForecastService {
         String supplierMode = "main";   // main | recent
         String warehouse;
         String supplier;
-        String category;
+        List<String> categories;
         String brand;
         String buyer;
         boolean showUnsold = false;
@@ -459,7 +460,7 @@ public class PurchaseForecastService {
                     ? (Map<String, Object>) m : Map.of();
             p.warehouse = s(f.get("warehouse"));
             p.supplier = s(f.get("supplier"));
-            p.category = s(f.get("categoryName"));
+            p.categories = strList(f.get("categoryName"));
             p.brand = s(f.get("brandName"));
             p.buyer = s(f.get("buyer"));
             Object days = body.get("preSaleDays");
@@ -495,6 +496,17 @@ public class PurchaseForecastService {
             if (o == null) return null;
             String v = String.valueOf(o).trim();
             return v.isEmpty() ? null : v;
+        }
+
+        /** 分类筛选：兼容数组、逗号分隔字符串与单值。 */
+        private static List<String> strList(Object o) {
+            if (o instanceof List<?> l) {
+                return l.stream().map(String::valueOf).map(String::trim)
+                        .filter(x -> !x.isEmpty()).distinct().toList();
+            }
+            if (o == null) return List.of();
+            return java.util.Arrays.stream(String.valueOf(o).split(","))
+                    .map(String::trim).filter(x -> !x.isEmpty()).distinct().toList();
         }
     }
 }

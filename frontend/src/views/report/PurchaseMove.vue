@@ -34,9 +34,7 @@
         </select>
       </div>
       <div class="ff"><label>单据号</label><input v-model="filters.billNo" placeholder="入库/退货单号" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>源单号</label><input v-model="filters.sourceBillNo" placeholder="采购订单号" @keyup.enter="onSearch"></div>
       <div class="ff"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>采购员</label><input v-model="filters.buyer" @keyup.enter="onSearch"></div>
       <div class="ff">
         <label>仓库</label>
         <select v-model="filters.warehouse">
@@ -45,18 +43,37 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编号/名称/条码" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>商品分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
-      <div class="ff">
-        <label>存储属性</label>
-        <select v-model="filters.storageProperty">
-          <option value="">全部</option>
-          <option value="常温">常温</option>
-          <option value="冷藏">冷藏</option>
-          <option value="冷冻">冷冻</option>
-          <option value="恒温">恒温</option>
-        </select>
-      </div>
+      <template #more>
+        <div class="ff"><label>源单号</label><input v-model="filters.sourceBillNo" placeholder="采购订单号" @keyup.enter="onSearch"></div>
+        <div class="ff">
+          <label>采购员</label>
+          <select v-model="filters.buyer" @change="onSearch">
+            <option value="">全部</option>
+            <option v-for="b in buyers" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" @change="onSearch" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName" @change="onSearch">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff">
+          <label>存储属性</label>
+          <select v-model="filters.storageProperty">
+            <option value="">全部</option>
+            <option value="常温">常温</option>
+            <option value="冷藏">冷藏</option>
+            <option value="冷冻">冷冻</option>
+            <option value="恒温">恒温</option>
+          </select>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -91,8 +108,12 @@ import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.js'
 import { loadWarehouses } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'purchaseMoveReport'
+const dicts = sharedReportDicts()
+const { brands, buyers, categoryTree } = dicts
 const CODE = 'purchase_move_detail'
 const STORE_KEY = 'rpt:purchase_move_detail:filters'
 const FROM_NAME = {
@@ -142,6 +163,7 @@ const visibleColumns = computed(() =>
 const DRILL_FILTER_KEYS = ['billType', 'supplier', 'buyer', 'warehouse', 'goods', 'categoryName', 'brandName', 'storageProperty']
 
 onMounted(async () => {
+  dicts.load().catch(() => {})
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
   if (route.query.drill === '1') {
     applyDrillQuery()

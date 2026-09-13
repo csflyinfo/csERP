@@ -1,5 +1,7 @@
 package com.erp.report.analysis;
 
+import com.erp.report.common.ReportFilters;
+
 import com.erp.report.common.ReportCamel;
 import com.erp.report.common.ReportDateRange;
 import com.erp.report.common.ReportQueryRequest;
@@ -237,13 +239,11 @@ public class GoodsAnalysisService {
             sb.append(" AND warehouse = ? ");
             args.add(warehouse);
         }
-        for (var e : List.of(Map.entry("categoryName", "category_name"),
-                             Map.entry("brandName", "brand_name"))) {
-            String v = req.text(e.getKey());
-            if (v != null) {
-                sb.append(" AND ").append(e.getValue()).append(" = ? ");
-                args.add(v);
-            }
+        ReportFilters.inList(req, sb, args, "categoryName", "category_name");
+        String brand = req.text("brandName");
+        if (brand != null) {
+            sb.append(" AND brand_name = ? ");
+            args.add(brand);
         }
         String goods = req.text("goods");
         if (goods != null) {
@@ -263,13 +263,11 @@ public class GoodsAnalysisService {
             sb.append(" AND s.warehouse = ? ");
             args.add(warehouse);
         }
-        for (var e : List.of(Map.entry("categoryName", "dg.category_name"),
-                             Map.entry("brandName", "dg.brand_name"))) {
-            String v = req.text(e.getKey());
-            if (v != null) {
-                sb.append(" AND ").append(e.getValue()).append(" = ? ");
-                args.add(v);
-            }
+        ReportFilters.inList(req, sb, args, "categoryName", "dg.category_name");
+        String brand = req.text("brandName");
+        if (brand != null) {
+            sb.append(" AND dg.brand_name = ? ");
+            args.add(brand);
         }
         String goods = req.text("goods");
         if (goods != null) {

@@ -39,11 +39,28 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编码/名称/条码" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>主供应商</label><input v-model="filters.supplier" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>采购员</label><input v-model="filters.buyer" @keyup.enter="onSearch"></div>
       <div v-if="tab !== 'realtime'" class="ff"><label>连续缺货≥N天</label><input v-model="filters.minConsecDays" type="number" min="1" @keyup.enter="onSearch"></div>
+      <template #more>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff"><label>主供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
+        <div class="ff">
+          <label>采购员</label>
+          <select v-model="filters.buyer">
+            <option value="">全部</option>
+            <option v-for="b in buyers" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -88,6 +105,8 @@ import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.
 import { loadWarehouses, rebuildStockSnapshot } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
 import { usePermStore } from '@/stores/perm.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'shortageAnalysisReport'
 const CODE = 'shortage_analysis'
@@ -99,6 +118,8 @@ const canAdmin = usePermStore().hasFunc('report.admin.view')
 const r = useCenterReport(CODE)
 const { start, end, filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
 const warehouses = ref([])
+const dicts = sharedReportDicts()
+const { brands, buyers, categoryTree } = dicts
 const tab = ref('realtime')
 const trendChart = ref(null)
 let chart = null
@@ -151,6 +172,7 @@ const visibleColumns = computed(() =>
 
 onMounted(() => {
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
+  dicts.load().catch(() => {})
   try { Object.assign(filters.value, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')) } catch { /* ignore */ }
   tab.value = filters.value.tab || 'realtime'
   r.query().catch(() => {})

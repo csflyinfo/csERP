@@ -20,7 +20,13 @@
 
     <ReportFilterBar v-model:start="start" v-model:end="end">
       <div class="ff"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>采购员</label><input v-model="filters.buyer" @keyup.enter="onSearch"></div>
+      <div class="ff">
+        <label>采购员</label>
+        <select v-model="filters.buyer">
+          <option value="">全部</option>
+          <option v-for="b in buyers" :key="b" :value="b">{{ b }}</option>
+        </select>
+      </div>
       <div class="ff"><label>结算方式</label><input v-model="filters.settlementMethod" @keyup.enter="onSearch"></div>
       <div class="ff"><label>最低期末余额</label><input v-model="filters.minEnding" type="number" @keyup.enter="onSearch"></div>
       <label class="rpt-check"><input type="checkbox" v-model="includeSettled" @change="onSearch">含已结清</label>
@@ -54,6 +60,7 @@ import DrillGridReport from '@/components/report/DrillGridReport.vue'
 import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.js'
 import { useRbac } from '@/composables/useRbac.js'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'supplierApSummaryReport'
 const CODE = 'supplier_ap_summary'
@@ -64,9 +71,12 @@ const { actionHidden, canViewColumn } = useRbac(MODULE)
 const r = useCenterReport(CODE)
 const { start, end, filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
 const includeSettled = ref(false)
+const dicts = sharedReportDicts()
+const { buyers } = dicts
 pageSize.value = 100000
 
 onMounted(() => {
+  dicts.load().catch(() => {})
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}')
     Object.assign(filters.value, saved)

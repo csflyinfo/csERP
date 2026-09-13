@@ -1,5 +1,7 @@
 package com.erp.report.purchase;
 
+import com.erp.report.common.ReportFilters;
+
 import com.erp.common.security.datascope.DataScopeService;
 import com.erp.report.common.ReportQueryRequest;
 import com.erp.report.meta.Plan;
@@ -245,11 +247,7 @@ public abstract class AbstractPurchaseSummaryDefinition implements ReportDefinit
             args.add("%" + goods + "%");
             args.add("%" + goods + "%");
         }
-        String category = req.text("categoryName");
-        if (category != null) {
-            sql.append(" AND d.category_name = ? ");
-            args.add(category);
-        }
+        ReportFilters.inList(req, sql, args, "categoryName", "d.category_name");
         String brand = req.text("brandName");
         if (brand != null) {
             sql.append(" AND d.brand_name = ? ");

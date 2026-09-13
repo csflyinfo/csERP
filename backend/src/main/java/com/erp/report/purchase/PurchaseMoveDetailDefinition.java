@@ -1,5 +1,7 @@
 package com.erp.report.purchase;
 
+import com.erp.report.common.ReportFilters;
+
 import com.erp.common.security.datascope.DataScopeService;
 import com.erp.report.common.ReportQueryRequest;
 import com.erp.report.meta.CustomPageSql;
@@ -152,7 +154,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
             plan.args.add("%" + goods + "%");
             plan.args.add("%" + goods + "%");
         }
-        appendEq(req, plan, "categoryName", "g.category_name");
+        ReportFilters.inList(req, plan.fromWhere, plan.args, "categoryName", "g.category_name");
         appendEq(req, plan, "brandName", "g.brand_name");
         appendEq(req, plan, "storageProperty", "g.storage_property");
         viewScope.appendTo(plan.fromWhere, plan.args);
@@ -472,11 +474,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
             args.add("%" + goods + "%");
             args.add("%" + goods + "%");
         }
-        String category = req.text("categoryName");
-        if (category != null) {
-            sql.append("          AND ").append(g).append(".category_name = ?\n");
-            args.add(category);
-        }
+        ReportFilters.inList(req, sql, args, "categoryName", g + ".category_name");
         String brand = req.text("brandName");
         if (brand != null) {
             sql.append("          AND ").append(g).append(".brand_name = ?\n");

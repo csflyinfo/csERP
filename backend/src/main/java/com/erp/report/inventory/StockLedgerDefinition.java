@@ -1,5 +1,7 @@
 package com.erp.report.inventory;
 
+import com.erp.report.common.ReportFilters;
+
 import com.erp.common.security.datascope.DataScopeService;
 import com.erp.common.security.datascope.DataScopeService.ScopeClause;
 import com.erp.report.common.ReportQueryRequest;
@@ -501,11 +503,12 @@ public class StockLedgerDefinition implements ReportDefinition {
             args.add("%" + goods + "%");
             args.add("%" + goods + "%");
         }
-        for (String key : List.of("categoryName", "brandName", "storageProperty")) {
+        // 分类支持多选（下拉树勾选上级自动带下级）；品牌/存储属性单选
+        ReportFilters.inList(req, sql, args, "categoryName", g + ".category_name");
+        for (String key : List.of("brandName", "storageProperty")) {
             String v = req.text(key);
             if (v != null) {
                 String col = switch (key) {
-                    case "categoryName" -> "category_name";
                     case "brandName" -> "brand_name";
                     case "storageProperty" -> "storage_property";
                     default -> key;

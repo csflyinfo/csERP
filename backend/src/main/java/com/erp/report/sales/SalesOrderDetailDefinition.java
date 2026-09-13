@@ -1,6 +1,7 @@
 package com.erp.report.sales;
 
 import com.erp.common.security.datascope.DataScopeService;
+import com.erp.report.common.ReportFilters;
 import com.erp.report.common.ReportQueryRequest;
 import com.erp.report.common.SqlLiterals;
 import com.erp.report.meta.CustomPageSql;
@@ -620,10 +621,8 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
                 args.add("%" + goods + "%");
             }
         }
-        String category = req.text("categoryName");
-        if (category != null) {
-            sql.append(" AND ").append(gAlias).append(".category_name = ? ");
-            if (args != null) args.add(category);
+        if (args != null) {
+            ReportFilters.inList(req, sql, args, "categoryName", gAlias + ".category_name");
         }
         String brand = req.text("brandName");
         if (brand != null) {

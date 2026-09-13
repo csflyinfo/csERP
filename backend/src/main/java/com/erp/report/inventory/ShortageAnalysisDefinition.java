@@ -1,5 +1,7 @@
 package com.erp.report.inventory;
 
+import com.erp.report.common.ReportFilters;
+
 import com.erp.common.security.datascope.DataScopeService;
 import com.erp.common.security.datascope.DataScopeService.ScopeClause;
 import com.erp.report.common.ReportQueryRequest;
@@ -355,8 +357,9 @@ public class ShortageAnalysisDefinition implements ReportDefinition {
             outerArgs.add("%" + goodsKw + "%");
             outerArgs.add("%" + goodsKw + "%");
         }
+        ReportFilters.inList(req, outerWhere, outerArgs, "categoryName", "dg.category_name");
         for (var e : new String[][] {
-                {"categoryName", "dg.category_name"}, {"brandName", "dg.brand_name"},
+                {"brandName", "dg.brand_name"},
                 {"storageProperty", "dg.storage_property"}}) {
             String v = req.text(e[0]);
             if (v != null) {
@@ -526,8 +529,9 @@ public class ShortageAnalysisDefinition implements ReportDefinition {
             args.add("%" + goods + "%");
             args.add("%" + goods + "%");
         }
+        // 分类支持多选（下拉树勾选上级自动带下级）；品牌/存储属性单选
+        ReportFilters.inList(req, sql, args, "categoryName", d + ".category_name");
         for (var e : java.util.Map.of(
-                "categoryName", d + ".category_name",
                 "brandName", d + ".brand_name",
                 "storageProperty", d + ".storage_property").entrySet()) {
             String v = req.text(e.getKey());

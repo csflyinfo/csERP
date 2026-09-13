@@ -39,38 +39,49 @@
           <option v-for="w in warehouses" :key="w" :value="w">{{ w }}</option>
         </select>
       </div>
-      <div class="ff"><label>批次</label><input v-model="filters.batchNo" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>单据号</label><input v-model="filters.billNo" @keyup.enter="onSearch"></div>
-      <details class="ff ff-multi">
-        <summary>单据类型{{ typeSummary }}</summary>
-        <div class="multi-pop">
-          <label v-for="t in TYPE_OPTIONS" :key="t.code">
-            <input type="checkbox" :checked="filters.billTypes.includes(t.code)" @change="toggleType(t.code)">
-            {{ t.label }}
-          </label>
+      <template #more>
+        <div class="ff"><label>批次</label><input v-model="filters.batchNo" @keyup.enter="onSearch"></div>
+        <div class="ff"><label>单据号</label><input v-model="filters.billNo" @keyup.enter="onSearch"></div>
+        <details class="ff ff-multi">
+          <summary>单据类型{{ typeSummary }}</summary>
+          <div class="multi-pop">
+            <label v-for="t in TYPE_OPTIONS" :key="t.code">
+              <input type="checkbox" :checked="filters.billTypes.includes(t.code)" @change="toggleType(t.code)">
+              {{ t.label }}
+            </label>
+          </div>
+        </details>
+        <div class="ff">
+          <label>方向</label>
+          <select v-model="filters.direction">
+            <option value="">全部</option>
+            <option value="IN">收入</option>
+            <option value="OUT">发出</option>
+            <option value="成本调整">成本调整</option>
+          </select>
         </div>
-      </details>
-      <div class="ff">
-        <label>方向</label>
-        <select v-model="filters.direction">
-          <option value="">全部</option>
-          <option value="IN">收入</option>
-          <option value="OUT">发出</option>
-          <option value="成本调整">成本调整</option>
-        </select>
-      </div>
-      <div class="ff"><label>商品分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
-      <div class="ff">
-        <label>存储属性</label>
-        <select v-model="filters.storageProperty">
-          <option value="">全部</option>
-          <option value="常温">常温</option>
-          <option value="冷藏">冷藏</option>
-          <option value="冷冻">冷冻</option>
-          <option value="恒温">恒温</option>
-        </select>
-      </div>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" @change="onSearch" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName" @change="onSearch">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff">
+          <label>存储属性</label>
+          <select v-model="filters.storageProperty">
+            <option value="">全部</option>
+            <option value="常温">常温</option>
+            <option value="冷藏">冷藏</option>
+            <option value="冷冻">冷冻</option>
+            <option value="恒温">恒温</option>
+          </select>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" :disabled="!canSearch" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -105,8 +116,12 @@ import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.js'
 import { loadWarehouses } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'stockLedgerReport'
+const dicts = sharedReportDicts()
+const { brands, buyers, categoryTree } = dicts
 const CODE = 'stock_ledger'
 const STORE_KEY = 'rpt:stock_ledger:filters'
 const FROM_NAME = { inventory_roll: '商品进销存汇总表' }
@@ -205,6 +220,7 @@ const DRILL_KEYS = ['goods', 'warehouse', 'batchNo', 'billNo', 'direction',
   'categoryName', 'brandName', 'storageProperty']
 
 onMounted(async () => {
+  dicts.load().catch(() => {})
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
   if (route.query.drill === '1') {
     applyDrillQuery()

@@ -105,6 +105,16 @@
   background: #fff;
   min-width: 120px;
 }
+/* 复选框不套文本框尺寸（参考采购预测的紧凑勾选样式） */
+.ff input[type='checkbox'],
+.ff input[type='radio'] {
+  height: 14px;
+  width: 14px;
+  min-width: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: #409eff;
+}
 
 /* 钻取落点回条 */
 .rpt-drill-banner {

@@ -1,6 +1,7 @@
 package com.erp.report.sales;
 
 import com.erp.common.security.datascope.DataScopeService;
+import com.erp.report.common.ReportFilters;
 import com.erp.report.common.ReportQueryRequest;
 import com.erp.report.meta.Plan;
 import com.erp.report.meta.ReportColumnDef;
@@ -286,7 +287,7 @@ public abstract class AbstractSalesSummaryDefinition implements ReportDefinition
             args.add("%" + goods + "%");
             args.add("%" + goods + "%");
         }
-        appendEq(req, sql, args, "categoryName", "d.category_name");
+        ReportFilters.inList(req, sql, args, "categoryName", "d.category_name");
         appendEq(req, sql, args, "brandName", "d.brand_name");
         appendEq(req, sql, args, "storageProperty", "d.storage_property");
         String customer = req.text("customer");

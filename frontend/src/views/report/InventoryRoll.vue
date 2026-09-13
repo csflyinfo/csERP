@@ -30,26 +30,37 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编号/名称/条码" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>商品分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
-      <div class="ff">
-        <label>存储属性</label>
-        <select v-model="filters.storageProperty">
-          <option value="">全部</option>
-          <option value="常温">常温</option>
-          <option value="冷藏">冷藏</option>
-          <option value="冷冻">冷冻</option>
-          <option value="恒温">恒温</option>
-        </select>
-      </div>
       <div class="ff ff-check">
         <label>&nbsp;</label>
         <label class="chk-line"><input type="checkbox" v-model="filters.onlyNonZero" true-value="1" false-value="">仅结存不为 0</label>
       </div>
-      <div class="ff ff-check">
-        <label>&nbsp;</label>
-        <label class="chk-line"><input type="checkbox" v-model="showDetail">展开单据类型明细列</label>
-      </div>
+      <template #more>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff">
+          <label>存储属性</label>
+          <select v-model="filters.storageProperty">
+            <option value="">全部</option>
+            <option value="常温">常温</option>
+            <option value="冷藏">冷藏</option>
+            <option value="冷冻">冷冻</option>
+            <option value="恒温">恒温</option>
+          </select>
+        </div>
+        <div class="ff ff-check">
+          <label>&nbsp;</label>
+          <label class="chk-line"><input type="checkbox" v-model="showDetail">展开单据类型明细列</label>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -114,6 +125,8 @@ import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows, fmtNum } from '@/components/report/report-table.js'
 import { loadWarehouses } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'inventoryRollReport'
 const CODE = 'inventory_roll'
@@ -123,7 +136,10 @@ const { actionHidden, canViewColumn } = useRbac(MODULE)
 
 const r = useCenterReport(CODE, { naturalMonth: true })
 const { start, end, filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
+filters.value.categoryName = []
 const warehouses = ref([])
+const dicts = sharedReportDicts()
+const { brands, categoryTree } = dicts
 const showDetail = ref(false)
 const reconcileOpen = ref(false)
 
@@ -132,6 +148,7 @@ pageSize.value = 100000
 
 onMounted(async () => {
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
+  dicts.load().catch(() => {})
   rememberLoad()
   await r.query()
 })

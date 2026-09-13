@@ -47,9 +47,24 @@
         </select>
       </div>
       <div class="ff"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="compute"></div>
-      <div class="ff"><label>商品分类</label><input v-model="filters.categoryName" @keyup.enter="compute"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="compute"></div>
-      <div class="ff"><label>采购员</label><input v-model="filters.buyer" @keyup.enter="compute"></div>
+      <div class="ff">
+        <label>商品分类</label>
+        <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" @change="compute" />
+      </div>
+      <div class="ff">
+        <label>品牌</label>
+        <select v-model="filters.brandName" @change="compute">
+          <option value="">全部</option>
+          <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+        </select>
+      </div>
+      <div class="ff">
+        <label>采购员</label>
+        <select v-model="filters.buyer" @change="compute">
+          <option value="">全部</option>
+          <option v-for="b in buyers" :key="b" :value="b">{{ b }}</option>
+        </select>
+      </div>
       <div class="ff" style="justify-content: flex-end;">
         <label style="display:flex;align-items:center;gap:4px;height:30px;">
           <input type="checkbox" v-model="showUnsold" style="min-width:auto;"> 无销量商品
@@ -185,8 +200,12 @@ import { defaultRange } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows, fmtNum } from '@/components/report/report-table.js'
 import { forecastCompute, forecastGenerate, loadWarehouses } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'purchaseForecastReport'
+const dicts = sharedReportDicts()
+const { brands, buyers, categoryTree } = dicts
 const STORE_KEY = 'rpt:purchase_forecast:params'
 const router = useRouter()
 const route = useRoute()
@@ -265,6 +284,7 @@ const estimatedAmount = computed(() => {
 })
 
 onMounted(() => {
+  dicts.load().catch(() => {})
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
   // #6 缺货分析「建议补货量」钻取带入（仓库/期间 + 结果内商品关键字），不自动计算，点查询生效
   if (route.query.drill === '1') {

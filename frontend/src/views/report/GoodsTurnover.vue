@@ -36,18 +36,29 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编码/名称/条码" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>分类</label><input v-model="filters.categoryName" @keyup.enter="onSearch"></div>
-      <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="onSearch"></div>
-      <div class="ff">
-        <label>存储属性</label>
-        <select v-model="filters.storageProperty">
-          <option value="">全部</option>
-          <option value="常温">常温</option>
-          <option value="冷藏">冷藏</option>
-          <option value="冷冻">冷冻</option>
-        </select>
-      </div>
       <label class="rpt-check"><input type="checkbox" v-model="slowOnly" @change="onSearch">仅看呆滞品</label>
+      <template #more>
+        <div class="ff">
+          <label>商品分类</label>
+          <CategoryTreeSelect v-model="filters.categoryName" :tree="categoryTree" />
+        </div>
+        <div class="ff">
+          <label>品牌</label>
+          <select v-model="filters.brandName">
+            <option value="">全部</option>
+            <option v-for="b in brands" :key="b" :value="b">{{ b }}</option>
+          </select>
+        </div>
+        <div class="ff">
+          <label>存储属性</label>
+          <select v-model="filters.storageProperty">
+            <option value="">全部</option>
+            <option value="常温">常温</option>
+            <option value="冷藏">冷藏</option>
+            <option value="冷冻">冷冻</option>
+          </select>
+        </div>
+      </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -80,6 +91,8 @@ import { useCenterReport } from '@/components/report/useCenterReport.js'
 import { exportRowsXlsx, buildTreeRows } from '@/components/report/report-table.js'
 import { loadWarehouses } from '@/api/report-center.js'
 import { useRbac } from '@/composables/useRbac.js'
+import CategoryTreeSelect from '@/components/report/CategoryTreeSelect.vue'
+import { sharedReportDicts } from '@/components/report/useReportDicts.js'
 
 const MODULE = 'goodsTurnoverReport'
 const CODE = 'goods_turnover'
@@ -90,12 +103,15 @@ const router = useRouter()
 const r = useCenterReport(CODE)
 const { start, end, filters, pageNo, pageSize, sortField, sortOrder, rows, summary, total, loading } = r
 const warehouses = ref([])
+const dicts = sharedReportDicts()
+const { brands, categoryTree } = dicts
 const slowOnly = ref(false)
-filters.value = { level: 'goods' }
+filters.value = { level: 'goods', categoryName: [] }
 pageSize.value = 100000
 
 onMounted(() => {
   loadWarehouses().then(ws => { warehouses.value = ws }).catch(() => {})
+  dicts.load().catch(() => {})
   try {
     const saved = JSON.parse(localStorage.getItem(STORE_KEY) || '{}')
     Object.assign(filters.value, saved)
