@@ -46,6 +46,8 @@ public abstract class AbstractPurchaseSummaryDefinition implements ReportDefinit
     @Override
     public List<String> groupFields(ReportQueryRequest req) {
         return resolveGroups(req).stream().map(g -> switch (g) {
+            case "date" -> "billDate";
+            case "month" -> "billMonth";
             case "category" -> "categoryName";
             case "brand" -> "brandName";
             case "buyer" -> "buyer";
@@ -82,6 +84,8 @@ public abstract class AbstractPurchaseSummaryDefinition implements ReportDefinit
     /** 分组维度对应的内层主键列别名（默认排序兜底用）。 */
     static String groupAlias(String g) {
         return switch (g) {
+            case "date" -> "bill_date";
+            case "month" -> "bill_month";
             case "category" -> "category_name";
             case "brand" -> "brand_name";
             case "buyer" -> "buyer";
@@ -102,6 +106,14 @@ public abstract class AbstractPurchaseSummaryDefinition implements ReportDefinit
     void appendInnerProjection(StringBuilder select, StringBuilder groupBy, List<String> groups) {
         for (String g : groups) {
             switch (g) {
+                case "date" -> {
+                    select.append("       d.bill_date AS bill_date,\n");
+                    groupBy.append("d.bill_date, ");
+                }
+                case "month" -> {
+                    select.append("       SUBSTRING(CAST(d.bill_date AS VARCHAR),1,7) AS bill_month,\n");
+                    groupBy.append("SUBSTRING(CAST(d.bill_date AS VARCHAR),1,7), ");
+                }
                 case "category" -> {
                     select.append("       d.category_name AS category_name,\n");
                     groupBy.append("d.category_name, ");

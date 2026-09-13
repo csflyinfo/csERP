@@ -51,6 +51,8 @@ public class CustomerGoodsSummaryDefinition extends AbstractSalesSummaryDefiniti
     @Override
     Map<String, String> groupWhitelist() {
         Map<String, String> m = new LinkedHashMap<>();
+        m.put("date", "d.bill_date");
+        m.put("month", "SUBSTRING(CAST(d.bill_date AS VARCHAR),1,7)");
         m.put("customer", "d.customer_code");
         m.put("territory", "d.territory");
         m.put("salesman", "d.salesman");

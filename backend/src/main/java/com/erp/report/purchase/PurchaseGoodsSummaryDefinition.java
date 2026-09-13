@@ -45,6 +45,8 @@ public class PurchaseGoodsSummaryDefinition extends AbstractPurchaseSummaryDefin
     @Override
     java.util.Map<String, String> groupWhitelist() {
         java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("date", "d.bill_date");
+        m.put("month", "SUBSTRING(CAST(d.bill_date AS VARCHAR),1,7)");
         m.put("category", "d.category_name");
         m.put("brand", "d.brand_name");
         m.put("buyer", "d.buyer");
