@@ -84,6 +84,11 @@ th { background: #f7fbff; color: #24415f; font-weight: 900; position: sticky; to
 .link-btn.danger-link:hover { color: #d33 !important; }
 .tree-empty { padding: 20px 10px; text-align: center; color: #909399; font-size: 12px; line-height: 1.6; }
 .tree-indent { color: #c0c4cc; margin-right: 4px; font-family: var(--font-mono); }
+.tree-node { display: flex; align-items: center; }
+.tree-caret { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; color: #909399; cursor: pointer; user-select: none; }
+.tree-caret.tree-caret-leaf { cursor: default; }
+.tree-node .tree-caret:hover { color: var(--primary); }
+.tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 800; }
 .ok { background: #dcfce7; color: #15803d; }
 .wait { background: #fff7ed; color: #c2410c; }

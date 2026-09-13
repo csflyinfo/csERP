@@ -8,7 +8,7 @@ export const moduleConfigs = {
     sections: ['基础信息', '单位与条码', '价格信息', '采购与库存', '附件/日志'],
   },
   category: {
-    type: 'base', mode: 'modal', tree: true, title: '商品分类', desc: '三级分类树：新建先选上级分类，分类编号两位，状态默认正常',
+    type: 'base', mode: 'modal', tree: true, title: '商品分类', desc: '左侧分类树默认只展示一级，点击节点展开下级并在右侧显示本级及所有下级分类；新建先选上级分类，分类编号两位，状态默认正常',
     treeNodes: [],
     filters: ['分类名称/编码', '状态'], columns: ['分类编码', '分类名称', '上级分类', '外部编码', '默认税率', '商品数', '状态', '操作'],
     row: [], actions: ['新建分类', '导入', '导出'], sections: ['上级分类', '分类编号', '分类名称', '默认税率', '状态'],

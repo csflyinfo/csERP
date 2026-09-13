@@ -576,6 +576,7 @@ function closeBaseDrawer() {
 }
 async function onBaseSave(result) {
   showBaseDrawer.value = false
+  treeDirty.value = true // 新增/编辑可能改变树结构，强制下次刷新左侧树
   show(`${moduleConfigs[baseDrawerCode.value]?.title || '资料'}保存成功`)
   await loadRows()
 }
@@ -644,8 +645,17 @@ const detailData = ref(null)
 const formModel = ref({})
 const tableRows = ref([])
 const loading = ref(false)
-const selectedTreeNode = ref('全部')
-const dynamicTree = ref([])   // 动态加载的树节点 [{ code, name, level, hasChildren }]
+const selectedTreeNode = ref('')   // 选中的树节点编码；''=全部
+const dynamicTree = ref([])   // 扁平动态树（往来单位/价格组商品查询用）[{ code, name, level }]
+// 自引用树形主档（商品分类/部门/资金账户/费用类型/片区）：嵌套树 + 展开状态
+const treeRoots = ref([])     // 嵌套结构 [{ code, name, parentCode, children }]
+const treeFullRecords = ref([]) // 未过滤的全量记录（构建树 + 本级+子孙过滤用）
+const expandedTreeKeys = ref(new Set()) // 已展开节点编码；默认空=只显示全部+一级
+const treeDirty = ref(true)   // 树全量缓存失效标记（新增/编辑/停用/删除/导入后置脏）
+const treeLoaded = ref(false) // 当前模块的全量树是否已加载过
+// 人员模块的树来自部门接口，单独走 ensureDepartmentTree；其余五个走各自的 page 接口
+const SELF_REF_TREE_MODULES = ['category', 'department', 'fundAccount', 'expenseType', 'territory']
+const isSelfRefTreeModule = computed(() => moduleCode.value === 'employee' || SELF_REF_TREE_MODULES.includes(moduleCode.value))
 // columnSettings / visibleColumns / 字段设置相关：由 useColumnSettings composable 管理（见上方）
 const pageNo = ref(1)
 const pageSize = ref(100)
@@ -976,6 +986,7 @@ async function handleImport(rows) {
     const skipped = res?.skipped ?? 0
     show(`导入完成：新增 ${inserted} 条${skipped ? `，跳过 ${skipped} 条` : ''}`)
     closeImportDialog()
+    treeDirty.value = true // 导入可能新增树节点，强制下次刷新左侧树
     if (preset.afterImport !== 'none') await loadRows()
   } catch (e) {
     show(`导入失败：${e.message || '未知错误'}`)
@@ -998,12 +1009,27 @@ async function loadRows() {
   }
   loading.value = true
   try {
-    // 树形+客户端过滤的主档（人员按部门树本级+子孙过滤）走大分页，一次性拿全部
-    const usingClientTreeFilter = moduleCode.value === 'employee'
-    const reqPageSize = usingClientTreeFilter ? 1000 : pageSize.value
-    const reqPageNo = usingClientTreeFilter ? 1 : pageNo.value
-    const data = await post(api.page, { pageNo: reqPageNo, pageSize: reqPageSize, sortField: sortField.value, sortOrder: sortOrder.value, filters: { ...(config.value.fixedFilters || {}), ...queryFilters.value } })
+    // 选中树节点的自引用主档：拉取全部页（后端单页上限 200）→ 客户端子树过滤+分页；
+    // 人员沿用既有大分页；其余模块走正常服务端分页
+    const treeNodeSelected = SELF_REF_TREE_MODULES.includes(moduleCode.value) && !!selectedTreeNode.value
+    const usingClientTreeFilter = moduleCode.value === 'employee' || treeNodeSelected
+    const reqFilters = { ...(config.value.fixedFilters || {}), ...queryFilters.value }
+    let data
+    if (treeNodeSelected) {
+      const all = await fetchAllPages(api.page, reqFilters, sortField.value, sortOrder.value)
+      data = { records: all, total: all.length }
+    } else if (moduleCode.value === 'employee') {
+      // 人员：单页大分页拉取（后端单页上限 200），客户端按部门子树过滤
+      data = await post(api.page, { pageNo: 1, pageSize: 200, sortField: sortField.value, sortOrder: sortOrder.value, filters: reqFilters })
+    } else {
+      data = await post(api.page, { pageNo: pageNo.value, pageSize: pageSize.value, sortField: sortField.value, sortOrder: sortOrder.value, filters: reqFilters })
+    }
     let records = data.records || []
+
+    // 五个自引用树主档：未过滤全量数据构建左侧树（右侧列表仍带查询条件，二者互不影响）
+    if (SELF_REF_TREE_MODULES.includes(moduleCode.value)) {
+      await ensureSelfRefTree()
+    }
 
     // 价格组商品查询：派生 unitLevelText / statusText
     if (moduleCode.value === 'priceGroupItem' && records.length) {
@@ -1109,6 +1135,12 @@ async function loadRows() {
         records = records.filter(r => deptSet.has(r.department || ''))
       }
     }
+    // 五个自引用树主档：按选中节点过滤为「本级 + 所有下级/子级」；选中「全部」不过滤
+    if (SELF_REF_TREE_MODULES.includes(moduleCode.value) && selectedTreeNode.value && treeFullRecords.value.length) {
+      const cfg = TREE_MODULE_KEYS[moduleCode.value]
+      const codeSet = subtreeCodeSet(treeFullRecords.value, cfg.codeKey, cfg.parentKey, selectedTreeNode.value)
+      records = records.filter(r => codeSet.has(r[cfg.codeKey]))
+    }
     // 商品库存查询 / 批次库存查询：派生大单位换算件数 + 可用库存金额
     if ((moduleCode.value === 'stockBalance' || moduleCode.value === 'batchStock') && records.length) {
       records = records.map(r => {
@@ -1141,20 +1173,17 @@ async function loadRows() {
         }
       })
     }
+    // 树形主档：大分页拿全量→子树过滤后，按当前页前端切片分页
+    let totalCount = data.total || 0
+    if (usingClientTreeFilter) {
+      totalCount = records.length
+      const start = (pageNo.value - 1) * pageSize.value
+      records = records.slice(start, start + pageSize.value)
+    }
     tableRows.value = records.length ? records.map(record => mapRecordToRow(record, config.value)) : []
-    total.value = data.total || 0
-    // 树形模块同步刷新树
-    if (moduleCode.value === 'category') {
-      buildTreeFor('category', records)
-    } else if (moduleCode.value === 'department') {
-      buildTreeFor('department', records)
-    } else if (moduleCode.value === 'fundAccount') {
-      buildTreeFor('fundAccount', records)
-    } else if (moduleCode.value === 'expenseType') {
-      buildTreeFor('expenseType', records)
-    } else if (moduleCode.value === 'territory') {
-      buildTreeFor('territory', records)
-    } else if (moduleCode.value === 'counterparty') {
+    total.value = totalCount
+    // 往来单位/价格组商品查询：列表返回后刷新扁平树；五个自引用树已在上方用全量数据构建
+    if (moduleCode.value === 'counterparty') {
       buildCounterpartyTree()
     } else if (moduleCode.value === 'priceGroupItem') {
       buildPriceGroupTree()
@@ -1220,10 +1249,10 @@ function buildTreeFor(module, records) {
   const cfg = TREE_MODULE_KEYS[module]
   if (!cfg) return
   if (!records || records.length === 0) {
-    dynamicTree.value = []
+    treeRoots.value = []
     return
   }
-  const { codeKey, nameKey, parentKey, rootLabel } = cfg
+  const { codeKey, nameKey, parentKey } = cfg
   const map = {}
   records.forEach(r => {
     if (r[codeKey]) {
@@ -1243,20 +1272,88 @@ function buildTreeFor(module, records) {
     list.forEach(n => sortRec(n.children))
   }
   sortRec(roots)
-  const flat = [{ code: '', name: rootLabel, level: 0 }]
-  const walk = (nodes, level) => {
-    nodes.forEach(n => {
-      flat.push({ code: n.code, name: n.name, level })
-      if (n.children.length) walk(n.children, level + 1)
-    })
-  }
-  walk(roots, 1)
-  dynamicTree.value = flat
+  treeRoots.value = roots
 }
 
-// 兼容旧调用：category 单独入口
-function buildCategoryTree(records) {
-  buildTreeFor('category', records)
+/**
+ * 翻页拉全量：后端单页硬上限 200（PageRequest.safePageSize），分类有 480 条，
+ * 必须循环翻页直到取完 total；安全阀 50 页（1 万行）防止异常接口死循环。
+ * @returns 全部记录数组
+ */
+async function fetchAllPages(endpoint, filters = {}, sortFieldVal = '', sortOrderVal = '') {
+  const size = 200
+  let pageNoVal = 1
+  const all = []
+  for (;;) {
+    const data = await post(endpoint, { pageNo: pageNoVal, pageSize: size, sortField: sortFieldVal, sortOrder: sortOrderVal, filters })
+    const rs = data.records || []
+    all.push(...rs)
+    const totalCount = Number(data.total) || 0
+    if (rs.length === 0 || all.length >= totalCount || pageNoVal >= 50) break
+    pageNoVal++
+  }
+  return all
+}
+
+// 自引用树形主档：拉未过滤全量数据构建左侧树，并供「本级+子孙」过滤取子孙编码。
+// 带缓存：翻页/勾选只复用；新增/编辑/停用/删除/导入后由 treeDirty 触发刷新。
+async function ensureSelfRefTree() {
+  const module = moduleCode.value
+  if (!SELF_REF_TREE_MODULES.includes(module)) return
+  const api = moduleApis[module]
+  if (!api?.page) { treeRoots.value = []; treeFullRecords.value = []; return }
+  if (!treeDirty.value && treeLoaded.value) return
+  try {
+    treeFullRecords.value = await fetchAllPages(api.page, {})
+    buildTreeFor(module, treeFullRecords.value)
+    treeDirty.value = false
+    treeLoaded.value = true
+  } catch (e) {
+    treeRoots.value = []
+    treeFullRecords.value = []
+  }
+}
+
+// 计算「选中节点 + 所有子孙」编码集合（本级及下级、子级全包含）
+function subtreeCodeSet(records, codeKey, parentKey, rootCode) {
+  const childrenMap = {}
+  records.forEach(r => {
+    const p = r[parentKey]
+    const c = r[codeKey]
+    if (p && c) (childrenMap[p] = childrenMap[p] || []).push(c)
+  })
+  const collected = new Set()
+  const walk = (code) => {
+    if (!code || collected.has(code)) return
+    collected.add(code)
+    ;(childrenMap[code] || []).forEach(walk)
+  }
+  walk(rootCode)
+  return collected
+}
+
+// 左侧树按展开状态拍平：根「全部」常驻 + 一级常驻，下级仅在父节点展开时可见
+const visibleTreeNodes = computed(() => {
+  if (!isSelfRefTreeModule.value) return []
+  const cfg = TREE_MODULE_KEYS[moduleCode.value === 'employee' ? 'department' : moduleCode.value]
+  if (!cfg) return []
+  const out = [{ code: '', name: cfg.rootLabel, level: 0, hasChildren: false, expanded: false }]
+  const walk = (nodes, level) => {
+    nodes.forEach(n => {
+      const hasChildren = n.children.length > 0
+      const expanded = expandedTreeKeys.value.has(n.code)
+      out.push({ code: n.code, name: n.name, level, hasChildren, expanded })
+      if (hasChildren && expanded) walk(n.children, level + 1)
+    })
+  }
+  walk(treeRoots.value, 1)
+  return out
+})
+
+function toggleTreeExpand(code) {
+  const next = new Set(expandedTreeKeys.value)
+  if (next.has(code)) next.delete(code); else next.add(code)
+  expandedTreeKeys.value = next
 }
 
 // 往来单位树：类型→单位 两级结构（从 /base/master/counterparty/tree 加载）
@@ -1301,6 +1398,16 @@ function resetRows() {
 watch(() => config.value, () => {
   // columnSettings 由 useColumnSettings composable 通过 storageKey watcher 自动加载；
   // 字段权限由路由守卫预拉的 perm store 驱动（permittedColumns），无需在此按角色加载
+  // 切模块：左侧树选中/展开/全量缓存全部复位，新模块树默认收起（只显示全部+一级）
+  selectedTreeNode.value = ''
+  expandedTreeKeys.value = new Set()
+  treeRoots.value = []
+  treeFullRecords.value = []
+  treeDirty.value = true
+  treeLoaded.value = false
+  dynamicTree.value = []
+  departmentTreeData.value = []
+  pageNo.value = 1
   // 特定模块的筛选下拉数据
   if (moduleCode.value === 'counterparty') loadCounterpartyTypesForFilter()
   if (moduleCode.value === 'employee') ensureDepartmentTree()
@@ -1477,6 +1584,7 @@ async function confirmAction() {
   if (endpoint) {
     try {
       await post(endpoint, buildPayload())
+      treeDirty.value = true // 停用/删除等可能影响树节点，强制下次刷新左侧树
       await loadRows()
       show(`${config.value.title}${action}成功`)
       closeDialog()
@@ -2909,18 +3017,18 @@ async function deleteAdjustOrder(row) {
 }
 
 function selectTreeNode(nodeOrCode) {
-  const value = typeof nodeOrCode === 'string' ? nodeOrCode.trim() : ''
+  // 新折叠树传节点对象 { code, name }；旧扁平树/静态 treeNodes 传字符串
+  const isObject = nodeOrCode && typeof nodeOrCode === 'object'
+  const value = isObject ? (nodeOrCode.code || '') : String(nodeOrCode || '').trim()
+  const label = isObject ? nodeOrCode.name : value
   selectedTreeNode.value = value
-  if (moduleCode.value === 'employee') {
-    // 人员：选中部门 → 客户端按本级+子孙过滤，重新走 loadRows
+  if (isSelfRefTreeModule.value) {
+    // 商品分类/部门/资金账户/费用类型/片区/人员：选中节点自动展开下级，
+    // 右侧列表按「本级 + 所有下级及子级」客户端过滤（人员在 loadRows 内按部门名过滤）
+    if (value) expandedTreeKeys.value = new Set([...expandedTreeKeys.value, value])
     pageNo.value = 1
     loadRows()
-    show(value ? `已切换到部门：${value}` : '已显示全部部门人员')
-    return
-  }
-  if (moduleCode.value === 'category' || moduleCode.value === 'department' || moduleCode.value === 'fundAccount' || moduleCode.value === 'expenseType' || moduleCode.value === 'territory') {
-    // 树状主档：点击树节点=视觉高亮，不做后台过滤（列表显示所有记录）
-    show(value ? `已高亮：${value}` : '已显示全部')
+    show(value ? `已切换到：${label}（含所有下级）` : '已显示全部')
     return
   }
   if (moduleCode.value === 'counterparty') {
@@ -3005,17 +3113,40 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 <template>
   <div class="module-body" :class="{ 'with-tree': treeVisible }">
     <aside v-if="treeVisible" class="module-tree">
-      <!-- 树形模块（category/department/fundAccount/expenseType/territory/counterparty/employee/priceGroupItem）：动态树 -->
-      <template v-if="moduleCode === 'category' || moduleCode === 'department' || moduleCode === 'fundAccount' || moduleCode === 'expenseType' || moduleCode === 'territory' || moduleCode === 'counterparty' || moduleCode === 'employee' || moduleCode === 'priceGroupItem'">
-        <div v-if="dynamicTree.length === 0" class="tree-empty">
+      <!-- 自引用树形主档（category/department/fundAccount/expenseType/territory/employee）：默认收起，点箭头展开下级，点名称选中并过滤右侧 -->
+      <template v-if="isSelfRefTreeModule">
+        <div v-if="treeRoots.length === 0" class="tree-empty">
           {{ moduleCode === 'department' ? '暂无部门，请点击右侧【新建部门】'
              : moduleCode === 'fundAccount' ? '暂无资金账户，请点击右侧【新建账户】'
              : moduleCode === 'expenseType' ? '暂无费用类型，请点击右侧【新建费用类型】'
              : moduleCode === 'territory' ? '暂无片区，请点击右侧【新建片区】'
-             : moduleCode === 'counterparty' ? '暂无往来单位，请点击右侧【新建】'
              : moduleCode === 'employee' ? '暂无部门，请先在【部门管理】维护'
-             : moduleCode === 'priceGroupItem' ? '暂无启用中的价格组，请先在【价格组设置】启用'
              : '暂无分类，请点击右侧【新建分类】' }}
+        </div>
+        <div
+          v-for="node in visibleTreeNodes"
+          :key="node.code || 'root'"
+          class="tree-node"
+          :class="{ active: selectedTreeNode === node.code }"
+          :style="{ paddingLeft: (10 + node.level * 16) + 'px' }"
+          :title="node.name"
+          @click="selectTreeNode(node)"
+        >
+          <span
+            v-if="node.hasChildren"
+            class="tree-caret"
+            :title="node.expanded ? '收起' : '展开下级'"
+            @click.stop="toggleTreeExpand(node.code)"
+          >{{ node.expanded ? '▼' : '▶' }}</span>
+          <span v-else class="tree-caret tree-caret-leaf"></span>
+          <span class="tree-label">{{ node.name }}</span>
+        </div>
+      </template>
+      <!-- 扁平动态树（往来单位/价格组商品查询）：一次展示全部层级 -->
+      <template v-else-if="moduleCode === 'counterparty' || moduleCode === 'priceGroupItem'">
+        <div v-if="dynamicTree.length === 0" class="tree-empty">
+          {{ moduleCode === 'counterparty' ? '暂无往来单位，请点击右侧【新建】'
+             : '暂无启用中的价格组，请先在【价格组设置】启用' }}
         </div>
         <div
           v-for="node in dynamicTree"
