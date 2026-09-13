@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, computed, onMounted } from 'vue'
 import { post, get } from '../../../api/client.js'
+import SearchSelect from '../../../components/SearchSelect.vue'
 
 const props = defineProps({
   modelValue: { type: Array, required: true },
@@ -91,9 +92,12 @@ onMounted(loadUnits)
 watch(() => props.visible, (v) => { if (v) loadUnits() })
 
 function optionsForCol(colIdx) {
-  if (colIdx === 1) return unitOptions.value.filter(u => u.canMiddleUnit)
-  if (colIdx === 2) return unitOptions.value.filter(u => u.canLargeUnit)
-  return unitOptions.value
+  const list = colIdx === 1
+    ? unitOptions.value.filter(u => u.canMiddleUnit)
+    : colIdx === 2
+      ? unitOptions.value.filter(u => u.canLargeUnit)
+      : unitOptions.value
+  return [{ value: '', label: '请选择' }, ...list.map(u => ({ value: u.name, label: u.name }))]
 }
 
 // ========== 数据初始化 ==========
@@ -224,10 +228,15 @@ function getPriceGroupValue(unit, pgCode) {
               </template>
               <!-- 单位名称 -->
               <template v-else-if="field.key === 'unitName'">
-                <select v-model="unit.unitName" :disabled="!unit.enabled" class="unit-select">
-                  <option value="">请选择</option>
-                  <option v-for="opt in optionsForCol(colIdx)" :key="opt.name" :value="opt.name">{{ opt.name }}</option>
-                </select>
+                <SearchSelect
+                  v-model="unit.unitName"
+                  :options="optionsForCol(colIdx)"
+                  :disabled="!unit.enabled"
+                  class="unit-select"
+                  size="small"
+                  :min-width="220"
+                  search-placeholder="输入单位名称/拼音首字母搜索"
+                />
               </template>
               <!-- 换算数量 -->
               <template v-else-if="field.key === 'convertQty'">

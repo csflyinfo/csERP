@@ -5,13 +5,15 @@
  * 交互：
  *  - 未输入关键字：以树状结构展示「正常」状态的商品分类，一级默认收起，点 ▶/节点名展开下级；
  *    只有末级分类（无子级）可点选回填，非末级点击只做展开/收起。
- *  - 输入关键字：在「末级分类」名称中做不区分大小写的模糊匹配，下拉平铺命中的末级
- *    （附带完整层级路径，便于同名消歧），点选回填。
+ *  - 输入关键字：在「末级分类」名称中做不区分大小写（含拼音首字母）的模糊匹配，
+ *    下拉平铺命中的末级（附带完整层级路径，便于同名消歧），点选回填。
  *
  * 输入：扁平节点数组 nodes（全量、已过滤停用），组件内部建树与判定叶子，
  * 避免父级集合只来自部分分页数据而把中间层误判成末级。
  */
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { pinyin } from 'pinyin-pro'
+import { useAnchoredPanel } from '../../../composables/useAnchoredPanel.js'
 
 const props = defineProps({
   /** 当前选中的分类名称（商品表只存 categoryName） */
@@ -24,17 +26,13 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'select'])
 
-const open = ref(false)
+// 面板 minWidth 260：四列表格中控件仅约 110px，过窄会截断长分类名与祖先路径
+const { open, panelStyle, controlRef, show, hide } = useAnchoredPanel({ minWidth: 260 })
 const keyword = ref('')
 const expanded = ref(new Set())
 const activeIndex = ref(-1)
 const rootRef = ref(null)
-const controlRef = ref(null)
-const panelRef = ref(null)
-// 面板 Teleport 到 body 后用 fixed 定位（抽屉 .drawer-body 是 overflow-y:auto，
-// absolute 下拉会被裁剪；fixed 脱离抽屉滚动容器，还能在下方空间不足时向上展开）
-const panelStyle = ref({})
-let rafPending = false
+const searchInputRef = ref(null)
 
 // 切换数据源（抽屉每次打开重新拉取）时复位展开状态
 watch(() => props.nodes, () => { expanded.value = new Set() })
@@ -84,13 +82,25 @@ const visibleRows = computed(() => {
 })
 
 // ==================== 搜索（仅末级名称模糊匹配） ====================
+function pinyinInitials(text) {
+  try {
+    return pinyin(text, { pattern: 'first', type: 'string', separator: '', v: true }).toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
 const searchResults = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return []
+  const pyKw = kw.replace(/[^a-z0-9]/g, '')
   const hits = []
   for (const n of props.nodes) {
     const hasChild = props.nodes.some(x => x.parentCode === n.categoryCode)
-    if (!hasChild && n.categoryName && n.categoryName.toLowerCase().includes(kw)) {
+    if (hasChild || !n.categoryName) continue
+    const label = n.categoryName.toLowerCase()
+    const matched = label.includes(kw) || (pyKw && pinyinInitials(n.categoryName).includes(pyKw))
+    if (matched) {
       hits.push({ code: n.categoryCode, name: n.categoryName, taxRate: n.defaultTaxRate || '', path: pathNamesOf(n.categoryCode) })
     }
     if (hits.length >= 100) break // 结果过多时截断，面板内滚动即可
@@ -112,37 +122,9 @@ function pathNamesOf(code) {
 
 // ==================== 交互 ====================
 function toggleOpen() {
-  if (open.value) { closePanel(); return }
-  open.value = true
+  if (open.value) { hide(); return }
   keyword.value = ''
-  nextTick(() => {
-    updatePanelPos()
-    searchInputRef.value?.focus()
-  })
-  document.addEventListener('scroll', schedulePos, true)
-  window.addEventListener('resize', schedulePos)
-}
-
-/** 按控件在视口中的位置给 teleport 面板算 fixed 坐标；下方不够就向上展开，极限小屏保底 160px */
-function updatePanelPos() {
-  const ctl = controlRef.value?.getBoundingClientRect()
-  if (!ctl || ctl.width === 0) return
-  const gap = 4
-  const vh = window.innerHeight
-  const below = vh - ctl.bottom - gap - 8
-  const above = ctl.top - gap - 8
-  const preferBelow = below >= 200 || below >= above
-  const avail = Math.max(160, Math.min(340, (preferBelow ? below : above)))
-  const s = { left: `${ctl.left}px`, width: `${ctl.width}px`, maxHeight: `${avail}px` }
-  if (preferBelow) s.top = `${ctl.bottom + gap}px`
-  else s.bottom = `${vh - ctl.top + gap}px`
-  panelStyle.value = s
-}
-
-function schedulePos() {
-  if (rafPending) return
-  rafPending = true
-  requestAnimationFrame(() => { rafPending = false; if (open.value) updatePanelPos() })
+  show(() => searchInputRef.value?.focus())
 }
 
 function toggleExpand(code) {
@@ -152,20 +134,13 @@ function toggleExpand(code) {
   expanded.value = next
 }
 
-function closePanel() {
-  if (!open.value) return
-  open.value = false
-  keyword.value = ''
-  activeIndex.value = -1
-  document.removeEventListener('scroll', schedulePos, true)
-  window.removeEventListener('resize', schedulePos)
-}
-
 function selectNode(node) {
   // node: { code/name/taxRate }
   emit('update:modelValue', node.name)
   emit('select', { name: node.name, taxRate: node.taxRate, code: node.code })
-  closePanel()
+  hide()
+  keyword.value = ''
+  activeIndex.value = -1
 }
 
 function onRowClick(row) {
@@ -182,25 +157,26 @@ function clearValue(e) {
 // 搜索结果键盘：↑↓ 移动、Enter 选中、Esc 关闭
 function onSearchKeydown(e) {
   const list = searchResults.value
-  if (e.key === 'Escape') { closePanel(); return }
+  if (e.key === 'Escape') { hide(); return }
   if (!list.length) return
   if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex.value = Math.min(activeIndex.value + 1, list.length - 1) }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex.value = Math.max(activeIndex.value - 1, 0) }
-  else if (e.key === 'Enter' && activeIndex.value >= 0) { e.preventDefault(); selectNode(list[activeIndex.value]) }
+  else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    const next = activeIndex.value - 1
+    activeIndex.value = next < 0 ? 0 : next
+  } else if (e.key === 'Enter' && activeIndex.value >= 0) { e.preventDefault(); selectNode(list[activeIndex.value]) }
 }
 watch(keyword, () => { activeIndex.value = -1 })
 
-// 点击组件外部关闭
+// 点击组件外部关闭（面板 teleport 到 body，面板内部 mousedown 已 .stop）
 function onDocMousedown(e) {
-  // 面板 teleport 到 body，面板内部的 mousedown 由 @mousedown.stop 拦下不会到这里
-  if (open.value && rootRef.value && !rootRef.value.contains(e.target)) closePanel()
+  if (open.value && rootRef.value && !rootRef.value.contains(e.target)) {
+    hide()
+    keyword.value = ''
+  }
 }
 document.addEventListener('mousedown', onDocMousedown)
-onBeforeUnmount(() => {
-  document.removeEventListener('mousedown', onDocMousedown)
-  document.removeEventListener('scroll', schedulePos, true)
-  window.removeEventListener('resize', schedulePos)
-})
+onBeforeUnmount(() => document.removeEventListener('mousedown', onDocMousedown))
 
 // 当前值是否仍属于「正常分类」中的节点（历史数据可能挂在已停用/已删除分类上，给出警示但不丢值）
 const valueKnown = computed(() =>
@@ -217,13 +193,13 @@ const valueKnown = computed(() =>
 
     <!-- Teleport 到 body：抽屉 .drawer-body 是 overflow 滚动容器，内嵌 absolute 面板会被裁剪 -->
     <Teleport to="body">
-    <div v-if="open" ref="panelRef" class="cts-panel" :style="panelStyle" @mousedown.stop>
+    <div v-if="open" class="cts-panel" :style="panelStyle" @mousedown.stop>
       <div class="cts-search">
         <input
           ref="searchInputRef"
           v-model="keyword"
           type="text"
-          placeholder="输入关键字搜索末级分类"
+          placeholder="输入关键字搜索末级分类（支持拼音首字母）"
           @keydown="onSearchKeydown"
         />
       </div>
@@ -240,8 +216,8 @@ const valueKnown = computed(() =>
             @click="selectNode(r)"
             @mouseenter="activeIndex = i"
           >
-            <span class="cts-result-name">{{ r.name }}</span>
-            <span class="cts-result-path">{{ r.path.slice(0, -1).join(' / ') }}</span>
+            <span class="cts-result-name" :title="r.name">{{ r.name }}</span>
+            <span class="cts-result-path" :title="r.path.slice(0, -1).join(' / ')">{{ r.path.slice(0, -1).join(' / ') }}</span>
           </div>
         </template>
 
@@ -259,7 +235,7 @@ const valueKnown = computed(() =>
             <span class="cts-caret" :class="{ 'cts-caret-leaf': row.isLeaf, 'cts-caret-open': row.expanded }">
               <template v-if="row.hasChildren">▶</template>
             </span>
-            <span class="cts-row-name">{{ row.name }}</span>
+            <span class="cts-row-name" :title="row.name">{{ row.name }}</span>
             <span v-if="row.isLeaf && row.name === modelValue" class="cts-check">✓</span>
           </div>
         </template>
@@ -326,7 +302,7 @@ const valueKnown = computed(() =>
 .cts-arrow-up { transform: rotate(180deg); }
 
 .cts-panel {
-  /* 坐标由 updatePanelPos 以 fixed 方式写入（空间不足时向上展开）；需高于抽屉遮罩 z-index:500 */
+  /* 坐标由 useAnchoredPanel 以 fixed 写入（空间不足时向上展开）；需高于抽屉遮罩 z-index:500 */
   position: fixed;
   z-index: 1200;
   background: #fff;
@@ -393,8 +369,21 @@ const valueKnown = computed(() =>
 }
 .cts-result:hover, .cts-result.cts-active { background: #ecf5ff; }
 .cts-result.cts-selected .cts-result-name { color: #409eff; font-weight: 600; }
-.cts-result-name { font-size: 12px; color: #303133; }
-.cts-result-path { font-size: 11px; color: #909399; margin-top: 1px; }
+.cts-result-name {
+  font-size: 12px;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cts-result-path {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cts-result:hover .cts-result-path,
 .cts-result.cts-active .cts-result-path { color: #79bbff; }
 </style>

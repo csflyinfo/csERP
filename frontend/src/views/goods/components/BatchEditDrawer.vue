@@ -1,6 +1,14 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { post } from '../../../api/client.js'
+import SearchSelect from '../../../components/SearchSelect.vue'
+
+// 布尔字段必须保留 Boolean 原值（不能退化成字符串）
+const YES_NO_OPTS = [{ value: true, label: '是' }, { value: false, label: '否' }]
+// select 类字段前置空值项（勾选字段但未选具体值时等同于显式清空）
+function withEmpty(options) {
+  return [{ value: '', label: '请选择' }, ...(options || []).map(v => ({ value: v, label: v }))]
+}
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -184,27 +192,15 @@ watch(() => props.visible, (val) => {
                 <span>{{ field.label }}</span>
               </label>
 
-              <!-- 是/否 选择器 -->
-              <select
-                v-if="field.type === 'yesno'"
+              <!-- 是/否 与普通下拉：统一可搜索下拉，勾选复选框前禁用 -->
+              <SearchSelect
+                v-if="field.type === 'yesno' || field.type === 'select'"
                 v-model="formModel[field.key].value"
+                :options="field.type === 'yesno' ? YES_NO_OPTS : withEmpty(field.options)"
                 :disabled="!formModel[field.key].enabled"
-                class="field-input"
-              >
-                <option :value="true">是</option>
-                <option :value="false">否</option>
-              </select>
-
-              <!-- 下拉选择器 -->
-              <select
-                v-else-if="field.type === 'select'"
-                v-model="formModel[field.key].value"
-                :disabled="!formModel[field.key].enabled"
-                class="field-input"
-              >
-                <option value="">请选择</option>
-                <option v-for="opt in field.options" :key="opt" :value="opt">{{ opt }}</option>
-              </select>
+                class="field-select"
+                :search-placeholder="field.type === 'yesno' ? '输入关键字搜索' : '输入名称/拼音首字母搜索'"
+              />
 
               <!-- 数字输入框 -->
               <input

@@ -1,9 +1,12 @@
 <script setup>
 import { computed } from 'vue'
+import SearchSelect from '../../../components/SearchSelect.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
 })
+
+const STORAGE_PROPERTY_OPTS = ['常温', '冷藏', '冷冻', '恒温'].map(v => ({ value: v, label: v }))
 
 // 计算小数位步长 - 称重品3位小数，非称重品整数
 const qtyStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
@@ -18,9 +21,11 @@ const stockLimitStep = computed(() => props.modelValue.isWeighted ? 0.001 : 1)
  */
 const purchaseUnitOptions = computed(() => {
   const units = props.modelValue.units || []
-  return units
+  const opts = [{ value: '', label: '未设置（按大→中→小）' }]
+  units
       .filter(u => u && u.enabled !== false && u.unitName)
-      .map(u => ({ name: u.unitName, label: `${u.unitName}（${u.unitType}）` }))
+      .forEach(u => opts.push({ value: u.unitName, label: `${u.unitName}（${u.unitType}）` }))
+  return opts
 })
 </script>
 
@@ -30,19 +35,15 @@ const purchaseUnitOptions = computed(() => {
     <div class="row">
       <div class="field">
         <label>存储属性</label>
-        <select v-model="modelValue.storageProperty">
-          <option value="常温">常温</option>
-          <option value="冷藏">冷藏</option>
-          <option value="冷冻">冷冻</option>
-          <option value="恒温">恒温</option>
-        </select>
+        <SearchSelect v-model="modelValue.storageProperty" :options="STORAGE_PROPERTY_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>默认采购单位</label>
-        <select v-model="modelValue.defaultPurchaseUnit">
-          <option value="">未设置（按大→中→小）</option>
-          <option v-for="o in purchaseUnitOptions" :key="o.name" :value="o.name">{{ o.label }}</option>
-        </select>
+        <SearchSelect
+          v-model="modelValue.defaultPurchaseUnit"
+          :options="purchaseUnitOptions"
+          search-placeholder="输入单位名称搜索"
+        />
       </div>
       <div class="field">
         <label>产地</label>

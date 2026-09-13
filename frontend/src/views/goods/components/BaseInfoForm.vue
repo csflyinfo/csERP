@@ -3,6 +3,21 @@ import { watch, ref, onMounted } from 'vue'
 import { post } from '../../../api/client.js'
 import { pinyin } from 'pinyin-pro'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
+import SearchSelect from '../../../components/SearchSelect.vue'
+
+// 写死枚举选项（SearchSelect 保留原值类型，布尔字段必须用 {value:true/false} 而非字符串）
+const YES_NO_OPTS = [{ value: true, label: '是' }, { value: false, label: '否' }]
+const GOODS_TYPE_OPTS = ['正常商品', '组合商品', '服务商品', '赠品'].map(v => ({ value: v, label: v }))
+const GOODS_LEVEL_OPTS = [
+  { value: '', label: '请选择' },
+  { value: 'A级', label: 'A级' }, { value: 'B级', label: 'B级' }, { value: 'C级', label: 'C级' },
+]
+const TAX_RATE_OPTS = [
+  { value: '', label: '请选择' },
+  { value: '13%', label: '13%' }, { value: '9%', label: '9%' },
+  { value: '6%', label: '6%' }, { value: '0%', label: '免税' },
+]
+const STATUS_OPTS = [{ value: '正常', label: '正常' }, { value: '停用', label: '停用' }]
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -140,10 +155,13 @@ function onCategorySelect({ name, taxRate }) {
       </div>
       <div class="field field-wide">
         <label>默认供应商</label>
-        <select v-model="modelValue.defaultSupplier">
-          <option value="">{{ supplierOptions.length ? '请选择' : '请先在【供应商资料】维护' }}</option>
-          <option v-for="opt in supplierOptions" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
+        <SearchSelect
+          v-model="modelValue.defaultSupplier"
+          :options="supplierOptions"
+          :placeholder="supplierOptions.length ? '请选择' : '请先在【供应商资料】维护'"
+          empty-text="请先在【供应商资料】维护供应商"
+          search-placeholder="输入名称/拼音首字母搜索"
+        />
       </div>
     </div>
 
@@ -151,35 +169,31 @@ function onCategorySelect({ name, taxRate }) {
     <div class="row">
       <div class="field">
         <label>品牌 <span class="required">*</span></label>
-        <select v-model="modelValue.brandName">
-          <option value="">{{ brandOptions.length ? '请选择' : '请先在【品牌管理】维护' }}</option>
-          <option v-for="opt in brandOptions" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
+        <SearchSelect
+          v-model="modelValue.brandName"
+          :options="brandOptions"
+          :placeholder="brandOptions.length ? '请选择' : '请先在【品牌管理】维护'"
+          empty-text="请先在【品牌管理】维护品牌"
+          search-placeholder="输入名称/拼音首字母搜索"
+        />
       </div>
       <div class="field">
         <label>商品类型</label>
-        <select v-model="modelValue.goodsType">
-          <option value="正常商品">正常商品</option>
-          <option value="组合商品">组合商品</option>
-          <option value="服务商品">服务商品</option>
-          <option value="赠品">赠品</option>
-        </select>
+        <SearchSelect v-model="modelValue.goodsType" :options="GOODS_TYPE_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>商品等级</label>
-        <select v-model="modelValue.goodsLevel">
-          <option value="">请选择</option>
-          <option value="A级">A级</option>
-          <option value="B级">B级</option>
-          <option value="C级">C级</option>
-        </select>
+        <SearchSelect v-model="modelValue.goodsLevel" :options="GOODS_LEVEL_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>默认仓库 <span class="required">*</span></label>
-        <select v-model="modelValue.defaultWarehouse">
-          <option value="">{{ warehouseOptions.length ? '请选择' : '请先在【仓库资料】维护' }}</option>
-          <option v-for="opt in warehouseOptions" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
+        <SearchSelect
+          v-model="modelValue.defaultWarehouse"
+          :options="warehouseOptions"
+          :placeholder="warehouseOptions.length ? '请选择' : '请先在【仓库资料】维护'"
+          empty-text="请先在【仓库资料】维护仓库"
+          search-placeholder="输入名称/拼音首字母搜索"
+        />
       </div>
     </div>
 
@@ -187,34 +201,25 @@ function onCategorySelect({ name, taxRate }) {
     <div class="row">
       <div class="field">
         <label>税率</label>
-        <select v-model="modelValue.taxRate">
-          <option value="">请选择</option>
-          <option value="13%">13%</option>
-          <option value="9%">9%</option>
-          <option value="6%">6%</option>
-          <option value="0%">免税</option>
-        </select>
+        <SearchSelect v-model="modelValue.taxRate" :options="TAX_RATE_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>商品负责人</label>
-        <select v-model="modelValue.goodsManager">
-          <option value="">{{ employeeOptions.length ? '请选择' : '请先在【人员信息】维护' }}</option>
-          <option v-for="opt in employeeOptions" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
+        <SearchSelect
+          v-model="modelValue.goodsManager"
+          :options="employeeOptions"
+          :placeholder="employeeOptions.length ? '请选择' : '请先在【人员信息】维护'"
+          empty-text="请先在【人员信息】维护人员"
+          search-placeholder="输入姓名/拼音首字母搜索"
+        />
       </div>
       <div class="field">
         <label>状态</label>
-        <select v-model="modelValue.status">
-          <option value="正常">正常</option>
-          <option value="停用">停用</option>
-        </select>
+        <SearchSelect v-model="modelValue.status" :options="STATUS_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>可退货</label>
-        <select v-model="modelValue.canReturn">
-          <option :value="true">是</option>
-          <option :value="false">否</option>
-        </select>
+        <SearchSelect v-model="modelValue.canReturn" :options="YES_NO_OPTS" search-placeholder="输入关键字搜索" />
       </div>
     </div>
 
@@ -222,17 +227,11 @@ function onCategorySelect({ name, taxRate }) {
     <div class="row">
       <div class="field">
         <label>是否称重</label>
-        <select v-model="modelValue.isWeighted">
-          <option :value="true">是</option>
-          <option :value="false">否</option>
-        </select>
+        <SearchSelect v-model="modelValue.isWeighted" :options="YES_NO_OPTS" search-placeholder="输入关键字搜索" />
       </div>
       <div class="field">
         <label>是否预售</label>
-        <select v-model="modelValue.isPresale">
-          <option :value="true">是</option>
-          <option :value="false">否</option>
-        </select>
+        <SearchSelect v-model="modelValue.isPresale" :options="YES_NO_OPTS" search-placeholder="输入关键字搜索" />
       </div>
     </div>
   </div>
