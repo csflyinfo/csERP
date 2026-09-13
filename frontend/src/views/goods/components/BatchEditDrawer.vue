@@ -16,19 +16,33 @@ const warehouseOpts = ref([])
 const supplierOpts = ref([])
 const employeeOpts = ref([])
 
+// 后端 /page 单页硬上限 200，分类数百条，必须翻页拉全量，否则末级判定与选项都会缺数据
+async function fetchAllCategories() {
+  const all = []
+  const pageSize = 200
+  for (let pageNo = 1; pageNo <= 50; pageNo++) {
+    const res = await post('/base/category/page', { pageNo, pageSize, filters: {} })
+    all.push(...(res.records || []))
+    if (all.length >= (res.total || 0) || !(res.records || []).length) break
+  }
+  return all
+}
+
 async function loadOpts() {
   const params = { pageNo: 1, pageSize: 500, filters: {} }
   try {
-    const [cat, brand, wh, sup, emp] = await Promise.all([
-      post('/base/category/page', params).catch(() => ({ records: [] })),
+    const [allCats, brand, wh, sup, emp] = await Promise.all([
+      fetchAllCategories().catch(() => []),
       post('/base/brand/page', params).catch(() => ({ records: [] })),
       post('/base/warehouse/page', params).catch(() => ({ records: [] })),
       post('/base/supplier/page', params).catch(() => ({ records: [] })),
       post('/base/master/employee/page', params).catch(() => ({ records: [] })),
     ])
-    const allCats = cat.records || []
+    // 仅正常状态的末级分类
     const parentCodes = new Set(allCats.map(r => r.parentCode).filter(Boolean))
-    categoryOpts.value = allCats.filter(r => !parentCodes.has(r.categoryCode)).map(r => r.categoryName).filter(Boolean)
+    categoryOpts.value = allCats
+      .filter(r => !parentCodes.has(r.categoryCode) && (!r.status || r.status === 'NORMAL' || r.status === '正常'))
+      .map(r => r.categoryName).filter(Boolean)
     brandOpts.value = (brand.records || []).map(r => r.brandName).filter(Boolean)
     warehouseOpts.value = (wh.records || []).map(r => r.warehouseName).filter(Boolean)
     supplierOpts.value = (sup.records || []).map(r => r.supplierName).filter(Boolean)

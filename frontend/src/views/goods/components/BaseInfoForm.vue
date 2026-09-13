@@ -2,6 +2,7 @@
 import { watch, ref, onMounted } from 'vue'
 import { post } from '../../../api/client.js'
 import { pinyin } from 'pinyin-pro'
+import CategoryTreeSelect from './CategoryTreeSelect.vue'
 
 const props = defineProps({
   modelValue: { type: Object, required: true },
@@ -10,29 +11,45 @@ const props = defineProps({
 })
 
 // 真实数据源：从后端加载
-// 分类保留完整对象 { name, taxRate } 以便选择时带出税率
-const categoryList = ref([])
+// 分类：categoryNodes 为全量「正常」分类扁平节点（交给树选择器建树）
+const categoryNodes = ref([])
 const brandOptions = ref([])
 const warehouseOptions = ref([])
 const employeeOptions = ref([])
 const supplierOptions = ref([])
 
+// 后端 /page 单页硬上限 200，分类已有数百条，必须循环翻页拉全量；
+// 否则末级判定所用的 parentCode 集合只来自第一页，中间层会被误判为末级
+async function fetchAllCategories() {
+  const all = []
+  const pageSize = 200
+  for (let pageNo = 1; pageNo <= 50; pageNo++) {
+    const res = await post('/base/category/page', { pageNo, pageSize, filters: {} })
+    all.push(...(res.records || []))
+    if (all.length >= (res.total || 0) || !(res.records || []).length) break
+  }
+  return all
+}
+
 async function loadOptions() {
   const params = { pageNo: 1, pageSize: 500, filters: {} }
   try {
-    const [cat, brand, wh, emp, sup] = await Promise.all([
-      post('/base/category/page', params).catch(() => ({ records: [] })),
+    const [allCats, brand, wh, emp, sup] = await Promise.all([
+      fetchAllCategories().catch(() => []),
       post('/base/brand/page', params).catch(() => ({ records: [] })),
       post('/base/warehouse/page', params).catch(() => ({ records: [] })),
       post('/base/master/employee/page', params).catch(() => ({ records: [] })),
       post('/base/supplier/page', params).catch(() => ({ records: [] })),
     ])
-    // 分类：只显示末级分类（自己的 categoryCode 未被其他节点作为 parentCode）
-    const allCats = cat.records || []
-    const parentCodes = new Set(allCats.map(r => r.parentCode).filter(Boolean))
-    categoryList.value = allCats
-      .filter(r => !parentCodes.has(r.categoryCode) && r.categoryName)
-      .map(r => ({ name: r.categoryName, taxRate: r.defaultTaxRate || '' }))
+    // 只展示「正常」状态分类；树选择器内部据此建树并仅允许选择末级
+    categoryNodes.value = allCats
+      .filter(r => r.categoryName && (!r.status || r.status === 'NORMAL' || r.status === '正常'))
+      .map(r => ({
+        categoryCode: r.categoryCode,
+        categoryName: r.categoryName,
+        parentCode: r.parentCode || '',
+        defaultTaxRate: r.defaultTaxRate || '',
+      }))
     brandOptions.value = (brand.records || []).map(r => r.brandName).filter(Boolean)
     warehouseOptions.value = (wh.records || []).map(r => r.warehouseName).filter(Boolean)
     employeeOptions.value = (emp.records || []).map(r => r.employeeName).filter(Boolean)
@@ -74,15 +91,16 @@ function onSimpleCodeInput(e) {
 }
 
 // ==================== 分类 → 税率 联动 ====================
-// 选择分类时，若分类有默认税率，则填入税率字段（用户仍可手动修改）
-function onCategoryChange(e) {
-  const name = e.target.value
+// 树选择器选中末级分类时回调；若该分类有默认税率，则填入税率字段（用户仍可手动修改）
+function onCategorySelect({ name, taxRate }) {
   props.modelValue.categoryName = name
-  const hit = categoryList.value.find(c => c.name === name)
-  if (hit && hit.taxRate) {
+  if (!name) {
+    // 清除分类时税率保留（可能是手工设置），不联动清空
+    return
+  }
+  if (taxRate) {
     // 归一化：既支持 "13%" 也支持数字
-    const rate = /%$/.test(hit.taxRate) ? hit.taxRate : `${hit.taxRate}%`
-    props.modelValue.taxRate = rate
+    props.modelValue.taxRate = /%$/.test(taxRate) ? taxRate : `${taxRate}%`
   }
 }
 </script>
@@ -97,10 +115,12 @@ function onCategoryChange(e) {
       </div>
       <div class="field">
         <label>商品分类 <span class="required">*</span></label>
-        <select :value="modelValue.categoryName" @change="onCategoryChange">
-          <option value="">{{ categoryList.length ? '请选择' : '请先在【商品分类】维护' }}</option>
-          <option v-for="opt in categoryList" :key="opt.name" :value="opt.name">{{ opt.name }}</option>
-        </select>
+        <CategoryTreeSelect
+          v-model="modelValue.categoryName"
+          :nodes="categoryNodes"
+          :placeholder="categoryNodes.length ? '请选择末级分类' : '请先在【商品分类】维护'"
+          @select="onCategorySelect"
+        />
       </div>
       <div class="field field-wide">
         <label>商品名称 <span class="required">*</span></label>
