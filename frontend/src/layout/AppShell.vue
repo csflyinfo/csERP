@@ -105,14 +105,16 @@ const currentName = computed(() => route.meta?.title || '经营概览')
 // 当前路由对应的菜单编码（PATH_MENU 命中才是菜单页，子页面/独立页为空）
 const currentMenuCode = computed(() => PATH_MENU[route.path] || '')
 
-// 当前展开的一级根目录：优先按路由反查，未命中（子页面/降级异常）保持手动展开项
-const manualRoot = ref('')
+// 当前展开的一级根目录：优先按路由反查，未命中（子页面/降级异常）默认展开第一个根；
+// 用户点击目录头后由 rootOverride 接管（'' = 显式全部收起），点击页面菜单打开页面时清除覆盖
+const rootOverride = ref(null)
 const activeRoot = computed(() => {
+  if (rootOverride.value !== null) return rootOverride.value
   if (currentMenuCode.value) {
     const root = rootOfCode(menuStore.tree, currentMenuCode.value)
     if (root) return root.code
   }
-  return manualRoot.value || menuStore.tree[0]?.code || ''
+  return menuStore.tree[0]?.code || ''
 })
 
 // 二级目录（财务管理 > 总账）展开状态；进入三级页面时自动展开对应目录
@@ -337,13 +339,22 @@ function navigate(code) {
     toast('该功能正在开发中')
     return
   }
+  // 打开页面后展开态回归"跟随当前页面所属根"，避免顶栏 tab 切到别的模块时还停在旧目录
+  rootOverride.value = null
   router.push(path)
 }
 
-/** 点一级目录：展开并跳到其第一个页面；同时记录手动展开项（菜单页反查失败时也能高亮） */
+/**
+ * 点一级「目录」：只展开/收起下级，不跳页面（再次点击已展开目录即收起）。
+ * 只有一级本身就是页面（L1 挂页）时才直接打开页面。
+ */
 function onRootClick(root) {
-  manualRoot.value = root.code
-  navigate(firstPageCode(root))
+  if (!root) return
+  if (root.menuType === 'PAGE') {
+    navigate(root.code)
+    return
+  }
+  rootOverride.value = activeRoot.value === root.code ? '' : root.code
 }
 
 /** 点二级目录：仅展开/折叠三级页面 */
@@ -387,11 +398,9 @@ function quickLocate(keyword) {
     toast('未找到匹配菜单')
     return
   }
-  manualRoot.value = rootOfCode(menuStore.tree, found.code)?.code || manualRoot.value
+  // 搜到目录时进其第一个页面、搜到页面直接打开；navigate 会让展开态跟随路由
   navigate(firstPageCode(found))
 }
-
-const topKeys = computed(() => menuStore.tree.map(r => r.code))
 </script>
 
 <template>
@@ -446,16 +455,22 @@ const topKeys = computed(() => menuStore.tree.map(r => r.code))
         />
         <div v-if="menuStore.source === 'fallback'" class="menu-fallback-tip">菜单服务不可用，已使用本地菜单</div>
       </div>
-      <template v-for="rootCode in topKeys" :key="rootCode">
+      <template v-for="root in menuStore.tree" :key="root.code">
+        <!-- 一级目录：点击只展开/收起下级，不跳页面；一级页面（L1 挂页）才直接打开 -->
         <div
           class="lvl1"
-          :class="{ on: activeRoot === rootCode }"
-          @click="onRootClick(menuStore.tree.find(r => r.code === rootCode))"
+          :class="{ on: activeRoot === root.code }"
+          :title="root.menuType === 'PAGE' ? root.name : (activeRoot === root.code ? '点击收起' : '点击展开')"
+          @click="onRootClick(root)"
         >
-          <span class="dot"></span>{{ menuStore.tree.find(r => r.code === rootCode)?.name }}
+          <span class="dot"></span>
+          <span class="lvl1-name">{{ root.name }}</span>
+          <span v-if="root.menuType !== 'PAGE'" class="dir-arrow lvl1-arrow">
+            {{ activeRoot === root.code ? '▾' : '▸' }}
+          </span>
         </div>
-        <div v-if="activeRoot === rootCode" class="submenu">
-          <template v-for="node in menuStore.tree.find(r => r.code === rootCode)?.children || []" :key="node.code">
+        <div v-if="activeRoot === root.code" class="submenu">
+          <template v-for="node in root.children || []" :key="node.code">
             <!-- 二级目录（如 财务管理 > 总账）：点击展开三级页面 -->
             <template v-if="node.menuType === 'DIR' && (node.children || []).length">
               <div class="lvl2 lvl2-dir" :class="{ on: expandedDirs.has(node.code) }" @click.stop="toggleDir(node.code)">
@@ -684,6 +699,10 @@ const topKeys = computed(() => menuStore.tree.map(r => r.code))
 .menu-fallback-tip { font-size: 11px; color: #b8860b; padding: 4px 10px 0; }
 .lvl2-dir { justify-content: space-between; font-weight: 700; }
 .dir-arrow { font-size: 11px; color: #7c93ad; }
+/* 一级目录头：展开箭头靠右；选中态（深色渐变底）上改浅色 */
+.lvl1-arrow { margin-left: auto; }
+.lvl1.on .lvl1-arrow { color: rgba(255, 255, 255, 0.85); }
+.lvl1-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lvl3-wrap { padding: 2px 0 2px 10px; }
 .lvl3 {
   height: 27px; border-radius: 7px; display: flex; align-items: center;
