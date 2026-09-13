@@ -385,8 +385,8 @@ async function submitExport() {
   cursor: pointer;
 }
 .ff-multi summary {
-  height: 30px;
-  line-height: 30px;
+  height: 28px;
+  line-height: 26px;
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   padding: 0 8px;

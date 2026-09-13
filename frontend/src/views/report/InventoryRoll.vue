@@ -30,10 +30,7 @@
         </select>
       </div>
       <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编号/名称/条码" @keyup.enter="onSearch"></div>
-      <div class="ff ff-check">
-        <label>&nbsp;</label>
-        <label class="chk-line"><input type="checkbox" v-model="filters.onlyNonZero" true-value="1" false-value="">仅结存不为 0</label>
-      </div>
+      <label class="chk-line rpt-check"><input type="checkbox" v-model="filters.onlyNonZero" true-value="1" false-value="">仅结存不为 0</label>
       <template #more>
         <div class="ff">
           <label>商品分类</label>
@@ -56,10 +53,7 @@
             <option value="恒温">恒温</option>
           </select>
         </div>
-        <div class="ff ff-check">
-          <label>&nbsp;</label>
-          <label class="chk-line"><input type="checkbox" v-model="showDetail">展开单据类型明细列</label>
-        </div>
+        <label class="chk-line rpt-check"><input type="checkbox" v-model="showDetail">展开单据类型明细列</label>
       </template>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>

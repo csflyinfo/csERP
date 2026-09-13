@@ -285,8 +285,6 @@ async function submitExport() {
 
 <style scoped>
 @import './report-page.css';
-.ff { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #606266; }
-.ff input, .ff select { height: 30px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 0 8px; font-size: 13px; min-width: 120px; }
 .rpt-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
 .rpt-tabs button { border: 1px solid #dcdfe6; background: #fff; border-radius: 4px; padding: 6px 16px; cursor: pointer; font-size: 13px; }
 .rpt-tabs button.active { background: #1677ff; color: #fff; border-color: #1677ff; }

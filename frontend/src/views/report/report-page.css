@@ -86,25 +86,33 @@
   color: #e6a23c;
 }
 
-/* 筛选条插槽内的字段（与 ReportFilterBar 内置字段同构） */
+/* 筛选条插槽内的字段：标签与控件同一行，等宽网格项，压缩纵向空间 */
 .ff {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: #606266;
+  min-width: 0;
 }
+.ff > label { white-space: nowrap; }
 .ff input,
 .ff select {
-  height: 30px;
+  flex: 1;
+  min-width: 0;
+  height: 28px;
   border: 1px solid #dcdfe6;
   border-radius: 4px;
   padding: 0 8px;
   font-size: 13px;
   color: #303133;
   background: #fff;
-  min-width: 120px;
 }
+/* 树多选/弹出类控件不被 flex 压缩异常 */
+.ff > :deep(.cat-select),
+.ff > .cat-select { flex: 1; min-width: 0; }
+.ff .cat-trigger { width: 100%; min-width: 0; }
 /* 复选框不套文本框尺寸（参考采购预测的紧凑勾选样式） */
 .ff input[type='checkbox'],
 .ff input[type='radio'] {
@@ -181,3 +189,7 @@
 .warn-text { color: #e6a23c; }
 .ok-text { color: #67c23a; }
 .muted { color: #909399; }
+
+/* 采购预测自定义表格铺满 */
+.rpt-forecast-grid { overflow-x: auto; }
+.rpt-forecast-grid .drill-table { width: 100%; min-width: 900px; }

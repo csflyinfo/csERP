@@ -74,7 +74,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 <style scoped>
 .cat-select { position: relative; }
 .cat-trigger {
-  height: 30px; min-width: 150px; border: 1px solid #dcdfe6; border-radius: 4px;
+  height: 28px; width: 100%; min-width: 0; border: 1px solid #dcdfe6; border-radius: 4px;
   background: #fff; padding: 0 8px; font-size: 13px; color: #303133;
   display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer;
 }

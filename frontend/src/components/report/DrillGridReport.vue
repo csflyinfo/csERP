@@ -159,14 +159,14 @@ function onSort(col) {
   box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
   position: relative;
 }
+/* 随页面整体滚动：表格完整铺开、不收起；仅超宽时横向滚动 */
 .drill-scroll {
-  overflow: auto;
-  max-height: calc(100vh - 250px);
+  overflow-x: auto;
+  overflow-y: visible;
 }
 .drill-table {
   border-collapse: collapse;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
   font-size: 12.5px;
 }
 .drill-table th,
@@ -179,9 +179,6 @@ function onSort(col) {
 .drill-table thead th {
   background: #f5f7fa;
   font-weight: 600;
-  position: sticky;
-  top: 0;
-  z-index: 2;
 }
 .drill-table th.sortable {
   cursor: pointer;

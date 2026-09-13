@@ -197,8 +197,6 @@ async function submitExport() {
 
 <style scoped>
 @import './report-page.css';
-.ff { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #606266; }
-.ff input, .ff select { height: 30px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 0 8px; font-size: 13px; min-width: 120px; }
 .rpt-check { font-size: 13px; color: #303133; display: flex; align-items: center; gap: 4px; }
 :deep(.row-slow) { background: #fff7e6 !important; }
 :deep(.row-slow td:last-child) { color: #d46b08; font-weight: 600; }

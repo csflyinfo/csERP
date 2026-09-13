@@ -325,8 +325,6 @@ async function submitExport() {
 
 <style scoped>
 @import './report-page.css';
-.ff { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #606266; }
-.ff input, .ff select { height: 30px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 0 8px; font-size: 13px; min-width: 120px; }
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
 .kpi-card { background: #fff; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
 .kpi-label { font-size: 12px; color: #909399; }

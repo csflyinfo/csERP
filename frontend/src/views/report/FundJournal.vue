@@ -159,8 +159,6 @@ async function submitExport() {
 
 <style scoped>
 @import './report-page.css';
-.ff { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #606266; }
-.ff input, .ff select { height: 30px; border: 1px solid #dcdfe6; border-radius: 4px; padding: 0 8px; font-size: 13px; min-width: 120px; }
 :deep(.row-danger) { background: #fff1f0 !important; color: #f5222d; font-weight: 600; }
 :deep(.row-subtotal) { background: #fafafa; color: #606266; }
 </style>
