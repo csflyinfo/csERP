@@ -23,25 +23,19 @@
           <input type="date" :value="end" @input="emit('update:end', $event.target.value); preset = 'custom'">
         </div>
       </template>
+      <!-- 默认条件与更多条件在同一个等宽网格内连续排布，自动逐行排满 -->
       <slot />
-      <!-- 更多条件：与第一行同网格，展开时自然折到后续列，排布均匀 -->
-      <template v-if="hasMore && expanded"><slot name="more" /></template>
+      <slot name="more" />
     </div>
 
-    <!-- 无页头导航可挂载时（如独立嵌入）的兜底内联渲染 -->
+    <!-- 无页头导航可挂载时（独立嵌入场景）的兜底内联渲染 -->
     <div v-if="!navTarget" class="rpt-filter-fallback">
-      <button v-if="hasMore" type="button" class="btn-plain btn-more" @click="expanded = !expanded">
-        {{ expanded ? '收起条件' : '展开更多条件' }}<span :class="{ rotated: expanded }">▾</span>
-      </button>
       <slot name="actions" />
     </div>
 
-    <!-- 操作按钮 teleport 到报表页头导航栏（与导出同一行） -->
-    <Teleport v-if="navTarget" :to="navTarget" :disabled="!navTarget">
+    <!-- 查询/重置 teleport 到报表页头导航栏（与导出同一行） -->
+    <Teleport v-if="navTarget" :to="navTarget">
       <span class="rpt-nav-actions">
-        <button v-if="hasMore" type="button" class="btn-plain btn-more" @click="expanded = !expanded">
-          {{ expanded ? '收起条件' : '更多条件' }}<span :class="{ rotated: expanded }">▾</span>
-        </button>
         <slot name="actions" />
       </span>
     </Teleport>
@@ -49,12 +43,12 @@
 </template>
 
 <script setup>
-import { ref, useSlots, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 
 /**
  * 报表统一筛选条（紧凑网格版）：
- * - 字段在卡片内自适应等宽网格，多行也排布均匀；
- * - 查询/重置/更多条件按钮 teleport 到页头 .rpt-ops（与导出同一行），最大化数据区空间；
+ * - 全部字段在同一等宽自适应网格内连续排布，逐行排满；
+ * - 查询/重置 teleport 到页头 .rpt-ops（与导出同一行），最大化数据区空间；
  * - K2 口径日期预设（默认「最近一个月，截止昨天」）。
  */
 const props = defineProps({
@@ -62,16 +56,11 @@ const props = defineProps({
   end: { type: String, required: true },
   /** 初始日期预设（月结类报表传 'thisMonth'，与后端自然月默认一致） */
   initialPreset: { type: String, default: 'month' },
-  /** 默认展开更多条件（如时点报表） */
-  defaultExpanded: { type: Boolean, default: false },
   /** 时点报表（账龄表）：隐藏期间日期字段，只展示截止日等自定义条件 */
   hideDates: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:start', 'update:end'])
 
-const slots = useSlots()
-const hasMore = !!slots.more
-const expanded = ref(props.defaultExpanded)
 const preset = ref(props.initialPreset)
 
 const root = ref(null)
@@ -83,7 +72,6 @@ onMounted(async () => {
   const page = root.value?.closest?.('.rpt-page')
   host = page?.querySelector?.('.rpt-ops') || null
   if (host) {
-    // 挂到导航栏末尾，并用 margin-left:auto 与左侧导出按钮分开
     host.classList.add('rpt-nav-host')
     navTarget.value = host
   }
@@ -139,7 +127,7 @@ function onPreset() {
   box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
   margin-bottom: 8px;
 }
-/* 等宽自适应网格：字段均匀铺满，多行高度一致 */
+/* 等宽自适应网格：字段均匀铺满，逐行排满 */
 .rpt-filter-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
@@ -173,13 +161,6 @@ function onPreset() {
   gap: 8px;
   justify-content: flex-end;
 }
-.btn-more {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-.btn-more span { display: inline-block; transition: transform .15s; }
-.btn-more span.rotated { transform: rotate(180deg); }
 :deep(.rpt-nav-actions) {
   display: inline-flex;
   align-items: center;

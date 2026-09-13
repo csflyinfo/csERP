@@ -51,6 +51,8 @@ public class PurchaseSupplierSummaryDefinition extends AbstractPurchaseSummaryDe
     @Override
     Map<String, String> groupWhitelist() {
         Map<String, String> m = new LinkedHashMap<>();
+        m.put("date", "d.bill_date");
+        m.put("month", "SUBSTRING(CAST(d.bill_date AS VARCHAR),1,7)");
         m.put("supplier", "d.supplier_code");
         m.put("supplierType", "d.supplier_type");
         m.put("buyer", "d.buyer");

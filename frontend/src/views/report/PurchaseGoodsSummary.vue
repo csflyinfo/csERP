@@ -109,6 +109,8 @@ const { actionHidden, canViewColumn } = useRbac(MODULE)
 
 // 可选分组维度（白名单与后端 groupWhitelist 严格一致）
 const GROUP_META = [
+  { key: 'date', title: '日期', outputKey: 'billDate' },
+  { key: 'month', title: '月份', outputKey: 'billMonth' },
   { key: 'goods', title: '商品', outputKey: 'goodsName' },
   { key: 'buyer', title: '采购员', outputKey: 'buyer' },
   { key: 'category', title: '商品类别', outputKey: 'categoryName' },
@@ -175,6 +177,8 @@ const visibleColumns = computed(() => {
   const groups = groupBy.value
   const cols = []
   for (const g of groups) {
+    if (g === 'date') cols.push({ key: 'billDate', title: '日期', width: 100, sortable: true })
+    else if (g === 'month') cols.push({ key: 'billMonth', title: '月份', width: 90, sortable: true })
     if (g === 'category') cols.push({ key: 'categoryName', title: '商品类别', width: 110 })
     else if (g === 'brand') cols.push({ key: 'brandName', title: '品牌', width: 110 })
     else if (g === 'buyer') cols.push({ key: 'buyer', title: '采购员', width: 90 })

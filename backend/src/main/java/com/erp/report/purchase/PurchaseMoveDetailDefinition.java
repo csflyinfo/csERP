@@ -74,6 +74,18 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         );
     }
 
+    /** 明细分组维度白名单：key → 分组列表达式（v 为 DWD 视图别名，g 为商品维度表）。 */
+    private static final Map<String, String> GROUP_WHITELIST = Map.ofEntries(
+            Map.entry("date", "v.bill_date"),
+            Map.entry("month", "SUBSTRING(CAST(v.bill_date AS VARCHAR),1,7)"),
+            Map.entry("supplier", "v.supplier_code"),
+            Map.entry("buyer", "v.buyer"),
+            Map.entry("warehouse", "v.warehouse"),
+            Map.entry("goods", "v.goods_code"),
+            Map.entry("category", "g.category_name"),
+            Map.entry("brand", "g.brand_name"),
+            Map.entry("storage", "g.storage_property"));
+
     @Override
     public Plan build(ReportQueryRequest req) {
         Plan plan = new Plan();
@@ -88,6 +100,13 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
             throw new IllegalArgumentException("单据类型只支持：采购入库 / 采购退货");
         }
 
+        // 分组模式：在 DWD 视图上按所选维度聚合（最多 3 级）
+        List<String> groups = resolveGroups(req);
+        if (!groups.isEmpty()) {
+            buildGroupedPath(req, plan, viewScope, billType, groups);
+            return plan;
+        }
+
         buildViewPath(req, plan, viewScope, billType);
 
         boolean defaultOrder = req.sortField() == null
@@ -96,6 +115,160 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
             buildWindowPath(req, plan, billType);
         }
         return plan;
+    }
+
+    private List<String> resolveGroups(ReportQueryRequest req) {
+        List<String> out = new ArrayList<>();
+        for (String g : req.groupBy()) {
+            if (!GROUP_WHITELIST.containsKey(g)) {
+                throw new IllegalArgumentException("不支持的分组维度：" + g
+                        + "；可选：" + String.join("、", GROUP_WHITELIST.keySet()));
+            }
+            if (!out.contains(g)) out.add(g);
+        }
+        if (out.size() > 3) throw new IllegalArgumentException("分组层级最多 3 级");
+        return out;
+    }
+
+    /** 公共 WHERE（明细视图路径与分组路径共用，参数顺序严格一致）。 */
+    private void appendWhere(ReportQueryRequest req, Plan plan, String billType,
+                             DataScopeService.ScopeClause viewScope) {
+        plan.args.add(req.range().startDate());
+        plan.args.add(req.range().endDate());
+        plan.fromWhere.append(" AND v.bill_date BETWEEN ? AND ? ");
+        if (billType != null) {
+            plan.fromWhere.append(" AND v.bill_type = ? ");
+            plan.args.add(billType);
+        }
+        appendLike(req, plan, "billNo", "v.bill_no");
+        appendLike(req, plan, "sourceBillNo", "v.source_bill_no");
+        String supplier = req.text("supplier");
+        if (supplier != null) {
+            plan.fromWhere.append(" AND (v.supplier_code LIKE ? OR v.supplier_name LIKE ?) ");
+            plan.args.add("%" + supplier + "%");
+            plan.args.add("%" + supplier + "%");
+        }
+        appendLike(req, plan, "buyer", "v.buyer");
+        appendEq(req, plan, "warehouse", "v.warehouse");
+        String goods = req.text("goods");
+        if (goods != null) {
+            plan.fromWhere.append(" AND (v.goods_code LIKE ? OR v.goods_name LIKE ? OR g.barcode LIKE ?) ");
+            plan.args.add("%" + goods + "%");
+            plan.args.add("%" + goods + "%");
+            plan.args.add("%" + goods + "%");
+        }
+        ReportFilters.inList(req, plan.fromWhere, plan.args, "categoryName", "g.category_name");
+        appendEq(req, plan, "brandName", "g.brand_name");
+        appendEq(req, plan, "storageProperty", "g.storage_property");
+        viewScope.appendTo(plan.fromWhere, plan.args);
+    }
+
+    private void buildGroupedPath(ReportQueryRequest req, Plan plan,
+                                  DataScopeService.ScopeClause viewScope, String billType,
+                                  List<String> groups) {
+        StringBuilder dims = new StringBuilder();
+        StringBuilder groupBy = new StringBuilder();
+        for (String gkey : groups) {
+            switch (gkey) {
+                case "date" -> {
+                    dims.append("       v.bill_date AS bill_date,\n");
+                    groupBy.append("v.bill_date, ");
+                }
+                case "month" -> {
+                    dims.append("       SUBSTRING(CAST(v.bill_date AS VARCHAR),1,7) AS bill_month,\n");
+                    groupBy.append("SUBSTRING(CAST(v.bill_date AS VARCHAR),1,7), ");
+                }
+                case "supplier" -> {
+                    dims.append("       v.supplier_code AS supplier_code,\n");
+                    dims.append("       MAX(v.supplier_name) AS supplier_name,\n");
+                    groupBy.append("v.supplier_code, ");
+                }
+                case "buyer" -> {
+                    dims.append("       v.buyer AS buyer,\n");
+                    groupBy.append("v.buyer, ");
+                }
+                case "warehouse" -> {
+                    dims.append("       v.warehouse AS warehouse,\n");
+                    groupBy.append("v.warehouse, ");
+                }
+                case "goods" -> {
+                    dims.append("       v.goods_code AS goods_code,\n");
+                    dims.append("       MAX(v.goods_name) AS goods_name,\n");
+                    dims.append("       MAX(g.brand_name) AS brand_name,\n");
+                    dims.append("       MAX(g.category_name) AS category_name,\n");
+                    dims.append("       MAX(g.storage_property) AS storage_property,\n");
+                    dims.append("       MAX(g.barcode) AS barcode,\n");
+                    dims.append("       MAX(g.base_unit) AS base_unit,\n");
+                    groupBy.append("v.goods_code, ");
+                }
+                case "category" -> {
+                    dims.append("       g.category_name AS category_name,\n");
+                    groupBy.append("g.category_name, ");
+                }
+                case "brand" -> {
+                    dims.append("       g.brand_name AS brand_name,\n");
+                    groupBy.append("g.brand_name, ");
+                }
+                case "storage" -> {
+                    dims.append("       g.storage_property AS storage_property,\n");
+                    groupBy.append("g.storage_property, ");
+                }
+                default -> { }
+            }
+        }
+        // 维度投影 + 度量聚合；列别名与明细视图一致，前端按分组动态列渲染
+        plan.detailSelect = "SELECT\n" + dims
+                + """
+                        COALESCE(SUM(v.base_qty),0) AS base_qty,
+                        COALESCE(SUM(v.package_qty),0) AS package_qty,
+                        COALESCE(SUM(v.amount),0) AS amount,
+                        COALESCE(SUM(CASE WHEN v.bill_type = '采购入库' THEN v.base_qty ELSE 0 END),0) AS inbound_qty_base,
+                        COALESCE(SUM(CASE WHEN v.bill_type = '采购退货' THEN v.base_qty ELSE 0 END),0) AS return_qty_base,
+                        COALESCE(SUM(CASE WHEN v.bill_type = '采购入库' THEN v.amount ELSE 0 END),0) AS inbound_amount,
+                        COALESCE(SUM(CASE WHEN v.bill_type = '采购退货' THEN v.amount ELSE 0 END),0) AS return_amount
+                  """;
+        plan.fromWhere.append("""
+                FROM v_rpt_purchase_detail v
+                LEFT JOIN rpt_dim_goods g ON g.goods_code = v.goods_code
+                WHERE 1=1
+                """);
+        appendWhere(req, plan, billType, viewScope);
+
+        // 合计必须在 GROUP BY 之外（明细查询），用 grandSql 单独走未分组 WHERE
+        plan.grandSql = """
+                SELECT COUNT(*) AS line_count,
+                       COALESCE(SUM(v.base_qty),0) AS base_qty,
+                       COALESCE(SUM(v.package_qty),0) AS package_qty,
+                       COALESCE(SUM(v.amount),0) AS amount
+                """ + " " + plan.fromWhere;
+        plan.grandArgs.addAll(plan.args);
+
+        if (groupBy.length() > 0) {
+            plan.fromWhere.append(" GROUP BY ").append(groupBy.substring(0, groupBy.length() - 2)).append(" ");
+        }
+        plan.defaultOrder = "ORDER BY "
+                + (groups.contains("date") ? "bill_date DESC, " : groups.contains("month") ? "bill_month DESC, " : "")
+                + "1 ASC";
+
+        plan.maskOverrides.putAll(Map.of(
+                "amount", "VIEW_PURCHASE_AMOUNT",
+                "inboundAmount", "VIEW_PURCHASE_AMOUNT",
+                "returnAmount", "VIEW_PURCHASE_AMOUNT"));
+        for (String k : List.of("billDate", "supplierName", "buyer", "warehouse",
+                "goodsCode", "baseQty", "amount", "inboundAmount", "returnAmount")) {
+            plan.sortWhitelist.put(k, switch (k) {
+                case "billDate" -> "bill_date";
+                case "supplierName" -> "supplier_name";
+                case "buyer" -> "buyer";
+                case "warehouse" -> "warehouse";
+                case "goodsCode" -> "goods_code";
+                case "baseQty" -> "base_qty";
+                case "amount" -> "amount";
+                case "inboundAmount" -> "inbound_amount";
+                case "returnAmount" -> "return_amount";
+                default -> k;
+            });
+        }
     }
 
     // ============================ DWD 视图路径（合计/非默认排序） ============================
@@ -129,35 +302,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
                 LEFT JOIN rpt_dim_goods g ON g.goods_code = v.goods_code
                 WHERE 1=1
                 """);
-        plan.args.add(req.range().startDate());
-        plan.args.add(req.range().endDate());
-        plan.fromWhere.append(" AND v.bill_date BETWEEN ? AND ? ");
-
-        if (billType != null) {
-            plan.fromWhere.append(" AND v.bill_type = ? ");
-            plan.args.add(billType);
-        }
-        appendLike(req, plan, "billNo", "v.bill_no");
-        appendLike(req, plan, "sourceBillNo", "v.source_bill_no");
-        String supplier = req.text("supplier");
-        if (supplier != null) {
-            plan.fromWhere.append(" AND (v.supplier_code LIKE ? OR v.supplier_name LIKE ?) ");
-            plan.args.add("%" + supplier + "%");
-            plan.args.add("%" + supplier + "%");
-        }
-        appendLike(req, plan, "buyer", "v.buyer");
-        appendEq(req, plan, "warehouse", "v.warehouse");
-        String goods = req.text("goods");
-        if (goods != null) {
-            plan.fromWhere.append(" AND (v.goods_code LIKE ? OR v.goods_name LIKE ? OR g.barcode LIKE ?) ");
-            plan.args.add("%" + goods + "%");
-            plan.args.add("%" + goods + "%");
-            plan.args.add("%" + goods + "%");
-        }
-        ReportFilters.inList(req, plan.fromWhere, plan.args, "categoryName", "g.category_name");
-        appendEq(req, plan, "brandName", "g.brand_name");
-        appendEq(req, plan, "storageProperty", "g.storage_property");
-        viewScope.appendTo(plan.fromWhere, plan.args);
+        appendWhere(req, plan, billType, viewScope);
 
         plan.sortWhitelist.putAll(Map.of(
                 "billDate", "bill_date", "billNo", "bill_no", "supplierName", "supplier_name",
