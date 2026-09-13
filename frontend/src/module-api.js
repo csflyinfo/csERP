@@ -293,7 +293,10 @@ const EXACT_TITLE_MAP = {
   '采购员': ['buyer'],
   '人员编码': ['employeeCode'],
   '人员姓名': ['employeeName'],
-  '姓名': ['employeeName', 'displayName'],
+  // 注意：EXACT_TITLE_MAP 是对象字面量，同名 key 后者覆盖前者。
+  // 「姓名」列被人员信息(employeeName)、系统用户(userName/大写 USERNAME)、登录日志(userName)共用，
+  // 候选字段必须合并在这一处，禁止在本对象其他位置再写一个 '姓名' 键。
+  '姓名': ['employeeName', 'userName', 'displayName', 'USERNAME', 'DISPLAYNAME'],
   '性别': ['gender'],
   '身份证号': ['idCard'],
   '学历': ['education'],
@@ -677,7 +680,7 @@ const EXACT_TITLE_MAP = {
   'IP': ['requestIp', 'ip'],
   '敏感': ['sensitive'],
   '账号': ['account'],
-  '姓名': ['userName'],
+  // 「姓名」映射已合并到人员信息段（employeeName/userName/displayName/大写键），此处不得重复定义
   '登录时间': ['loginAt'],
   '登出时间': ['logoutAt'],
   '失败原因': ['failReason'],
