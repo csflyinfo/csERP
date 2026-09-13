@@ -19,6 +19,13 @@ const routes = [
     meta: { title: '凭证打印' }
   },
   {
+    // 业务日结 RJ 单打印独立页（PRD-33，新窗口打开，无菜单框架）
+    path: '/finance/day-close-ticket',
+    name: 'DayCloseTicket',
+    component: () => import('@/views/finance/DayClosePrint.vue'),
+    meta: { title: '业务日结单打印' }
+  },
+  {
     path: '/',
     name: 'Layout',
     component: () => import('@/layout/AppShell.vue'),
@@ -120,6 +127,9 @@ const routes = [
       { path: 'gl-report', name: 'GlReport', component: () => import('@/views/gl/FinReport.vue'), meta: { title: '总账报表', module: 'glReport' } },
       { path: 'gl-reconcile', name: 'GlReconcile', component: () => import('@/views/gl/Reconcile.vue'), meta: { title: '业财对账', module: 'glReconcile' } },
 
+      // 业务日结（PRD-33，按日封单）
+      { path: 'finance/day-close', name: 'FinanceDayClose', component: () => import('@/views/finance/DayClose.vue'), meta: { title: '日结管理', module: 'finance.day_close' } },
+
       // 系统管理（PRD-28 RBAC：用户/角色/模块菜单管理）
       { path: 'user', name: 'User', component: () => import('@/views/system/UserManage.vue'), meta: { title: '用户管理', module: 'user' } },
       { path: 'role', name: 'Role', component: () => import('@/views/system/RoleManage.vue'), meta: { title: '角色管理', module: 'role' } },
@@ -136,6 +146,8 @@ const routes = [
       { path: 'print-template', name: 'PrintTemplate', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '打印模板设置', module: 'printTemplate' } },
       { path: 'import-list', name: 'ImportList', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '导入列表', module: 'importList' } },
       { path: 'export-center', name: 'ExportCenter', component: () => import('@/views/report/ExportCenter.vue'), meta: { title: '导出中心', module: 'exportCenter' } },
+      // 动态定时任务管理（PRD-33 §7.1）
+      { path: 'system/schedule-task', name: 'SystemScheduleTask', component: () => import('@/views/system/ScheduleTask.vue'), meta: { title: '定时任务', module: 'system.schedule_task' } },
 
       // 客户价格
       { path: 'customer-price', name: 'CustomerPrice', component: () => import('@/views/CustomerPriceAdjust.vue'), meta: { title: '客户价格调整' } },

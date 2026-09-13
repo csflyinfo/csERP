@@ -6,6 +6,7 @@ import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import com.erp.purchase.entity.PurchaseInbound;
 import com.erp.purchase.entity.PurchaseInboundDetail;
@@ -57,6 +58,7 @@ public class PurchaseController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public PurchaseController(JdbcTemplate jdbcTemplate,
                               PurchaseInboundService inboundService,
@@ -66,7 +68,8 @@ public class PurchaseController {
                               com.erp.common.util.BillNoGenerator billNoGen,
                               com.erp.system.OperationLogService opLog,
                               com.erp.common.security.datascope.DataScopeService dataScope,
-                              com.erp.common.security.FieldMasker fieldMasker) {
+                              com.erp.common.security.FieldMasker fieldMasker,
+                              BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inboundService = inboundService;
         this.inboundDetailService = inboundDetailService;
@@ -76,6 +79,7 @@ public class PurchaseController {
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 把 JdbcTemplate 风格的 {@code ?} 片段转成 MyBatis-QueryWrapper.apply 需要的 {0}{1} 占位。 */
@@ -442,6 +446,9 @@ public class PurchaseController {
         );
         if (inbound == null) throw new IllegalArgumentException("入库单不存在或已审核");
 
+        // 业务日结封单守卫：审核生效日恒为当天，当天已封则禁止审核（PRD-33）
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购入库单", inbound.getInboundNo());
+
         List<PurchaseInboundDetail> details = inboundDetailService.list(
                 new QueryWrapper<PurchaseInboundDetail>().eq("inbound_id", inbound.getInboundId())
         );
@@ -467,6 +474,8 @@ public class PurchaseController {
 
         inbound.setStatus("APPROVED");
         inbound.setStockUpdated(true);
+        // 通用封单规则：单据日期审核时回填为审核日（等价 UPDATE ... SET bill_date=CURRENT_DATE）
+        inbound.setBillDate(LocalDate.now());
         // 采购收货单审核时单独设置 receipt_generated
         inboundService.updateById(inbound);
 
@@ -635,6 +644,9 @@ public class PurchaseController {
                     wmsTaskId, inboundId);
         } catch (Exception ignore) { /* 列缺失时不阻塞，迁移未跑则退化为非幂等 */ }
 
+        // 业务日结封单守卫：WMS 上架自动审核，生效日恒为当天，当天已封则禁止过账（PRD-33）
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购入库单(WMS)", inboundNo);
+
         // 立即审核：写库存/成本 + 生成采购收货单
         for (PurchaseInboundDetail d : detailEntities) {
             inventoryCostService.purchaseInbound(
@@ -648,6 +660,9 @@ public class PurchaseController {
         }
         inbound.setStatus("APPROVED");
         inbound.setStockUpdated(true);
+        // 通用封单规则：单据日期审核时回填为审核日（与人工审核一致，等价 SET bill_date=CURRENT_DATE）；
+        // 库存流水若按 bill_date 取发生日，回填后仍为当天
+        inbound.setBillDate(LocalDate.now());
         inboundService.updateById(inbound);
 
         // 回写采购订单累计入库

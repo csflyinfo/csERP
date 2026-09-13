@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -57,19 +58,23 @@ public class RejectInboundController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    /** 业务日结封单守卫（PRD-33）：审核/反审核落库前显式判封单。 */
+    private final BizDayCloseGuard dayCloseGuard;
 
     public RejectInboundController(JdbcTemplate jdbcTemplate,
                                    InventoryCostService inventoryCostService,
                                    com.erp.common.util.BillNoGenerator billNoGen,
                                    com.erp.system.OperationLogService opLog,
                                    com.erp.common.security.datascope.DataScopeService dataScope,
-                                   com.erp.common.security.FieldMasker fieldMasker) {
+                                   com.erp.common.security.FieldMasker fieldMasker,
+                                   BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 拒收入库单列表/详情共用数据范围目标：仓库/客户/业务员/建档人 + 商品分类/品牌按明细行。 */
@@ -326,6 +331,9 @@ public class RejectInboundController {
         String inboundNo = str(pick(head, "inbound_no"));
         String headWarehouse = str(pick(head, "warehouse"));
 
+        // 业务日结守卫（PRD-33）：审核生效日为当天，当天已封单则拦截（回填 bill_date 见下方状态 UPDATE）
+        dayCloseGuard.assertWritable(LocalDate.now(), "拒收入库单", inboundNo);
+
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_reject_inbound_detail WHERE reject_inbound_id = ?", headId);
         if (details.isEmpty()) throw new IllegalArgumentException("入库明细为空，无法审核");
@@ -370,7 +378,8 @@ public class RejectInboundController {
 
         jdbcTemplate.update("""
                 UPDATE inv_reject_inbound
-                SET status = 'APPROVED', stock_updated = TRUE, qty = ?, cost_amount = ?,
+                SET status = 'APPROVED', stock_updated = TRUE, bill_date = CURRENT_DATE,
+                    qty = ?, cost_amount = ?,
                     audit_user = '系统管理员', audit_time = CURRENT_TIMESTAMP
                 WHERE reject_inbound_id = ?
                 """, totalQty, totalCostAmount, headId);
@@ -406,6 +415,9 @@ public class RejectInboundController {
         String headId = str(pick(head, "reject_inbound_id"));
         String inboundNo = str(pick(head, "inbound_no"));
         String headWarehouse = str(pick(head, "warehouse"));
+
+        // 业务日结守卫（PRD-33）：按拒收入库单日期判封单，已封单不允许反审核扣回库存
+        dayCloseGuard.assertBillWritable("inv_reject_inbound", "bill_date", "reject_inbound_id", headId, "拒收入库单");
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_reject_inbound_detail WHERE reject_inbound_id = ?", headId);

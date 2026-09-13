@@ -1,5 +1,6 @@
 package com.erp.report;
 
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.report.common.ReportGuard;
 import com.erp.report.dws.PurchaseDwsService;
 import com.erp.report.dws.ReportDimGoodsService;
@@ -40,11 +41,13 @@ public class ReportDwsSnapshotTask {
     private final StockSnapshotService stockSnapshot;
     private final ReportGuard guard;
     private final ReportExportService exportService;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public ReportDwsSnapshotTask(ReportDimGoodsService dimGoods, ReportDimPartnerService dimPartner,
                                  PurchaseDwsService purchaseDws, SalesDwsService salesDws,
                                  StockMoveDwsService stockMoveDws, StockSnapshotService stockSnapshot,
-                                 ReportGuard guard, ReportExportService exportService) {
+                                 ReportGuard guard, ReportExportService exportService,
+                                 BizDayCloseGuard dayCloseGuard) {
         this.dimGoods = dimGoods;
         this.dimPartner = dimPartner;
         this.purchaseDws = purchaseDws;
@@ -53,15 +56,19 @@ public class ReportDwsSnapshotTask {
         this.stockSnapshot = stockSnapshot;
         this.guard = guard;
         this.exportService = exportService;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
-    /** 维度 + 当天增量：每小时 10 分、40 分。 */
+    /** 维度 + 当天增量：每小时 10 分、40 分；当天已封单（手工当日日结）则跳过 DWS 覆盖。 */
     @Scheduled(cron = "0 10,40 * * * ?")
     public void intradayRefresh() {
         try {
             dimGoods.refreshAll();
             dimPartner.refreshAll();
             LocalDate today = LocalDate.now();
+            if (dayCloseGuard.isClosed(today)) {
+                return;
+            }
             purchaseDws.refreshRange(today, today);
             salesDws.refreshRange(today, today);
             stockMoveDws.refreshRange(today, today);
@@ -77,24 +84,34 @@ public class ReportDwsSnapshotTask {
             dimGoods.refreshAll();
             dimPartner.refreshAll();
             LocalDate today = LocalDate.now();
+            // 已日结分区定版：滚动重算只允许覆盖封单日之后（PRD-33 §5.4）
             LocalDate from = today.minusDays(2);
-            purchaseDws.refreshRange(from, today);
-            Map<String, Object> recon = purchaseDws.reconcile(from, today);
-            if (Boolean.FALSE.equals(recon.get("balanced"))) {
-                log.warn("采购 DWS 夜间对账不平：{}", recon);
+            LocalDate lastClosed = dayCloseGuard.lastClosedDate();
+            if (lastClosed != null && !from.isAfter(lastClosed)) {
+                from = lastClosed.plusDays(1);
             }
-            salesDws.refreshRange(from, today);
-            Map<String, Object> salesRecon = salesDws.reconcile(from, today);
-            if (Boolean.FALSE.equals(salesRecon.get("balanced"))) {
-                log.warn("销售 DWS 夜间对账不平：{}", salesRecon);
+            if (!from.isAfter(today)) {
+                purchaseDws.refreshRange(from, today);
+                Map<String, Object> recon = purchaseDws.reconcile(from, today);
+                if (Boolean.FALSE.equals(recon.get("balanced"))) {
+                    log.warn("采购 DWS 夜间对账不平：{}", recon);
+                }
+                salesDws.refreshRange(from, today);
+                Map<String, Object> salesRecon = salesDws.reconcile(from, today);
+                if (Boolean.FALSE.equals(salesRecon.get("balanced"))) {
+                    log.warn("销售 DWS 夜间对账不平：{}", salesRecon);
+                }
+                stockMoveDws.refreshRange(from, today);
+                Map<String, Object> moveRecon = stockMoveDws.reconcile(from, today);
+                if (Boolean.FALSE.equals(moveRecon.get("balanced"))) {
+                    log.warn("库存流水 DWS 夜间对账不平：{}", moveRecon);
+                }
             }
-            stockMoveDws.refreshRange(from, today);
-            Map<String, Object> moveRecon = stockMoveDws.reconcile(from, today);
-            if (Boolean.FALSE.equals(moveRecon.get("balanced"))) {
-                log.warn("库存流水 DWS 夜间对账不平：{}", moveRecon);
+            // 前一日库存快照（凌晨执行时余额即前一日日结余额）；已被日结定版则不覆盖
+            LocalDate yesterday = today.minusDays(1);
+            if (!dayCloseGuard.isClosed(yesterday)) {
+                stockSnapshot.rebuild(yesterday);
             }
-            // 前一日库存快照（凌晨执行时余额即前一日日结余额）
-            stockSnapshot.rebuild(today.minusDays(1));
         } catch (Exception e) {
             log.warn("报表夜间预聚合失败：{}", e.getMessage());
         }
@@ -114,8 +131,9 @@ public class ReportDwsSnapshotTask {
         }
     }
 
-    /** 管理接口手工触发（重算闭区间 + 对账），结果原样返回。 */
+    /** 管理接口手工触发（重算闭区间 + 对账），结果原样返回。含已封单日期时硬拒（PRD-33 §5.4）。 */
     public Map<String, Object> recomputePurchase(LocalDate start, LocalDate end) {
+        dayCloseGuard.assertRangeOpen(start, end, "采购 DWS 重算");
         dimGoods.refreshAll();
         dimPartner.refreshAll();
         int rows = purchaseDws.refreshRange(start, end);
@@ -126,11 +144,13 @@ public class ReportDwsSnapshotTask {
     }
 
     public int rebuildStockSnapshot(LocalDate date) {
+        dayCloseGuard.assertRangeOpen(date, date, "库存快照重建");
         return stockSnapshot.rebuild(date);
     }
 
     /** 管理接口手工触发销售 DWS 重算闭区间 + 对账，结果原样返回。 */
     public Map<String, Object> recomputeSales(LocalDate start, LocalDate end) {
+        dayCloseGuard.assertRangeOpen(start, end, "销售 DWS 重算");
         dimGoods.refreshAll();
         dimPartner.refreshAll();
         int rows = salesDws.refreshRange(start, end);
@@ -140,8 +160,13 @@ public class ReportDwsSnapshotTask {
         return r;
     }
 
-    /** 管理接口手工触发库存流水 DWS 全量重建。 */
+    /** 管理接口手工触发库存流水 DWS 全量重建；库中存在任意封单日即禁止（会覆盖定版分区）。 */
     public int rebuildStockMoveAll() {
+        LocalDate lastClosed = dayCloseGuard.enabled() ? dayCloseGuard.lastClosedDate() : null;
+        if (lastClosed != null) {
+            throw new IllegalArgumentException("已存在日结封单（封单日 " + lastClosed
+                    + "），禁止全量重建库存流水 DWS，请改用区间重算且区间需晚于封单日");
+        }
         return stockMoveDws.rebuildAll();
     }
 }

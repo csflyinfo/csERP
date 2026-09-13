@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -28,6 +29,7 @@ public class OrderController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.approval.ApprovalService approvalService;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
@@ -36,7 +38,8 @@ public class OrderController {
                            com.erp.system.OperationLogService opLog,
                            com.erp.common.security.datascope.DataScopeService dataScope,
                            com.erp.common.security.FieldMasker fieldMasker,
-                           com.erp.common.security.approval.ApprovalService approvalService) {
+                           com.erp.common.security.approval.ApprovalService approvalService,
+                           BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
@@ -45,6 +48,7 @@ public class OrderController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.approvalService = approvalService;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 建档人：当前登录用户姓名（数据范围 OWNER/DEFAULT DENY 依赖），无登录上下文回落系统管理员。 */
@@ -366,10 +370,12 @@ public class OrderController {
         // 超信用红线：本单审核后客户应收未收将超过信用额度时，需「超信用授权」（PRD-28 卡片6）
         requireOverCreditApproval(realOrderId, orderNo, req);
 
+        // 业务日结（PRD-33）：审核即生效，生效日为当天，落库前先过封单守卫
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售订单", orderNo);
         jdbcTemplate.update("""
                 UPDATE sales_order
                 SET status = 'APPROVED', audit_time = CURRENT_TIMESTAMP, audit_user = ?,
-                    outbound_status = '待出库', stock_check = '通过'
+                    outbound_status = '待出库', stock_check = '通过', bill_date = CURRENT_DATE
                 WHERE order_id = ?
                 """, "系统管理员", realOrderId);
         opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.AUDIT,
@@ -411,6 +417,8 @@ public class OrderController {
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
         String orderNo = str(pickCS(rows.get(0), "order_no"));
 
+        // 业务日结（PRD-33）：反审核使已生效单据失效，按单据日期判封单；本方法仅对已审核单放行，无需再判状态
+        dayCloseGuard.assertBillWritable("sales_order", "bill_date", "order_id", realOrderId, "销售订单");
         // ① 已审核的出库单一律拦截：实物库存已扣减、发货单已生成，不能靠删单回退
         List<Map<String, Object>> outbounds = jdbcTemplate.queryForList(
                 "SELECT outbound_id, outbound_no, status FROM sales_outbound WHERE source_order = ?", orderNo);
@@ -495,6 +503,10 @@ public class OrderController {
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
         String orderNo = str(pickCS(rows.get(0), "order_no"));
         String warehouse = str(pickCS(rows.get(0), "warehouse"));
+        // 业务日结（PRD-33）：仅终止已生效（已审核）订单时按单据日期判封单；待审核订单终止不拦截
+        if ("APPROVED".equals(status)) {
+            dayCloseGuard.assertBillWritable("sales_order", "bill_date", "order_id", realOrderId, "销售订单");
+        }
         // PENDING 与 APPROVED 都占着库存（创建即占用），关闭时释放尚未出库的部分
         releaseLocks(warehouse, remainingLockOf(realOrderId, orderNo));
         jdbcTemplate.update(
@@ -547,11 +559,13 @@ public class OrderController {
         String warehouse = str(req.get("warehouseId"));
         // 快速开单同样受超信用红线约束（低价红线已在 createSales 内校验，授权字段随 req 透传）
         requireOverCreditApproval(orderId, String.valueOf(data.get("orderNo")), req);
-        // 内联审核，避免 Spring 代理自调用绕过事务
+        // 业务日结（PRD-33）：创建即审核，审核生效日为当天，落库前过封单守卫
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售订单", String.valueOf(data.get("orderNo")));
+        // 内联审核，避免 Spring 代理自调用绕过事务；审核日覆盖单据日期
         jdbcTemplate.update("""
                 UPDATE sales_order
                 SET status = 'APPROVED', audit_time = CURRENT_TIMESTAMP, audit_user = ?,
-                    outbound_status = '待出库', stock_check = '通过'
+                    outbound_status = '待出库', stock_check = '通过', bill_date = CURRENT_DATE
                 WHERE order_id = ?
                 """, "系统管理员（快速开单）", orderId);
         opLog.logUpdate(com.erp.system.OperationModule.SALES_ORDER, com.erp.system.OperationAction.AUDIT,
@@ -1052,13 +1066,15 @@ public class OrderController {
         String status = str(pickCS(rows.get(0), "status"));
         if (!"PENDING".equals(status)) return ApiResponse.fail("400", "只有待审核订单可审核，当前状态：" + status);
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
+        String orderNo = str(pickCS(rows.get(0), "order_no"));
+        // 业务日结（PRD-33）：审核即生效，生效日为当天，落库前先过封单守卫
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购订单", orderNo);
         jdbcTemplate.update("""
                 UPDATE purchase_order
                 SET status = 'APPROVED', audit_time = CURRENT_TIMESTAMP, audit_user = ?,
-                    inbound_status = '待入库'
+                    inbound_status = '待入库', bill_date = CURRENT_DATE
                 WHERE order_id = ?
                 """, "系统管理员", realOrderId);
-        String orderNo = str(pickCS(rows.get(0), "order_no"));
         // 审核通过后自动在 WMS 侧建收货任务，PDA 端"收货作业"才看得到。
         // 幂等：重复审核 / 已有进行中任务会抛 IllegalStateException，吞掉不影响审核结果。
         String wmsWarning = null;
@@ -1108,6 +1124,8 @@ public class OrderController {
         if (!"APPROVED".equals(status)) return ApiResponse.fail("400", "只有已审核订单可反审核");
         String orderNo = str(pickCS(rows.get(0), "order_no"));
         String realOrderId = str(pickCS(rows.get(0), "order_id"));
+        // 业务日结（PRD-33）：反审核使已生效单据失效，按单据日期判封单；本方法仅对已审核单放行，无需再判状态
+        dayCloseGuard.assertBillWritable("purchase_order", "bill_date", "order_id", realOrderId, "采购订单");
         // 检查是否已生成入库单
         Integer inboundCnt = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM pur_inbound WHERE source_order = ?", Integer.class, orderNo);
@@ -1138,6 +1156,15 @@ public class OrderController {
         String key = str(req.get("orderId"));
         if (key.isBlank()) key = str(req.get("bizId"));
         if (key.isBlank()) return ApiResponse.fail("400", "缺少 orderId");
+        // 先查状态：仅终止已生效（已审核）订单时按单据日期做日结封单校验；待审核订单终止不拦截
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT order_id, status FROM purchase_order WHERE order_id = ? OR order_no = ?", key, key);
+        if (rows.isEmpty()) return ApiResponse.fail("404", "订单不存在");
+        String status = str(pickCS(rows.get(0), "status"));
+        if ("APPROVED".equals(status)) {
+            dayCloseGuard.assertBillWritable("purchase_order", "bill_date", "order_id",
+                    str(pickCS(rows.get(0), "order_id")), "采购订单");
+        }
         int updated = jdbcTemplate.update("""
                 UPDATE purchase_order
                 SET status = 'CLOSED', inbound_status = '已终止'

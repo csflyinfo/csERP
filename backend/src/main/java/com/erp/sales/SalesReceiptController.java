@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -71,6 +72,7 @@ public class SalesReceiptController {
     private final com.erp.finance.gl.GlHookService glHooks;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public SalesReceiptController(JdbcTemplate jdbcTemplate,
                                   com.erp.common.util.BillNoGenerator billNoGen,
@@ -78,7 +80,8 @@ public class SalesReceiptController {
                                   com.erp.system.OperationLogService opLog,
                                   com.erp.finance.gl.GlHookService glHooks,
                                   com.erp.common.security.datascope.DataScopeService dataScope,
-                                  com.erp.common.security.FieldMasker fieldMasker) {
+                                  com.erp.common.security.FieldMasker fieldMasker,
+                                  BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.rejectInboundController = rejectInboundController;
@@ -86,6 +89,7 @@ public class SalesReceiptController {
         this.glHooks = glHooks;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 销售发货单列表/详情共用数据范围目标：仓库/客户/建档人 + 商品分类/品牌按明细行（无业务员维度）。 */
@@ -239,6 +243,9 @@ public class SalesReceiptController {
             throw new IllegalArgumentException("该发货单签收金额为 0，无应收可生成");
         }
 
+        // 业务日结守卫（PRD-33 §5.3）：审核生效日=当天，仅当今天已封单时拦截
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售发货单", receiptNo);
+
         String arNo = approveAndGenerateAr(receiptId, receiptNo, customer, signAmount);
 
         log("sales.receipt", "AUDIT", receiptNo, "销售发货单审核 → 生成应收 " + arNo);
@@ -269,6 +276,7 @@ public class SalesReceiptController {
         jdbcTemplate.update("""
                 UPDATE sales_receipt
                 SET status = 'APPROVED', ar_status = '已生成',
+                    receipt_date = CURRENT_DATE,
                     audit_user = ?, audit_time = CURRENT_TIMESTAMP
                 WHERE receipt_id = ?
                 """, "系统管理员", receiptId);
@@ -282,7 +290,7 @@ public class SalesReceiptController {
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT receipt_id, receipt_no, status FROM sales_receipt WHERE receipt_id = ? OR receipt_no = ?",
+                "SELECT receipt_id, receipt_no, status, receipt_date FROM sales_receipt WHERE receipt_id = ? OR receipt_no = ?",
                 request.bizId(), request.bizId());
         if (rows.isEmpty()) throw new IllegalArgumentException("发货单不存在");
         String status = str(pick(rows.get(0), "status"));
@@ -290,6 +298,14 @@ public class SalesReceiptController {
 
         String receiptId = str(pick(rows.get(0), "receipt_id"));
         String receiptNo = str(pick(rows.get(0), "receipt_no"));
+
+        // 业务日结守卫（PRD-33 §5.3）：反审核按单上已落库的 receipt_date 判封单，先于任何冲销写库
+        LocalDate storedReceiptDate = BizDayCloseGuard.toLocalDate(pick(rows.get(0), "receipt_date"));
+        if (storedReceiptDate != null) {
+            dayCloseGuard.assertWritable(storedReceiptDate, "销售发货单", receiptNo);
+        } else {
+            dayCloseGuard.assertBillWritable("sales_receipt", "receipt_date", "receipt_id", receiptId, "销售发货单");
+        }
 
         // 检查关联 fin_ar 是否已收款
         List<Map<String, Object>> arRows = jdbcTemplate.queryForList(
@@ -371,6 +387,9 @@ public class SalesReceiptController {
         if (!signStatus.isBlank() && !"待签收".equals(signStatus)) {
             throw new IllegalArgumentException("该发货单已签收（" + signStatus + "），如需重新登记请先撤销签收");
         }
+
+        // 业务日结守卫（PRD-33 §5.3）：签收日=当天，仅当今天已封单时拦截，先于任何签收写库
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售发货签收", receiptNo);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT detail_id, goods_name, qty, price, tax_rate FROM sales_receipt_detail WHERE receipt_id = ?",
@@ -523,7 +542,7 @@ public class SalesReceiptController {
     @Transactional
     public ApiResponse<Map<String, Object>> unsign(@Valid @RequestBody AuditRequest request) {
         List<Map<String, Object>> heads = jdbcTemplate.queryForList(
-                "SELECT receipt_id, receipt_no, sign_status, deliver_amount " +
+                "SELECT receipt_id, receipt_no, sign_status, sign_time, deliver_amount " +
                         "FROM sales_receipt WHERE receipt_id = ? OR receipt_no = ?",
                 request.bizId(), request.bizId());
         if (heads.isEmpty()) throw new IllegalArgumentException("销售发货单不存在：" + request.bizId());
@@ -532,6 +551,13 @@ public class SalesReceiptController {
         String signStatus = str(pick(heads.get(0), "sign_status"));
         if (signStatus.isBlank() || "待签收".equals(signStatus)) {
             throw new IllegalArgumentException("该发货单尚未签收，无需撤销");
+        }
+
+        // 业务日结守卫（PRD-33 §5.3）：撤签按原签收日（sign_time 日期）判封单，先于任何冲销写库；
+        // sign_time 为空表示从未签收，直接放行（上面的状态校验已兜底）
+        Object signTime = pick(heads.get(0), "sign_time");
+        if (signTime != null) {
+            dayCloseGuard.assertWritable(BizDayCloseGuard.toLocalDate(signTime), "销售发货签收", receiptNo);
         }
 
         // 1) 已收款不能撤 —— 钱已经进来了，撤签收会让应收凭空消失

@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import com.erp.wms.WmsInboundService;
 import jakarta.validation.Valid;
@@ -78,6 +79,8 @@ public class SalesReturnController {
     private final com.erp.finance.gl.GlHookService glHooks;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    /** 业务日结封单守卫（PRD-33）：已生效单据的审核/反审核落库前显式判封单。 */
+    private final BizDayCloseGuard dayCloseGuard;
 
     public SalesReturnController(JdbcTemplate jdbcTemplate,
                                  InventoryCostService inventoryCostService,
@@ -86,7 +89,8 @@ public class SalesReturnController {
                                  com.erp.system.OperationLogService opLog,
                                  com.erp.finance.gl.GlHookService glHooks,
                                  com.erp.common.security.datascope.DataScopeService dataScope,
-                                 com.erp.common.security.FieldMasker fieldMasker) {
+                                 com.erp.common.security.FieldMasker fieldMasker,
+                                 BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
@@ -95,6 +99,7 @@ public class SalesReturnController {
         this.glHooks = glHooks;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 销售退货单列表/详情共用数据范围目标：仓库/客户/建档人 + 商品分类/品牌按明细行（无业务员维度）。 */
@@ -770,6 +775,9 @@ public class SalesReturnController {
         // 按退货方式 + 入账时点参数校验是否到了可入账的节点
         assertAuditable(order);
 
+        // 业务日结守卫（PRD-33）：审核生效日为当天，当天已封单则拦截（回填 bill_date 在 writeReturnAr 的审核 UPDATE 中）
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售退货申请", applyNo);
+
         String effect = writeReturnAr(applyId, applyNo, "系统管理员");
         log("sales.return.order", "AUDIT", applyNo, "销售退货单审核 → " + effect);
         return ApiResponse.ok(Map.of("applyId", applyId, "applyNo", applyNo, "status", "APPROVED",
@@ -856,7 +864,8 @@ public class SalesReturnController {
         }
 
         jdbcTemplate.update("""
-                UPDATE sales_return_apply SET status='APPROVED', audit_user=?, audit_time=CURRENT_TIMESTAMP
+                UPDATE sales_return_apply SET status='APPROVED', bill_date=CURRENT_DATE,
+                    audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE apply_id=?
                 """, auditUser, applyId);
 
@@ -896,6 +905,9 @@ public class SalesReturnController {
                         + " 已审核（货已回库），无法反审核退货单");
             }
         }
+
+        // 业务日结守卫（PRD-33）：按退货申请单日期判封单，已封单不允许反审核
+        dayCloseGuard.assertBillWritable("sales_return_apply", "bill_date", "apply_id", applyId, "销售退货申请");
 
         // 删除负向应收
         List<Map<String, Object>> arRows = jdbcTemplate.queryForList(
@@ -1230,6 +1242,9 @@ public class SalesReturnController {
         String applyNo = str(pick(ib, "source_apply_no"));
         String headWarehouse = str(pick(ib, "warehouse"));
 
+        // 业务日结守卫（PRD-33）：退货入库审核生效日为当天，已封单则拦截（PC 审核与 WMS 回调共用本方法）
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售退货入库", inboundNo);
+
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM sales_return_inbound_detail WHERE inbound_id = ?", inboundId);
 
@@ -1315,7 +1330,7 @@ public class SalesReturnController {
         String op = strOrDefault(operator, "系统管理员");
         jdbcTemplate.update("""
                 UPDATE sales_return_inbound SET status='APPROVED', stock_updated=TRUE,
-                    cost_amount=?, audit_user=?, audit_time=CURRENT_TIMESTAMP
+                    bill_date=CURRENT_DATE, cost_amount=?, audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE inbound_id=?
                 """, totalCostAmount, op, inboundId);
 

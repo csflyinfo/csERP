@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -47,6 +48,8 @@ public class TransferController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
+    /** PRD-33 业务日结封单守卫：三个审核回填生效日，三个反审核按单据生效日判封单。 */
+    private final BizDayCloseGuard dayCloseGuard;
 
     public TransferController(JdbcTemplate jdbcTemplate,
                               BillNoGenerator billNoGen,
@@ -54,7 +57,8 @@ public class TransferController {
                               com.erp.system.OperationLogService opLog,
                               com.erp.common.security.datascope.DataScopeService dataScope,
                               com.erp.common.security.FieldMasker fieldMasker,
-                              com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
+                              com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard,
+                              BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
@@ -62,6 +66,7 @@ public class TransferController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.warehouseGuard = warehouseGuard;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ============================================================
@@ -223,8 +228,11 @@ public class TransferController {
         if (toBd(h.get("qty")).signum() <= 0) return ApiResponse.fail("400", "申请数量为 0，无法审核");
         String applyId = str(h.get("applyId"));
         String applyNo = str(h.get("applyNo"));
+        // 业务日结守卫【回填】：申请审核以当天为生效日（申请日期回填为审核日），封单日后禁止审核
+        dayCloseGuard.assertWritable(LocalDate.now(), "库存调拨申请", applyNo);
         jdbcTemplate.update("""
-                UPDATE transfer_apply SET status = 'APPROVED', auditor_name = ?, audit_time = ?
+                UPDATE transfer_apply SET status = 'APPROVED', auditor_name = ?, audit_time = ?,
+                    apply_date = CURRENT_DATE
                 WHERE apply_id = ?
                 """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), applyId);
 
@@ -325,6 +333,8 @@ public class TransferController {
                 "SELECT outbound_no FROM transfer_outbound WHERE source_apply_no = ? AND status = 'APPROVED'",
                 applyNo);
         if (!approvedOb.isEmpty()) return ApiResponse.fail("400", "已有已审核的调拨出库单，无法反审核");
+        // 业务日结守卫【守卫】：反审核冲销已生效申请单，按审核时回填的申请日期判封单
+        dayCloseGuard.assertBillWritable("transfer_apply", "apply_date", "apply_id", h.get("applyId"), "库存调拨申请");
         // 删除未审核的自动生成出库单（含明细），然后取消审核
         jdbcTemplate.update("DELETE FROM transfer_outbound_detail WHERE outbound_id IN (SELECT outbound_id FROM transfer_outbound WHERE source_apply_no = ? AND status = 'PENDING')", applyNo);
         jdbcTemplate.update("DELETE FROM transfer_outbound WHERE source_apply_no = ? AND status = 'PENDING'", applyNo);
@@ -510,6 +520,8 @@ public class TransferController {
         String outboundId = str(h.get("outboundId"));
         String outboundNo = str(h.get("outboundNo"));
         String sourceWh = str(h.get("sourceWarehouse"));
+        // 业务日结守卫【回填】：出库审核即扣减转出仓库存，以当天为生效日，封单日后禁止审核
+        dayCloseGuard.assertWritable(LocalDate.now(), "调拨出库", outboundNo);
 
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM transfer_outbound_detail WHERE outbound_id = ? ORDER BY sort_order", outboundId);
@@ -558,10 +570,10 @@ public class TransferController {
             d.put("costAmount", costAmount);
         }
 
-        // 更新出库单
+        // 更新出库单（回填业务日期为审核当天，作为日结生效日）
         jdbcTemplate.update("""
                 UPDATE transfer_outbound SET status = 'APPROVED', stock_updated = TRUE,
-                    cost_amount = ?, auditor_name = ?, audit_time = ?
+                    cost_amount = ?, auditor_name = ?, audit_time = ?, bill_date = CURRENT_DATE
                 WHERE outbound_id = ?
                 """, totalCost, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), outboundId);
 
@@ -602,6 +614,8 @@ public class TransferController {
                 return ApiResponse.fail("400", "关联调拨入库单 " + str(in.get("inboundNo")) + " 已审核，无法反审核");
             }
         }
+        // 业务日结守卫【守卫】：反审核回补库存并删除入库单，按出库单回填的业务日期判封单
+        dayCloseGuard.assertBillWritable("transfer_outbound", "bill_date", "outbound_id", h.get("outboundId"), "调拨出库");
         // 删除未审核的关联入库单（含明细）
         jdbcTemplate.update("DELETE FROM transfer_inbound_detail WHERE inbound_id IN (SELECT inbound_id FROM transfer_inbound WHERE source_outbound_no = ?)", str(h.get("outboundNo")));
         jdbcTemplate.update("DELETE FROM transfer_inbound WHERE source_outbound_no = ?", str(h.get("outboundNo")));
@@ -764,6 +778,8 @@ public class TransferController {
         String inboundNo = str(h.get("inboundNo"));
         String inboundType = str(h.get("inboundType"));
         String targetWh = str(h.get("targetWarehouse"));
+        // 业务日结守卫【回填】：入库审核即增加转入仓库存，以当天为生效日，封单日后禁止审核
+        dayCloseGuard.assertWritable(LocalDate.now(), "调拨入库", inboundNo);
 
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM transfer_inbound_detail WHERE inbound_id = ? ORDER BY sort_order", inboundId);
@@ -807,7 +823,7 @@ public class TransferController {
 
         jdbcTemplate.update("""
                 UPDATE transfer_inbound SET status = 'APPROVED', stock_updated = TRUE,
-                    cost_amount = ?, auditor_name = ?, audit_time = ?
+                    cost_amount = ?, auditor_name = ?, audit_time = ?, bill_date = CURRENT_DATE
                 WHERE inbound_id = ?
                 """, totalCost, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), inboundId);
 
@@ -846,6 +862,8 @@ public class TransferController {
 
         String inboundNo = str(h.get("inboundNo"));
         String targetWh = str(h.get("targetWarehouse"));
+        // 业务日结守卫【守卫】：反审核扣回转入仓库存（正常单与差异退回单同入口），按入库单回填的业务日期判封单
+        dayCloseGuard.assertBillWritable("transfer_inbound", "bill_date", "inbound_id", h.get("inboundId"), "调拨入库");
 
         // 正常单：若其差异退回单已审核则不允许反审核（先反审核差异退回单）
         if (!TYPE_DIFF_RETURN.equals(str(h.get("inboundType")))) {

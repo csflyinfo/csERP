@@ -3,6 +3,7 @@ package com.erp.wms;
 import com.erp.common.security.PermissionService;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.common.util.BillNoGenerator.BillType;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import com.erp.system.SysParamService;
 import com.erp.tms.TmsUtil;
@@ -41,17 +42,21 @@ public class WmsInternalService {
     private final InventoryCostService inventoryCost;
     private final WmsWarehouseResolver warehouseResolver;
     private final PermissionService permissionService;
+    /** PRD-33 业务日结封单守卫：盘盈审批桥接写入 ERP 库存前按当天判封单。 */
+    private final BizDayCloseGuard dayCloseGuard;
 
     public WmsInternalService(JdbcTemplate jdbc, BillNoGenerator billNo, SysParamService params,
                               InventoryCostService inventoryCost,
                               WmsWarehouseResolver warehouseResolver,
-                              PermissionService permissionService) {
+                              PermissionService permissionService,
+                              BizDayCloseGuard dayCloseGuard) {
         this.jdbc = jdbc;
         this.billNo = billNo;
         this.params = params;
         this.inventoryCost = inventoryCost;
         this.warehouseResolver = warehouseResolver;
         this.permissionService = permissionService;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ==================== 补货 ====================
@@ -363,6 +368,9 @@ public class WmsInternalService {
         String warehouse = TmsUtil.str(a.get("warehouse"));
         String batchNo = TmsUtil.str(a.get("batchNo"));
         if (diff.signum() > 0) {
+            // 业务日结守卫：盘盈经 inboundAtCurrentCost 桥接写入 ERP 批次/汇总库存（生效日=当天），
+            // 封单日后禁止；盘亏分支只改 wms_bin_stock 实物、不产生 ERP 账面单据，不守卫
+            dayCloseGuard.assertWritable(LocalDate.now(), "WMS盘盈桥接", TmsUtil.str(a.get("adjustNo")));
             inventoryCost.inboundAtCurrentCost(goodsCode, goodsName, warehouse, batchNo, diff,
                     BigDecimal.ZERO, "WMS_ADJUST_GAIN:" + a.get("adjustNo"), null);
             addBinStock(goodsCode, goodsName, warehouse, batchNo, TmsUtil.str(a.get("binCode")), diff);

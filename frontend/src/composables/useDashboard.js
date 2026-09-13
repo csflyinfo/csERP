@@ -7,6 +7,7 @@ export function useDashboard(toast) {
   const dashboardLoading = ref(false)
   const dashboardError = ref('')
   const recentLogs = ref([])
+  const dayCloseReminder = ref(null)
 
   const dashboardCards = computed(() => {
     const summary = dashboardSummary.value || {}
@@ -47,6 +48,18 @@ export function useDashboard(toast) {
     }
   }
 
+  /**
+   * 业务日结红色提醒（PRD-33）：过 P0188 时刻昨日未结 / 最近自动日结失败。
+   * 无 finance.day_close.view 权限（403）或接口异常时静默不显示，不影响工作台。
+   */
+  async function loadDayCloseReminder() {
+    try {
+      dayCloseReminder.value = await post('/finance/day-close/reminder', {})
+    } catch (error) {
+      dayCloseReminder.value = null
+    }
+  }
+
   async function runCoreFlow() {
     try {
       flowResult.value = await post('/flow/v1-core/self-test', {})
@@ -56,7 +69,7 @@ export function useDashboard(toast) {
     }
   }
 
-  return { flowResult, dashboardSummary, dashboardLoading, dashboardError, recentLogs, dashboardCards, loadRecentLogs, loadDashboardSummary, runCoreFlow }
+  return { flowResult, dashboardSummary, dashboardLoading, dashboardError, recentLogs, dayCloseReminder, dashboardCards, loadRecentLogs, loadDashboardSummary, loadDayCloseReminder, runCoreFlow }
 }
 
 function money(value) {

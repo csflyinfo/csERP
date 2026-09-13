@@ -3,11 +3,13 @@ package com.erp.tms;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.*;
 
 /**
@@ -27,9 +29,11 @@ import java.util.*;
 public class TmsDeliveryController {
 
     private final JdbcTemplate jdbcTemplate;
+    private final BizDayCloseGuard dayCloseGuard;
 
-    public TmsDeliveryController(JdbcTemplate jdbcTemplate) {
+    public TmsDeliveryController(JdbcTemplate jdbcTemplate, BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 配送行程列表（ERP 端监控）。 */
@@ -123,8 +127,13 @@ public class TmsDeliveryController {
         String verifiedStatus = "PASS".equalsIgnoreCase(action) ? "APPROVED" : "REJECTED";
 
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT sign_id, source_bill_no, sign_type, signed_qty FROM tms_sign_record WHERE sign_id=?", signId);
+                "SELECT sign_id, source_bill_no, sign_type, signed_qty, sign_time FROM tms_sign_record WHERE sign_id=?", signId);
         if (rows.isEmpty()) return ApiResponse.fail("404", "签收记录不存在");
+
+        // 业务日结【守卫】：后台核验作用于历史签收记录，按其签收生效日 sign_time 判封单，
+        // 先于核验写库（sign_time 为空的草稿记录放行）。
+        dayCloseGuard.assertWritable(BizDayCloseGuard.toLocalDate(rows.get(0).get("sign_time")),
+                "签收核验", TmsUtil.str(rows.get(0).get("source_bill_no")));
 
         // 签收核销：使用 verified 字段记录核销状态
         jdbcTemplate.update("""
@@ -147,6 +156,27 @@ public class TmsDeliveryController {
         String action = TmsUtil.str(body.get("action"));
         if (action.isEmpty()) action = "PASS";
         String verifiedStatus = "PASS".equalsIgnoreCase(action) ? "APPROVED" : "REJECTED";
+
+        // 业务日结【守卫】：批量核验在任何写库前一次性逐条按签收生效日 sign_time 判封单，
+        // 命中已封日期整批拒绝并返回冲突清单（不做部分成功，避免同批出现半核验状态）。
+        if (dayCloseGuard.enabled()) {
+            String ph = String.join(",", Collections.nCopies(signIds.size(), "?"));
+            List<Map<String, Object>> signRows = jdbcTemplate.queryForList(
+                    "SELECT sign_id, source_bill_no, sign_time FROM tms_sign_record WHERE sign_id IN (" + ph + ")",
+                    signIds.toArray());
+            List<String> conflicts = new ArrayList<>();
+            for (Map<String, Object> row : signRows) {
+                LocalDate signDate = BizDayCloseGuard.toLocalDate(row.get("sign_time"));
+                if (signDate != null && dayCloseGuard.isClosed(signDate)) {
+                    String billNo = TmsUtil.str(row.get("source_bill_no"));
+                    conflicts.add((billNo.isEmpty() ? TmsUtil.str(row.get("sign_id")) : billNo) + "（" + signDate + "）");
+                }
+            }
+            if (!conflicts.isEmpty()) {
+                throw new IllegalArgumentException("以下签收记录的签收日期已日结封单，不能批量核验："
+                        + String.join("、", conflicts) + "，请先反日结后再操作");
+            }
+        }
 
         int count = 0;
         for (String signId : signIds) {

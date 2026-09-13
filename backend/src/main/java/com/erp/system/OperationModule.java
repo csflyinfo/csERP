@@ -17,6 +17,7 @@ public final class OperationModule {
     public static final String AUTH          = "system.auth";
     public static final String OP_LOG        = "system.log";
     public static final String PARAM         = "system.param";
+    public static final String SCHEDULE_TASK = "system.schedule_task";
 
     // 基础资料
     public static final String BASE_GOODS    = "base.goods";
@@ -50,6 +51,7 @@ public final class OperationModule {
     // 财务
     public static final String FIN_RECEIPT  = "finance.receipt";
     public static final String FIN_PAYMENT  = "finance.payment";
+    public static final String FIN_DAY_CLOSE = "finance.day_close";
 
     private static final Map<String, String> NAMES = new LinkedHashMap<>();
     static {
@@ -57,6 +59,7 @@ public final class OperationModule {
         NAMES.put(AUTH, "登录认证");
         NAMES.put(OP_LOG, "操作日志");
         NAMES.put(PARAM, "参数设置");
+        NAMES.put(SCHEDULE_TASK, "定时任务");
         NAMES.put(BASE_GOODS, "商品档案");
         NAMES.put(BASE_CUSTOMER, "客户档案");
         NAMES.put(BASE_SUPPLIER, "供应商档案");
@@ -78,6 +81,7 @@ public final class OperationModule {
         NAMES.put(INV_COST_ADJUST, "成本调整");
         NAMES.put(FIN_RECEIPT, "收款单");
         NAMES.put(FIN_PAYMENT, "付款单");
+        NAMES.put(FIN_DAY_CLOSE, "业务日结");
 
         // 历史模块码兼容（各控制器旧 log() 里沿用的字符串，统一给中文名）
         NAMES.put("inventory.otherInbound", "其他入库");

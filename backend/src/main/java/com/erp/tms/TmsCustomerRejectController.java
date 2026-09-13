@@ -5,6 +5,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.sales.RejectInboundController;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.*;
 
 /**
@@ -43,15 +45,18 @@ public class TmsCustomerRejectController {
     private final BillNoGenerator billNoGen;
     private final RejectInboundController rejectInboundController;
     private final TmsNotifyService notifyService;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public TmsCustomerRejectController(JdbcTemplate jdbcTemplate,
                                        BillNoGenerator billNoGen,
                                        RejectInboundController rejectInboundController,
-                                       TmsNotifyService notifyService) {
+                                       TmsNotifyService notifyService,
+                                       BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.rejectInboundController = rejectInboundController;
         this.notifyService = notifyService;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ========================================================================
@@ -363,7 +368,7 @@ public class TmsCustomerRejectController {
     @Transactional
     public ApiResponse<Map<String, Object>> receive(@PathVariable String id, @RequestBody(required = false) Map<String, Object> body) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT reject_id, reject_no, receipt_no, status, total_qty, total_amount FROM tms_customer_reject WHERE reject_id=? OR reject_no=?", id, id);
+                "SELECT reject_id, reject_no, receipt_no, status, total_qty, total_amount, returned_at FROM tms_customer_reject WHERE reject_id=? OR reject_no=?", id, id);
         if (rows.isEmpty()) return ApiResponse.fail("404", "客户拒收单不存在");
         Map<String, Object> r = rows.get(0);
         String rejectId = TmsUtil.str(r.get("reject_id"));
@@ -373,6 +378,14 @@ public class TmsCustomerRejectController {
         if ("RECEIVED".equals(status) || "COMPLETED".equals(status)) {
             return ApiResponse.fail("400", "当前状态为「" + status + "」，不可重复收货");
         }
+
+        // 业务日结【守卫】：仓库收货即冲减应收（写负向 fin_ar），属已生效业务的逆向动作。
+        // 业务日期取司机实际返仓日 returned_at（业务事实日）；返仓时间为空时本方法才落
+        // received_at=当前时刻，此时按今天守卫。必须放在任何写库之前，且不能落进下面
+        // catch(Exception) 的应收冲销块里 —— 封单拦截不允许被吞掉。
+        LocalDate rejectBizDate = BizDayCloseGuard.toLocalDate(r.get("returned_at"));
+        dayCloseGuard.assertWritable(rejectBizDate != null ? rejectBizDate : LocalDate.now(),
+                "客户拒收", rejectNo);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> items = (body != null && body.get("items") instanceof List<?> l)

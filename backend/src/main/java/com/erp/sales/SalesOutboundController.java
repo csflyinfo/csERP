@@ -5,6 +5,7 @@ import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -53,6 +54,7 @@ public class SalesOutboundController {
     private final com.erp.common.security.approval.ApprovalService approvalService;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public SalesOutboundController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
@@ -62,7 +64,8 @@ public class SalesOutboundController {
                                     com.erp.finance.gl.GlHookService glHooks,
                                     com.erp.common.security.approval.ApprovalService approvalService,
                                     com.erp.common.security.datascope.DataScopeService dataScope,
-                                    com.erp.common.security.FieldMasker fieldMasker) {
+                                    com.erp.common.security.FieldMasker fieldMasker,
+                                    BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.receiptController = receiptController;
@@ -72,6 +75,7 @@ public class SalesOutboundController {
         this.approvalService = approvalService;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 销售出库单列表/详情共用数据范围目标：仓库/客户/业务员 + 商品分类/品牌按明细行（本表无建档人字段，不做 CREATOR 维度）。 */
@@ -685,6 +689,14 @@ public class SalesOutboundController {
     @PostMapping("/outbound/audit")
     @Transactional
     public ApiResponse<Map<String, Object>> audit(@Valid @RequestBody AuditRequest request) {
+        // 业务日结守卫【回填】：审核以当天为生效日，结账日后禁止写入。bizId 可能是主键，先回查单号。
+        List<Map<String, Object>> dayCloseHeads = jdbcTemplate.queryForList(
+                "SELECT outbound_no FROM sales_outbound WHERE outbound_id = ? OR outbound_no = ?",
+                request.bizId(), request.bizId());
+        if (!dayCloseHeads.isEmpty()) {
+            dayCloseGuard.assertWritable(LocalDate.now(), "销售出库单",
+                    str(pick(dayCloseHeads.get(0), "outbound_no")));
+        }
         // 原子抢占：先把 PENDING 行条件翻转为 AUDITING（仅本事务能命中 WHERE status='PENDING'），
         // 杜绝两个并发审核同时读到 PENDING 后双扣库存。AUDITING 为瞬时态，事务提交时被 auditOutbound 改为 APPROVED。
         int claimed = jdbcTemplate.update("""
@@ -793,8 +805,10 @@ public class SalesOutboundController {
             );
         }
 
+        // 通用单据规则：审核翻转状态时回填单据日期为当天（业务日结生效日口径）
         jdbcTemplate.update(
-                "UPDATE sales_outbound SET status = 'APPROVED', stock_updated = TRUE WHERE outbound_id = ?",
+                "UPDATE sales_outbound SET status = 'APPROVED', stock_updated = TRUE, bill_date = CURRENT_DATE "
+                        + "WHERE outbound_id = ?",
                 outboundId);
 
         // 回写销售订单 outbound_amount / outbound_status
@@ -1024,6 +1038,8 @@ public class SalesOutboundController {
 
         String id = "SOU" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String no = billNoGen.nextNo(com.erp.common.util.BillNoGenerator.BillType.SALES_OUTBOUND, "sales_outbound", "outbound_no");
+        // 业务日结守卫【回填】：WMS 桥接调用绕过 HTTP 拦截器，必须在服务层守住，且位于任何写库（含后续 auditOutbound 扣库存）之前
+        dayCloseGuard.assertWritable(LocalDate.now(), "销售出库单(WMS)", no);
         try {
             jdbcTemplate.update("""
                     INSERT INTO sales_outbound (outbound_id, outbound_no, source_order, customer, warehouse,

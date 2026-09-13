@@ -77,6 +77,8 @@ export const fallbackMenus = {
     { code: 'paymentVerify', name: '付款核销' },
     { code: 'customerStatement', name: '客户对账' },
     { code: 'supplierStatement', name: '供应商对账' },
+    // PRD-33 业务日结（code 用后端菜单码，AppShell.navigate 经 MENU_PATH 定位）
+    { code: 'finance.day_close', name: '日结管理' },
   ],
   总账管理: [
     { code: 'glAccount', name: '会计科目' },
@@ -129,6 +131,7 @@ export const fallbackMenus = {
     { code: 'printTemplate', name: '打印模板设置' },
     { code: 'importList', name: '导入列表' },
     { code: 'exportCenter', name: '导出中心' },
+    { code: 'system.schedule_task', name: '定时任务' },
     { code: 'log', name: '操作日志' },
     { code: 'loginLog', name: '登录日志' },
   ],

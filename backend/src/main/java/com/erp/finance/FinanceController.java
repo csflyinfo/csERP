@@ -22,6 +22,7 @@ import com.erp.common.security.RequirePerm;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -41,18 +42,21 @@ public class FinanceController {
 
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final com.erp.finance.dayclose.BizDayCloseGuard dayCloseGuard;
 
     public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                              com.erp.system.OperationLogService opLog,
                              com.erp.finance.gl.GlHookService glHooks,
                              com.erp.common.security.datascope.DataScopeService dataScope,
-                             com.erp.common.security.FieldMasker fieldMasker) {
+                             com.erp.common.security.FieldMasker fieldMasker,
+                             com.erp.finance.dayclose.BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ============================================================
@@ -695,6 +699,11 @@ public class FinanceController {
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String expenseNo = str(r.get("expenseNo"));
+        // v1.3：费用单记账日期不回填用户已填值；为空按当天并持久化；审核按该日期判封单
+        boolean expenseDateMissing = !(r.get("expenseDate") instanceof java.sql.Date);
+        java.sql.Date expenseDate = expenseDateMissing
+                ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("expenseDate");
+        dayCloseGuard.assertWritable(expenseDate.toLocalDate(), "费用单", expenseNo);
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
         String cpName = str(r.get("counterpartyName"));
@@ -703,8 +712,13 @@ public class FinanceController {
         // 收支方向以单据存档为准（建单/编辑时按表单写入），不能再按金额正负推断
         String direction = str(r.get("direction"));
         if (direction.isEmpty()) direction = "OUT";
-        jdbcTemplate.update("UPDATE fin_expense_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, direction = ? WHERE expense_id = ?",
-                auditor, java.sql.Timestamp.valueOf(now), direction, id);
+        if (expenseDateMissing) {
+            jdbcTemplate.update("UPDATE fin_expense_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, direction = ?, expense_date = ? WHERE expense_id = ?",
+                    auditor, java.sql.Timestamp.valueOf(now), direction, expenseDate, id);
+        } else {
+            jdbcTemplate.update("UPDATE fin_expense_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, direction = ? WHERE expense_id = ?",
+                    auditor, java.sql.Timestamp.valueOf(now), direction, id);
+        }
 
         BigDecimal absAmt = total.abs();
         if (!fundAcct.isEmpty()) {
@@ -720,8 +734,8 @@ public class FinanceController {
                             total_amount, verified_amount, fund_account, amount,
                             business_source, handler, related_bill_no, summary,
                             creator_name, create_time, auditor_name, audit_time)
-                        VALUES (?, ?, CURRENT_DATE, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
-                        """, autoId, autoNo, cpType, cpCode, cpName, cpName,
+                        VALUES (?, ?, ?, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
+                        """, autoId, autoNo, expenseDate, cpType, cpCode, cpName, cpName,
                         absAmt, absAmt, fundAcct, absAmt,
                         str(r.get("handler")), expenseNo, "费用单自动生成",
                         auditor, java.sql.Timestamp.valueOf(now), auditor, java.sql.Timestamp.valueOf(now));
@@ -734,14 +748,14 @@ public class FinanceController {
                             total_amount, verified_amount, fund_account, amount,
                             business_source, handler, related_bill_no, summary,
                             creator_name, create_time, auditor_name, audit_time)
-                        VALUES (?, ?, CURRENT_DATE, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
-                        """, autoId, autoNo, cpType, cpCode, cpName, cpName,
+                        VALUES (?, ?, ?, 'APPROVED', ?, ?, ?, ?, ?, ?, ?, ?, 'EXPENSE', ?, ?, ?, ?, ?, ?, ?)
+                        """, autoId, autoNo, expenseDate, cpType, cpCode, cpName, cpName,
                         absAmt, absAmt, fundAcct, absAmt,
                         str(r.get("handler")), expenseNo, "费用单自动生成",
                         auditor, java.sql.Timestamp.valueOf(now), auditor, java.sql.Timestamp.valueOf(now));
             }
-            // 写核销记录（receipt_no 列对付款单同样复用，存付款单号）
-            writeReconcileRecordV2(autoNo, java.sql.Date.valueOf(LocalDate.now()), expenseNo, expenseNo,
+            // 写核销记录（receipt_no 列对付款单同样复用，存付款单号；归属日同费用记账日，v1.3）
+            writeReconcileRecordV2(autoNo, expenseDate, expenseNo, expenseNo,
                     "EXPENSE", str(r.get("expenseDate")), cpType, cpCode, cpName, absAmt, "", "");
         } else {
             // 无收/付账户 → 生成往来 AR/AP
@@ -780,6 +794,8 @@ public class FinanceController {
     @PostMapping("/reconcile/receive")
     @Transactional
     public ApiResponse<Map<String, Object>> receiveReconcile(@Valid @RequestBody FundBillRequest request) {
+        // 日结封单：快速核销资金即时生效，按当天判封单
+        dayCloseGuard.assertWritable(LocalDate.now(), "往来快速核销", null);
         // 查找目标应收（优先按传入的 objectId 匹配，否则取最近一条未核销）
         List<Map<String, Object>> rows;
         if (request.objectId() != null && !request.objectId().isBlank()) {
@@ -834,6 +850,8 @@ public class FinanceController {
     @PostMapping("/reconcile/pay")
     @Transactional
     public ApiResponse<Map<String, Object>> payReconcile(@Valid @RequestBody FundBillRequest request) {
+        // 日结封单：快速核销资金即时生效，按当天判封单
+        dayCloseGuard.assertWritable(LocalDate.now(), "往来快速核销", null);
         List<Map<String, Object>> rows;
         if (request.objectId() != null && !request.objectId().isBlank()) {
             rows = jdbcTemplate.queryForList(
@@ -1231,12 +1249,22 @@ public class FinanceController {
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String receiptNo = str(r.get("receiptNo"));
-        // 写核销记录（简化：不实际匹配 AR/AP，后续可加强）
-        // 更新状态
-        jdbcTemplate.update("""
-                UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
-                WHERE receipt_id = ?
-                """, auditor, java.sql.Timestamp.valueOf(now), id);
+        // v1.3：按记账日期判封单；为空按当天并持久化（存量行为）
+        boolean dateMissing = !(r.get("receiptDate") instanceof java.sql.Date);
+        java.sql.Date receiptDate = dateMissing
+                ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("receiptDate");
+        dayCloseGuard.assertWritable(receiptDate.toLocalDate(), "收款单", receiptNo);
+        if (dateMissing) {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, receipt_date = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), receiptDate, id);
+        } else {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), id);
+        }
         // 总账钩子：批量审核同样丢收款事件（钩子内按 business_source 过滤自动单）
         glHooks.onReceiptAudited(receiptNo);
     }
@@ -1335,8 +1363,13 @@ public class FinanceController {
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String receiptNo = str(r.get("receiptNo"));
-        java.sql.Date receiptDate = r.get("receiptDate") instanceof java.sql.Date d
-                ? d : java.sql.Date.valueOf(LocalDate.now());
+        // v1.3：记账日期不回填用户已填值；为空沿用存量行为按审核当天（并持久化，保证流水有归属日）
+        boolean receiptDateMissing = !(r.get("receiptDate") instanceof java.sql.Date);
+        java.sql.Date receiptDate = receiptDateMissing
+                ? java.sql.Date.valueOf(LocalDate.now())
+                : (java.sql.Date) r.get("receiptDate");
+        // 审核按单据记账日期判封单（已封日期拒审）
+        dayCloseGuard.assertWritable(receiptDate.toLocalDate(), "收款单", receiptNo);
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
         String cpName = str(r.get("counterpartyName"));
@@ -1357,25 +1390,36 @@ public class FinanceController {
                     actual, summary, str(d.get("remark"))));
         }
 
-        // 2. 写资金流水 + 更新账户余额（按明细行逐条）
+        // 2. 写资金流水 + 更新账户余额（按明细行逐条；流水归属日 = 记账日期，v1.3）
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         for (Map<String, Object> d : details) {
             BigDecimal amt = toBd(d.get("amount"));
             if (amt.signum() <= 0) continue;
             String fundAcct = str(d.get("fundAccount"));
             BigDecimal bal = getFundBalance(fundAcct).add(amt);
-            insertFundLedgerV2(fundAcct, "IN", amt, receiptNo, bal, auditor);
+            insertFundLedgerV2(fundAcct, "IN", amt, receiptNo, bal, auditor, receiptDate.toLocalDate());
             updateFundBalance(fundAcct, bal);
+            touchedFundAccounts.add(fundAcct);
         }
+        // 补录往日记账时按发生时间重排余额链，保证日结资金滚存可勾稽
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 3. 写往来流水
         BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
         writeCounterpartyLedger(cpType, cpCode, cpName, "IN", total, receiptNo, "RECEIPT", cpBal, summary);
 
-        // 4. 更新收款单状态
-        jdbcTemplate.update("""
-                UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
-                WHERE receipt_id = ?
-                """, auditor, java.sql.Timestamp.valueOf(now), id);
+        // 4. 更新收款单状态（记账日期为空时持久化审核当天，存量行为留痕）
+        if (receiptDateMissing) {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, receipt_date = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), receiptDate, id);
+        } else {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), id);
+        }
         // 总账钩子：收款事件（仅后台手工单，自动单在钩子内按 business_source 过滤）
         glHooks.onReceiptAudited(receiptNo);
         finLog(com.erp.system.OperationModule.FIN_RECEIPT, com.erp.system.OperationAction.AUDIT,
@@ -1404,6 +1448,10 @@ public class FinanceController {
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
         BigDecimal total = toBd(r.get("totalAmount"));
+        // v1.3：反审核按记账日期判封单（审核时空日期已持久化为当天）
+        java.sql.Date receiptDate = r.get("receiptDate") instanceof java.sql.Date d ? d : null;
+        dayCloseGuard.assertWritable(receiptDate == null ? null : receiptDate.toLocalDate(),
+                "收款单", receiptNo);
 
         // 1. 取核销记录，逐条回退 AR/AP
         List<Map<String, Object>> records = queryCamel(
@@ -1423,18 +1471,22 @@ public class FinanceController {
         // 2. 删除核销流水
         jdbcTemplate.update("DELETE FROM fin_reconcile_record WHERE receipt_no = ?", receiptNo);
 
-        // 3. 冲减资金流水：写对冲记录
+        // 3. 冲减资金流水：写对冲记录（归属日同原记账日期）
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM fin_receipt_detail WHERE receipt_id = ? ORDER BY sort_order", id);
         String auditor = currentUser();
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         for (Map<String, Object> d : details) {
             BigDecimal amt = toBd(d.get("amount"));
             if (amt.signum() <= 0) continue;
             String fa = str(d.get("fundAccount"));
             BigDecimal bal = getFundBalance(fa).subtract(amt);
-            insertFundLedgerV2(fa, "OUT", amt, receiptNo + "(取消审核)", bal, auditor);
+            insertFundLedgerV2(fa, "OUT", amt, receiptNo + "(取消审核)", bal, auditor,
+                    receiptDate == null ? null : receiptDate.toLocalDate());
             updateFundBalance(fa, bal);
+            touchedFundAccounts.add(fa);
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 4. 冲减往来流水
         BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).subtract(total);
@@ -1482,8 +1534,11 @@ public class FinanceController {
         }
 
         String auditor = currentUser();
-        java.sql.Date receiptDate = r.get("receiptDate") instanceof java.sql.Date d
-                ? d : java.sql.Date.valueOf(LocalDate.now());
+        boolean receiptDateMissing = !(r.get("receiptDate") instanceof java.sql.Date);
+        java.sql.Date receiptDate = receiptDateMissing
+                ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("receiptDate");
+        // v1.3：交账联动审核同样按记账日期判封单
+        dayCloseGuard.assertWritable(receiptDate.toLocalDate(), "收款单", receiptNo);
         String cpCode = str(r.get("counterpartyCode"));
         String cpName = str(r.get("counterpartyName"));
         BigDecimal total = toBd(r.get("totalAmount"));
@@ -1534,29 +1589,40 @@ public class FinanceController {
                     remaining, summary, "司机交账审核自动核销");
         }
 
-        // 3. 资金入账：按收款明细逐个账户写流水并推余额
+        // 3. 资金入账：按收款明细逐个账户写流水并推余额（归属日 = 记账日期，v1.3）
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM fin_receipt_detail WHERE receipt_id = ? ORDER BY sort_order", receiptId);
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         for (Map<String, Object> d : details) {
             BigDecimal amt = toBd(d.get("amount"));
             if (amt.signum() <= 0) continue;
             String fundAcct = str(d.get("fundAccount"));
             BigDecimal bal = getFundBalance(fundAcct).add(amt);
-            insertFundLedgerV2(fundAcct, "IN", amt, receiptNo, bal, auditor);
+            insertFundLedgerV2(fundAcct, "IN", amt, receiptNo, bal, auditor, receiptDate.toLocalDate());
             updateFundBalance(fundAcct, bal);
+            touchedFundAccounts.add(fundAcct);
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 4. 往来流水
         BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
         writeCounterpartyLedger(cpType, cpCode, cpName, "IN", total, receiptNo, "RECEIPT", cpBal, summary);
 
-        // 5. 单据转已审核，并按实际核销额回写 verified_amount
+        // 5. 单据转已审核，并按实际核销额回写 verified_amount（空记账日期持久化当天）
         BigDecimal verified = total.subtract(remaining);
-        jdbcTemplate.update("""
-                UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?,
-                    verified_amount = ?
-                WHERE receipt_id = ?
-                """, auditor, java.sql.Timestamp.valueOf(LocalDateTime.now()), verified, receiptId);
+        if (receiptDateMissing) {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?,
+                        verified_amount = ?, receipt_date = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(LocalDateTime.now()), verified, receiptDate, receiptId);
+        } else {
+            jdbcTemplate.update("""
+                    UPDATE fin_receipt_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?,
+                        verified_amount = ?
+                    WHERE receipt_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(LocalDateTime.now()), verified, receiptId);
+        }
 
         return GenericResult.row("receiptNo", receiptNo, "status", "APPROVED",
                 "verifiedAmount", verified, "unmatchedAmount", remaining);
@@ -1630,8 +1696,11 @@ public class FinanceController {
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String paymentNo = str(r.get("paymentNo"));
-        java.sql.Date paymentDate = r.get("paymentDate") instanceof java.sql.Date d
-                ? d : java.sql.Date.valueOf(LocalDate.now());
+        // v1.3：付款记账日期不回填用户已填值；为空按当天并持久化；审核按该日期判封单
+        boolean paymentDateMissing = !(r.get("paymentDate") instanceof java.sql.Date);
+        java.sql.Date paymentDate = paymentDateMissing
+                ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("paymentDate");
+        dayCloseGuard.assertWritable(paymentDate.toLocalDate(), "付款单", paymentNo);
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
         String cpName = str(r.get("counterpartyName"));
@@ -1652,25 +1721,35 @@ public class FinanceController {
                     actual, summary, str(d.get("remark"))));
         }
 
-        // 2. 写资金流水（OUT）+ 更新账户余额
+        // 2. 写资金流水（OUT）+ 更新账户余额（流水归属日 = 记账日期，v1.3）
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         for (Map<String, Object> d : details) {
             BigDecimal amt = toBd(d.get("amount"));
             if (amt.signum() <= 0) continue;
             String fundAcct = str(d.get("fundAccount"));
             BigDecimal bal = getFundBalance(fundAcct).subtract(amt);
-            insertFundLedgerV2(fundAcct, "OUT", amt, paymentNo, bal, auditor);
+            insertFundLedgerV2(fundAcct, "OUT", amt, paymentNo, bal, auditor, paymentDate.toLocalDate());
             updateFundBalance(fundAcct, bal);
+            touchedFundAccounts.add(fundAcct);
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 3. 写往来流水（OUT：付款给供应商 → 往来余额减少）
         BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).subtract(total);
         writeCounterpartyLedger(cpType, cpCode, cpName, "OUT", total, paymentNo, "PAYMENT", cpBal, summary);
 
-        // 4. 更新付款单状态
-        jdbcTemplate.update("""
-                UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
-                WHERE payment_id = ?
-                """, auditor, java.sql.Timestamp.valueOf(now), id);
+        // 4. 更新付款单状态（记账日期为空时持久化当天）
+        if (paymentDateMissing) {
+            jdbcTemplate.update("""
+                    UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, payment_date = ?
+                    WHERE payment_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), paymentDate, id);
+        } else {
+            jdbcTemplate.update("""
+                    UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
+                    WHERE payment_id = ?
+                    """, auditor, java.sql.Timestamp.valueOf(now), id);
+        }
         glHooks.onPaymentAudited(paymentNo);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
                 com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "审核付款单 " + paymentNo);
@@ -1694,6 +1773,10 @@ public class FinanceController {
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
         BigDecimal total = toBd(r.get("totalAmount"));
+        // v1.3：反审核按付款记账日期判封单
+        java.sql.Date paymentDate = r.get("paymentDate") instanceof java.sql.Date d ? d : null;
+        dayCloseGuard.assertWritable(paymentDate == null ? null : paymentDate.toLocalDate(),
+                "付款单", paymentNo);
 
         // 1. 取核销记录，逐条回退 AP
         List<Map<String, Object>> records = queryCamel(
@@ -1709,18 +1792,22 @@ public class FinanceController {
         // 2. 删除核销流水
         jdbcTemplate.update("DELETE FROM fin_reconcile_record WHERE receipt_no = ?", paymentNo);
 
-        // 3. 冲减资金流水：写对冲记录（IN）
+        // 3. 冲减资金流水：写对冲记录（IN，归属日同原记账日期）
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM fin_payment_detail WHERE payment_id = ? ORDER BY sort_order", id);
         String auditor = currentUser();
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         for (Map<String, Object> d : details) {
             BigDecimal amt = toBd(d.get("amount"));
             if (amt.signum() <= 0) continue;
             String fa = str(d.get("fundAccount"));
             BigDecimal bal = getFundBalance(fa).add(amt);
-            insertFundLedgerV2(fa, "IN", amt, paymentNo + "(取消审核)", bal, auditor);
+            insertFundLedgerV2(fa, "IN", amt, paymentNo + "(取消审核)", bal, auditor,
+                    paymentDate == null ? null : paymentDate.toLocalDate());
             updateFundBalance(fa, bal);
+            touchedFundAccounts.add(fa);
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 4. 冲减往来流水（IN：取消付款 → 往来余额恢复）
         BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
@@ -1751,10 +1838,22 @@ public class FinanceController {
             Map<String, Object> r = heads.get(0);
             if (!"PENDING".equals(str(r.get("status")))) { skip++; continue; }
             assertHeadCpVisible(r);
-            jdbcTemplate.update("""
-                    UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
-                    WHERE payment_id = ?
-                    """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
+            // v1.3：批量审核同样按付款记账日期判封单，为空按当天并持久化
+            boolean dateMissing = !(r.get("paymentDate") instanceof java.sql.Date);
+            java.sql.Date paymentDate = dateMissing
+                    ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("paymentDate");
+            dayCloseGuard.assertWritable(paymentDate.toLocalDate(), "付款单", str(r.get("paymentNo")));
+            if (dateMissing) {
+                jdbcTemplate.update("""
+                        UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, payment_date = ?
+                        WHERE payment_id = ?
+                        """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), paymentDate, id);
+            } else {
+                jdbcTemplate.update("""
+                        UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
+                        WHERE payment_id = ?
+                        """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
+            }
             glHooks.onPaymentAudited(str(r.get("paymentNo")));
             ok++;
         }
@@ -1941,8 +2040,10 @@ public class FinanceController {
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(heads.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可审核");
         assertCpVisible("CUSTOMER", str(heads.get(0).get("customerName")));
+        // 一般单据：审核生效日=当天（当天已封才拦），statement_date 为空时回填当天
+        dayCloseGuard.assertWritable(LocalDate.now(), "客户对账单", str(heads.get(0).get("statementNo")));
         String auditor = currentUser(); LocalDateTime now = LocalDateTime.now();
-        jdbcTemplate.update("UPDATE fin_customer_statement SET status='APPROVED',auditor_name=?,audit_time=? WHERE statement_id=?", auditor, java.sql.Timestamp.valueOf(now), id);
+        jdbcTemplate.update("UPDATE fin_customer_statement SET status='APPROVED',auditor_name=?,audit_time=?,statement_date=COALESCE(statement_date, CURRENT_DATE) WHERE statement_id=?", auditor, java.sql.Timestamp.valueOf(now), id);
         // 更新源单据的对账状态为"已对账"
         List<Map<String, Object>> details = queryCamel("SELECT source_bill_no FROM fin_customer_statement_detail WHERE statement_id=?",id);
         for (Map<String, Object> d : details) {
@@ -1961,6 +2062,9 @@ public class FinanceController {
         if (!"APPROVED".equals(str(h.get("status")))) return ApiResponse.fail("400","仅已审核可反审核");
         assertCpVisible("CUSTOMER", str(h.get("customerName")));
         if (toBd(h.get("paidAmount")).signum() > 0) return ApiResponse.fail("400","已有收款，不可反审核");
+        // 日结封单守卫：按对账单日期判
+        dayCloseGuard.assertBillWritable("fin_customer_statement", "statement_date", "statement_id",
+                id, "客户对账单");
         jdbcTemplate.update("UPDATE fin_customer_statement SET status='PENDING',auditor_name=NULL,audit_time=NULL WHERE statement_id=?",id);
         // 还原源单据对账状态
         List<Map<String, Object>> details = queryCamel("SELECT source_bill_no FROM fin_customer_statement_detail WHERE statement_id=?",id);
@@ -2059,6 +2163,8 @@ public class FinanceController {
 
         BigDecimal settleAmount = totalAmount.subtract(writeOff);
         java.sql.Date settleDateSql = java.sql.Date.valueOf(settleDate.isEmpty()?LocalDate.now().toString():settleDate);
+        // v1.3：结算资金按用户录入结算日期归属，已封日期拒绝结算
+        dayCloseGuard.assertWritable(settleDateSql.toLocalDate(), "客户对账结算", "");
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
 
         // 生成收款单
@@ -2111,7 +2217,8 @@ public class FinanceController {
             }
         }
 
-        // 写资金流水 + 更新资金账户余额
+        // 写资金流水 + 更新资金账户余额（归属日 = 结算日期，v1.3）
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         if (acctsRaw instanceof List<?> al) {
             for (Object item : al) {
                 if (!(item instanceof Map<?,?> am)) continue;
@@ -2119,10 +2226,12 @@ public class FinanceController {
                 BigDecimal amt = toBd(am.get("amount"));
                 if (amt.signum() <= 0) continue;
                 BigDecimal bal = getFundBalance(acct).add(amt);
-                insertFundLedgerV2(acct, "IN", amt, receiptNo, bal, op);
+                insertFundLedgerV2(acct, "IN", amt, receiptNo, bal, op, settleDateSql.toLocalDate());
                 updateFundBalance(acct, bal);
+                touchedFundAccounts.add(acct);
             }
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 写往来流水
         BigDecimal cpBal = getCounterpartyBalance("CUSTOMER", firstCust).add(settleAmount.abs());
@@ -2243,7 +2352,9 @@ public class FinanceController {
         if (heads.isEmpty()) return ApiResponse.fail("404","对账单不存在");
         if (!"PENDING".equals(str(heads.get(0).get("status")))) return ApiResponse.fail("400","仅待审核可审核");
         assertCpVisible("SUPPLIER", str(heads.get(0).get("supplierName")));
-        jdbcTemplate.update("UPDATE fin_supplier_statement SET status='APPROVED',auditor_name=?,audit_time=? WHERE statement_id=?", currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
+        // 一般单据：审核生效日=当天（当天已封才拦），statement_date 为空时回填当天
+        dayCloseGuard.assertWritable(LocalDate.now(), "供应商对账单", str(heads.get(0).get("statementNo")));
+        jdbcTemplate.update("UPDATE fin_supplier_statement SET status='APPROVED',auditor_name=?,audit_time=?,statement_date=COALESCE(statement_date, CURRENT_DATE) WHERE statement_id=?", currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
         return ApiResponse.ok(GenericResult.row("status","APPROVED"));
     }
 
@@ -2282,6 +2393,8 @@ public class FinanceController {
 
         BigDecimal settleAmount = totalAmount.subtract(writeOff);
         java.sql.Date settleDateSql = java.sql.Date.valueOf(settleDate.isEmpty()?LocalDate.now().toString():settleDate);
+        // v1.3：结算资金按用户录入结算日期归属，已封日期拒绝结算
+        dayCloseGuard.assertWritable(settleDateSql.toLocalDate(), "供应商对账结算", "");
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
 
         // 生成付款单
@@ -2334,7 +2447,8 @@ public class FinanceController {
             }
         }
 
-        // 写资金流水（OUT）+ 更新资金账户余额
+        // 写资金流水（OUT）+ 更新资金账户余额（归属日 = 结算日期，v1.3）
+        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
         if (acctsRaw instanceof List<?> al) {
             for (Object item : al) {
                 if (!(item instanceof Map<?,?> am)) continue;
@@ -2342,10 +2456,12 @@ public class FinanceController {
                 BigDecimal amt = toBd(am.get("amount"));
                 if (amt.signum() <= 0) continue;
                 BigDecimal bal = getFundBalance(acct).subtract(amt);
-                insertFundLedgerV2(acct, "OUT", amt, paymentNo, bal, op);
+                insertFundLedgerV2(acct, "OUT", amt, paymentNo, bal, op, settleDateSql.toLocalDate());
                 updateFundBalance(acct, bal);
+                touchedFundAccounts.add(acct);
             }
         }
+        touchedFundAccounts.forEach(this::rebuildFundChain);
 
         // 写往来流水（OUT：付款给供应商 → 往来余额减少）
         BigDecimal cpBal = getCounterpartyBalance("SUPPLIER", firstSupp).subtract(settleAmount.abs());
@@ -2556,11 +2672,65 @@ public class FinanceController {
 
     private void insertFundLedgerV2(String fundAccount, String direction, BigDecimal amount,
             String sourceBill, BigDecimal balanceAfter, String operator) {
+        insertFundLedgerV2(fundAccount, direction, amount, sourceBill, balanceAfter, operator, null);
+    }
+
+    /**
+     * 写资金流水。occurredDate 非空时流水归属到该日期（收/付款单记账日期，v1.3 日结口径），
+     * 时刻仍取当前时间；为空沿用 CURRENT_TIMESTAMP（交账/对账等动作即生效的联动场景）。
+     *
+     * <p>归属日可能早于账户内已有流水的日期（封单开放窗口内补录往日记账），
+     * 插入后由 {@link #rebuildFundChain} 按发生时间顺序重排余额链，
+     * 保证 balance_after 始终是「该时点的钱包余额」，日结资金滚存勾稽才有意义。
+     */
+    private void insertFundLedgerV2(String fundAccount, String direction, BigDecimal amount,
+            String sourceBill, BigDecimal balanceAfter, String operator, LocalDate occurredDate) {
+        java.sql.Timestamp occurred = occurredDate == null
+                ? java.sql.Timestamp.valueOf(LocalDateTime.now())
+                : java.sql.Timestamp.valueOf(occurredDate.atTime(LocalTime.now()));
         jdbcTemplate.update("""
                 INSERT INTO fin_fund_ledger(ledger_id, ledger_no, fund_account, direction, amount, source_bill, balance_after, occurred_at, operator_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, "FL" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
-                "FUND" + System.currentTimeMillis(), fundAccount, direction, amount, sourceBill, balanceAfter, operator);
+                "FUND" + System.currentTimeMillis(), fundAccount, direction, amount, sourceBill, balanceAfter,
+                occurred, operator);
+    }
+
+    /**
+     * 按发生时间顺序重建某资金账户全量流水的 balance_after 链（v1.3 日结资金口径）。
+     *
+     * <p>为什么需要：补录记账日期早于今天的收/付款单时，新流水物理上后插、业务日期却靠前，
+     * 若只在链尾加减，历史每行余额都会错位。这里以「账户档案当前余额 − 全部流水净额」倒推期初，
+     * 再按 occurred_at, ledger_no 顺序滚算并回写 balance_after。
+     * 流水只增不删（取消审核是追加反向行），重算不会破坏任何业务事实。
+     */
+    private void rebuildFundChain(String fundAccount) {
+        if (fundAccount == null || fundAccount.isBlank()) return;
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT ledger_id, direction, amount FROM fin_fund_ledger WHERE fund_account = ? "
+                        + "ORDER BY occurred_at ASC, ledger_no ASC", fundAccount);
+        if (rows.isEmpty()) return;
+        BigDecimal net = BigDecimal.ZERO;
+        for (Map<String, Object> row : rows) {
+            BigDecimal amt = toBd(row.get("AMOUNT"));
+            net = "IN".equals(String.valueOf(row.get("DIRECTION"))) ? net.add(amt) : net.subtract(amt);
+        }
+        BigDecimal running = getFundBalanceArchive(fundAccount).subtract(net);
+        for (Map<String, Object> row : rows) {
+            BigDecimal amt = toBd(row.get("AMOUNT"));
+            running = "IN".equals(String.valueOf(row.get("DIRECTION"))) ? running.add(amt) : running.subtract(amt);
+            jdbcTemplate.update("UPDATE fin_fund_ledger SET balance_after = ? WHERE ledger_id = ?",
+                    running, String.valueOf(row.get("LEDGER_ID")));
+        }
+        updateFundBalance(fundAccount, running);
+    }
+
+    /** 只查账户档案余额（不回落流水末笔），供余额链倒推期初使用。 */
+    private BigDecimal getFundBalanceArchive(String fundAccount) {
+        List<Map<String, Object>> acc = jdbcTemplate.queryForList(
+                "SELECT balance FROM base_fund_account WHERE fund_account_name = ? OR fund_account_code = ? LIMIT 1",
+                fundAccount, fundAccount);
+        return acc.isEmpty() ? BigDecimal.ZERO : toBd(acc.get(0).get("BALANCE"));
     }
 
     /**

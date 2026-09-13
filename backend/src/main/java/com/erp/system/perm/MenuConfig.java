@@ -127,7 +127,8 @@ public class MenuConfig {
                 .page("fin.receipt_verify", "收款核销", "/finance/receipt-verify")
                 .page("fin.payment_verify", "付款核销", "/finance/payment-verify")
                 .page("fin.customer_recon", "客户对账", "/finance/customer-statement")
-                .page("fin.supplier_recon", "供应商对账", "/finance/supplier-statement");
+                .page("fin.supplier_recon", "供应商对账", "/finance/supplier-statement")
+                .page("finance.day_close", "日结管理", "/finance/day-close");
         // 三级示例：财务管理(L1) > 总账(L2 目录) > 凭证/账簿...(L3 页面)
         fin.dir("finance.gl", "总账", "Notebook")
                 .page("finance.gl.account", "会计科目", "/gl/account")
@@ -209,6 +210,7 @@ public class MenuConfig {
                 .page("system.import_list", "导入列表", "/system/import-list")
                 .page("system.export_center", "导出中心", "/system/export-center")
                 .page("system.log", "操作日志", "/system/operation-log")
+                .page("system.schedule_task", "定时任务", "/system/schedule-task")
                 .page("system.login_log", "登录日志", "/system/login-log");
     }
 

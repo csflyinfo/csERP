@@ -5,6 +5,7 @@ import com.erp.common.api.GenericResult;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -50,19 +51,22 @@ public class PurchaseReceiptController {
     private final com.erp.finance.gl.GlHookService glHooks;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public PurchaseReceiptController(JdbcTemplate jdbcTemplate,
                                      com.erp.common.util.BillNoGenerator billNoGen,
                                      com.erp.system.OperationLogService opLog,
                                      com.erp.finance.gl.GlHookService glHooks,
                                      com.erp.common.security.datascope.DataScopeService dataScope,
-                                     com.erp.common.security.FieldMasker fieldMasker) {
+                                     com.erp.common.security.FieldMasker fieldMasker,
+                                     BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.glHooks = glHooks;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 采购收货单数据范围目标：仓库/供应商/建档人 + 商品分类/品牌按明细行。 */
@@ -175,6 +179,8 @@ public class PurchaseReceiptController {
 
         String receiptId = str(pick(receipt, "receipt_id"));
         String receiptNo = str(pick(receipt, "receipt_no"));
+        // 业务日结封单守卫：审核生效日恒为当天，当天已封则禁止审核（PRD-33）
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购收货单", receiptNo);
         String supplier = str(pick(receipt, "supplier_name"));
         // 应付按「含税商品金额」——供应商实际要收的是含税货款。
         // goods_amount 为含税金额；final_amount 是拆出税额后的不含税金额，不用于结算。
@@ -195,6 +201,7 @@ public class PurchaseReceiptController {
         jdbcTemplate.update("""
                 UPDATE pur_receipt
                 SET status = 'APPROVED', ap_status = '已生成',
+                    receipt_date = CURRENT_DATE,
                     audit_user = ?, audit_time = CURRENT_TIMESTAMP
                 WHERE receipt_id = ?
                 """, "系统管理员", receiptId);
@@ -221,7 +228,7 @@ public class PurchaseReceiptController {
     @Transactional
     public ApiResponse<Map<String, Object>> reverseAudit(@Valid @RequestBody AuditRequest request) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT receipt_id, receipt_no, status FROM pur_receipt WHERE receipt_id = ? OR receipt_no = ?",
+                "SELECT receipt_id, receipt_no, status, receipt_date FROM pur_receipt WHERE receipt_id = ? OR receipt_no = ?",
                 request.bizId(), request.bizId());
         if (rows.isEmpty()) throw new IllegalArgumentException("收货单不存在");
         String status = str(pick(rows.get(0), "status"));
@@ -229,6 +236,11 @@ public class PurchaseReceiptController {
 
         String receiptId = str(pick(rows.get(0), "receipt_id"));
         String receiptNo = str(pick(rows.get(0), "receipt_no"));
+
+        // 业务日结封单守卫：反审核按单据上存储的收货日期判封单，回滚写入前拦截（PRD-33）
+        dayCloseGuard.assertWritable(
+                BizDayCloseGuard.toLocalDate(pick(rows.get(0), "receipt_date")),
+                "采购收货单", receiptNo);
 
         // 检查关联 fin_ap 是否已有付款
         List<Map<String, Object>> apRows = jdbcTemplate.queryForList(

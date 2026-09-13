@@ -3,6 +3,7 @@ package com.erp.inventory;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -48,6 +49,7 @@ public class OtherInboundController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public OtherInboundController(JdbcTemplate jdbcTemplate,
                                   InventoryCostService inventoryCostService,
@@ -56,7 +58,8 @@ public class OtherInboundController {
                                   com.erp.finance.gl.GlHookService glHooks,
                                   com.erp.common.security.datascope.DataScopeService dataScope,
                                   com.erp.common.security.FieldMasker fieldMasker,
-                                  com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
+                                  com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard,
+                                  BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
@@ -65,6 +68,7 @@ public class OtherInboundController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.warehouseGuard = warehouseGuard;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ========================================================================
@@ -358,6 +362,10 @@ public class OtherInboundController {
         // 数据范围（PRD-28 §5.3）：禁止审核/反审核/作废他仓入库单
         warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
+        // 业务日结【回填】：审核以当天为生效日（含期初库存 inbound_type='0'，首次日结向导另行要求其已审核），
+        // 当天已封账禁止审核；守卫必须位于任何库存写入之前
+        dayCloseGuard.assertWritable(LocalDate.now(), "其他入库单", inboundNo);
+
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
         if (details.isEmpty()) throw new IllegalArgumentException("入库明细为空，无法审核");
@@ -389,7 +397,7 @@ public class OtherInboundController {
         }
 
         jdbcTemplate.update("""
-                UPDATE inv_other_inbound SET status='APPROVED', cost_amount=?,
+                UPDATE inv_other_inbound SET status='APPROVED', bill_date=CURRENT_DATE, cost_amount=?,
                     audit_user='系统管理员', audit_time=CURRENT_TIMESTAMP
                 WHERE inbound_id=?
                 """, totalCostAmount, inboundId);
@@ -425,6 +433,9 @@ public class OtherInboundController {
         String warehouse = str(pick(head, "warehouse"));
         // 数据范围（PRD-28 §5.3）：禁止审核/反审核/作废他仓入库单
         warehouseGuard.assertVisible(jdbcTemplate, warehouse);
+
+        // 业务日结【守卫】：反审核按单据日期判封单，已日结期间的单据禁止反审核
+        dayCloseGuard.assertBillWritable("inv_other_inbound", "bill_date", "inbound_id", inboundId, "其他入库单");
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
@@ -490,6 +501,8 @@ public class OtherInboundController {
         warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
         if ("APPROVED".equals(status)) {
+            // 业务日结【守卫】：作废已审核单等同冲销，按单据日期判封单；DRAFT/PENDING 作废不守卫
+            dayCloseGuard.assertBillWritable("inv_other_inbound", "bill_date", "inbound_id", inboundId, "其他入库单");
             List<Map<String, Object>> details = jdbcTemplate.queryForList(
                     "SELECT * FROM inv_other_inbound_detail WHERE inbound_id = ?", inboundId);
             rollbackStock(details, warehouse, inboundNo, "作废");

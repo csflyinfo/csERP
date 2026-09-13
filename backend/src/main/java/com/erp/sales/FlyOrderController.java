@@ -5,6 +5,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -34,16 +35,19 @@ public class FlyOrderController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                               com.erp.system.OperationLogService opLog,
                               com.erp.common.security.datascope.DataScopeService dataScope,
-                              com.erp.common.security.FieldMasker fieldMasker) {
+                              com.erp.common.security.FieldMasker fieldMasker,
+                              BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /**
@@ -418,12 +422,16 @@ public class FlyOrderController {
         String status = str(pickCS(fly, "status"));
         if (!"DRAFT".equals(status)) return ApiResponse.fail("400", "只有待审核飞单可审核，当前状态：" + status);
 
+        // 业务日结（PRD-33 §5.3）【回填】：飞单审核即生成已审核采销单与应收应付，生效日恒为当天。
+        // 先校验当天是否已封单；头表 bill_date 与联动单据日期审核时统一回填为当天（见下方各处写入）
+        LocalDate effectiveDate = LocalDate.now();
+        dayCloseGuard.assertWritable(effectiveDate, "快速开单", str(pickCS(fly, "fly_no")));
+
         String supplierCode = str(pickCS(fly, "supplier_code"));
         String supplierName = str(pickCS(fly, "supplier_name"));
         String customerCode = str(pickCS(fly, "customer_code"));
         String customerName = str(pickCS(fly, "customer_name"));
         String salesman = str(pickCS(fly, "salesman"));
-        LocalDate billDate = parseDate(pickCS(fly, "bill_date"));
         BigDecimal purchaseTotal = toBd(pickCS(fly, "purchase_amount"));
         BigDecimal salesTotal = toBd(pickCS(fly, "sales_amount"));
 
@@ -441,7 +449,7 @@ public class FlyOrderController {
                     status, creator_name, audit_info, remark)
                 VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, '无需入库', '未付款', 'APPROVED', ?, '飞单审核自动生成', ?)
                 """,
-                poId, poNo, supplierCode, supplierName, salesman, billDate,
+                poId, poNo, supplierCode, supplierName, salesman, effectiveDate,
                 purchaseTotal, purchaseTotal, "系统管理员",
                 "飞单 " + str(pickCS(fly, "fly_no")) + " 自动生成");
 
@@ -466,7 +474,7 @@ public class FlyOrderController {
                     inbound_amount, payment_status, arrival_status, status, creator_info, cost_amount, audit_info)
                 VALUES (?, ?, ?, ?, NULL, ?, ?, 0, '未付款', '无需入库', 'APPROVED', ?, ?, '飞单审核自动生成')
                 """,
-                poId, poNo, supplierName, salesman, billDate, purchaseTotal,
+                poId, poNo, supplierName, salesman, effectiveDate, purchaseTotal,
                 "系统管理员", purchaseTotal);
 
         for (Map<String, Object> d : details) {
@@ -493,7 +501,7 @@ public class FlyOrderController {
                     creator_name, audit_info, remark)
                 VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, '无需出库', 'APPROVED', ?, ?, '飞单审核自动生成', ?)
                 """,
-                soId, soNo, customerName, customerCode, salesman, billDate,
+                soId, soNo, customerName, customerCode, salesman, effectiveDate,
                 salesTotal, salesTotal, purchaseTotal,
                 "系统管理员", "飞单 " + str(pickCS(fly, "fly_no")) + " 自动生成");
 
@@ -535,8 +543,10 @@ public class FlyOrderController {
                 arId, arNo, soNo, customerName, salesman, salesTotal, salesTotal);
 
         // ============ 5. 更新飞单状态 ============
+        // 业务日结【回填】：头表业务日期回填为审核生效日（当天）
         jdbcTemplate.update("""
-                UPDATE fly_order SET status = 'APPROVED', purchase_order_id = ?, purchase_order_no = ?,
+                UPDATE fly_order SET status = 'APPROVED', bill_date = CURRENT_DATE,
+                    purchase_order_id = ?, purchase_order_no = ?,
                     sales_order_id = ?, sales_order_no = ?, audit_user = ?, audit_time = CURRENT_TIMESTAMP,
                     audit_info = ?
                 WHERE fly_id = ?
@@ -577,6 +587,10 @@ public class FlyOrderController {
         String realFlyId = str(pickCS(fly, "fly_id"));
         String status = str(pickCS(fly, "status"));
         if (!"APPROVED".equals(status)) return ApiResponse.fail("400", "只有已审核飞单可反审核");
+
+        // 业务日结（PRD-33 §5.3）【守卫】：反审核会删除已生效采销单与应收应付，
+        // 先按飞单存储的业务日期判封单（日期为审核时回填的生效日）
+        dayCloseGuard.assertBillWritable("fly_order", "bill_date", "fly_id", realFlyId, "快速开单");
 
         String poNo = str(pickCS(fly, "purchase_order_no"));
         String soNo = str(pickCS(fly, "sales_order_no"));
@@ -652,6 +666,12 @@ public class FlyOrderController {
         if ("CANCELLED".equals(status)) return ApiResponse.fail("400", "飞单已作废");
         String realFlyId = str(pickCS(flyRows.get(0), "fly_id"));
 
+        // 业务日结（PRD-33 §5.3）【守卫】：仅作废已生效（已审核）飞单时按单据业务日期判封单；
+        // 草稿作废不拦截（草稿删除/修改本就不受日结约束）
+        if ("APPROVED".equals(status)) {
+            dayCloseGuard.assertBillWritable("fly_order", "bill_date", "fly_id", realFlyId, "快速开单");
+        }
+
         jdbcTemplate.update("UPDATE fly_order SET status = 'CANCELLED' WHERE fly_id = ?", realFlyId);
         flyLog(com.erp.system.OperationAction.CANCEL,
                 String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
@@ -693,6 +713,9 @@ public class FlyOrderController {
         @SuppressWarnings("unchecked")
         List<String> ids = req.get("ids") instanceof List<?> l ? (List<String>) l : Collections.emptyList();
         if (ids.isEmpty()) return ApiResponse.fail("400", "请选择要审核的飞单");
+        // 业务日结（PRD-33 §5.3）【回填】：批量审核生效日恒为当天，入口先统一拦一次；
+        // 逐张的日期回填与守卫在 audit() 内完成
+        dayCloseGuard.assertWritable(LocalDate.now(), "快速开单(批量)", null);
         int ok = 0, fail = 0;
         for (String id : ids) {
             try {
@@ -716,6 +739,9 @@ public class FlyOrderController {
         int ok = 0, fail = 0;
         for (String id : ids) {
             try {
+                // 业务日结（PRD-33 §5.3）【守卫】：逐张按单据存储的业务日期判封单
+                //（不能按批量入口当天判，各单生效日可能不同）；unaudit() 内对已解析主键再守一道
+                dayCloseGuard.assertBillWritable("fly_order", "bill_date", "fly_id", id, "快速开单(批量)");
                 Map<String, Object> r = unaudit(Map.of("flyId", id)).data();
                 if (r != null && Boolean.TRUE.equals(r.get("success"))) ok++; else fail++;
             } catch (Exception e) { fail++; }

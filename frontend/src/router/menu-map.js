@@ -110,6 +110,9 @@ export const MENU_PATH = {
   'finance.gl.report': '/gl-report',
   'finance.gl.reconcile': '/gl-reconcile',
 
+  // 业务日结（PRD-33，按日封单）
+  'finance.day_close': '/finance/day-close',
+
   // 报表中心
   'report.purchase_order_detail': '/report/purchase-order-detail',
   'report.purchase_move_detail': '/report/purchase-move',
@@ -162,6 +165,7 @@ export const MENU_PATH = {
   'system.print_template': '/print-template',
   'system.import_list': '/import-list',
   'system.export_center': '/export-center',
+  'system.schedule_task': '/system/schedule-task',
   'system.log': '/log',
   'system.login_log': '/login-log',
 

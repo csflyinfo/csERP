@@ -5,6 +5,7 @@ import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.tms.service.TmsNotifyService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,16 +42,19 @@ public class TmsSettlementController {
     private final TmsNotifyService notifyService;
     private final TmsStoreSettleController storeSettleController;
     private final com.erp.system.SysParamService sysParamService;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public TmsSettlementController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                                    TmsNotifyService notifyService,
                                    TmsStoreSettleController storeSettleController,
-                                   com.erp.system.SysParamService sysParamService) {
+                                   com.erp.system.SysParamService sysParamService,
+                                   BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.notifyService = notifyService;
         this.storeSettleController = storeSettleController;
         this.sysParamService = sysParamService;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     // ========================================================================
@@ -474,8 +478,12 @@ public class TmsSettlementController {
             return ApiResponse.fail("400", "该交账单已审核，不可重复操作");
         }
         String auditRemark = body != null ? TmsUtil.str(body.get("auditRemark")) : "";
+        // 业务日结【回填】：交账审核即资金回收入账生效（联动收款单自动审核核销），
+        // 生效日恒为审核当天；先拦「当天已封账」，再把头表交账日期回填为 CURRENT_DATE。
+        dayCloseGuard.assertWritable(LocalDate.now(), "司机交账", settlementNo);
         jdbcTemplate.update("""
-                UPDATE tms_settlement SET status='APPROVED', audited_at=?, auditor=?, audit_remark=?
+                UPDATE tms_settlement SET status='APPROVED', settle_date=CURRENT_DATE,
+                    audited_at=?, auditor=?, audit_remark=?
                 WHERE settlement_id=?
                 """, Timestamp.valueOf(TmsUtil.now()), TmsUtil.currentUser(), auditRemark, settlementId);
         TmsUtil.log(jdbcTemplate, "tms.settlement", "AUDIT", settlementNo,
@@ -521,11 +529,15 @@ public class TmsSettlementController {
     @Transactional
     public ApiResponse<Map<String, Object>> dispute(@PathVariable String id, @RequestBody Map<String, Object> body) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT settlement_id, settlement_no, status FROM tms_settlement WHERE settlement_id=? OR settlement_no=?", id, id);
+                "SELECT settlement_id, settlement_no, status, settle_date FROM tms_settlement WHERE settlement_id=? OR settlement_no=?", id, id);
         if (rows.isEmpty()) return ApiResponse.fail("404", "交账单不存在");
         Map<String, Object> r = rows.get(0);
         String settlementId = TmsUtil.str(r.get("settlement_id"));
         String settlementNo = TmsUtil.str(r.get("settlement_no"));
+        // 业务日结【守卫 — 最易漏的内部入口】：争议是对交账单（含已审核单）的逆向变更，
+        // 按交账业务日期 settle_date 判封单，必须先于任何写库（含对已审核单的争议路径）。
+        dayCloseGuard.assertWritable(BizDayCloseGuard.toLocalDate(r.get("settle_date")),
+                "司机交账争议", settlementNo);
         if ("APPROVED".equals(TmsUtil.str(r.get("status")))) {
             return ApiResponse.fail("400", "该交账单已审核通过，不可标记争议");
         }

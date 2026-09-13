@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-13 16:24:33
+> 生成时间：2026-09-14 01:16:29
 
-- 端点总数：809
-- 已挂 @RequirePerm：630
+- 端点总数：826
+- 已挂 @RequirePerm：647
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
 
 ## base
@@ -149,6 +149,17 @@
 | POST | `/finance/customer-statement/reverse-audit` | FinanceController#csReverseAudit | fin.customer_recon.unaudit | fin.customer_recon | unaudit | 方法：fin.customer_recon.unaudit |
 | POST | `/finance/customer-statement/settle` | FinanceController#csSettle | fin.customer_recon.settle | fin.customer_recon | settle | 方法：fin.customer_recon.settle |
 | POST | `/finance/customer-statement/update` | FinanceController#csUpdate | fin.customer_recon.edit | fin.customer_recon | edit | 方法：fin.customer_recon.edit |
+| POST | `/finance/day-close/ap-daily/page` | BizDayCloseController#apDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/ar-daily/page` | BizDayCloseController#arDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/close` | BizDayCloseController#close | finance.day_close.audit | finance.day_close | audit | 方法：finance.day_close.audit |
+| POST | `/finance/day-close/fund-daily/page` | BizDayCloseController#fundDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/log-page` | BizDayCloseController#logPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/page` | BizDayCloseController#page | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/reminder` | BizDayCloseController#reminder | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/reopen` | BizDayCloseController#reopen | finance.day_close.unaudit | finance.day_close | unaudit | 方法：finance.day_close.unaudit |
+| POST | `/finance/day-close/reopen-batch` | BizDayCloseController#reopenBatch | finance.day_close.unaudit | finance.day_close | unaudit | 方法：finance.day_close.unaudit |
+| POST | `/finance/day-close/ticket` | BizDayCloseController#ticket | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/wizard` | BizDayCloseController#wizard | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
 | POST | `/finance/expense/audit` | FinanceController#auditExpense | fin.fee.audit | fin.fee | audit | 方法：fin.fee.audit |
 | POST | `/finance/expense/create` | FinanceController#createExpense | fin.fee.add | fin.fee | add | 方法：fin.fee.add |
 | POST | `/finance/expense/delete` | FinanceController#deleteExpense | fin.fee.delete | fin.fee | delete | 方法：fin.fee.delete |
@@ -574,6 +585,12 @@
 | GET | `/system/rbac/user/{userId}` | RbacUserAdminController#detail | system.user.view | system.user | view | 方法：system.user.view |
 | POST | `/system/role/page` | SystemController#rolePage | system.role.view | system.role | view | 方法：system.role.view |
 | POST | `/system/role/save` | SystemController#saveRole | system.role.edit | system.role | edit | 方法：system.role.edit |
+| POST | `/system/schedule-task/log-page` | SysScheduledTaskController#logPage | system.schedule_task.view | system.schedule_task | view | 方法：system.schedule_task.view |
+| POST | `/system/schedule-task/next5` | SysScheduledTaskController#next5 | system.schedule_task.view | system.schedule_task | view | 方法：system.schedule_task.view |
+| POST | `/system/schedule-task/page` | SysScheduledTaskController#page | system.schedule_task.view | system.schedule_task | view | 方法：system.schedule_task.view |
+| POST | `/system/schedule-task/run-once` | SysScheduledTaskController#runOnce | system.schedule_task.execute | system.schedule_task | execute | 方法：system.schedule_task.execute |
+| POST | `/system/schedule-task/toggle` | SysScheduledTaskController#toggle | system.schedule_task.edit | system.schedule_task | edit | 方法：system.schedule_task.edit |
+| POST | `/system/schedule-task/update` | SysScheduledTaskController#update | system.schedule_task.edit | system.schedule_task | edit | 方法：system.schedule_task.edit |
 | POST | `/system/todo/done` | SystemController#doneTodo | — | — | — | ❌ |
 | POST | `/system/todo/page` | SystemController#todoPage | — | — | — | ❌ |
 | GET | `/system/todo/pending-count` | SystemController#pendingCount | — | — | — | ❌ |

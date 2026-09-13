@@ -4,6 +4,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import com.erp.inventory.service.InventoryCostService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -45,6 +46,7 @@ public class PurchaseReturnController {
     private final com.erp.finance.gl.GlHookService glHooks;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public PurchaseReturnController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
@@ -52,7 +54,8 @@ public class PurchaseReturnController {
                                     com.erp.system.OperationLogService opLog,
                                     com.erp.finance.gl.GlHookService glHooks,
                                     com.erp.common.security.datascope.DataScopeService dataScope,
-                                    com.erp.common.security.FieldMasker fieldMasker) {
+                                    com.erp.common.security.FieldMasker fieldMasker,
+                                    BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
@@ -60,6 +63,7 @@ public class PurchaseReturnController {
         this.glHooks = glHooks;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** 退货申请数据范围目标：仓库/供应商/建档人 + 商品分类/品牌按明细行。 */
@@ -545,8 +549,12 @@ public class PurchaseReturnController {
         String applyId = str(pick(apply, "apply_id"));
         String applyNo = str(pick(apply, "apply_no"));
 
+        // 业务日结【回填】：审核即生效，生效日取当天，先校验当天是否已日结
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购退货申请", applyNo);
+
         jdbcTemplate.update("""
-                UPDATE pur_return_apply SET status='APPROVED', audit_user=?, audit_time=CURRENT_TIMESTAMP
+                UPDATE pur_return_apply SET status='APPROVED', bill_date=CURRENT_DATE,
+                    audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE apply_id=?
                 """, "系统管理员", applyId);
 
@@ -568,6 +576,9 @@ public class PurchaseReturnController {
         if (!"APPROVED".equals(status)) throw new IllegalArgumentException("仅已审核申请可反审核，当前状态：" + status);
         String applyId = str(pick(apply, "apply_id"));
         String applyNo = str(pick(apply, "apply_no"));
+
+        // 业务日结【守卫】：按申请单 bill_date 校验，已日结期间的单据禁止反审核
+        dayCloseGuard.assertBillWritable("pur_return_apply", "bill_date", "apply_id", applyId, "采购退货申请");
 
         // 检查关联出库单
         List<Map<String, Object>> obRows = jdbcTemplate.queryForList(
@@ -806,6 +817,9 @@ public class PurchaseReturnController {
         String outboundNo = str(pick(ob, "outbound_no"));
         String warehouse = str(pick(ob, "warehouse"));
 
+        // 业务日结【回填】：出库审核即扣库存生效，生效日取当天，先校验当天是否已日结
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购退货出库", outboundNo);
+
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM pur_return_outbound_detail WHERE outbound_id = ?", outboundId);
 
@@ -881,7 +895,7 @@ public class PurchaseReturnController {
 
         jdbcTemplate.update("""
                 UPDATE pur_return_outbound SET status='APPROVED', stock_updated=TRUE,
-                    cost_amount=?, audit_user=?, audit_time=CURRENT_TIMESTAMP
+                    bill_date=CURRENT_DATE, cost_amount=?, audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE outbound_id=?
                 """, totalCostAmount, "系统管理员", outboundId);
 
@@ -1003,6 +1017,9 @@ public class PurchaseReturnController {
         // goods_amount 为含税金额；final_amount 是拆出税额后的不含税金额，不用于结算。
         BigDecimal apAmount = toBd(pick(r, "goods_amount"));
 
+        // 业务日结【回填】：退货单审核即写负向应付生效，生效日取当天，先校验当天是否已日结
+        dayCloseGuard.assertWritable(LocalDate.now(), "采购退货单", returnNo);
+
         // 写负向 fin_ap（source_bill 存退货单号，ap_amount 为负数）
         String apId = "AP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
         String apNo = billNoGen.nextNo("AP", "fin_ap", "ap_no");
@@ -1015,7 +1032,7 @@ public class PurchaseReturnController {
 
         jdbcTemplate.update("""
                 UPDATE pur_return SET status='APPROVED', ap_status='已生成',
-                    audit_user=?, audit_time=CURRENT_TIMESTAMP
+                    return_date=CURRENT_DATE, audit_user=?, audit_time=CURRENT_TIMESTAMP
                 WHERE return_id=?
                 """, "系统管理员", returnId);
 
@@ -1046,6 +1063,9 @@ public class PurchaseReturnController {
 
         String returnId = str(pick(rows.get(0), "return_id"));
         String returnNo = str(pick(rows.get(0), "return_no"));
+
+        // 业务日结【守卫】：按退货单 return_date 校验，已日结期间的单据禁止反审核
+        dayCloseGuard.assertBillWritable("pur_return", "return_date", "return_id", returnId, "采购退货单");
 
         // 检查关联 fin_ap 是否已有付款
         List<Map<String, Object>> apRows = jdbcTemplate.queryForList(

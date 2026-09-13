@@ -466,7 +466,51 @@ public class GlPeriodService {
             checks.add(check("上期已结", ok,
                     ok ? "上期 " + prev + " 已" + st : "上期 " + prev + " 状态为「" + st + "」，请先结账上期", null));
         }
+
+        // 5. 本期业务已全部日结（PRD-33；参数 P0186：Y=硬拦截并列未结日期，N=仅提示）
+        checks.add(dayCloseCheck(period));
         return checks;
+    }
+
+    /**
+     * 业务日结月结检查：本期月初至结账当天（历史期间至月末）存在未日结日期时，
+     * 按 P0186 决定硬拦或提示。总开关停用或库中从无日结记录时不校验
+     * （与单据封单守卫 no-op 口径一致，避免首次启用即被历史期间卡死）。
+     */
+    private Map<String, Object> dayCloseCheck(String period) {
+        int year = Integer.parseInt(period.substring(0, 4));
+        int month = Integer.parseInt(period.substring(4, 6));
+        LocalDate first = LocalDate.of(year, month, 1);
+        LocalDate monthEnd = first.plusMonths(1).minusDays(1);
+        LocalDate today = LocalDate.now();
+        LocalDate end = monthEnd.isAfter(today) ? today : monthEnd;
+
+        boolean closeEnabled = sysParam.getBool(com.erp.finance.dayclose.BizDayCloseConst.PARAM_ENABLED, true);
+        Integer closeRows = jdbc.queryForObject("SELECT COUNT(*) FROM biz_day_close", Integer.class);
+        if (!closeEnabled || closeRows == null || closeRows == 0) {
+            return check("业务日结", true,
+                    !closeEnabled ? "业务日结总开关停用，不校验" : "尚未执行过业务日结，本期不校验", null);
+        }
+        List<java.sql.Date> closedDates = jdbc.queryForList(
+                "SELECT close_date FROM biz_day_close WHERE close_date BETWEEN ? AND ?",
+                java.sql.Date.class, java.sql.Date.valueOf(first), java.sql.Date.valueOf(end));
+        java.util.Set<String> closed = new java.util.HashSet<>();
+        for (java.sql.Date d : closedDates) {
+            closed.add(d.toLocalDate().toString());
+        }
+        List<String> missing = new ArrayList<>();
+        for (LocalDate d = first; !d.isAfter(end); d = d.plusDays(1)) {
+            if (!closed.contains(d.toString())) missing.add(d.toString());
+        }
+        boolean hard = sysParam.getBool(com.erp.finance.dayclose.BizDayCloseConst.PARAM_GL_REQUIRE, true);
+        if (missing.isEmpty()) {
+            return check("业务日结", true, "本期 " + first + " ~ " + end + " 业务已全部日结", null);
+        }
+        String shown = missing.size() <= 10 ? String.join("、", missing)
+                : String.join("、", missing.subList(0, 10)) + " 等";
+        String detail = "本期有 " + missing.size() + " 个日期未日结（" + shown + "）"
+                + (hard ? "，请先完成业务日结再月结" : "，当前参数为仅提示，可继续月结");
+        return check("业务日结", !hard, detail, Map.of("unclosed", missing));
     }
 
     /** 期末结账：四检查全过 → 期间置已结账（12 期已冻结），下一期间置进行中（自动建下年期间）。 */

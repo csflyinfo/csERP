@@ -5,6 +5,7 @@ import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
 import com.erp.common.util.BillNoGenerator;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,13 +42,15 @@ public class StockTakeController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
+    private final BizDayCloseGuard dayCloseGuard;
 
     public StockTakeController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGenerator,
                                com.erp.system.OperationLogService opLog,
                                com.erp.finance.gl.GlHookService glHooks,
                                com.erp.common.security.datascope.DataScopeService dataScope,
                                com.erp.common.security.FieldMasker fieldMasker,
-                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
+                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard,
+                               BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGenerator = billNoGenerator;
         this.opLog = opLog;
@@ -55,6 +58,7 @@ public class StockTakeController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.warehouseGuard = warehouseGuard;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     /** PRD-31 盘点操作日志：统一走 OperationLogService（真实操作人/IP/耗时/中文名/单据时间线）。 */
@@ -643,6 +647,15 @@ public class StockTakeController {
         // 数据范围（PRD-28 §5.3）：禁止审核/反审核他仓盘点单
         warehouseGuard.assertVisible(jdbcTemplate, warehouse);
 
+        // 业务日结【不回填…守卫】（v1.3 终审）：盘点日 count_date 即入账日，审核不回填该日期。
+        // 盘点日为空直接拒审；已封账日期的盘点单禁止审核。守卫必须位于 addStock/deductStock 等任何库存写入之前。
+        Object countDateRaw = sheets.get(0).get("COUNT_DATE");
+        if (countDateRaw == null || String.valueOf(countDateRaw).isBlank()
+                || "null".equals(String.valueOf(countDateRaw))) {
+            throw new IllegalArgumentException("盘点日为空，无法审核（日结封单口径要求盘点日非空）");
+        }
+        dayCloseGuard.assertWritable(BizDayCloseGuard.toLocalDate(countDateRaw), "库存盘点", sheetNo);
+
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_detail WHERE sheet_no = ? ORDER BY line_no", sheetNo);
 
@@ -725,6 +738,15 @@ public class StockTakeController {
         String warehouse = String.valueOf(sheets.get(0).get("WAREHOUSE"));
         // 数据范围（PRD-28 §5.3）：禁止审核/反审核他仓盘点单
         warehouseGuard.assertVisible(jdbcTemplate, warehouse);
+
+        // 业务日结【守卫】（v1.3 终审）：反审核按单据上的盘点日 count_date 判封单，
+        // 必须位于任何反向库存写入（deductStock/addStock）之前。存量盘点日为空按当天（建单默认今天）。
+        Object reverseCountDateRaw = sheets.get(0).get("COUNT_DATE");
+        LocalDate reverseCountDate = (reverseCountDateRaw == null
+                || String.valueOf(reverseCountDateRaw).isBlank()
+                || "null".equals(String.valueOf(reverseCountDateRaw)))
+                ? LocalDate.now() : BizDayCloseGuard.toLocalDate(reverseCountDateRaw);
+        dayCloseGuard.assertWritable(reverseCountDate, "库存盘点", sheetNo);
 
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM inv_count_detail WHERE sheet_no = ? ORDER BY line_no", sheetNo);

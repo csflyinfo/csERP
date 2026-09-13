@@ -12,9 +12,11 @@ const {
   dashboardLoading,
   dashboardError,
   recentLogs,
+  dayCloseReminder,
   dashboardCards,
   loadRecentLogs,
   loadDashboardSummary,
+  loadDayCloseReminder,
   runCoreFlow
 } = useDashboard(toast)
 
@@ -60,11 +62,17 @@ function gotoNotification() {
   router.push('/notification')
 }
 
+/** 跳转日结管理处理红色提醒。 */
+function gotoDayClose() {
+  router.push('/finance/day-close')
+}
+
 onMounted(() => {
   loadDashboardSummary()
   loadRecentLogs()
   loadTodoSummary()
   loadNotifyCount()
+  loadDayCloseReminder()
 })
 </script>
 
@@ -75,6 +83,24 @@ onMounted(() => {
       <button class="btn primary" @click="doRunCoreFlow">核心闭环自测</button>
       <span v-if="dashboardLoading" class="muted">正在加载经营概览...</span>
       <span v-else-if="dashboardError" class="muted">{{ dashboardError }}</span>
+    </div>
+
+    <!-- 业务日结红色提醒（PRD-33：过 P0188 时刻昨日未结 / 自动日结失败） -->
+    <div v-if="dayCloseReminder?.show" class="day-close-alert" @click="gotoDayClose">
+      <span class="alert-ic">⚠</span>
+      <div style="flex:1">
+        <template v-if="dayCloseReminder.late">
+          <b>业务日结提醒：</b>截至今日 {{ dayCloseReminder.lateHour }}:00，
+          {{ dayCloseReminder.yesterday }} 的业务日结尚未执行
+          （当前封单日：{{ dayCloseReminder.lastClosed || '无' }}）。
+          未日结将阻断总账月末结账，请及时前往「财务管理 - 日结管理」执行封单。
+        </template>
+        <template v-if="dayCloseReminder.lastFail">
+          <b>自动日结失败：</b>{{ dayCloseReminder.lastFail.closeDate }} 自动日结未成功
+          （{{ dayCloseReminder.lastFail.detail || '详见日结管理操作日志' }}），请处理后补结。
+        </template>
+      </div>
+      <button class="btn danger-btn" style="height:26px;padding:0 12px;font-size:12px">前往日结</button>
     </div>
 
     <!-- 待办快捷入口 -->
@@ -143,4 +169,12 @@ onMounted(() => {
 .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 0 12px 12px; }
 .cards .card { text-align: center; padding: 16px; }
 .cards .value { font-size: 22px; font-weight: 800; color: var(--primary); margin-top: 6px; }
+.day-close-alert {
+  display: flex; align-items: center; gap: 10px; margin: 0 12px 12px;
+  padding: 10px 14px; background: #fdeaea; border: 1px solid #f5b5b5;
+  border-left: 4px solid #d33; border-radius: 4px; color: #a02121;
+  font-size: 13px; cursor: pointer;
+}
+.alert-ic { font-size: 18px; }
+.danger-btn { background: #d33; color: #fff; border-color: #d33; }
 </style>

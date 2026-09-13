@@ -3,6 +3,7 @@ package com.erp.inventory;
 import com.erp.common.api.ApiResponse;
 import com.erp.common.api.PageRequest;
 import com.erp.common.api.PageResult;
+import com.erp.finance.dayclose.BizDayCloseGuard;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import com.erp.common.security.RequirePerm;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,16 +30,20 @@ public class InventoryController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard;
+    /** PRD-33 业务日结封单守卫：遗留调拨/成本调整审核回填 bill_date（V120 新增列）。 */
+    private final BizDayCloseGuard dayCloseGuard;
 
     public InventoryController(JdbcTemplate jdbcTemplate, com.erp.system.OperationLogService opLog,
                                com.erp.common.security.datascope.DataScopeService dataScope,
                                com.erp.common.security.FieldMasker fieldMasker,
-                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard) {
+                               com.erp.common.security.datascope.WarehouseScopeGuard warehouseGuard,
+                               BizDayCloseGuard dayCloseGuard) {
         this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.warehouseGuard = warehouseGuard;
+        this.dayCloseGuard = dayCloseGuard;
     }
 
     @RequirePerm(value = "inv.balance.view", name = "查看")
@@ -266,6 +272,8 @@ public class InventoryController {
         // 数据范围（PRD-28 §5.3）：调出/调入仓库都必须在当前用户仓库范围内
         warehouseGuard.assertVisible(jdbcTemplate, sourceWarehouse);
         warehouseGuard.assertVisible(jdbcTemplate, targetWarehouse);
+        // 业务日结守卫【回填】：遗留调拨审核直接改库存，以当天为生效日，封单日后禁止审核
+        dayCloseGuard.assertWritable(LocalDate.now(), "遗留调拨", String.valueOf(bill.get("BILL_NO")));
         // 获取当前成本单价
         BigDecimal costPrice = getCostPrice(goodsCode, sourceWarehouse);
         BigDecimal amount = qty.multiply(costPrice);
@@ -275,9 +283,9 @@ public class InventoryController {
         // 增加目标仓库库存
         addStock(goodsCode, goodsName, targetWarehouse, qty, costPrice);
 
-        // 更新单据状态
+        // 更新单据状态（V120 新增 bill_date，审核回填为当天作为日结生效日）
         jdbcTemplate.update(
-            "UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_id=?",
+            "UPDATE biz_simple_bill SET status='APPROVED', bill_date=CURRENT_DATE WHERE bill_id=?",
             bill.get("BILL_ID"));
 
         // 生成调出流水
@@ -354,6 +362,9 @@ public class InventoryController {
             throw new IllegalArgumentException("库存数量为0，无法调整成本");
         }
 
+        // 业务日结守卫【回填】：遗留成本调整审核直接改库存成本，以当天为生效日，封单日后禁止审核
+        dayCloseGuard.assertWritable(LocalDate.now(), "成本调整", String.valueOf(bill.get("BILL_NO")));
+
         // 新成本 = 原成本 + (差异金额 / 库存数量)
         BigDecimal costDelta = diffAmount.divide(physicalQty, 4, RoundingMode.HALF_UP);
         BigDecimal newCostPrice = oldCostPrice.add(costDelta);
@@ -363,9 +374,9 @@ public class InventoryController {
             "UPDATE inv_stock_balance SET cost_price=?, stock_amount=?, last_inout_time=CURRENT_TIMESTAMP WHERE goods_code=? AND warehouse=?",
             newCostPrice, newStockAmount, goodsCode, warehouse);
 
-        // 更新单据状态
+        // 更新单据状态（V120 新增 bill_date，审核回填为当天作为日结生效日）
         jdbcTemplate.update(
-            "UPDATE biz_simple_bill SET status='APPROVED' WHERE bill_id=?",
+            "UPDATE biz_simple_bill SET status='APPROVED', bill_date=CURRENT_DATE WHERE bill_id=?",
             bill.get("BILL_ID"));
 
         // 成本调整改成本单价——敏感操作，整条日志标 sensitive（非管理员脱敏）
