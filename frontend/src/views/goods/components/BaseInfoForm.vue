@@ -4,18 +4,15 @@ import { post } from '../../../api/client.js'
 import { pinyin } from 'pinyin-pro'
 import CategoryTreeSelect from './CategoryTreeSelect.vue'
 import SearchSelect from '../../../components/SearchSelect.vue'
+import { GOODS_TYPES } from '../goodsConstants.js'
 
 // 写死枚举选项（SearchSelect 保留原值类型，布尔字段必须用 {value:true/false} 而非字符串）
 const YES_NO_OPTS = [{ value: true, label: '是' }, { value: false, label: '否' }]
-const GOODS_TYPE_OPTS = ['正常商品', '组合商品', '服务商品', '赠品'].map(v => ({ value: v, label: v }))
+// 商品类型：库存数字码 0..4，下拉显示中文
+const GOODS_TYPE_OPTS = GOODS_TYPES
 const GOODS_LEVEL_OPTS = [
   { value: '', label: '请选择' },
   { value: 'A级', label: 'A级' }, { value: 'B级', label: 'B级' }, { value: 'C级', label: 'C级' },
-]
-const TAX_RATE_OPTS = [
-  { value: '', label: '请选择' },
-  { value: '13%', label: '13%' }, { value: '9%', label: '9%' },
-  { value: '6%', label: '6%' }, { value: '0%', label: '免税' },
 ]
 const STATUS_OPTS = [{ value: '正常', label: '正常' }, { value: '停用', label: '停用' }]
 
@@ -116,9 +113,25 @@ function onCategorySelect({ name, taxRate, code }) {
     return
   }
   if (taxRate) {
-    // 归一化：既支持 "13%" 也支持数字
-    props.modelValue.taxRate = /%$/.test(taxRate) ? taxRate : `${taxRate}%`
+    // 分类默认税率存 "13%" 形态；税率字段库存纯数字，带出时去 % （0-50 整数校验失焦时兜底）
+    props.modelValue.taxRate = String(taxRate).replace('%', '')
   }
+}
+
+// ==================== 税率手工录入 ====================
+// 只允许两位正整数 0-50：输入过程剔除非数字，失焦后规整/夹值
+function onTaxInput(e) {
+  let v = e.target.value.replace(/[^\d]/g, '').slice(0, 2)
+  if (v.length > 1 && v.startsWith('0')) v = v.slice(1)
+  props.modelValue.taxRate = v
+  e.target.value = v
+}
+function onTaxBlur(e) {
+  let n = parseInt(e.target.value, 10)
+  if (Number.isNaN(n)) n = 0
+  n = Math.min(50, Math.max(0, n))
+  props.modelValue.taxRate = String(n)
+  e.target.value = String(n)
 }
 </script>
 
@@ -203,7 +216,18 @@ function onCategorySelect({ name, taxRate, code }) {
     <div class="row">
       <div class="field">
         <label>税率</label>
-        <SearchSelect v-model="modelValue.taxRate" :options="TAX_RATE_OPTS" search-placeholder="输入关键字搜索" />
+        <div class="tax-input">
+          <input
+            type="text"
+            inputmode="numeric"
+            :value="modelValue.taxRate"
+            placeholder="0-50 的整数"
+            maxlength="2"
+            @input="onTaxInput"
+            @blur="onTaxBlur"
+          />
+          <span class="tax-suffix">％</span>
+        </div>
       </div>
       <div class="field">
         <label>商品负责人</label>
@@ -225,7 +249,7 @@ function onCategorySelect({ name, taxRate, code }) {
       </div>
     </div>
 
-    <!-- 第五行：是否称重 · 是否预售 -->
+    <!-- 第五行：是否称重 · 是否预售 · 是否生鲜 -->
     <div class="row">
       <div class="field">
         <label>是否称重</label>
@@ -234,6 +258,10 @@ function onCategorySelect({ name, taxRate, code }) {
       <div class="field">
         <label>是否预售</label>
         <SearchSelect v-model="modelValue.isPresale" :options="YES_NO_OPTS" search-placeholder="输入关键字搜索" />
+      </div>
+      <div class="field">
+        <label>是否生鲜</label>
+        <SearchSelect v-model="modelValue.isFresh" :options="YES_NO_OPTS" search-placeholder="输入关键字搜索" />
       </div>
     </div>
   </div>
@@ -314,5 +342,25 @@ function onCategorySelect({ name, taxRate, code }) {
   background-repeat: no-repeat;
   background-position: right 8px center;
   padding-right: 28px;
+}
+
+/* 税率手工录入：数字输入框 + ％ 后缀 */
+.tax-input {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+}
+.tax-input input {
+  width: 100%;
+  padding-right: 26px;
+}
+.tax-suffix {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: #909399;
+  pointer-events: none;
 }
 </style>

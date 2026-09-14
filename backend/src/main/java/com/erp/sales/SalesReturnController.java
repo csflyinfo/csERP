@@ -81,6 +81,7 @@ public class SalesReturnController {
     private final com.erp.common.security.FieldMasker fieldMasker;
     /** 业务日结封单守卫（PRD-33）：已生效单据的审核/反审核落库前显式判封单。 */
     private final BizDayCloseGuard dayCloseGuard;
+    private final com.erp.base.GoodsImportSupport goodsImportSupport;
 
     public SalesReturnController(JdbcTemplate jdbcTemplate,
                                  InventoryCostService inventoryCostService,
@@ -90,7 +91,8 @@ public class SalesReturnController {
                                  com.erp.finance.gl.GlHookService glHooks,
                                  com.erp.common.security.datascope.DataScopeService dataScope,
                                  com.erp.common.security.FieldMasker fieldMasker,
-                                 BizDayCloseGuard dayCloseGuard) {
+                                 BizDayCloseGuard dayCloseGuard,
+                                 com.erp.base.GoodsImportSupport goodsImportSupport) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
@@ -100,6 +102,14 @@ public class SalesReturnController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.dayCloseGuard = dayCloseGuard;
+        this.goodsImportSupport = goodsImportSupport;
+    }
+
+    /** 销售退货准入：可销售商品可退，兑换物虽不可销但允许销退。 */
+    private void assertSalesReturnAllowed(List<Map<String, Object>> details) {
+        goodsImportSupport.assertBizAllowed(
+                details.stream().map(l -> str(l.get("goodsCode"))).filter(s -> !s.isBlank()).distinct().toList(),
+                com.erp.base.GoodsImportSupport.Scene.SALES_RETURN);
     }
 
     /** 销售退货单列表/详情共用数据范围目标：仓库/客户/建档人 + 商品分类/品牌按明细行（无业务员维度）。 */
@@ -263,6 +273,7 @@ public class SalesReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = d.goods_code AND sb.warehouse = ?
                         WHERE h.status = 'APPROVED' AND h.customer = ?
+                          AND (COALESCE(g.can_sale, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(d.goods_code) LIKE ? OR LOWER(d.goods_name) LIKE ?)
                         GROUP BY d.goods_code
                         ORDER BY MAX(h.bill_date) DESC, d.goods_code
@@ -281,6 +292,7 @@ public class SalesReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = g.goods_code AND sb.warehouse = ?
                         WHERE COALESCE(g.status, 'NORMAL') <> 'STOPPED'
+                          AND (COALESCE(g.can_sale, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                                OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
                         ORDER BY g.goods_code
@@ -296,6 +308,7 @@ public class SalesReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = g.goods_code AND sb.warehouse = ?
                         WHERE COALESCE(g.status, 'NORMAL') <> 'STOPPED'
+                          AND (COALESCE(g.can_sale, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                                OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
                         ORDER BY g.goods_code
@@ -438,6 +451,8 @@ public class SalesReturnController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
+        // 采销准入：仅可销售商品（及兑换物）允许销售退货
+        assertSalesReturnAllowed(reqDetails);
         validateDetails(reqDetails, null);
 
         BigDecimal totalQty = BigDecimal.ZERO;
@@ -519,6 +534,8 @@ public class SalesReturnController {
         }
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
+        // 采销准入：仅可销售商品（及兑换物）允许销售退货
+        assertSalesReturnAllowed(reqDetails);
         validateDetails(reqDetails, applyId);
 
         BigDecimal totalQty = BigDecimal.ZERO;

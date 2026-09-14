@@ -291,7 +291,8 @@ async function loadBaseData() {
     post('/base/unit/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
     post('/base/warehouse/page', { pageNo: 1, pageSize: 100, filters: {} }).catch(() => ({ records: [] })),
     // 商品列表供内联选择器共用（简拼搜索在前端过滤，后端 keyword 也已支持）
-    post('/base/goods/page', { pageNo: 1, pageSize: 2000, filters: {} }).catch(() => ({ records: [] })),
+    // 按采销场景过滤：采购只列可采商品，销售只列可售商品（类型 2/3 不可销、4 不可采）
+    post('/base/goods/page', { pageNo: 1, pageSize: 2000, filters: { bizScene: isPurchase.value ? 'purchase' : 'sale' } }).catch(() => ({ records: [] })),
   ])
   unitList.value = u.records || []
   warehouseList.value = w.records || []

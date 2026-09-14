@@ -47,6 +47,7 @@ public class PurchaseReturnController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final BizDayCloseGuard dayCloseGuard;
+    private final com.erp.base.GoodsImportSupport goodsImportSupport;
 
     public PurchaseReturnController(JdbcTemplate jdbcTemplate,
                                     InventoryCostService inventoryCostService,
@@ -55,7 +56,8 @@ public class PurchaseReturnController {
                                     com.erp.finance.gl.GlHookService glHooks,
                                     com.erp.common.security.datascope.DataScopeService dataScope,
                                     com.erp.common.security.FieldMasker fieldMasker,
-                                    BizDayCloseGuard dayCloseGuard) {
+                                    BizDayCloseGuard dayCloseGuard,
+                                    com.erp.base.GoodsImportSupport goodsImportSupport) {
         this.jdbcTemplate = jdbcTemplate;
         this.inventoryCostService = inventoryCostService;
         this.billNoGen = billNoGen;
@@ -64,6 +66,14 @@ public class PurchaseReturnController {
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.dayCloseGuard = dayCloseGuard;
+        this.goodsImportSupport = goodsImportSupport;
+    }
+
+    /** 采购退货准入：可采购商品可退，兑换物虽不可采但允许采退。 */
+    private void assertPurchaseReturnAllowed(List<Map<String, Object>> details) {
+        goodsImportSupport.assertBizAllowed(
+                details.stream().map(l -> str(l.get("goodsCode"))).filter(s -> !s.isBlank()).distinct().toList(),
+                com.erp.base.GoodsImportSupport.Scene.PURCHASE_RETURN);
     }
 
     /** 退货申请数据范围目标：仓库/供应商/建档人 + 商品分类/品牌按明细行。 */
@@ -260,6 +270,7 @@ public class PurchaseReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = d.goods_code AND sb.warehouse = ?
                         WHERE h.status = 'APPROVED' AND h.supplier = ?
+                          AND (COALESCE(g.can_purchase, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(d.goods_code) LIKE ? OR LOWER(d.goods_name) LIKE ?)
                         GROUP BY d.goods_code
                         ORDER BY MAX(h.bill_date) DESC, d.goods_code
@@ -279,6 +290,7 @@ public class PurchaseReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = g.goods_code AND sb.warehouse = ?
                         WHERE g.default_supplier = ? AND COALESCE(g.status, 'NORMAL') <> 'STOPPED'
+                          AND (COALESCE(g.can_purchase, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                                OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
                         ORDER BY g.goods_code
@@ -295,6 +307,7 @@ public class PurchaseReturnController {
                         LEFT JOIN inv_stock_balance sb
                                ON sb.goods_code = g.goods_code AND sb.warehouse = ?
                         WHERE COALESCE(g.status, 'NORMAL') <> 'STOPPED'
+                          AND (COALESCE(g.can_purchase, TRUE) = TRUE OR g.goods_type = '4')
                           AND (? IS NULL OR LOWER(g.goods_code) LIKE ? OR LOWER(g.goods_name) LIKE ?
                                OR LOWER(COALESCE(g.barcode, '')) LIKE ?)
                         ORDER BY g.goods_code
@@ -419,6 +432,8 @@ public class PurchaseReturnController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
+        // 采销准入：仅可采购商品（及兑换物）允许采购退货
+        assertPurchaseReturnAllowed(reqDetails);
         // 校验：按单退货按源单行校验可退数量；按品退货按批次可用库存校验
         validateDetails(reqDetails, warehouse, null);
 
@@ -498,6 +513,8 @@ public class PurchaseReturnController {
         }
         if (reqDetails.isEmpty()) throw new IllegalArgumentException("退货明细不能为空");
 
+        // 采销准入：仅可采购商品（及兑换物）允许采购退货
+        assertPurchaseReturnAllowed(reqDetails);
         // 校验：排除本单自身已占用的额度（excludeApplyId = 本单）
         validateDetails(reqDetails, warehouse, applyId);
 

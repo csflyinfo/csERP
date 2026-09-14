@@ -2,12 +2,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { post } from '../../../api/client.js'
 import SearchSelect from '../../../components/SearchSelect.vue'
+import { GOODS_TYPES } from '../goodsConstants.js'
 
 // 布尔字段必须保留 Boolean 原值（不能退化成字符串）
 const YES_NO_OPTS = [{ value: true, label: '是' }, { value: false, label: '否' }]
-// select 类字段前置空值项（勾选字段但未选具体值时等同于显式清空）
+// select 类字段前置空值项（勾选字段但未选具体值时等同于显式清空）；兼容 {value,label} 对象选项
 function withEmpty(options) {
-  return [{ value: '', label: '请选择' }, ...(options || []).map(v => ({ value: v, label: v }))]
+  return [{ value: '', label: '请选择' }, ...(options || []).map(v =>
+    typeof v === 'object' && v !== null ? v : { value: v, label: v })]
 }
 
 const props = defineProps({
@@ -64,7 +66,8 @@ onMounted(loadOpts)
 
 // PRD 定义的批量编辑字段配置（不含价格相关字段）
 const batchEditFieldsConfig = computed(() => [
-  { key: 'goodsType', label: '商品类型', type: 'select', options: ['正常商品', '组合商品', '赠品', '服务商品'] },
+  // 商品类型：库存数字码 0..4，显示中文（批量编辑不落库为存量问题，选项先与新口径对齐）
+  { key: 'goodsType', label: '商品类型', type: 'select', options: GOODS_TYPES },
   { key: 'brandName', label: '品牌', type: 'select', options: brandOpts.value },
   { key: 'categoryName', label: '分类', type: 'select', options: categoryOpts.value },
   { key: 'defaultWarehouse', label: '默认仓库', type: 'select', options: warehouseOpts.value },
@@ -86,6 +89,12 @@ const batchEditFieldsConfig = computed(() => [
 // 表单数据 - 动态生成
 const formModel = ref({})
 
+// 选项可能是字符串或 {value,label}（商品类型），取首项的原始值
+function firstOptionValue(field) {
+  const o = field.options[0]
+  return o && typeof o === 'object' ? o.value : o
+}
+
 // 初始化表单
 function initForm() {
   const form = {}
@@ -96,7 +105,7 @@ function initForm() {
     } else if (field.type === 'yesno') {
       defaultValue = true
     } else if (field.type === 'select' && field.options.length > 0) {
-      defaultValue = field.options[0]
+      defaultValue = firstOptionValue(field)
     }
     form[field.key] = { enabled: false, value: defaultValue }
   })
@@ -120,7 +129,7 @@ function resetForm() {
     } else if (field.type === 'yesno') {
       formModel.value[key].value = true
     } else if (field.type === 'select' && field.options.length > 0) {
-      formModel.value[key].value = field.options[0]
+      formModel.value[key].value = firstOptionValue(field)
     } else {
       formModel.value[key].value = ''
     }

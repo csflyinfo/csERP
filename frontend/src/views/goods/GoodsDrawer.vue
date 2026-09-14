@@ -46,7 +46,7 @@ const defaultForm = {
   /** 末级分类编码（不落 goods 表，仅用于后端留空编码时按大类自动生成商品编码） */
   categoryCode: '',
   brandName: '',
-  goodsType: '正常商品',
+  goodsType: '0',
   goodsLevel: '',
   defaultWarehouse: '',
   goodsOwnerId: '',
@@ -55,9 +55,10 @@ const defaultForm = {
   shelfLifeDays: 0,
   warningDays: 0,
   origin: '',
-  taxRate: '',
+  taxRate: '0',
   isWeighted: false,
   isPresale: false,
+  isFresh: false,
   canSale: true,
   canPurchase: true,
   canReturn: true,
@@ -103,7 +104,8 @@ function parseRowToForm(row) {
   form.goodsId = raw.goodsId || ''
   form.goodsCode = raw.goodsCode || row.c1 || ''
   form.goodsName = raw.goodsName || row.c2 || ''
-  form.goodsType = raw.goodsType || '正常商品'
+  // 库存数字码 0..4；旧中文类型（组合商品/服务商品）保留原值，下拉兜底原样显示
+  form.goodsType = raw.goodsType || '0'
   form.spec = raw.spec || ''
   form.categoryName = raw.categoryName || ''
   form.brandName = raw.brandName || ''
@@ -127,10 +129,12 @@ function parseRowToForm(row) {
   form.status = raw.status === 'STOPPED' ? '停用' : '正常'
   form.simpleCode = raw.simpleCode || ''
   form.goodsLevel = raw.goodsLevel || ''
-  form.taxRate = raw.taxRate || ''
+  // 税率库存纯数字（兼容存量带 % 值），页面输入框只显示数字
+  form.taxRate = raw.taxRate != null && String(raw.taxRate) !== '' ? String(raw.taxRate).replace('%', '') : '0'
   form.goodsManager = raw.goodsManager || ''
   form.isWeighted = raw.isWeighted === true
   form.isPresale = raw.isPresale === true
+  form.isFresh = raw.isFresh === true
   form.canSale = raw.canSale !== false
   form.canPurchase = raw.canPurchase !== false
   form.origin = raw.origin || ''
@@ -165,6 +169,14 @@ function parseRowToForm(row) {
   }
   return form
 }
+
+// 商品类型 → 可采/可销派生（后端保存时同样强制派生，这里保持页面标志位一致）
+watch(() => formModel.value.goodsType, (type) => {
+  const t = String(type ?? '')
+  // 旧中文类型不在 0..4 内，按可采可销兜底
+  formModel.value.canSale = !['2', '3', '4'].includes(t)
+  formModel.value.canPurchase = t !== '4'
+})
 
 // 监听打开抽屉，重置表单和错误
 watch(() => props.visible, (val) => {
@@ -212,6 +224,8 @@ async function doSave() {
   const isEdit = currentMode.value === 'edit'
   const endpoint = isEdit ? '/base/goods/update' : '/base/goods/create'
   const payload = { ...formModel.value }
+  // 税率上送纯数字（库存口径），类型上送数字码
+  payload.taxRate = String(payload.taxRate ?? '0').replace('%', '') || '0'
   // 从小单位提取 baseUnit / barcode / 价格
   const baseUnit = formModel.value.units?.[0]
   if (baseUnit) {

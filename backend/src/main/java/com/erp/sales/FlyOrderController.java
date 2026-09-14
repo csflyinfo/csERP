@@ -36,18 +36,28 @@ public class FlyOrderController {
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final BizDayCloseGuard dayCloseGuard;
+    private final com.erp.base.GoodsImportSupport goodsImportSupport;
 
     public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                               com.erp.system.OperationLogService opLog,
                               com.erp.common.security.datascope.DataScopeService dataScope,
                               com.erp.common.security.FieldMasker fieldMasker,
-                              BizDayCloseGuard dayCloseGuard) {
+                              BizDayCloseGuard dayCloseGuard,
+                              com.erp.base.GoodsImportSupport goodsImportSupport) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
         this.dayCloseGuard = dayCloseGuard;
+        this.goodsImportSupport = goodsImportSupport;
+    }
+
+    /** 飞单保存（创建/编辑）时校验商品可销售，首个违规商品抛中文异常。 */
+    private void assertSaleAllowed(List<Map<String, Object>> details) {
+        goodsImportSupport.assertBizAllowed(
+                details.stream().map(d -> str(d.get("goodsCode"))).filter(s -> !s.isBlank()).distinct().toList(),
+                com.erp.base.GoodsImportSupport.Scene.SALE);
     }
 
     /**
@@ -88,6 +98,9 @@ public class FlyOrderController {
             salesTotal = salesTotal.add(toBd(d.get("salesAmount")));
         }
         BigDecimal profit = salesTotal.subtract(purchaseTotal);
+
+        // 采销准入：飞单是销售通道，设备辅材/包装物/兑换物不可销售
+        assertSaleAllowed(details);
 
         jdbcTemplate.update("""
                 INSERT INTO fly_order (fly_id, fly_no, supplier_code, supplier_name, customer_code, customer_name,
@@ -156,6 +169,9 @@ public class FlyOrderController {
             salesTotal = salesTotal.add(toBd(d.get("salesAmount")));
         }
         BigDecimal profit = salesTotal.subtract(purchaseTotal);
+
+        // 采销准入：改单明细同样必须满足可销售约束
+        assertSaleAllowed(details);
 
         jdbcTemplate.update("""
                 UPDATE fly_order SET supplier_code=?, supplier_name=?, customer_code=?, customer_name=?,
@@ -316,7 +332,8 @@ public class FlyOrderController {
         // 解析 unit_config，提取单位列表和对应价格
         List<Map<String, Object>> units = parseUnitConfig(unitConfig);
         out.put("units", units);
-        out.put("taxRate", taxRate);
+        // 税率库存纯数字（V122），飞单明细口径带 %
+        out.put("taxRate", taxRate.isBlank() ? "" : (taxRate.endsWith("%") ? taxRate : taxRate + "%"));
 
         // 选中的单位信息
         int idx = unitLevel - 1;

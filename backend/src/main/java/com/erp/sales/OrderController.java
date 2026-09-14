@@ -30,6 +30,7 @@ public class OrderController {
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final com.erp.common.security.approval.ApprovalService approvalService;
     private final BizDayCloseGuard dayCloseGuard;
+    private final com.erp.base.GoodsImportSupport goodsImportSupport;
 
     public OrderController(JdbcTemplate jdbcTemplate,
                            com.erp.common.util.BillNoGenerator billNoGen,
@@ -39,7 +40,8 @@ public class OrderController {
                            com.erp.common.security.datascope.DataScopeService dataScope,
                            com.erp.common.security.FieldMasker fieldMasker,
                            com.erp.common.security.approval.ApprovalService approvalService,
-                           BizDayCloseGuard dayCloseGuard) {
+                           BizDayCloseGuard dayCloseGuard,
+                           com.erp.base.GoodsImportSupport goodsImportSupport) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.inventoryCostService = inventoryCostService;
@@ -49,6 +51,14 @@ public class OrderController {
         this.fieldMasker = fieldMasker;
         this.approvalService = approvalService;
         this.dayCloseGuard = dayCloseGuard;
+        this.goodsImportSupport = goodsImportSupport;
+    }
+
+    /** 商品类型采销准入：订单保存（创建/编辑）时统一拦截，首个违规商品抛中文异常。 */
+    private void assertGoodsAllowed(List<Map<String, Object>> details, com.erp.base.GoodsImportSupport.Scene scene) {
+        goodsImportSupport.assertBizAllowed(
+                details.stream().map(d -> str(d.get("goodsCode"))).filter(s -> !s.isBlank()).distinct().toList(),
+                scene);
     }
 
     /** 建档人：当前登录用户姓名（数据范围 OWNER/DEFAULT DENY 依赖），无登录上下文回落系统管理员。 */
@@ -98,6 +108,8 @@ public class OrderController {
         for (Map<String, Object> d : details) {
             totalAmount = totalAmount.add(toBd(d.get("amount")));
         }
+        // 采销准入：设备辅材/包装物/兑换物不可销售（在任何 INSERT 之前拦）
+        assertGoodsAllowed(details, com.erp.base.GoodsImportSupport.Scene.SALE);
         // 库存校验：在任何 INSERT 之前做，不足则直接返回，事务内尚无写入
         String shortage = checkStockOfPayload(warehouse, details);
         if (shortage != null) return ApiResponse.fail("400", shortage);
@@ -271,6 +283,9 @@ public class OrderController {
                 ? (List<Map<String, Object>>) l : new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Map<String, Object> d : details) totalAmount = totalAmount.add(toBd(d.get("amount")));
+
+        // 采销准入：改单后明细同样必须满足可销售约束
+        assertGoodsAllowed(details, com.erp.base.GoodsImportSupport.Scene.SALE);
 
         // 库存校验：订单在创建时已占用库存，可用库存里已经扣掉了自己，
         // 所以判断口径是「新数量 ≤ 可用 + 本单已占用」，而不是「新数量 ≤ 可用」。
@@ -918,6 +933,8 @@ public class OrderController {
         for (Map<String, Object> d : details) {
             totalAmount = totalAmount.add(toBd(d.get("amount")));
         }
+        // 采销准入：兑换物不可采购（在任何 INSERT 之前拦）
+        assertGoodsAllowed(details, com.erp.base.GoodsImportSupport.Scene.PURCHASE);
         jdbcTemplate.update("""
                 INSERT INTO purchase_order (order_id, order_no, supplier_code, supplier_name, buyer, warehouse,
                     bill_date, amount, unpaid_amount, status, creator_name, remark)

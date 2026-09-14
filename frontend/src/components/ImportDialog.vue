@@ -1,13 +1,16 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import * as XLSX from 'xlsx'
+import { getBlob, saveBlobFile } from '../api/client.js'
 
 /**
  * 通用 Excel 导入弹窗
- * - 支持 xls / xlsx / csv
+ * - 支持 xls / xlsx / csv，仅解析工作簿第一个页签
  * - 拖入或点击选择文件
- * - 「下载模板」按模板 headers 生成 xlsx
- * - 解析后按表头做字段映射并发出 'import' 事件（携带 rows 数组）
+ * - 「下载模板」：配置 templateUrl 时走后端流式下载真实文件；否则按表头前端生成 xlsx
+ * - fieldSelector 模式（导入修改）：先勾选可修改字段（锁定字段默认勾选且不可取消），
+ *   按勾选列动态生成模板，警示文案逐字展示
+ * - 解析后按表头做字段映射并发出 'import' 事件（携带 rows 数组与 { fileName, fields }）
  */
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -24,6 +27,12 @@ const props = defineProps({
   fieldMap: { type: Object, required: true },
   /** 必须有值才视为有效行 */
   requiredKey: { type: String, default: '' },
+  /** 配置后「下载模板」改走后端 GET 流式下载（如商品档案双页签模板） */
+  templateUrl: { type: String, default: '' },
+  /**
+   * 字段勾选区配置：{ fields:[{label,key,locked}], lockedKey, warnings:[...], defaultAllChecked }
+   */
+  fieldSelector: { type: Object, default: null },
 })
 
 const emit = defineEmits(['close', 'import'])
@@ -31,10 +40,28 @@ const emit = defineEmits(['close', 'import'])
 const dragging = ref(false)
 const selectedFile = ref(null)
 const parseError = ref('')
+const downloading = ref(false)
 const previewRows = ref([]) // 已解析成对象的行
 
-// 预览表头：按模板列顺序显示，仅取出被 fieldMap 覆盖的列
+// fieldSelector 模式：字段勾选状态（key → 是否勾选）
+const selected = ref({})
+
+const isSelector = computed(() => !!(props.fieldSelector && Array.isArray(props.fieldSelector.fields)))
+// 勾选生效的字段（含锁定列）
+const activeFields = computed(() => {
+  if (!isSelector.value) return null
+  return props.fieldSelector.fields.filter(f => selected.value[f.key])
+})
+// 除锁定字段外至少勾选一个字段，才允许下载模板/上传
+const selectorReady = computed(() => {
+  if (!isSelector.value) return true
+  const f = props.fieldSelector
+  return f.fields.some(item => item.key !== f.lockedKey && selected.value[item.key])
+})
+
+// 预览表头：勾选模式按勾选项；普通模式按模板列顺序，仅取出被 fieldMap 覆盖的列
 const previewHeaders = computed(() => {
+  if (isSelector.value) return activeFields.value.map(f => f.label)
   const map = props.fieldMap || {}
   return (props.templateHeaders || []).filter(h => Object.prototype.hasOwnProperty.call(map, h))
 })
@@ -45,8 +72,24 @@ watch(() => props.visible, (v) => {
     selectedFile.value = null
     parseError.value = ''
     previewRows.value = []
+    if (isSelector.value) {
+      const next = {}
+      for (const f of props.fieldSelector.fields) {
+        next[f.key] = !!(f.locked || props.fieldSelector.defaultAllChecked)
+      }
+      selected.value = next
+    }
   }
 })
+
+// 勾选字段变化后，已解析文件与新模板列可能不一致，清空强制重新选择文件
+watch(selected, () => {
+  if (props.visible && isSelector.value) {
+    selectedFile.value = null
+    parseError.value = ''
+    previewRows.value = []
+  }
+}, { deep: true })
 
 function onFileChange(e) {
   const f = e.target.files?.[0]
@@ -64,6 +107,10 @@ function onDragLeave() { dragging.value = false }
 
 async function handleFile(file) {
   parseError.value = ''
+  if (!selectorReady.value) {
+    parseError.value = '请先勾选需要修改的字段（商品编号已固定包含）'
+    return
+  }
   selectedFile.value = file
   const nameOk = /\.(xls|xlsx|csv)$/i.test(file.name)
   if (!nameOk) {
@@ -74,12 +121,23 @@ async function handleFile(file) {
   try {
     const buf = await file.arrayBuffer()
     const wb = XLSX.read(buf, { type: 'array' })
+    // 需求：只解析第一个页签
     const ws = wb.Sheets[wb.SheetNames[0]]
     if (!ws) { parseError.value = '工作簿为空'; return }
     const arr = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
     if (!arr.length) { parseError.value = '文件无数据'; return }
     const header = arr[0].map(h => String(h ?? '').trim())
     const rows = arr.slice(1)
+    // 勾选模式：模板按勾选列动态生成，上传文件必须包含全部勾选列
+    if (isSelector.value) {
+      const missing = activeFields.value.map(f => f.label).filter(label => !header.includes(label))
+      if (missing.length) {
+        parseError.value = `上传文件缺少勾选列：${missing.join('、')}，请使用本次勾选后下载的模板`
+        selectedFile.value = null
+        previewRows.value = []
+        return
+      }
+    }
     // 建立列 index 表
     const colIdx = {}
     for (const [label, key] of Object.entries(props.fieldMap)) {
@@ -106,21 +164,47 @@ async function handleFile(file) {
   }
 }
 
-function downloadTemplate() {
-  const ws = XLSX.utils.aoa_to_sheet([props.templateHeaders])
-  // 简单列宽
-  ws['!cols'] = props.templateHeaders.map(() => ({ wch: 18 }))
+async function downloadTemplate() {
+  if (!selectorReady.value) {
+    parseError.value = '请先勾选需要修改的字段（商品编号已固定包含）'
+    return
+  }
+  // 后端真实模板（如商品档案双页签模板）：GET 流式下载
+  if (props.templateUrl) {
+    downloading.value = true
+    try {
+      const blob = await getBlob(props.templateUrl)
+      saveBlobFile(`${props.templateName}.xlsx`, blob)
+    } catch (e) {
+      parseError.value = '模板下载失败：' + (e.message || '未知错误')
+    } finally {
+      downloading.value = false
+    }
+    return
+  }
+  // 前端按（勾选后的）表头动态生成
+  const headers = isSelector.value ? activeFields.value.map(f => f.label) : props.templateHeaders
+  const ws = XLSX.utils.aoa_to_sheet([headers])
+  ws['!cols'] = headers.map(() => ({ wch: 18 }))
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1')
   XLSX.writeFile(wb, `${props.templateName}.xlsx`)
 }
 
 function confirm() {
+  if (!selectorReady.value) {
+    parseError.value = '请先勾选需要修改的字段（商品编号已固定包含）'
+    return
+  }
   if (!previewRows.value.length) {
     parseError.value = '请先选择或拖入有效的 Excel/CSV 文件'
     return
   }
-  emit('import', previewRows.value)
+  const fields = isSelector.value ? activeFields.value.map(f => f.key) : null
+  emit('import', previewRows.value, {
+    fileName: selectedFile.value?.name || '',
+    fields,
+  })
 }
 
 function close() {
@@ -130,15 +214,29 @@ function close() {
 
 <template>
   <div v-if="visible" class="import-mask" @click.self="close">
-    <div class="import-box">
+    <div class="import-box" :class="{ 'import-box-wide': isSelector }">
       <div class="import-head">
         <b>{{ title }}</b>
         <button class="close-btn" type="button" @click="close">×</button>
       </div>
       <div class="import-body">
+        <!-- 导入修改：字段勾选区 -->
+        <div v-if="isSelector" class="field-selector">
+          <div class="fs-title">请勾选本次需要修改的字段：</div>
+          <div class="fs-warn" v-for="(w, i) in fieldSelector.warnings" :key="i">{{ w }}</div>
+          <div class="fs-grid">
+            <label v-for="f in fieldSelector.fields" :key="f.key" class="fs-item" :class="{ locked: f.locked }">
+              <input type="checkbox" v-model="selected[f.key]" :disabled="f.locked" />
+              <span>{{ f.label }}</span>
+            </label>
+          </div>
+        </div>
+
         <div class="tpl-row">
           <span>请先下载模板，按照表头填入数据后再上传：</span>
-          <button class="btn" type="button" @click="downloadTemplate">下载模板（.xlsx）</button>
+          <button class="btn" type="button" :disabled="downloading || !selectorReady" @click="downloadTemplate">
+            {{ downloading ? '下载中…' : '下载模板（.xlsx）' }}
+          </button>
         </div>
 
         <div class="dropzone" :class="{ dragging }"
@@ -146,11 +244,11 @@ function close() {
           <div v-if="!selectedFile" class="dz-empty">
             <div class="dz-icon">⬆</div>
             <div class="dz-title">拖入文件到此处，或</div>
-            <label class="btn primary">
+            <label class="btn primary" :class="{ disabled: !selectorReady }">
               选择文件
-              <input type="file" accept=".xls,.xlsx,.csv" style="display:none" @change="onFileChange" />
+              <input type="file" accept=".xls,.xlsx,.csv" style="display:none" :disabled="!selectorReady" @change="onFileChange" />
             </label>
-            <div class="dz-hint">支持 .xls / .xlsx / .csv</div>
+            <div class="dz-hint">支持 .xls / .xlsx / csv，仅解析第一个页签</div>
           </div>
           <div v-else class="dz-file">
             <div class="dz-fname">📄 {{ selectedFile.name }}</div>
@@ -186,7 +284,7 @@ function close() {
       </div>
       <div class="import-foot">
         <button class="btn" type="button" @click="close">取消</button>
-        <button class="btn primary" type="button" :disabled="!previewRows.length" @click="confirm">
+        <button class="btn primary" type="button" :disabled="!previewRows.length || !selectorReady" @click="confirm">
           确认导入 {{ previewRows.length ? `(${previewRows.length})` : '' }}
         </button>
       </div>
@@ -213,6 +311,7 @@ function close() {
   flex-direction: column;
   overflow: hidden;
 }
+.import-box-wide { width: min(860px, 94vw); }
 .import-head {
   height: 46px;
   padding: 0 14px;
@@ -250,8 +349,46 @@ function close() {
 }
 .btn:hover { border-color: #c6e2ff; color: #409eff; }
 .btn.primary { background: #409eff; color: #fff; border-color: #409eff; }
-.btn.primary:hover { background: #66b1ff; border-color: #66b1ff; color: #fff; }
+.btn.primary:hover { border-color: #66b1ff; color: #fff; }
+.btn.primary.disabled { opacity: 0.55; cursor: not-allowed; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* 字段勾选区（导入修改） */
+.field-selector {
+  border: 1px solid #f0d9a8;
+  background: #fdf8ec;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.fs-title { font-size: 13px; font-weight: 600; color: #8a5a12; margin-bottom: 6px; }
+.fs-warn {
+  font-size: 12px;
+  color: #b88230;
+  line-height: 1.7;
+}
+.fs-warn + .fs-warn { margin-top: 2px; }
+.fs-grid {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px 12px;
+  max-height: 200px;
+  overflow: auto;
+  padding: 6px 4px;
+  border-top: 1px dashed #ecdcb4;
+}
+.fs-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #303133;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fs-item.locked { color: #909399; cursor: not-allowed; }
+.fs-item input { accent-color: #409eff; }
+
 .dropzone {
   border: 2px dashed #c8d3e6;
   border-radius: 8px;

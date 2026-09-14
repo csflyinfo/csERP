@@ -46,6 +46,8 @@ public class BaseGoods {
     private Boolean canPurchase;
     private Boolean isWeighted;
     private Boolean isPresale;
+    /** 是否生鲜（V122）；商品类型数字码 0..4 见 GoodsBizPolicy */
+    private Boolean isFresh;
     private String origin;
     private Integer warningDays;
     private BigDecimal minOrderQty;
@@ -157,6 +159,9 @@ public class BaseGoods {
 
     public Boolean getIsPresale() { return isPresale; }
     public void setIsPresale(Boolean isPresale) { this.isPresale = isPresale; }
+
+    public Boolean getIsFresh() { return isFresh; }
+    public void setIsFresh(Boolean isFresh) { this.isFresh = isFresh; }
 
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }

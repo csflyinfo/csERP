@@ -34,8 +34,9 @@ const unitsList = ref([])
 let dataLoaded = false
 async function ensureData() {
   if (dataLoaded) return
+  // 采销场景过滤：采购只列可采、销售只列可售（候选过滤，保存时后端另有硬校验）
   const [g, u] = await Promise.all([
-    post('/base/goods/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
+    post('/base/goods/page', { pageNo: 1, pageSize: 500, filters: { bizScene: isPurchase.value ? 'purchase' : 'sale' } }).catch(() => ({ records: [] })),
     post('/base/unit/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
   ])
   allGoods.value = (g.records || []).filter(x => x.status !== 'STOPPED')

@@ -29,6 +29,7 @@ import { useRbac } from '../composables/useRbac.js'
 import { useColumnSettings } from '../composables/useColumnSettings.js'
 import FieldSettingDialog from '../components/FieldSettingDialog.vue'
 import { mapRecordToRow, moduleApis, excelModules } from '../module-api.js'
+import { GOODS_TYPES } from './goods/goodsConstants.js'
 import { moduleConfigs } from '../module-config.js'
 import * as XLSX from 'xlsx'
 
@@ -871,6 +872,12 @@ const dynamicFilters = computed(() => {
       return f
     })
   }
+  if (moduleCode.value === 'goods') {
+    // 商品类型：下拉选五分类（库存数字码，后端筛选同时兼容中文）
+    return base.map(f => f === '商品类型'
+      ? { label: '商品类型', options: GOODS_TYPES.map(t => ({ value: t.value, label: t.label })) }
+      : f)
+  }
   if (moduleCode.value === 'salesReturn') {
     // 退货方式 / 流转状态用下拉，避免手输错字匹配不到（后端是整行文本模糊匹配）
     return base.map(f => {
@@ -933,7 +940,7 @@ const {
 
 // ============ 通用导入弹窗（所有模块共享） ============
 const importMenuOpen = ref(false)
-const importDialog = ref({ visible: false, presetKey: '', title: '', templateHeaders: [], templateName: '', fieldMap: {}, requiredKey: '' })
+const importDialog = ref({ visible: false, presetKey: '', title: '', templateHeaders: [], templateName: '', fieldMap: {}, requiredKey: '', templateUrl: '', fieldSelector: null })
 
 function toggleImportMenu() {
   importMenuOpen.value = !importMenuOpen.value
@@ -954,12 +961,14 @@ function openImportDialog(presetKey) {
     templateName: preset.templateName,
     fieldMap: preset.fieldMap,
     requiredKey: preset.requiredKey,
+    templateUrl: preset.templateUrl || '',
+    fieldSelector: preset.fieldSelector || null,
   }
 }
 function closeImportDialog() {
   importDialog.value = { ...importDialog.value, visible: false }
 }
-async function handleImport(rows) {
+async function handleImport(rows, meta = {}) {
   const key = importDialog.value.presetKey
   const preset = IMPORT_PRESETS[key]
   if (!preset) return
@@ -981,12 +990,22 @@ async function handleImport(rows) {
   }
   try {
     const extra = preset.extra ? preset.extra(moduleCode.value) : {}
-    const res = await post(preset.endpoint, { ...extra, rows })
-    const inserted = res?.inserted ?? 0
-    const skipped = res?.skipped ?? 0
-    show(`导入完成：新增 ${inserted} 条${skipped ? `，跳过 ${skipped} 条` : ''}`)
+    // fileName 供后端写【导入列表】；fields 为导入修改勾选的字段白名单
+    const payload = { ...extra, rows, fileName: meta.fileName || '' }
+    if (meta.fields) payload.fields = meta.fields
+    const res = await post(preset.endpoint, payload)
+    if (key === 'goodsAdd' || key === 'goodsUpdate') {
+      // 商品导入：成功/失败条数 + 失败文件走【导入列表】下载
+      const success = (res?.inserted ?? 0) + (res?.updated ?? 0)
+      const failed = res?.failed ?? 0
+      show(res?.message || `导入完成：成功 ${success} 条，失败 ${failed} 条，失败明细可在【导入列表】下载`)
+    } else {
+      const inserted = res?.inserted ?? 0
+      const skipped = res?.skipped ?? 0
+      show(`导入完成：新增 ${inserted} 条${skipped ? `，跳过 ${skipped} 条` : ''}`)
+    }
     closeImportDialog()
-    treeDirty.value = true // 导入可能新增树节点，强制下次刷新左侧树
+    treeDirty.value = true // 导入可能新增树节点（品牌自动新建等），强制下次刷新左侧树
     if (preset.afterImport !== 'none') await loadRows()
   } catch (e) {
     show(`导入失败：${e.message || '未知错误'}`)
@@ -2644,6 +2663,23 @@ async function handleAction(action, row = null) {
   } else if (/导入/.test(action)) {
     openDialog('import', action, `${config.value.title}导入：先下载模板，上传后预校验，失败行可下载原因。`, row)
   } else if (/下载|失败原因/.test(action)) {
+    // 导入列表：下载商品导入等落盘的真实失败明细 xlsx（V122，GET 流式）
+    if (moduleCode.value === 'importList') {
+      const raw = row?._raw || {}
+      const taskNo = raw.taskNo || raw.code || raw.CODE || row?.c0 || ''
+      const failIdx = (config.value.columns || []).indexOf('失败行数')
+      const failedRows = Number(raw.failedRows ?? raw.FAILEDROWS ?? (failIdx >= 0 ? row?.[`c${failIdx}`] : 0)) || 0
+      if (!taskNo) { show('未取到任务号，请刷新后重试'); return }
+      if (failedRows === 0) { show('该任务无失败记录'); return }
+      try {
+        const blob = await getBlob(`/system/import-list/failure-file/${encodeURIComponent(taskNo)}`)
+        saveBlobFile(`导入失败明细_${taskNo}.xlsx`, blob)
+        show('失败明细文件已开始下载')
+      } catch (e) {
+        show(`下载失败：${e.message || '未知错误'}`)
+      }
+      return
+    }
     const api = moduleApis[moduleCode.value]
     if (api?.download) {
       try {
@@ -2763,7 +2799,7 @@ function modulePayload() {
       goodsCode: code,
       goodsId: selectedRow.value?.c1 || code,
       goodsName: text('商品名称') || '新商品',
-      goodsType: text('商品类型') || '正常商品',
+      goodsType: text('商品类型') || '0',
       spec: text('规格'),
       categoryName: text('分类') || '默认分类',
       brandName: text('品牌'),
@@ -3874,7 +3910,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     @save="onBaseSave"
   />
 
-  <!-- 通用导入弹窗（往来单位模块使用） -->
+  <!-- 通用导入弹窗（往来单位/商品档案等模块共用） -->
   <ImportDialog
     :visible="importDialog.visible"
     :title="importDialog.title"
@@ -3882,6 +3918,8 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     :template-name="importDialog.templateName"
     :field-map="importDialog.fieldMap"
     :required-key="importDialog.requiredKey"
+    :template-url="importDialog.templateUrl"
+    :field-selector="importDialog.fieldSelector"
     @close="closeImportDialog"
     @import="handleImport"
   />

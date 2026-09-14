@@ -92,7 +92,8 @@ watch(() => props.visible, async (val) => {
 
 async function loadBaseData() {
   const [g, s, c] = await Promise.all([
-    post('/base/goods/page', { pageNo: 1, pageSize: 2000, filters: {} }).catch(() => ({ records: [] })),
+    // 飞单是销售性质：选品只列可售商品（类型 2/3/4 不可销）
+    post('/base/goods/page', { pageNo: 1, pageSize: 2000, filters: { bizScene: 'sale' } }).catch(() => ({ records: [] })),
     post('/base/supplier/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
     post('/base/customer/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
   ])

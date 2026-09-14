@@ -14,6 +14,49 @@ const masterPreset = (moduleCode, opts) => ({
   ...opts,
 })
 
+// ============================ 商品档案导入三件套（V122） ============================
+// 导入新增 48 列：{中文表头, 驼峰键}，必须与后端 GoodsImportController.ADD_FIELDS、
+// 桌面《商品档案_导入模板.xlsx》goods 页签列序完全一致
+const GOODS_ADD_FIELDS = [
+  ['商品编码', 'goodsCode'], ['商品名称', 'goodsName'], ['规格', 'spec'],
+  ['商品分类编号', 'categoryCode'], ['品牌名称', 'brandName'], ['基本单位', 'baseUnit'],
+  ['基本条码', 'barcode'], ['默认供应商', 'defaultSupplier'], ['默认仓库', 'defaultWarehouse'],
+  ['商品类型', 'goodsType'], ['税率', 'taxRate'], ['启用价格联动', 'priceLinked'],
+  ['是否生鲜', 'isFresh'], ['标准售价', 'standardPrice'], ['参考进价', 'latestPurchasePrice'],
+  ['最低售价', 'minSalePrice'], ['商品负责人', 'goodsManager'], ['保质期(天)', 'shelfLifeDays'],
+  ['存储属性', 'storageProperty'], ['建议零售价', 'suggestedRetailPrice'],
+  ['库存上限', 'stockUpperLimit'], ['库存下限', 'stockLowerLimit'],
+  ['是否预售品', 'isPresale'], ['是否可退', 'canReturn'], ['是否称重', 'isWeighted'],
+  ['商品等级', 'goodsLevel'], ['产地', 'origin'], ['采购起订量', 'minOrderQty'],
+  ['临期预警天数', 'warningDays'],
+  ['大单位', 'largeUnit'], ['大单位换算数量', 'largeConvertQty'], ['大单位条码', 'largeBarcode'],
+  ['大单位标价', 'largeStandardPrice'], ['大单位参考进价', 'largePurchasePrice'], ['大单位最低价', 'largeMinPrice'],
+  ['中单位', 'middleUnit'], ['中单位换算数量', 'middleConvertQty'], ['中单位条码', 'middleBarcode'],
+  ['中单位标价', 'middleStandardPrice'], ['中单位参考进价', 'middlePurchasePrice'], ['中单位最低价', 'middleMinPrice'],
+  ['小单位重量', 'smallWeight'], ['大单位重量', 'largeWeight'], ['中单位重量', 'middleWeight'],
+  ['小单位体积', 'smallVolume'], ['大单位体积', 'largeVolume'], ['中单位体积', 'middleVolume'],
+  ['备注', 'remark'],
+]
+// 导入修改 40 列（含锁定的商品编码）；与后端 UPDATE_FIELDS 一致
+const GOODS_UPDATE_FIELDS = [
+  ['商品编码', 'goodsCode'], ['商品名称', 'goodsName'], ['规格', 'spec'],
+  ['商品分类编号', 'categoryCode'], ['品牌名称', 'brandName'], ['基本单位', 'baseUnit'],
+  ['基本条码', 'barcode'], ['状态', 'status'], ['默认供应商', 'defaultSupplier'],
+  ['税率', 'taxRate'], ['默认仓库', 'defaultWarehouse'], ['商品类型', 'goodsType'],
+  ['启用价格联动', 'priceLinked'], ['是否生鲜', 'isFresh'], ['商品负责人', 'goodsManager'],
+  ['保质期(天)', 'shelfLifeDays'], ['存储属性', 'storageProperty'], ['建议零售价', 'suggestedRetailPrice'],
+  ['库存上限', 'stockUpperLimit'], ['库存下限', 'stockLowerLimit'],
+  ['是否预售品', 'isPresale'], ['是否可退', 'canReturn'], ['是否称重', 'isWeighted'],
+  ['商品等级', 'goodsLevel'], ['产地', 'origin'], ['采购起订量', 'minOrderQty'],
+  ['临期预警天数', 'warningDays'],
+  ['大单位', 'largeUnit'], ['大单位换算数量', 'largeConvertQty'], ['大单位条码', 'largeBarcode'],
+  ['中单位', 'middleUnit'], ['中单位换算数量', 'middleConvertQty'], ['中单位条码', 'middleBarcode'],
+  ['小单位重量', 'smallWeight'], ['大单位重量', 'largeWeight'], ['中单位重量', 'middleWeight'],
+  ['小单位体积', 'smallVolume'], ['大单位体积', 'largeVolume'], ['中单位体积', 'middleVolume'],
+  ['备注', 'remark'],
+]
+const goodsFieldMapOf = (fields) => Object.fromEntries(fields.map(([label, key]) => [label, key]))
+
 // customer/supplier 的详细字段较多，先给出核心必填 + 常用；用户可按模板扩展
 export const IMPORT_PRESETS = {
   // ============ 基础资料 ============
@@ -259,7 +302,47 @@ export const IMPORT_PRESETS = {
     endpoint: '/inventory/other-inbound/import',
     extra: () => ({}),
   },
-  // 其他出库单导入：按「仓库 + 单据日期 + 客户/供应商」分组生成其他出库单
+  // ============ 商品档案：导入新增（模板走后端真实双页签文件，解析只读第一个页签） ============
+  goodsAdd: {
+    title: '导入新增商品',
+    templateUrl: '/base/goods/import-template',
+    templateName: '商品档案_导入模板',
+    templateHeaders: GOODS_ADD_FIELDS.map(([label]) => label),
+    fieldMap: goodsFieldMapOf(GOODS_ADD_FIELDS),
+    requiredKey: 'goodsName',
+    endpoint: '/base/goods/import',
+    extra: () => ({}),
+  },
+  // ============ 商品档案：导入修改（先勾选字段 → 按勾选列生成模板 → 空值不更新） ============
+  goodsUpdate: {
+    title: '导入修改商品',
+    templateName: '商品导入修改模板',
+    templateHeaders: GOODS_UPDATE_FIELDS.map(([label]) => label),
+    fieldMap: goodsFieldMapOf(GOODS_UPDATE_FIELDS),
+    requiredKey: 'goodsCode',
+    endpoint: '/base/goods/import-update',
+    extra: () => ({}),
+    fieldSelector: {
+      fields: GOODS_UPDATE_FIELDS.map(([label, key]) => ({ label, key, locked: key === 'goodsCode' })),
+      lockedKey: 'goodsCode',
+      // 需求逐字警示文案
+      warnings: [
+        '1、请谨慎修改大/中单位及对应的换算数量，修改会影响在途单据的数量出入库校验，请在库存数量为0的情况下再做修改。',
+        '2、修改了单位及换算数量后及时核查销售价格是否需要同步更新。',
+      ],
+      defaultAllChecked: true,
+    },
+  },
+  // ============ 商品档案：导入查询（模板仅商品编号列，上传后按编号过滤列表） ============
+  goodsQuery: {
+    mode: 'filter',
+    title: '导入查询商品',
+    templateName: '商品查询导入模板',
+    templateHeaders: ['商品编号'],
+    fieldMap: { '商品编号': 'goodsCode' },
+    requiredKey: 'goodsCode',
+  },
+  // 其他出库单导入：按「仓库 + 单据日期+ 客户/供应商」分组生成其他出库单
   otherOutbound: {
     title: '导入其他出库单',
     templateName: '其他出库单导入模板',
@@ -296,6 +379,7 @@ export const MODULE_DEFAULT_IMPORT = {
   priceGroup: 'priceGroup',
   counterpartyType: 'counterpartyType',
   counterparty: 'counterparty',
+  goods: 'goodsAdd',
   damage: 'damage',
   otherInbound: 'otherInbound',
   otherOutbound: 'otherOutbound',
@@ -307,5 +391,10 @@ export const MODULE_IMPORT_MENU = {
     { key: 'counterparty', label: '导入往来单位' },
     { key: 'counterpartyBank', label: '导入银行账号' },
     { key: 'counterpartyInvoice', label: '导入发票信息' },
+  ],
+  goods: [
+    { key: 'goodsAdd', label: '导入新增' },
+    { key: 'goodsUpdate', label: '导入修改' },
+    { key: 'goodsQuery', label: '导入查询' },
   ],
 }

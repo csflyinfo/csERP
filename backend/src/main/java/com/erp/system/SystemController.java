@@ -9,13 +9,19 @@ import com.erp.system.perm.MenuMetaService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.File;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -415,21 +421,43 @@ public class SystemController {
     @PostMapping("/import-list/page")
     @RequirePerm("system.import_list.view")
     public ApiResponse<PageResult<Map<String, Object>>> importListPage(@RequestBody PageRequest request) {
-        return ApiResponse.ok(PageResult.of(jdbcTemplate.queryForList("""
-                SELECT task_no code,
-                       task_name name,
-                       module_code type,
-                       CASE status WHEN 'FINISHED' THEN '已完成' ELSE '处理中' END status,
-                       file_name fileName,
-                       success_rows successRows,
-                       failed_rows failedRows,
-                       result_text remark,
-                       created_at createdAt,
-                       finished_at finishedAt,
-                       '查看 下载失败原因' action
+        // H2（CASE_INSENSITIVE_IDENTIFIERS）下 queryForList 的列别名一律返回大写 key，
+        // 前端 EXACT_TITLE_MAP 按驼峰取值会整列空白；这里显式 RowMapper 输出驼峰键
+        List<Map<String, Object>> list = jdbcTemplate.query("""
+                SELECT task_no,
+                       task_name,
+                       module_code,
+                       CASE status WHEN 'FINISHED' THEN '已完成' ELSE '处理中' END AS status,
+                       file_name,
+                       success_rows,
+                       failed_rows,
+                       result_text,
+                       created_at,
+                       finished_at
                 FROM sys_import_task_runtime
                 ORDER BY created_at DESC
-                """), request));
+                """, (rs, rowNum) -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("taskNo", rs.getString("task_no"));
+            m.put("taskName", rs.getString("task_name"));
+            m.put("moduleCode", rs.getString("module_code"));
+            m.put("status", rs.getString("status"));
+            m.put("fileName", rs.getString("file_name"));
+            m.put("successRows", rs.getInt("success_rows"));
+            m.put("failedRows", rs.getInt("failed_rows"));
+            m.put("resultText", rs.getString("result_text"));
+            m.put("createdAt", fmtTs(rs.getTimestamp("created_at")));
+            m.put("finishedAt", fmtTs(rs.getTimestamp("finished_at")));
+            // 操作列由前端 valueForTitle 优先取 action 原样拆分渲染
+            m.put("action", "查看 下载失败原因");
+            return m;
+        });
+        return ApiResponse.ok(PageResult.of(list, request));
+    }
+
+    /** H2 TIMESTAMP 统一格式化为 yyyy-MM-dd HH:mm:ss，空值返回空串。 */
+    private String fmtTs(java.sql.Timestamp ts) {
+        return ts == null ? "" : new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(ts);
     }
 
     @PostMapping("/import-list/create")
@@ -476,6 +504,30 @@ public class SystemController {
                 "fileContent", "行号,字段,失败原因\n1,商品编码,示例：该任务无失败行\n任务号," + task.get("TASKNO") + "," + task.get("RESULTTEXT"),
                 "message", "失败原因文件已准备好"
         ));
+    }
+
+    /**
+     * 下载导入任务的真实失败明细文件（V122：商品导入新增/修改落盘的 xlsx，内含失败行原值与失败原因）。
+     */
+    @GetMapping("/import-list/failure-file/{taskNo}")
+    @RequirePerm("system.import_list.export")
+    public void downloadFailureFile(@PathVariable String taskNo, HttpServletResponse response) throws Exception {
+        if (!taskNo.matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("任务号不合法");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT failure_file FROM sys_import_task_runtime WHERE task_no = ?", taskNo);
+        if (rows.isEmpty()) throw new IllegalArgumentException("导入任务不存在");
+        Object stored = rows.get(0).get("FAILURE_FILE");
+        if (stored == null || String.valueOf(stored).isBlank()) {
+            throw new IllegalArgumentException("该任务没有失败记录文件（全部成功或任务来自旧版导入）");
+        }
+        // 只取文件名，杜绝路径穿越
+        File file = new File("data/import-failures", new File(String.valueOf(stored)).getName());
+        if (!file.isFile()) throw new IllegalArgumentException("失败文件已不存在，请重新导入获取");
+        String downloadName = URLEncoder.encode("导入失败明细_" + taskNo + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        response.setCharacterEncoding("utf-8");
+        response.setHeader("Content-Disposition", "attachment;filename=" + downloadName);
+        Files.copy(file.toPath(), response.getOutputStream());
     }
 
     @PostMapping("/export-center/page")

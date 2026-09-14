@@ -1,3 +1,5 @@
+import { goodsTypeLabel } from './views/goods/goodsConstants.js'
+
 export const moduleApis = {
   goods: { page: '/base/goods/page', save: '/base/goods/create', update: '/base/goods/update', stop: '/base/goods/stop', delete: '/base/goods/delete' },
   category: { page: '/base/category/page', save: '/base/category/create', update: '/base/category/update', stop: '/base/category/stop', delete: '/base/category/delete' },
@@ -757,6 +759,14 @@ const STATUS_MAP = {
 // 布尔值 → 中文
 function toDisplayValue(val, title) {
   if (val === null || val === undefined) return ''
+  // 商品类型：库存数字码 → 中文（旧中文值 goodsTypeLabel 原样返回）
+  if (title === '商品类型' && typeof val === 'string') {
+    return goodsTypeLabel(val)
+  }
+  // 税率：库存纯数字 → 页面带 %（已是 N% 形态不重复追加）
+  if (title === '税率' && val !== '' && !String(val).endsWith('%')) {
+    return `${val}%`
+  }
   // 状态字段翻译
   if (/状态/.test(title) && typeof val === 'string' && STATUS_MAP[val]) {
     return STATUS_MAP[val]
@@ -810,6 +820,8 @@ function valueForTitle(title, record) {
   }
   // 操作列：根据状态返回不同按钮
   if (/操作/.test(title)) {
+    // 后端显式给了动作串（如导入列表「查看 下载失败原因」）时原样使用
+    if (record.action) return toDisplayValue(record.action, title)
     // 调拨三模块：不显示核销
     const isTransfer = record.applyNo != null || record.outboundNo != null || record.inboundNo != null
     const st = record.statusText || record.status

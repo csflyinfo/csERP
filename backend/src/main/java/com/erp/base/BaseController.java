@@ -42,6 +42,7 @@ public class BaseController {
     private final com.erp.system.OperationLogService opLog;
     private final com.erp.common.security.datascope.DataScopeService dataScope;
     private final com.erp.common.security.FieldMasker fieldMasker;
+    private final GoodsImportSupport goodsImportSupport;
 
     public BaseController(BaseCategoryService categoryService,
                           BaseUnitService unitService,
@@ -53,7 +54,8 @@ public class BaseController {
                           org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
                           com.erp.system.OperationLogService opLog,
                           com.erp.common.security.datascope.DataScopeService dataScope,
-                          com.erp.common.security.FieldMasker fieldMasker) {
+                          com.erp.common.security.FieldMasker fieldMasker,
+                          GoodsImportSupport goodsImportSupport) {
         this.categoryService = categoryService;
         this.unitService = unitService;
         this.brandService = brandService;
@@ -65,6 +67,7 @@ public class BaseController {
         this.opLog = opLog;
         this.dataScope = dataScope;
         this.fieldMasker = fieldMasker;
+        this.goodsImportSupport = goodsImportSupport;
     }
 
     /**
@@ -332,6 +335,33 @@ public class BaseController {
                     .or().apply("UPPER(barcode) LIKE {0}", "%" + upper + "%")
                     .or().apply("UPPER(simple_code) LIKE {0}", "%" + upper + "%"));
         }
+        // 导入查询：按商品编号集合精确过滤（filter 模式导入弹窗 → filters.goodsCodeList，逗号分隔）
+        Object codeListObj = request.filters() == null ? null : request.filters().get("goodsCodeList");
+        if (codeListObj != null && !String.valueOf(codeListObj).isBlank()) {
+            java.util.List<String> codes = java.util.Arrays.stream(String.valueOf(codeListObj).split(","))
+                    .map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+            if (!codes.isEmpty()) qw.in("goods_code", codes);
+        }
+        // 列表筛选条「商品类型」：中文名或数字码均可，归一化为码
+        Object typeFilter = request.filters() == null ? null : request.filters().get("商品类型");
+        if (typeFilter != null && !String.valueOf(typeFilter).isBlank()) {
+            try {
+                qw.eq("goods_type", GoodsBizPolicy.normalizeType(typeFilter));
+            } catch (IllegalArgumentException ignore) {
+                // 非法筛选值不参与过滤
+            }
+        }
+        // 业务场景准入：purchase/sale 过滤可采/可销；*Return 在此基础上放行兑换物(4)做退货
+        Object sceneObj = request.filters() == null ? null : request.filters().get("bizScene");
+        if (sceneObj != null) {
+            switch (String.valueOf(sceneObj).trim()) {
+                case "purchase" -> qw.apply("COALESCE(can_purchase, TRUE) = TRUE");
+                case "sale" -> qw.apply("COALESCE(can_sale, TRUE) = TRUE");
+                case "purchaseReturn" -> qw.apply("(COALESCE(can_purchase, TRUE) = TRUE OR goods_type = '4')");
+                case "salesReturn" -> qw.apply("(COALESCE(can_sale, TRUE) = TRUE OR goods_type = '4')");
+                default -> { }
+            }
+        }
         // 数据范围：商品档案按商品分类/品牌收窄（档案模式，未配维度全可见）
         applyArchiveScope(qw, dataScope.target().goodsColumn("goods_code").archiveMode().build());
         qw.orderByDesc("goods_code");
@@ -408,7 +438,9 @@ public class BaseController {
            // 一年内有交易 = 1，无交易 = 0，作为第一排序键
            .append(", CASE WHEN COALESCE(s.total_qty, 0) > 0 THEN 1 ELSE 0 END AS recent_traded")
            .append(" FROM base_goods g LEFT JOIN (").append(saleSub)
-           .append(") s ON s.gc = g.goods_code WHERE g.status = 'NORMAL'");
+           .append(") s ON s.gc = g.goods_code WHERE g.status = 'NORMAL'")
+           // 销售排行只列可销商品（设备辅材/包装物/兑换物不可销，V122）
+           .append(" AND COALESCE(g.can_sale, TRUE) = TRUE");
 
         // 关键字：编号 / 名称 / 简拼 / 条码，UPPER 双侧统一（H2 的 LIKE 区分大小写）
         if (!keyword.isEmpty()) {
@@ -482,8 +514,17 @@ public class BaseController {
 
     @RequirePerm(value = "base.goods.biz_selector", name = "商品选择器")
     @PostMapping("/goods/selector")
-    public ApiResponse<java.util.List<Map<String, Object>>> goodsSelector() {
+    public ApiResponse<java.util.List<Map<String, Object>>> goodsSelector(@RequestBody(required = false) Map<String, Object> body) {
         QueryWrapper<BaseGoods> qw = new QueryWrapper<>();
+        // 业务场景过滤（如飞单选品传 scene=sale）：不可销商品不出现在候选里
+        String scene = body == null ? "" : str(body.get("scene"));
+        switch (scene) {
+            case "purchase" -> qw.apply("COALESCE(can_purchase, TRUE) = TRUE");
+            case "sale" -> qw.apply("COALESCE(can_sale, TRUE) = TRUE");
+            case "purchaseReturn" -> qw.apply("(COALESCE(can_purchase, TRUE) = TRUE OR goods_type = '4')");
+            case "salesReturn" -> qw.apply("(COALESCE(can_sale, TRUE) = TRUE OR goods_type = '4')");
+            default -> { }
+        }
         // 数据范围：选择器同样受分类/品牌收窄（档案模式，未配维度全可见），避免越权枚举全公司商品
         applyArchiveScope(qw, dataScope.target().goodsColumn("goods_code").archiveMode().build());
         qw.eq("status", "NORMAL").orderByAsc("goods_code");
@@ -566,7 +607,7 @@ public class BaseController {
      * 软删商品仍占用编码（不回收），避免唯一约束冲突与历史单号含义漂移。
      * synchronized：单机部署下保证同大类并发生成不撞号（goods_code 有唯一约束兜底）。
      */
-    private synchronized String generateGoodsCodeByCategory(Map<String, Object> request) {
+    private String generateGoodsCodeByCategory(Map<String, Object> request) {
         String categoryCode = request.get("categoryCode") == null ? "" : String.valueOf(request.get("categoryCode")).trim();
         BaseCategory category = null;
         if (!categoryCode.isEmpty()) {
@@ -588,44 +629,25 @@ public class BaseController {
             }
             category = matches.get(0);
         }
-        // 沿 parentCode 上溯到大类（一级分类）；guard 防脏数据成环
-        String rootCode = category.getCategoryCode();
-        java.util.Set<String> guard = new java.util.HashSet<>();
-        guard.add(rootCode);
-        while (category.getParentCode() != null && !category.getParentCode().isBlank()) {
-            rootCode = category.getParentCode();
-            if (!guard.add(rootCode)) {
-                throw new IllegalArgumentException("商品分类层级存在循环引用，无法自动生成商品编码");
-            }
-            BaseCategory parent = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", rootCode));
-            if (parent == null) {
-                throw new IllegalArgumentException("商品大类编码「" + rootCode + "」不存在，无法自动生成商品编码");
-            }
-            category = parent;
-        }
-        // LIKE '大类码_____'：下划线为单字符通配，恰好匹配前缀 + 5 位；存量编码定长，MAX 字典序即数值序
-        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT MAX(goods_code) AS max_code FROM base_goods WHERE goods_code LIKE ?",
-                rootCode + "_____");
-        String maxCode = rows.isEmpty() || rows.get(0).get("max_code") == null
-                ? null : String.valueOf(rows.get(0).get("max_code"));
-        int seq = 1;
-        if (maxCode != null) {
-            String tail = maxCode.length() > rootCode.length() ? maxCode.substring(rootCode.length()) : "";
-            if (tail.matches("\\d{5}")) {
-                seq = Integer.parseInt(tail) + 1;
-            }
-        }
-        if (seq > 99999) {
-            throw new IllegalArgumentException("商品大类「" + rootCode + "」编码流水号已达上限（99999）");
-        }
-        return rootCode + String.format("%05d", seq);
+        // 上溯大类 + 流水号生成逻辑抽到 GoodsImportSupport（导入新增共用同一口径）
+        return goodsImportSupport.nextCodeByCategory(category);
     }
 
     private void fillGoodsEntity(BaseGoods entity, Map<String, Object> request) {
         entity.setGoodsCode((String) request.getOrDefault("goodsCode", entity.getGoodsId()));
         entity.setGoodsName((String) request.getOrDefault("goodsName", "新商品"));
-        entity.setGoodsType((String) request.getOrDefault("goodsType", "正常商品"));
+        // 商品类型：归一化为数字码 0..4（兼容中文入参）；采销标志由类型强制派生。
+        // 入参未带 goodsType 时保留实体原值（导入修改的合并 Map 可能不含该键，含旧中文类型）。
+        Object gtRaw = request.get("goodsType");
+        String goodsType;
+        if (gtRaw == null && entity.getGoodsType() != null) {
+            goodsType = entity.getGoodsType();
+        } else {
+            goodsType = GoodsBizPolicy.normalizeType(gtRaw);
+        }
+        entity.setGoodsType(goodsType);
+        entity.setCanSale(GoodsBizPolicy.canSale(goodsType));
+        entity.setCanPurchase(GoodsBizPolicy.canPurchase(goodsType));
         entity.setSpec((String) request.getOrDefault("spec", ""));
         entity.setCategoryName((String) request.getOrDefault("categoryName", ""));
         entity.setBrandName((String) request.getOrDefault("brandName", ""));
@@ -648,12 +670,15 @@ public class BaseController {
         // 扩展字段
         try { entity.setSimpleCode((String) request.getOrDefault("simpleCode", "")); } catch (Exception ignore) {}
         try { entity.setGoodsLevel((String) request.getOrDefault("goodsLevel", "")); } catch (Exception ignore) {}
-        try { entity.setTaxRate((String) request.getOrDefault("taxRate", "")); } catch (Exception ignore) {}
+        // 税率：库存纯数字字符串（0-50 整数），页面显示带 %；兼容历史 "13%" 入参。
+        // 入参未带 taxRate 时保留实体原值（导入修改的合并 Map 可能不含该键）。
+        if (request.containsKey("taxRate") || entity.getTaxRate() == null) {
+            entity.setTaxRate(GoodsBizPolicy.normalizeTaxRate(request.get("taxRate")));
+        }
         try { entity.setGoodsManager((String) request.getOrDefault("goodsManager", "")); } catch (Exception ignore) {}
-        try { entity.setCanSale(parseBoolean(request.get("canSale"), true)); } catch (Exception ignore) {}
-        try { entity.setCanPurchase(parseBoolean(request.get("canPurchase"), true)); } catch (Exception ignore) {}
         try { entity.setIsWeighted(parseBoolean(request.get("isWeighted"), false)); } catch (Exception ignore) {}
         try { entity.setIsPresale(parseBoolean(request.get("isPresale"), false)); } catch (Exception ignore) {}
+        try { entity.setIsFresh(parseBoolean(request.get("isFresh"), false)); } catch (Exception ignore) {}
         try { entity.setOrigin((String) request.getOrDefault("origin", "")); } catch (Exception ignore) {}
         try { entity.setWarningDays(parseInt(request.get("warningDays"))); } catch (Exception ignore) {}
         try { entity.setMinOrderQty(parseDecimal(request.get("minOrderQty"))); } catch (Exception ignore) {}
