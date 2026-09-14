@@ -43,6 +43,8 @@ const defaultForm = {
   spec: '',
   simpleCode: '',
   categoryName: '',
+  /** 末级分类编码（不落 goods 表，仅用于后端留空编码时按大类自动生成商品编码） */
+  categoryCode: '',
   brandName: '',
   goodsType: '正常商品',
   goodsLevel: '',
@@ -184,7 +186,7 @@ function validateForm() {
   const errors = {}
   const m = formModel.value
 
-  if (!m.goodsCode || !String(m.goodsCode).trim()) errors.goodsCode = '商品编码不能为空'
+  // 商品编码可留空：保存时由后端按「商品大类编号 + 5 位流水号」自动生成
   if (!m.goodsName || !String(m.goodsName).trim()) errors.goodsName = '商品名称不能为空'
   if (!m.categoryName || !String(m.categoryName).trim()) errors.categoryName = '商品分类不能为空'
   if (!m.brandName || !String(m.brandName).trim()) errors.brandName = '品牌不能为空'
@@ -218,6 +220,9 @@ async function doSave() {
     if (baseUnit.standardPrice != null) payload.standardPrice = baseUnit.standardPrice
     if (baseUnit.minPrice != null) payload.minSalePrice = baseUnit.minPrice
     if (baseUnit.suggestRetailPrice != null) payload.suggestedRetailPrice = baseUnit.suggestRetailPrice
+    // 基本单位（小单位）的重量/体积同步到商品顶层，供物流计费等场景使用
+    if (baseUnit.weight != null) payload.baseWeight = Number(baseUnit.weight) || 0
+    if (baseUnit.volume != null) payload.baseVolume = Number(baseUnit.volume) || 0
   }
   try {
     const result = await post(endpoint, payload)
@@ -251,7 +256,7 @@ function copyAsNew() {
   formModel.value = cloned
   currentMode.value = 'add'
   formErrors.value = {}
-  alert('已复制商品信息，请填写新的商品编码后保存')
+  alert('已复制商品信息，商品编码留空保存时将按商品大类自动生成（大类编号+5位流水号）')
 }
 
 /** 快速调价：创建商品调价单草稿 → 打开商品调价抽屉 */
@@ -344,25 +349,6 @@ async function onQuickAdjust() {
               @update:model-value="formModel.units = $event"
               @quick-adjust="onQuickAdjust"
             />
-          </div>
-
-          <!-- 价格信息 -->
-          <div id="section-price" class="section-card">
-            <div class="section-title">价格信息</div>
-            <div class="price-info-grid">
-              <div class="field">
-                <label>批发价</label>
-                <input type="number" v-model.number="formModel.wholesalePrice" placeholder="0.00" step="0.01" />
-              </div>
-              <div class="field">
-                <label>会员价</label>
-                <input type="number" v-model.number="formModel.memberPrice" placeholder="0.00" step="0.01" />
-              </div>
-              <div class="field">
-                <label>零售价</label>
-                <input type="number" v-model.number="formModel.retailPrice" placeholder="0.00" step="0.01" />
-              </div>
-            </div>
           </div>
 
           <!-- 采购与库存 -->
@@ -692,42 +678,6 @@ async function onQuickAdjust() {
   flex: 1;
   font-size: 12px;
   color: #606266;
-}
-
-/* 价格信息网格 —— 批发价 / 会员价 / 零售价 */
-.price-info-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px 16px;
-  padding: 8px 0;
-}
-.price-info-grid .field {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-.price-info-grid .field label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #303133;
-  min-width: 72px;
-  text-align: right;
-  flex-shrink: 0;
-  line-height: 32px;
-}
-.price-info-grid .field input {
-  flex: 1;
-  height: 32px; padding: 0 10px;
-  border: 1px solid #dcdfe6; border-radius: 4px;
-  font-size: 12px; color: #606266;
-  transition: all 0.2s;
-  box-sizing: border-box; min-width: 0;
-  outline: none; background: #fff;
-}
-.price-info-grid .field input:focus {
-  border-color: #409eff;
-  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.1);
 }
 
 @keyframes fadeIn {

@@ -65,6 +65,9 @@ const attributeFields = [
   { key: 'unitName', label: '单位', type: 'select', required: true },
   { key: 'convertQty', label: '换算数量', type: 'number', required: true, decimals: 0 },
   { key: 'barcode', label: '条码', type: 'text' },
+  // 按单位设置重量/体积（小单位值同步商品 baseWeight/baseVolume）
+  { key: 'weight', label: '重量(kg)', type: 'number', decimals: 3 },
+  { key: 'volume', label: '体积(m³)', type: 'number', decimals: 6 },
   // 参考进价 —— 放在标准售价上方，不参与价格联动
   { key: 'purchasePrice', label: '参考进价', type: 'price', noLink: true },
   { key: 'standardPrice', label: '标准售价', type: 'price', required: true },

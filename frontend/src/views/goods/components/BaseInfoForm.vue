@@ -107,8 +107,10 @@ function onSimpleCodeInput(e) {
 
 // ==================== 分类 → 税率 联动 ====================
 // 树选择器选中末级分类时回调；若该分类有默认税率，则填入税率字段（用户仍可手动修改）
-function onCategorySelect({ name, taxRate }) {
+function onCategorySelect({ name, taxRate, code }) {
   props.modelValue.categoryName = name
+  // 末级分类编码随选择带回；留空商品编码时后端据此找大类自动生成编码
+  props.modelValue.categoryCode = code || ''
   if (!name) {
     // 清除分类时税率保留（可能是手工设置），不联动清空
     return
@@ -125,8 +127,8 @@ function onCategorySelect({ name, taxRate }) {
     <!-- 第一行：编码 · 商品分类 · 商品名称（占 2） -->
     <div class="row">
       <div class="field">
-        <label>商品编码 <span class="required">*</span></label>
-        <input type="text" v-model="modelValue.goodsCode" placeholder="请输入商品编码" />
+        <label>商品编码</label>
+        <input type="text" v-model="modelValue.goodsCode" placeholder="留空保存按大类自动生成（大类编号+5位流水号）" />
       </div>
       <div class="field">
         <label>商品分类 <span class="required">*</span></label>

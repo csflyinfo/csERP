@@ -466,6 +466,11 @@ public class BaseController {
     public ApiResponse<BaseGoods> createGoods(@RequestBody Map<String, Object> request) {
         BaseGoods entity = new BaseGoods();
         entity.setGoodsId(genId("G"));
+        // 商品编码留空：按所选商品分类的大类编码 + 5 位流水号自动生成
+        Object codeVal = request.get("goodsCode");
+        if (codeVal == null || String.valueOf(codeVal).isBlank()) {
+            request.put("goodsCode", generateGoodsCodeByCategory(request));
+        }
         fillGoodsEntity(entity, request);
         entity.setCurrentStock(java.math.BigDecimal.ZERO);
         goodsService.save(entity);
@@ -553,6 +558,68 @@ public class BaseController {
         opLog.logUpdate(com.erp.system.OperationModule.BASE_GOODS, com.erp.system.KeyFields.BIZ_GOODS,
                 entity.getGoodsId(), originalCode, before, masterSnapshot(afterEntity));
         return ApiResponse.ok(null);
+    }
+
+    /**
+     * 商品编码留空时按「大类编码 + 5 位流水号」自动生成。
+     * 沿分类 parentCode 链上溯到一级分类（大类），取该前缀下现有最大流水 +1；
+     * 软删商品仍占用编码（不回收），避免唯一约束冲突与历史单号含义漂移。
+     * synchronized：单机部署下保证同大类并发生成不撞号（goods_code 有唯一约束兜底）。
+     */
+    private synchronized String generateGoodsCodeByCategory(Map<String, Object> request) {
+        String categoryCode = request.get("categoryCode") == null ? "" : String.valueOf(request.get("categoryCode")).trim();
+        BaseCategory category = null;
+        if (!categoryCode.isEmpty()) {
+            category = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", categoryCode));
+        }
+        if (category == null) {
+            // 兼容只传分类名称的调用方：同名分类唯一时采用，重名则要求传分类编码，避免归错大类
+            String categoryName = String.valueOf(request.getOrDefault("categoryName", "")).trim();
+            if (categoryName.isEmpty()) {
+                throw new IllegalArgumentException("请先选择商品分类（商品编码留空时按商品大类自动生成）");
+            }
+            java.util.List<BaseCategory> matches = categoryService.list(
+                    new QueryWrapper<BaseCategory>().eq("category_name", categoryName));
+            if (matches.isEmpty()) {
+                throw new IllegalArgumentException("商品分类「" + categoryName + "」不存在，无法自动生成商品编码");
+            }
+            if (matches.size() > 1) {
+                throw new IllegalArgumentException("存在多个同名商品分类「" + categoryName + "」，无法自动生成商品编码");
+            }
+            category = matches.get(0);
+        }
+        // 沿 parentCode 上溯到大类（一级分类）；guard 防脏数据成环
+        String rootCode = category.getCategoryCode();
+        java.util.Set<String> guard = new java.util.HashSet<>();
+        guard.add(rootCode);
+        while (category.getParentCode() != null && !category.getParentCode().isBlank()) {
+            rootCode = category.getParentCode();
+            if (!guard.add(rootCode)) {
+                throw new IllegalArgumentException("商品分类层级存在循环引用，无法自动生成商品编码");
+            }
+            BaseCategory parent = categoryService.getOne(new QueryWrapper<BaseCategory>().eq("category_code", rootCode));
+            if (parent == null) {
+                throw new IllegalArgumentException("商品大类编码「" + rootCode + "」不存在，无法自动生成商品编码");
+            }
+            category = parent;
+        }
+        // LIKE '大类码_____'：下划线为单字符通配，恰好匹配前缀 + 5 位；存量编码定长，MAX 字典序即数值序
+        java.util.List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT MAX(goods_code) AS max_code FROM base_goods WHERE goods_code LIKE ?",
+                rootCode + "_____");
+        String maxCode = rows.isEmpty() || rows.get(0).get("max_code") == null
+                ? null : String.valueOf(rows.get(0).get("max_code"));
+        int seq = 1;
+        if (maxCode != null) {
+            String tail = maxCode.length() > rootCode.length() ? maxCode.substring(rootCode.length()) : "";
+            if (tail.matches("\\d{5}")) {
+                seq = Integer.parseInt(tail) + 1;
+            }
+        }
+        if (seq > 99999) {
+            throw new IllegalArgumentException("商品大类「" + rootCode + "」编码流水号已达上限（99999）");
+        }
+        return rootCode + String.format("%05d", seq);
     }
 
     private void fillGoodsEntity(BaseGoods entity, Map<String, Object> request) {
