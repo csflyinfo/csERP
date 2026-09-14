@@ -10,7 +10,7 @@ import { useRouter } from 'vue-router'
 import {
   dayCloseWizard, dayCloseExecute, dayCloseReopen, dayCloseReopenBatch,
   dayClosePage, dayCloseLogPage, dayCloseArDailyPage, dayCloseApDailyPage,
-  dayCloseFundDailyPage,
+  dayCloseFundDailyPage, dayCloseGoodsDailyPage,
 } from '../../api/day-close.js'
 
 const router = useRouter()
@@ -177,7 +177,7 @@ const ledgerRows = ref([])
 const ledgerTotal = ref(0)
 const ledgerPageNo = ref(1)
 const ledgerPageSize = 20
-const ledgerLoaded = { ar: false, ap: false, fund: false }
+const ledgerLoaded = { ar: false, ap: false, fund: false, goods: false }
 
 const LEDGER_COLS = {
   ar: [
@@ -198,6 +198,27 @@ const LEDGER_COLS = {
     { p: 'outAmount', t: '当日支出', num: true }, { p: 'closeBalance', t: '当日余额', num: true },
     { p: 'cashCount', t: '现金实盘数', num: true },
   ],
+  goods: [
+    { p: 'goodsCode', t: '商品编码' }, { p: 'goodsName', t: '商品名称' },
+    { p: 'spec', t: '规格' }, { p: 'baseUnit', t: '单位' }, { p: 'warehouse', t: '仓库' },
+    { p: 'openingQty', t: '期初数量', num: true }, { p: 'openingAmount', t: '期初金额', num: true },
+    { p: 'purchaseInQty', t: '采购入库', num: true },
+    { p: 'salesReturnInQty', t: '销退入库', num: true },
+    { p: 'otherInQty', t: '其他入库', num: true },
+    { p: 'transferInQty', t: '调入', num: true },
+    { p: 'inQty', t: '收入合计', num: true }, { p: 'inAmount', t: '收入金额', num: true },
+    { p: 'adjustAmount', t: '成本调整', num: true },
+    { p: 'salesOutQty', t: '销售出库', num: true },
+    { p: 'purchaseReturnOutQty', t: '采退出库', num: true },
+    { p: 'otherOutQty', t: '其他出库', num: true },
+    { p: 'transferOutQty', t: '调出', num: true },
+    { p: 'outQty', t: '发出合计', num: true }, { p: 'outAmount', t: '发出金额', num: true },
+    { p: 'signedQty', t: '签收净量', num: true }, { p: 'signedAmount', t: '签收净额', num: true },
+    { p: 'grossProfit', t: '毛利', num: true },
+    { p: 'endingQty', t: '期末数量', num: true }, { p: 'endingAmount', t: '期末金额', num: true },
+    { p: 'endingCostPrice', t: '单位成本', num: true },
+    { p: 'negativeFlag', t: '负库存', tag: { Y: '是' } },
+  ],
 }
 
 /** 查询当前定版台账（应收/应付/资金，点查询/翻页触发）。 */
@@ -211,8 +232,8 @@ async function loadLedger() {
     },
   }
   try {
-    const fn = ledgerTab.value === 'ar' ? dayCloseArDailyPage
-      : ledgerTab.value === 'ap' ? dayCloseApDailyPage : dayCloseFundDailyPage
+    const fnMap = { ar: dayCloseArDailyPage, ap: dayCloseApDailyPage, fund: dayCloseFundDailyPage, goods: dayCloseGoodsDailyPage }
+    const fn = fnMap[ledgerTab.value]
     const res = await fn(body)
     ledgerRows.value = res.records || []
     ledgerTotal.value = res.total || 0
@@ -609,6 +630,7 @@ onMounted(() => {
           <button :class="['tab-btn', { on: ledgerTab === 'ar' }]" @click="switchLedger('ar')">客户应收日余额</button>
           <button :class="['tab-btn', { on: ledgerTab === 'ap' }]" @click="switchLedger('ap')">供应商应付日余额</button>
           <button :class="['tab-btn', { on: ledgerTab === 'fund' }]" @click="switchLedger('fund')">资金账户日余额</button>
+          <button :class="['tab-btn', { on: ledgerTab === 'goods' }]" @click="switchLedger('goods')">商品收发存日余额</button>
         </div>
       </div>
       <div class="page-ops">
@@ -627,10 +649,14 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(r, i) in ledgerRows" :key="i">
-              <td>{{ day(r.closeDate) }}</td>
+            <tr v-for="(r, i) in ledgerRows" :key="i" :class="{ 'row-neg': ledgerTab === 'goods' && r.negativeFlag === 'Y' }">
+              <td>
+                <template v-if="ledgerTab === 'goods'">{{ day(r.fromDate) }} ~ {{ day(r.toDate) }}</template>
+                <template v-else>{{ day(r.closeDate) }}</template>
+              </td>
               <td v-for="c in LEDGER_COLS[ledgerTab]" :key="c.p" :class="{ num: c.num }">
-                {{ c.num ? money(r[c.p]) : (r[c.p] ?? '—') }}
+                <template v-if="c.tag">{{ c.tag[r[c.p]] || '' }}</template>
+                <template v-else>{{ c.num ? money(r[c.p]) : (r[c.p] ?? '—') }}</template>
               </td>
             </tr>
             <tr v-if="!ledgerRows.length"><td :colSpan="LEDGER_COLS[ledgerTab].length + 1" class="empty">暂无定版数据</td></tr>
@@ -762,6 +788,7 @@ onMounted(() => {
 .kpi-grid b { font-size: 15px; color: #1d6fd1; }
 .num { text-align: right; }
 .empty { text-align: center; color: #999; padding: 14px; }
+.row-neg td { color: #d33; }
 .lk { color: #1d6fd1; cursor: pointer; margin-right: 10px; font-size: 13px; }
 .lk.danger { color: #d33; }
 .reason-cell { max-width: 180px; font-size: 12px; color: #555; }

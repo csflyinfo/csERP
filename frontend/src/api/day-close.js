@@ -39,5 +39,8 @@ export const dayCloseApDailyPage = (body) => post('/finance/day-close/ap-daily/p
 /** 资金定版台账分页 */
 export const dayCloseFundDailyPage = (body) => post('/finance/day-close/fund-daily/page', body)
 
+/** 商品收发存定版台账分页（区间滚算，filters: from/to/keyword；V121） */
+export const dayCloseGoodsDailyPage = (body) => post('/finance/day-close/goods-daily/page', body)
+
 /** RJ 日结单详情（打印用，body: { date }） */
 export const dayCloseTicket = (date) => post('/finance/day-close/ticket', { date })

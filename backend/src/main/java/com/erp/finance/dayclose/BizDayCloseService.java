@@ -46,6 +46,7 @@ public class BizDayCloseService {
     private final SysParamService sysParam;
     private final BizDayCloseGuard guard;
     private final BizCloseSnapshotService snapshotService;
+    private final BizGoodsCloseSnapshotService goodsSnapshot;
     private final PurchaseDwsService purchaseDws;
     private final SalesDwsService salesDws;
     private final StockMoveDwsService stockMoveDws;
@@ -56,6 +57,7 @@ public class BizDayCloseService {
 
     public BizDayCloseService(JdbcTemplate jdbcTemplate, SysParamService sysParam,
                               BizDayCloseGuard guard, BizCloseSnapshotService snapshotService,
+                              BizGoodsCloseSnapshotService goodsSnapshot,
                               PurchaseDwsService purchaseDws, SalesDwsService salesDws,
                               StockMoveDwsService stockMoveDws, StockSnapshotService stockSnapshot,
                               OperationLogService opLog, @Lazy BizDayCloseService self) {
@@ -63,6 +65,7 @@ public class BizDayCloseService {
         this.sysParam = sysParam;
         this.guard = guard;
         this.snapshotService = snapshotService;
+        this.goodsSnapshot = goodsSnapshot;
         this.purchaseDws = purchaseDws;
         this.salesDws = salesDws;
         this.stockMoveDws = stockMoveDws;
@@ -356,13 +359,25 @@ public class BizDayCloseService {
                         bd(r.get("IN_QTY")), bd(r.get("OUT_QTY")),
                         bd(r.get("IN_AMOUNT")), bd(r.get("OUT_AMOUNT")), bd(r.get("ADJUST_AMOUNT"))}));
 
+        // 期初优先取商品定版（V121：反结即删、重算不可改），首次日结无定版行时回落分析快照/0
         Map<String, BigDecimal[]> priorMap = new LinkedHashMap<>();
-        jdbcTemplate.queryForList(
-                "SELECT goods_code, warehouse, physical_qty, stock_amount "
-                        + "FROM inv_stock_daily_snapshot WHERE snapshot_date = ?",
-                java.sql.Date.valueOf(date.minusDays(1))).forEach(r ->
-                priorMap.put(key(r.get("GOODS_CODE"), r.get("WAREHOUSE")),
-                        new BigDecimal[]{bd(r.get("PHYSICAL_QTY")), bd(r.get("STOCK_AMOUNT"))}));
+        List<Map<String, Object>> priorRows = jdbcTemplate.queryForList(
+                "SELECT goods_code, warehouse, ending_qty, ending_amount "
+                        + "FROM biz_close_goods_daily WHERE close_date = ?",
+                java.sql.Date.valueOf(date.minusDays(1)));
+        if (priorRows.isEmpty()) {
+            priorRows = jdbcTemplate.queryForList(
+                    "SELECT goods_code, warehouse, physical_qty, stock_amount "
+                            + "FROM inv_stock_daily_snapshot WHERE snapshot_date = ?",
+                    java.sql.Date.valueOf(date.minusDays(1)));
+        }
+        final List<Map<String, Object>> finalPriorRows = priorRows;
+        finalPriorRows.forEach(r -> {
+            Object qty = r.get("ENDING_QTY") != null ? r.get("ENDING_QTY") : r.get("PHYSICAL_QTY");
+            Object amt = r.get("ENDING_AMOUNT") != null ? r.get("ENDING_AMOUNT") : r.get("STOCK_AMOUNT");
+            priorMap.put(key(r.get("GOODS_CODE"), r.get("WAREHOUSE")),
+                    new BigDecimal[]{bd(qty), bd(amt)});
+        });
 
         Map<String, BigDecimal[]> liveMap = new LinkedHashMap<>();
         jdbcTemplate.queryForList(
@@ -581,6 +596,29 @@ public class BizDayCloseService {
         return totals;
     }
 
+    /**
+     * 商品定版合计与主表库存收发合计闭环（防止 DWS 视图与定版透视两套口径漂移）。
+     * 容差 0.01；不平直接中止结账事务。
+     */
+    private void assertGoodsTotals(LocalDate date, Map<String, Object> totals) {
+        Map<String, Object> sum = goodsSnapshot.goodsSummary(date);
+        if (sum == null) {
+            throw new IllegalArgumentException("商品收发存定版未生成，已中止日结：" + date.format(DATE_FMT));
+        }
+        Object inObj = sum.get("inAmount");
+        Object outObj = sum.get("outAmount");
+        BigDecimal inTotal = inObj == null ? BigDecimal.ZERO : new BigDecimal(String.valueOf(inObj));
+        BigDecimal outTotal = outObj == null ? BigDecimal.ZERO : new BigDecimal(String.valueOf(outObj));
+        BigDecimal expectIn = (BigDecimal) totals.get("stockInAmount");
+        BigDecimal expectOut = (BigDecimal) totals.get("stockOutAmount");
+        if (inTotal.subtract(expectIn).abs().doubleValue() > BizDayCloseConst.TIE_TOLERANCE
+                || outTotal.subtract(expectOut).abs().doubleValue() > BizDayCloseConst.TIE_TOLERANCE) {
+            throw new IllegalArgumentException(String.format(
+                    "商品定版收发合计与库存流水不一致（收入 定版%s/流水%s，发出 定版%s/流水%s），已中止日结",
+                    inTotal, expectIn, outTotal, expectOut));
+        }
+    }
+
     // ============================================================
     // 结账
     // ============================================================
@@ -663,11 +701,14 @@ public class BizDayCloseService {
         snapshotService.rebuildAr(date);
         snapshotService.rebuildAp(date);
         snapshotService.rebuildFund(date, cashCounts);
+        // 商品收发存定版（V121，内含逐行恒等式硬断言，不平抛错回滚）
+        goodsSnapshot.rebuildGoods(date);
 
         // 6. 汇总并落主记录
         Map<String, Object> step2 = checkHangingBills(date);
         Map<String, Object> step3 = checkAnomalies();
         Map<String, Object> totals = collectTotals(date);
+        assertGoodsTotals(date, totals);
         boolean fundBalanced = ((List<?>) step6.get("archiveDiffs")).isEmpty();
 
         Map<String, Object> checkResult = new LinkedHashMap<>();
@@ -782,7 +823,7 @@ public class BizDayCloseService {
 
     /**
      * 反结事务核心（单日/批量共用，经代理调用）。
-     * 删除四类定版数据与主记录；REOPEN 日志永久保留。
+     * 删除往来/资金/商品四类定版、库存分析快照与主记录；REOPEN 日志永久保留。
      */
     @Transactional
     public void performReopen(LocalDate date, String reason, String batchNo, String operator) {
@@ -820,6 +861,7 @@ public class BizDayCloseService {
         jdbcTemplate.update("DELETE FROM biz_close_fund_daily WHERE close_date = ?", d);
         jdbcTemplate.update("DELETE FROM biz_close_ar_daily WHERE close_date = ?", d);
         jdbcTemplate.update("DELETE FROM biz_close_ap_daily WHERE close_date = ?", d);
+        jdbcTemplate.update("DELETE FROM biz_close_goods_daily WHERE close_date = ?", d);
         jdbcTemplate.update("DELETE FROM inv_stock_daily_snapshot WHERE snapshot_date = ?", d);
         jdbcTemplate.update("DELETE FROM biz_day_close WHERE close_date = ?", d);
 
@@ -971,6 +1013,21 @@ public class BizDayCloseService {
                         + "out_amount, close_balance, cash_count "
                         + "FROM biz_close_fund_daily WHERE close_date = ? ORDER BY fund_account_code",
                 java.sql.Date.valueOf(date)));
+        row.put("goodsSummary", goodsSnapshot.goodsSummary(date));
+        row.put("goodsDaily", TmsUtil.queryCamel(jdbcTemplate,
+                "SELECT goods_code, goods_name, spec, barcode, base_unit, warehouse, "
+                        + "opening_qty, opening_amount, "
+                        + "purchase_in_qty, purchase_in_amount, sales_return_in_qty, sales_return_in_amount, "
+                        + "other_in_qty, other_in_amount, transfer_in_qty, transfer_in_amount, "
+                        + "in_qty, in_amount, adjust_amount, "
+                        + "sales_out_qty, sales_out_amount, purchase_return_out_qty, purchase_return_out_amount, "
+                        + "other_out_qty, other_out_amount, transfer_out_qty, transfer_out_amount, "
+                        + "out_qty, out_amount, signed_qty, signed_amount, signed_cost_amount, "
+                        + "gross_profit, ending_qty, ending_amount, ending_cost_price, "
+                        + "qty_diff, amount_diff, tie_flag, negative_flag "
+                        + "FROM biz_close_goods_daily WHERE close_date = ? "
+                        + "ORDER BY warehouse, ending_amount DESC, goods_code",
+                java.sql.Date.valueOf(date)));
         return row;
     }
 
@@ -1035,6 +1092,16 @@ public class BizDayCloseService {
                 + "in_amount, out_amount, close_balance, cash_count "
                 + "FROM biz_close_fund_daily", "fund_account_code", "fund_account_name",
                 from, to, keyword);
+    }
+
+    /** 商品收发存定版台账（区间滚算：期初取首日、期末取末日，V121）。 */
+    public List<Map<String, Object>> listGoodsDaily(LocalDate from, LocalDate to, String keyword) {
+        LocalDate end = to != null ? to : LocalDate.now();
+        LocalDate start = from != null ? from : end;
+        if (start.isAfter(end)) {
+            throw new IllegalArgumentException("开始日期不能晚于结束日期");
+        }
+        return goodsSnapshot.listGoodsRoll(start, end, keyword);
     }
 
     private List<Map<String, Object>> listDaily(String baseSql, String codeCol, String nameCol,

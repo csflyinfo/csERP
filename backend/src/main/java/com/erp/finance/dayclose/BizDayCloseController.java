@@ -156,6 +156,16 @@ public class BizDayCloseController {
         return ApiResponse.ok(PageResult.of(rows, pagingOnly(request)));
     }
 
+    /** 商品收发存定版台账分页（区间滚算）。filters: from/to/keyword。 */
+    @RequirePerm(value = "finance.day_close.view", name = "查看")
+    @PostMapping("/goods-daily/page")
+    public ApiResponse<PageResult<Map<String, Object>>> goodsDailyPage(@RequestBody PageRequest request) {
+        Map<String, Object> f = filters(request);
+        List<Map<String, Object>> rows = dayCloseService.listGoodsDaily(dateFilter(f, "from"),
+                dateFilter(f, "to"), request.keyword());
+        return ApiResponse.ok(PageResult.of(rows, pagingOnly(request)));
+    }
+
     /** RJ 单据详情（打印）。body: {date} */
     @RequirePerm(value = "finance.day_close.view", name = "查看")
     @PostMapping("/ticket")

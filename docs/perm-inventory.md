@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-14 01:16:29
+> 生成时间：2026-09-14 10:15:46
 
-- 端点总数：826
-- 已挂 @RequirePerm：647
+- 端点总数：827
+- 已挂 @RequirePerm：648
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
 
 ## base
@@ -153,6 +153,7 @@
 | POST | `/finance/day-close/ar-daily/page` | BizDayCloseController#arDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
 | POST | `/finance/day-close/close` | BizDayCloseController#close | finance.day_close.audit | finance.day_close | audit | 方法：finance.day_close.audit |
 | POST | `/finance/day-close/fund-daily/page` | BizDayCloseController#fundDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
+| POST | `/finance/day-close/goods-daily/page` | BizDayCloseController#goodsDailyPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
 | POST | `/finance/day-close/log-page` | BizDayCloseController#logPage | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
 | POST | `/finance/day-close/page` | BizDayCloseController#page | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |
 | POST | `/finance/day-close/reminder` | BizDayCloseController#reminder | finance.day_close.view | finance.day_close | view | 方法：finance.day_close.view |

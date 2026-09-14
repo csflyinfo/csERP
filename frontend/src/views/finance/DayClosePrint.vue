@@ -1,7 +1,7 @@
 <script setup>
 /**
  * 业务日结 RJ 单打印页（PRD-33，独立窗口，无菜单框架）。
- * 数据来自 /finance/day-close/ticket（日结头 + 当日关键合计 + 应收/应付/资金定版台账 + 资金备注），
+ * 数据来自 /finance/day-close/ticket（日结头 + 当日关键合计 + 应收/应付/资金/商品定版台账 + 资金备注），
  * 加载后自动调起 window.print()；@media print 隐藏操作按钮。
  */
 import { ref, onMounted } from 'vue'
@@ -136,6 +136,43 @@ onMounted(async () => {
           </tbody>
         </table>
 
+        <div class="sec-title">五、商品收发存定版（按商品+仓库，数量为基本单位）</div>
+        <div v-if="data.goodsSummary" class="goods-sum">
+          <span>商品/仓行：<b>{{ data.goodsSummary.rowCount }}</b></span>
+          <span>收入数量：<b>{{ money(data.goodsSummary.inQty) }}</b></span>
+          <span>收入金额：<b>{{ money(data.goodsSummary.inAmount) }}</b></span>
+          <span>成本调整：<b>{{ money(data.goodsSummary.adjustAmount) }}</b></span>
+          <span>发出数量：<b>{{ money(data.goodsSummary.outQty) }}</b></span>
+          <span>发出金额：<b>{{ money(data.goodsSummary.outAmount) }}</b></span>
+          <span>签收净额：<b>{{ money(data.goodsSummary.signedAmount) }}</b></span>
+          <span>毛利：<b>{{ money(data.goodsSummary.grossProfit) }}</b></span>
+          <span>期末金额：<b>{{ money(data.goodsSummary.endingAmount) }}</b></span>
+          <span v-if="data.goodsSummary.negativeCount > 0" class="bad">负库存行：{{ data.goodsSummary.negativeCount }}</span>
+        </div>
+        <table class="rj-table goods-table">
+          <thead>
+            <tr>
+              <th>商品编码</th><th>商品名称</th><th>规格</th><th>仓库</th>
+              <th class="num">期初数量</th><th class="num">收入数量</th><th class="num">收入金额</th>
+              <th class="num">成本调整</th><th class="num">发出数量</th><th class="num">发出金额</th>
+              <th class="num">签收净额</th><th class="num">毛利</th>
+              <th class="num">期末数量</th><th class="num">期末金额</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(r, i) in data.goodsDaily" :key="'g' + i" :class="{ neg: r.negativeFlag === 'Y' }">
+              <td>{{ r.goodsCode }}</td><td>{{ r.goodsName }}</td><td>{{ r.spec }}</td><td>{{ r.warehouse }}</td>
+              <td class="num">{{ money(r.openingQty) }}</td>
+              <td class="num">{{ money(r.inQty) }}</td><td class="num">{{ money(r.inAmount) }}</td>
+              <td class="num">{{ money(r.adjustAmount) }}</td>
+              <td class="num">{{ money(r.outQty) }}</td><td class="num">{{ money(r.outAmount) }}</td>
+              <td class="num">{{ money(r.signedAmount) }}</td><td class="num">{{ money(r.grossProfit) }}</td>
+              <td class="num">{{ money(r.endingQty) }}</td><td class="num">{{ money(r.endingAmount) }}</td>
+            </tr>
+            <tr v-if="!data.goodsDaily?.length"><td colspan="14" class="empty">无数据</td></tr>
+          </tbody>
+        </table>
+
         <div v-if="data.fundRemark" class="remark-box">
           <b>资金情况说明：</b>{{ data.fundRemark }}
         </div>
@@ -174,6 +211,9 @@ onMounted(async () => {
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .empty { text-align: center; color: #999; padding: 10px; }
 .remark-box { margin-top: 14px; border: 1px solid #d0d0d0; padding: 8px 10px; font-size: 13px; border-radius: 4px; }
+.goods-sum { display: flex; flex-wrap: wrap; gap: 6px 18px; background: #fafbfc; border: 1px solid #e3e3e3; border-radius: 4px; padding: 6px 10px; font-size: 12px; margin-bottom: 6px; }
+.goods-table { font-size: 11px; }
+.goods-table tr.neg td { color: #d33; }
 .sign-row { display: flex; justify-content: space-around; margin-top: 30px; font-size: 13px; color: #333; }
 .foot-note { margin-top: 16px; color: #666; font-size: 11px; text-align: center; line-height: 1.7; }
 @media print {

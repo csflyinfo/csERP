@@ -132,6 +132,18 @@ async function main() {
     await post('/finance/day-close/reopen-batch', { toDate: oldest, reason: '验收脚本重复执行：重置冒烟库日结状态' })
   }
 
+  // 商品档案：专用空库无商品档案（其他入库允许手输商品）。补建 SP001 档案以验证
+  // 商品定版档案列在结账时随 rpt_dim_goods 维度刷新并冻结（规格/条码/基本单位/品牌/温区）
+  const goodsPage = await post('/base/goods/page', { pageNo: 1, pageSize: 20, filters: { keyword: 'SP001' } })
+  if (!(goodsPage.records || []).some(r => r.goodsCode === 'SP001')) {
+    await post('/base/goods/create', {
+      goodsCode: 'SP001', goodsName: '农夫山泉500ml*24', spec: '500ml*24',
+      categoryName: '饮用水', brandName: '农夫山泉', baseUnit: '瓶',
+      barcode: '6901234500011', standardPrice: 12, goodsType: '正常商品',
+      storageProperty: '常温', defaultWarehouse: '总仓',
+    })
+  }
+
   // ===== 用例 13a：首次日结存在未审核期初入库单 → 硬阻断，随后删除该单 =====
   const opening = await createOtherInbound('0', '期初待审')
   let wz = await post('/finance/day-close/wizard', { date: D })
@@ -204,6 +216,46 @@ async function main() {
   assert('records' in arP && 'total' in arP, '应收定版分页结构应为 records/total')
   assert('records' in apP && 'records' in fundP, '应付/资金定版分页应可取')
 
+  // ===== V121 商品收发存定版（第四类定版，日+商品+仓） =====
+  assert(Array.isArray(ticket.goodsDaily), 'ticket 应含 goodsDaily 数组')
+  assert(ticket.goodsSummary && num(ticket.goodsSummary.rowCount) >= 1, 'goodsSummary 应有汇总行')
+  const g = ticket.goodsDaily.find(r => r.goodsCode === 'SP001' && r.warehouse === '总仓')
+  assert(g, '商品定版应有 SP001/总仓 行')
+  assert(Math.abs(num(g.openingQty)) < 1e-6, `首日期初数量应为 0，实际 ${g.openingQty}`)
+  assert(Math.abs(num(g.otherInQty) - 1) < 1e-6, `其他入库数量应为 1，实际 ${g.otherInQty}`)
+  assert(Math.abs(num(g.inQty) - 1) < 1e-6, `收入合计应为 1，实际 ${g.inQty}`)
+  assert(Math.abs(num(g.outQty)) < 1e-6, `发出合计应为 0，实际 ${g.outQty}`)
+  assert(Math.abs(num(g.endingQty) - 1) < 1e-6, `期末数量应为 1，实际 ${g.endingQty}`)
+  assert(Math.abs(num(g.qtyDiff)) < 1e-6, `数量勾稽差异应为 0，实际 ${g.qtyDiff}`)
+  assert(Math.abs(num(g.amountDiff)) < 0.01, `金额勾稽差异应为 0，实际 ${g.amountDiff}`)
+  assert(g.tieFlag === 'Y', 'tieFlag 应为 Y')
+  assert(Math.abs(num(g.inAmount) - 10) < 0.01, `收入金额应为 10，实际 ${g.inAmount}`)
+  assert(Math.abs(num(g.endingAmount) - 10) < 0.01, `期末金额应为 10，实际 ${g.endingAmount}`)
+  assert(g.negativeFlag === 'N', '期末不应负库存')
+  assert(Math.abs(num(ticket.goodsSummary.inAmount) - num(ticket.stockInAmount)) < 0.01,
+    `商品定版收入金额合计 ${ticket.goodsSummary.inAmount} 应=主表入库成本 ${ticket.stockInAmount}`)
+  assert(Math.abs(num(ticket.goodsSummary.outAmount) - num(ticket.stockOutAmount)) < 0.01,
+    '商品定版发出金额合计应=主表出库成本')
+  // 档案快照列随定版冻结（SP001 已建档：名称/规格/条码/基本单位取自 rpt_dim_goods）
+  assert(g.goodsName === '农夫山泉500ml*24', `商品名称应为档案快照，实际 ${g.goodsName}`)
+  assert(g.baseUnit === '瓶', `基本单位应为档案快照「瓶」，实际 ${g.baseUnit}`)
+  assert(g.spec === '500ml*24' && g.barcode === '6901234500011',
+    `规格/条码应为档案快照，实际 ${g.spec}/${g.barcode}`)
+  // 商品定版台账区间滚算（单日）
+  const goodsP = await post('/finance/day-close/goods-daily/page',
+    { pageNo: 1, pageSize: 50, filters: { from: D, to: D } })
+  assert('records' in goodsP && goodsP.total >= 1, '商品定版分页应可取且 ≥1 行')
+  const gp = goodsP.records.find(r => r.goodsCode === 'SP001' && r.warehouse === '总仓')
+  assert(gp && day(gp.fromDate) === D && day(gp.toDate) === D, '滚算行应带区间首日/末日')
+  assert(Math.abs(num(gp.inQty) - 1) < 1e-6 && Math.abs(num(gp.endingQty) - 1) < 1e-6,
+    '滚算行收入/期末数量应正确')
+  assert(gp.brandName === '农夫山泉' && gp.categoryName === '饮用水' && gp.storageProperty === '常温',
+    `滚算行应带档案快照品牌/分类/温区，实际 ${gp.brandName}/${gp.categoryName}/${gp.storageProperty}`)
+  // 关键字（条码/名称/编码）
+  const goodsKw = await post('/finance/day-close/goods-daily/page',
+    { pageNo: 1, pageSize: 50, filters: { from: D, to: D, keyword: 'SP001' } })
+  assert(goodsKw.records.every(r => String(r.goodsCode).includes('SP001')), '关键字过滤应只回匹配商品')
+
   // ===== 用例 7：反日结校验 + 恢复链路 =====
   await expectFail(() => post('/finance/day-close/reopen', { date: D, reason: '' }),
     '原因', '反日结原因空')
@@ -214,6 +266,8 @@ async function main() {
   // 定版随之删除
   const fundAfter = await post('/finance/day-close/fund-daily/page', { pageNo: 1, pageSize: 10, filters: { from: D, to: D } })
   assert(fundAfter.total === 0, '反日结后当日资金定版应删除')
+  const goodsAfter = await post('/finance/day-close/goods-daily/page', { pageNo: 1, pageSize: 10, filters: { from: D, to: D } })
+  assert(goodsAfter.total === 0, '反日结后当日商品收发存定版应物理删除')
   // 守卫放行：反审核成功，再次审核（回填今天），再日结
   await post('/inventory/other-inbound/reverse-audit', { bizId: inb.inboundNo })
   await post('/inventory/other-inbound/audit', { bizId: inb.inboundNo })
@@ -221,6 +275,12 @@ async function main() {
     date: D, openingConfirmed: true, acknowledgeHanging: true, acknowledgeAnomaly: true,
   })
   assert(reclose.closeNo === RJ_NO && reclose.idempotent === false, '反结后重新日结应再次成功')
+  // 商品定版恢复，恒等式重新冻结为平衡
+  const ticket2 = await post('/finance/day-close/ticket', { date: D })
+  const g2 = ticket2.goodsDaily.find(r => r.goodsCode === 'SP001' && r.warehouse === '总仓')
+  assert(g2 && Math.abs(num(g2.endingQty) - 1) < 1e-6 && g2.tieFlag === 'Y',
+    '重结后 SP001 商品定版应恢复且勾稽平衡')
+  assert(g2.goodsName && g2.baseUnit, '重结后商品档案快照（名称/基本单位）应完整（维度已随结账刷新）')
 
   // 日志链：CLOSE 成功 ≥2 次、REOPEN 1 次，且按时间倒序
   const logs = await post('/finance/day-close/log-page',
