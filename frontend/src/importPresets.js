@@ -37,10 +37,11 @@ const GOODS_ADD_FIELDS = [
   ['小单位体积', 'smallVolume'], ['大单位体积', 'largeVolume'], ['中单位体积', 'middleVolume'],
   ['备注', 'remark'],
 ]
-// 导入修改 40 列（含锁定的商品编码）；与后端 UPDATE_FIELDS 一致
+// 导入修改 41 列（含锁定的商品编码）；与后端 UPDATE_FIELDS 一致
 const GOODS_UPDATE_FIELDS = [
   ['商品编码', 'goodsCode'], ['商品名称', 'goodsName'], ['规格', 'spec'],
   ['商品分类编号', 'categoryCode'], ['品牌名称', 'brandName'], ['基本单位', 'baseUnit'],
+  ['默认采购单位', 'defaultPurchaseUnit'],
   ['基本条码', 'barcode'], ['状态', 'status'], ['默认供应商', 'defaultSupplier'],
   ['税率', 'taxRate'], ['默认仓库', 'defaultWarehouse'], ['商品类型', 'goodsType'],
   ['启用价格联动', 'priceLinked'], ['是否生鲜', 'isFresh'], ['商品负责人', 'goodsManager'],
@@ -330,7 +331,7 @@ export const IMPORT_PRESETS = {
         '1、请谨慎修改大/中单位及对应的换算数量，修改会影响在途单据的数量出入库校验，请在库存数量为0的情况下再做修改。',
         '2、修改了单位及换算数量后及时核查销售价格是否需要同步更新。',
       ],
-      defaultAllChecked: true,
+      // 默认只勾选锁定的商品编码，其余字段由用户按需勾选（弹窗提供全选/取消全选）
     },
   },
   // ============ 商品档案：导入查询（模板仅商品编号列，上传后按编号过滤列表） ============

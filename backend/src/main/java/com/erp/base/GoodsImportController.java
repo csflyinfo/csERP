@@ -51,10 +51,11 @@ public class GoodsImportController {
             {"备注", "remark"},
     };
 
-    /** 导入修改 40 列（含锁定的商品编码）；顺序即勾选区展示与失败文件列序 */
+    /** 导入修改 41 列（含锁定的商品编码）；顺序即勾选区展示与失败文件列序 */
     private static final String[][] UPDATE_FIELDS = {
             {"商品编码", "goodsCode"}, {"商品名称", "goodsName"}, {"规格", "spec"},
             {"商品分类编号", "categoryCode"}, {"品牌名称", "brandName"}, {"基本单位", "baseUnit"},
+            {"默认采购单位", "defaultPurchaseUnit"},
             {"基本条码", "barcode"}, {"状态", "status"}, {"默认供应商", "defaultSupplier"},
             {"税率", "taxRate"}, {"默认仓库", "defaultWarehouse"}, {"商品类型", "goodsType"},
             {"启用价格联动", "priceLinked"}, {"是否生鲜", "isFresh"}, {"商品负责人", "goodsManager"},
@@ -296,6 +297,11 @@ public class GoodsImportController {
             String baseUnit = str(r.get("baseUnit"));
             if (!support.unitExists(baseUnit)) throw new IllegalArgumentException("基本单位「" + baseUnit + "」不存在，须先维护");
             req.put("baseUnit", baseUnit);
+        }
+        if (notBlank(r, "defaultPurchaseUnit")) {
+            String purchaseUnit = str(r.get("defaultPurchaseUnit"));
+            if (!support.unitExists(purchaseUnit)) throw new IllegalArgumentException("默认采购单位「" + purchaseUnit + "」不存在，须先维护");
+            req.put("defaultPurchaseUnit", purchaseUnit);
         }
         if (notBlank(r, "barcode")) req.put("barcode", str(r.get("barcode")));
         if (notBlank(r, "status")) {
@@ -651,6 +657,7 @@ public class GoodsImportController {
         entity.setCategoryName(str(req.get("categoryName")));
         entity.setBrandName(str(req.get("brandName")));
         entity.setBaseUnit(str(req.get("baseUnit")));
+        entity.setDefaultPurchaseUnit(str(req.get("defaultPurchaseUnit")));
         entity.setBarcode(str(req.get("barcode")));
         entity.setStandardPrice(decimal(req.get("standardPrice")));
         entity.setLatestPurchasePrice(decimal(req.get("latestPurchasePrice")));

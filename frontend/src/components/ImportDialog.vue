@@ -82,6 +82,20 @@ watch(() => props.visible, (v) => {
   }
 })
 
+// 全选：勾选全部字段（锁定列本就勾选）；取消全选：仅保留锁定列
+function selectAllFields() {
+  if (!isSelector.value) return
+  const next = {}
+  for (const f of props.fieldSelector.fields) next[f.key] = true
+  selected.value = next
+}
+function clearAllFields() {
+  if (!isSelector.value) return
+  const next = {}
+  for (const f of props.fieldSelector.fields) next[f.key] = !!f.locked
+  selected.value = next
+}
+
 // 勾选字段变化后，已解析文件与新模板列可能不一致，清空强制重新选择文件
 watch(selected, () => {
   if (props.visible && isSelector.value) {
@@ -222,7 +236,13 @@ function close() {
       <div class="import-body">
         <!-- 导入修改：字段勾选区 -->
         <div v-if="isSelector" class="field-selector">
-          <div class="fs-title">请勾选本次需要修改的字段：</div>
+          <div class="fs-head">
+            <div class="fs-title">请勾选本次需要修改的字段：</div>
+            <div class="fs-actions">
+              <button type="button" class="fs-link" @click="selectAllFields">全选</button>
+              <button type="button" class="fs-link" @click="clearAllFields">取消全选</button>
+            </div>
+          </div>
           <div class="fs-warn" v-for="(w, i) in fieldSelector.warnings" :key="i">{{ w }}</div>
           <div class="fs-grid">
             <label v-for="f in fieldSelector.fields" :key="f.key" class="fs-item" :class="{ locked: f.locked }">
@@ -360,6 +380,11 @@ function close() {
   border-radius: 8px;
   padding: 10px 12px;
 }
+.fs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.fs-head .fs-title { margin-bottom: 0; }
+.fs-actions { display: flex; gap: 12px; flex-shrink: 0; }
+.fs-link { border: 0; background: none; color: #409eff; font-size: 12px; cursor: pointer; padding: 0; line-height: 1.6; }
+.fs-link:hover { text-decoration: underline; }
 .fs-title { font-size: 13px; font-weight: 600; color: #8a5a12; margin-bottom: 6px; }
 .fs-warn {
   font-size: 12px;
@@ -372,8 +397,6 @@ function close() {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px 12px;
-  max-height: 200px;
-  overflow: auto;
   padding: 6px 4px;
   border-top: 1px dashed #ecdcb4;
 }
