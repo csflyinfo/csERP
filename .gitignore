@@ -25,6 +25,11 @@ temp/
 backend/data/
 backend-run.log
 
+# 隔离冒烟产物（根 data/ 下有受控种子库 erp-v1.mv.db，只忽略冒烟/临时项）
+/data/erp-smoke-init*.db
+/data/edge-ui-profile/
+/data/import-failures/
+
 # 一次性脚本与备份（详见 docs/分支管理规范.md）
 tmp-*.js
 *.bak

@@ -362,6 +362,69 @@ export const IMPORT_PRESETS = {
     endpoint: '/inventory/other-outbound/import',
     extra: () => ({}),
   },
+
+  // ============ PRD-34 期初初始化（库存按批次/按库位、应收、应付） ============
+  // 列序/表头必须与后端 StockInitService.FIELDS_BATCH/FIELDS_BIN、ArInitService.FIELDS、
+  // ApInitService.FIELDS 及 resources/templates 四个 xlsx 模板逐列对齐
+  initStockBatch: {
+    title: '库存期初导入（按批次）',
+    templateName: '库存期初_导入模板（按批次）',
+    templateUrl: '/init/stock/import-template?type=batch',
+    templateHeaders: ['商品编码', '商品名称', '仓库编码', '仓库名称', '批号', '生产日期', '效期日期', '数量', '成本单价(可填0)', '备注'],
+    fieldMap: {
+      '商品编码': 'goodsCode', '商品名称': 'goodsName',
+      '仓库编码': 'warehouseCode', '仓库名称': 'warehouseName',
+      '批号': 'batchNoInput', '生产日期': 'productionDate', '效期日期': 'expiryDate',
+      '数量': 'qty', '成本单价(可填0)': 'unitPrice', '备注': 'remark',
+    },
+    requiredKey: 'goodsCode',
+    endpoint: '/init/stock/import',
+    extra: () => ({ mode: 'BATCH' }),
+  },
+  initStockBin: {
+    title: '库存期初导入（按库位）',
+    templateName: '库存期初_导入模板（按库位）',
+    templateUrl: '/init/stock/import-template?type=bin',
+    templateHeaders: ['商品编码', '商品名称', '仓库编码', '仓库名称', '库位编码', '容器编码', '批号', '生产日期', '效期日期', '数量', '成本单价(可填0)', '备注'],
+    fieldMap: {
+      '商品编码': 'goodsCode', '商品名称': 'goodsName',
+      '仓库编码': 'warehouseCode', '仓库名称': 'warehouseName',
+      '库位编码': 'binCode', '容器编码': 'containerCode',
+      '批号': 'batchNoInput', '生产日期': 'productionDate', '效期日期': 'expiryDate',
+      '数量': 'qty', '成本单价(可填0)': 'unitPrice', '备注': 'remark',
+    },
+    requiredKey: 'goodsCode',
+    endpoint: '/init/stock/import',
+    extra: () => ({ mode: 'BIN' }),
+  },
+  initAr: {
+    title: '客户应收期初导入',
+    templateName: '客户应收期初_导入模板',
+    templateUrl: '/init/ar/import-template',
+    templateHeaders: ['客户编码', '客户名称', '原单据号', '原单据日期', '应收金额', '业务员', '备注'],
+    fieldMap: {
+      '客户编码': 'customerCode', '客户名称': 'customerName',
+      '原单据号': 'originalBillNo', '原单据日期': 'originalBillDate',
+      '应收金额': 'arAmount', '业务员': 'salesman', '备注': 'remark',
+    },
+    requiredKey: 'customerCode',
+    endpoint: '/init/ar/import',
+    extra: () => ({}),
+  },
+  initAp: {
+    title: '供应商应付期初导入',
+    templateName: '供应商应付期初_导入模板',
+    templateUrl: '/init/ap/import-template',
+    templateHeaders: ['供应商编码', '供应商名称', '原单据号', '原单据日期', '应付金额', '备注'],
+    fieldMap: {
+      '供应商编码': 'supplierCode', '供应商名称': 'supplierName',
+      '原单据号': 'originalBillNo', '原单据日期': 'originalBillDate',
+      '应付金额': 'apAmount', '备注': 'remark',
+    },
+    requiredKey: 'supplierCode',
+    endpoint: '/init/ap/import',
+    extra: () => ({}),
+  },
 }
 
 // 模块级默认 preset key（`action 导入` 点击时使用）

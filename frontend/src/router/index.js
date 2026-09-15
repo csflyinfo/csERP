@@ -91,6 +91,7 @@ const routes = [
       { path: 'other-inbound', name: 'OtherInbound', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '其他入库', module: 'otherInbound' } },
       { path: 'other-outbound', name: 'OtherOutbound', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '其他出库', module: 'otherOutbound' } },
       { path: 'stock-take', name: 'StockTake', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '库存盘点', module: 'stockTake' } },
+      { path: 'inventory/init-stock', name: 'InitStock', component: () => import('@/views/init/InitStock.vue'), meta: { title: '库存期初初始化', module: 'inv.init_stock' } },
 
       // 财务管理
       { path: 'ar', name: 'AR', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '客户应收明细表', module: 'ar' } },
@@ -108,6 +109,10 @@ const routes = [
       { path: 'payment-verify', name: 'PaymentVerify', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '付款核销', module: 'paymentVerify' } },
       { path: 'customer-statement', name: 'CustomerStatement', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '客户对账', module: 'customerStatement' } },
       { path: 'supplier-statement', name: 'SupplierStatement', component: () => import('@/views/GenericBusinessList.vue'), meta: { title: '供应商对账', module: 'supplierStatement' } },
+
+      // 业务期初（PRD-34）
+      { path: 'finance/init-ar', name: 'InitAr', component: () => import('@/views/init/InitAr.vue'), meta: { title: '客户应收期初', module: 'fin.init_ar' } },
+      { path: 'finance/init-ap', name: 'InitAp', component: () => import('@/views/init/InitAp.vue'), meta: { title: '供应商应付期初', module: 'fin.init_ap' } },
 
       // 总账管理（PRD-31）
       { path: 'gl-account', name: 'GlAccount', component: () => import('@/views/gl/SubjectMgmt.vue'), meta: { title: '会计科目', module: 'glAccount' } },

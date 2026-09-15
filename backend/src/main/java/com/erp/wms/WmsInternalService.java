@@ -44,12 +44,14 @@ public class WmsInternalService {
     private final PermissionService permissionService;
     /** PRD-33 业务日结封单守卫：盘盈审批桥接写入 ERP 库存前按当天判封单。 */
     private final BizDayCloseGuard dayCloseGuard;
+    private final BinStockService binStockService;
 
     public WmsInternalService(JdbcTemplate jdbc, BillNoGenerator billNo, SysParamService params,
                               InventoryCostService inventoryCost,
                               WmsWarehouseResolver warehouseResolver,
                               PermissionService permissionService,
-                              BizDayCloseGuard dayCloseGuard) {
+                              BizDayCloseGuard dayCloseGuard,
+                              BinStockService binStockService) {
         this.jdbc = jdbc;
         this.billNo = billNo;
         this.params = params;
@@ -57,6 +59,7 @@ public class WmsInternalService {
         this.warehouseResolver = warehouseResolver;
         this.permissionService = permissionService;
         this.dayCloseGuard = dayCloseGuard;
+        this.binStockService = binStockService;
     }
 
     // ==================== 补货 ====================
@@ -373,7 +376,7 @@ public class WmsInternalService {
             dayCloseGuard.assertWritable(LocalDate.now(), "WMS盘盈桥接", TmsUtil.str(a.get("adjustNo")));
             inventoryCost.inboundAtCurrentCost(goodsCode, goodsName, warehouse, batchNo, diff,
                     BigDecimal.ZERO, "WMS_ADJUST_GAIN:" + a.get("adjustNo"), null);
-            addBinStock(goodsCode, goodsName, warehouse, batchNo, TmsUtil.str(a.get("binCode")), diff);
+            binStockService.addBinStock(goodsCode, goodsName, warehouse, batchNo, TmsUtil.str(a.get("binCode")), diff);
         } else {
             // 盘亏：从实物位扣减（不动财务，由报损/其他出库对接）
             BigDecimal loss = diff.abs();
@@ -541,7 +544,7 @@ public class WmsInternalService {
         }
         // 成品入工位
         if (!station.isBlank()) {
-            addBinStock(TmsUtil.str(task.get("finishedGoodsCode")),
+            binStockService.addBinStock(TmsUtil.str(task.get("finishedGoodsCode")),
                     TmsUtil.str(task.get("finishedGoodsName")),
                     TmsUtil.str(task.get("warehouse")), "", station, toBd(task.get("qty")));
         }
@@ -1145,7 +1148,7 @@ public class WmsInternalService {
                 WHERE goods_code=? AND warehouse=? AND bin_code=? AND COALESCE(batch_no,'')=?
                 """, qty, qty, goodsCode, warehouse, fromBin, batchNo == null ? "" : batchNo);
         if (n == 0) throw new IllegalStateException("源库位无库存：" + fromBin + " / " + goodsCode);
-        addBinStock(goodsCode, "", warehouse, batchNo, toBin, qty);
+        binStockService.addBinStock(goodsCode, "", warehouse, batchNo, toBin, qty);
         try {
             jdbc.update("""
                     INSERT INTO wms_bin_stock_log
@@ -1160,25 +1163,6 @@ public class WmsInternalService {
                 qty, warehouse, fromBin);
         jdbc.update("UPDATE wms_bin SET used_qty = COALESCE(used_qty,0) + ? WHERE warehouse=? AND bin_code=?",
                 qty, warehouse, toBin);
-    }
-
-    private void addBinStock(String goodsCode, String goodsName, String warehouse,
-                             String batchNo, String bin, BigDecimal qty) {
-        int n = jdbc.update("""
-                UPDATE wms_bin_stock SET qty = qty + ?, updated_at = CURRENT_TIMESTAMP
-                WHERE goods_code=? AND warehouse=? AND bin_code=? AND COALESCE(batch_no,'')=?
-                  AND COALESCE(container_code,'')=''
-                """, qty, goodsCode, warehouse, bin, batchNo == null ? "" : batchNo);
-        if (n > 0) return;
-        jdbc.update("""
-                INSERT INTO wms_bin_stock
-                (bin_stock_id, goods_code, goods_name, warehouse, batch_no, bin_code, container_code,
-                 qty, locked_qty, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, '', ?, 0, CURRENT_TIMESTAMP)
-                """, "BS" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase(),
-                goodsCode, goodsName, warehouse, emptyToNull(batchNo), bin, qty);
-        jdbc.update("UPDATE wms_bin SET used_qty = COALESCE(used_qty,0) + ? WHERE warehouse=? AND bin_code=?",
-                qty, warehouse, bin);
     }
 
     private static BigDecimal toBd(Object o) {

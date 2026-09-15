@@ -49,11 +49,13 @@ public class WmsInboundService {
     private final SalesReturnController salesReturnController;
     private final WmsWarehouseResolver warehouseResolver;
     private final PermissionService permissionService;
+    private final BinStockService binStockService;
 
     public WmsInboundService(JdbcTemplate jdbc, BillNoGenerator billNo, SysParamService params,
                              PurchaseController purchaseController, InventoryCostService inventoryCost,
                              @Autowired(required = false) @Lazy SalesReturnController salesReturnController,
-                             WmsWarehouseResolver warehouseResolver, PermissionService permissionService) {
+                             WmsWarehouseResolver warehouseResolver, PermissionService permissionService,
+                             BinStockService binStockService) {
         this.jdbc = jdbc;
         this.billNo = billNo;
         this.params = params;
@@ -62,6 +64,7 @@ public class WmsInboundService {
         this.salesReturnController = salesReturnController;
         this.warehouseResolver = warehouseResolver;
         this.permissionService = permissionService;
+        this.binStockService = binStockService;
     }
 
     // ==================== 入库任务列表 / 明细 ====================
@@ -880,8 +883,9 @@ public class WmsInboundService {
         String batchNo = TmsUtil.str(p.get("batchNo"));
         String containerCode = TmsUtil.str(p.get("containerCode"));
         BigDecimal qty = toBd(p.get("qty"));
-        addBinStock(goodsCode, goodsName, warehouse, batchNo, bin, qty, containerCode,
-                TmsUtil.toLocalDate(p.get("productionDate")), TmsUtil.toLocalDate(p.get("expiryDate")));
+        binStockService.addInboundBinStock(goodsCode, goodsName, warehouse, batchNo, bin, qty, containerCode,
+                TmsUtil.toLocalDate(p.get("productionDate")), TmsUtil.toLocalDate(p.get("expiryDate")),
+                "WMS_PUTAWAY");
 
         // 2) 更新上架任务
         jdbc.update("""
@@ -1136,43 +1140,6 @@ public class WmsInboundService {
     }
 
     // ==================== 公共工具 ====================
-
-    private void addBinStock(String goodsCode, String goodsName, String warehouse,
-                             String batchNo, String bin, BigDecimal qty) {
-        addBinStock(goodsCode, goodsName, warehouse, batchNo, bin, qty, null, null, null);
-    }
-
-    /** 增加实物账（V86：支持容器维度；V87：支持生产日期/到期日，唯一键 goods/warehouse/batch/bin/container）。 */
-    private void addBinStock(String goodsCode, String goodsName, String warehouse,
-                             String batchNo, String bin, BigDecimal qty, String containerCode,
-                             LocalDate productionDate, LocalDate expiryDate) {
-        String cc = containerCode == null ? "" : containerCode;
-        String bn = batchNo == null ? "" : batchNo;
-        int n = jdbc.update("""
-                UPDATE wms_bin_stock SET qty = qty + ?, updated_at = CURRENT_TIMESTAMP
-                WHERE goods_code = ? AND warehouse = ? AND bin_code = ?
-                  AND COALESCE(batch_no,'') = ? AND COALESCE(container_code,'') = ?
-                """, qty, goodsCode, warehouse, bin, bn, cc);
-        if (n > 0) return;
-        jdbc.update("""
-                INSERT INTO wms_bin_stock
-                (bin_stock_id, goods_code, goods_name, warehouse, batch_no, bin_code, container_code,
-                 production_date, expiry_date, qty, locked_qty, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
-                """, "BS" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase(),
-                goodsCode, goodsName, warehouse, emptyToNull(batchNo), bin,
-                cc.isBlank() ? "" : cc, productionDate, expiryDate, qty);
-        jdbc.update("UPDATE wms_bin SET used_qty = COALESCE(used_qty,0) + ? WHERE warehouse = ? AND bin_code = ?",
-                qty, warehouse, bin);
-        try {
-            jdbc.update("""
-                    INSERT INTO wms_bin_stock_log (log_id, warehouse, goods_code, batch_no, to_bin, container_code, direction, qty, source_bill, operator)
-                    VALUES (?, ?, ?, ?, ?, ?, 'IN', ?, 'WMS_PUTAWAY', ?)
-                    """, "BL" + UUID.randomUUID().toString().replace("-", "").substring(0, 14).toUpperCase(),
-                    warehouse, goodsCode, emptyToNull(batchNo), bin, cc.isBlank() ? null : cc,
-                    qty, TmsUtil.currentUser());
-        } catch (Exception ignore) {}
-    }
 
     private Map<String, Object> mustGetTask(String taskId) {
         List<Map<String, Object>> r = TmsUtil.queryCamel(jdbc,

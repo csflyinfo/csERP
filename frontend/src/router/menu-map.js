@@ -74,6 +74,7 @@ export const MENU_PATH = {
   'inv.other_in': '/other-inbound',
   'inv.other_out': '/other-outbound',
   'inv.count': '/stock-take',
+  'inv.init_stock': '/inventory/init-stock',
 
   // 财务-出纳/往来
   'fin.ar_detail': '/ar',
@@ -91,6 +92,10 @@ export const MENU_PATH = {
   'fin.payment_verify': '/payment-verify',
   'fin.customer_recon': '/customer-statement',
   'fin.supplier_recon': '/supplier-statement',
+
+  // 业务期初（PRD-34）
+  'fin.init_ar': '/finance/init-ar',
+  'fin.init_ap': '/finance/init-ap',
 
   // 财务-总账（三级菜单：财务管理 > 总账 > 页面）
   'finance.gl.account': '/gl-account',

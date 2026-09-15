@@ -108,7 +108,8 @@ public class MenuConfig {
                 .page("inv.adjust", "库存调整单", "/inventory/stock-adjust")
                 .page("inv.other_in", "其他入库", "/inventory/other-inbound")
                 .page("inv.other_out", "其他出库", "/inventory/other-outbound")
-                .statePage("inv.count", "库存盘点", "/inventory/stock-take");
+                .statePage("inv.count", "库存盘点", "/inventory/stock-take")
+                .page("inv.init_stock", "库存期初初始化", "/inventory/init-stock");
     }
 
     private MenuNode financeMenus() {
@@ -128,6 +129,8 @@ public class MenuConfig {
                 .page("fin.payment_verify", "付款核销", "/finance/payment-verify")
                 .page("fin.customer_recon", "客户对账", "/finance/customer-statement")
                 .page("fin.supplier_recon", "供应商对账", "/finance/supplier-statement")
+                .page("fin.init_ar", "客户应收期初", "/finance/init-ar")
+                .page("fin.init_ap", "供应商应付期初", "/finance/init-ap")
                 .page("finance.day_close", "日结管理", "/finance/day-close");
         // 三级示例：财务管理(L1) > 总账(L2 目录) > 凭证/账簿...(L3 页面)
         fin.dir("finance.gl", "总账", "Notebook")

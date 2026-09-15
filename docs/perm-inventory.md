@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-14 10:15:46
+> 生成时间：2026-09-15 20:40:43
 
-- 端点总数：827
-- 已挂 @RequirePerm：648
+- 端点总数：861
+- 已挂 @RequirePerm：682
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
 
 ## base
@@ -62,6 +62,9 @@
 | POST | `/base/goods/create` | BaseController#createGoods | base.goods.add | base.goods | add | 方法：base.goods.add |
 | POST | `/base/goods/delete` | BaseController#deleteGoods | base.goods.delete | base.goods | delete | 方法：base.goods.delete |
 | POST | `/base/goods/freeze` | BaseController#freezeGoods | base.goods.biz_freeze | base.goods | biz_freeze | 方法：base.goods.biz_freeze |
+| POST | `/base/goods/import` | GoodsImportController#importGoods | base.goods.import | base.goods | import | 方法：base.goods.import |
+| GET | `/base/goods/import-template` | GoodsImportController#downloadTemplate | base.goods.import | base.goods | import | 方法：base.goods.import |
+| POST | `/base/goods/import-update` | GoodsImportController#importUpdate | base.goods.import | base.goods | import | 方法：base.goods.import |
 | GET | `/base/goods/latest-purchase-price` | BaseController#latestPurchasePrice | base.goods.view | base.goods | view | 方法：base.goods.view |
 | GET | `/base/goods/latest-sales-price` | BaseController#latestSalesPrice | base.goods.view | base.goods | view | 方法：base.goods.view |
 | POST | `/base/goods/page` | BaseController#goodsPage | base.goods.view | base.goods | view | 方法：base.goods.view |
@@ -291,6 +294,41 @@
 | POST | `/finance/supplier-statement/page` | FinanceController#ssPage | fin.supplier_recon.view | fin.supplier_recon | view | 方法：fin.supplier_recon.view |
 | POST | `/finance/supplier-statement/settle` | FinanceController#ssSettle | fin.supplier_recon.settle | fin.supplier_recon | settle | 方法：fin.supplier_recon.settle |
 | POST | `/finance/supplier-statement/update` | FinanceController#ssUpdate | fin.supplier_recon.edit | fin.supplier_recon | edit | 方法：fin.supplier_recon.edit |
+
+## init
+
+| HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
+| --- | --- | --- | --- | --- | --- | --- |
+| POST | `/init/ap/clear` | ApInitController#clear | fin.init_ap.delete | fin.init_ap | delete | 方法：fin.init_ap.delete |
+| POST | `/init/ap/import` | ApInitController#importRows | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
+| GET | `/init/ap/import-template` | ApInitController#downloadTemplate | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
+| POST | `/init/ap/line/delete` | ApInitController#delete | fin.init_ap.delete | fin.init_ap | delete | 方法：fin.init_ap.delete |
+| POST | `/init/ap/line/page` | ApInitController#linePage | fin.init_ap.view | fin.init_ap | view | 方法：fin.init_ap.view |
+| POST | `/init/ap/line/save` | ApInitController#save | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
+| POST | `/init/ap/line/update` | ApInitController#update | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
+| POST | `/init/ap/post` | ApInitController#post | fin.init_ap.post | fin.init_ap | post | 方法：fin.init_ap.post |
+| POST | `/init/ap/reverse` | ApInitController#reverse | fin.init_ap.reverse | fin.init_ap | reverse | 方法：fin.init_ap.reverse |
+| POST | `/init/ap/status` | ApInitController#status | fin.init_ap.view | fin.init_ap | view | 方法：fin.init_ap.view |
+| POST | `/init/ar/clear` | ArInitController#clear | fin.init_ar.delete | fin.init_ar | delete | 方法：fin.init_ar.delete |
+| POST | `/init/ar/import` | ArInitController#importRows | fin.init_ar.import | fin.init_ar | import | 方法：fin.init_ar.import |
+| GET | `/init/ar/import-template` | ArInitController#downloadTemplate | fin.init_ar.import | fin.init_ar | import | 方法：fin.init_ar.import |
+| POST | `/init/ar/line/delete` | ArInitController#delete | fin.init_ar.delete | fin.init_ar | delete | 方法：fin.init_ar.delete |
+| POST | `/init/ar/line/page` | ArInitController#linePage | fin.init_ar.view | fin.init_ar | view | 方法：fin.init_ar.view |
+| POST | `/init/ar/line/save` | ArInitController#save | fin.init_ar.edit | fin.init_ar | edit | 方法：fin.init_ar.edit |
+| POST | `/init/ar/line/update` | ArInitController#update | fin.init_ar.edit | fin.init_ar | edit | 方法：fin.init_ar.edit |
+| POST | `/init/ar/post` | ArInitController#post | fin.init_ar.post | fin.init_ar | post | 方法：fin.init_ar.post |
+| POST | `/init/ar/reverse` | ArInitController#reverse | fin.init_ar.reverse | fin.init_ar | reverse | 方法：fin.init_ar.reverse |
+| POST | `/init/ar/status` | ArInitController#status | fin.init_ar.view | fin.init_ar | view | 方法：fin.init_ar.view |
+| POST | `/init/stock/clear` | StockInitController#clear | inv.init_stock.delete | inv.init_stock | delete | 方法：inv.init_stock.delete |
+| POST | `/init/stock/import` | StockInitController#importRows | inv.init_stock.import | inv.init_stock | import | 方法：inv.init_stock.import |
+| GET | `/init/stock/import-template` | StockInitController#downloadTemplate | inv.init_stock.import | inv.init_stock | import | 方法：inv.init_stock.import |
+| POST | `/init/stock/line/delete` | StockInitController#delete | inv.init_stock.delete | inv.init_stock | delete | 方法：inv.init_stock.delete |
+| POST | `/init/stock/line/page` | StockInitController#linePage | inv.init_stock.view | inv.init_stock | view | 方法：inv.init_stock.view |
+| POST | `/init/stock/line/save` | StockInitController#save | inv.init_stock.edit | inv.init_stock | edit | 方法：inv.init_stock.edit |
+| POST | `/init/stock/line/update` | StockInitController#update | inv.init_stock.edit | inv.init_stock | edit | 方法：inv.init_stock.edit |
+| POST | `/init/stock/post` | StockInitController#post | inv.init_stock.post | inv.init_stock | post | 方法：inv.init_stock.post |
+| POST | `/init/stock/reverse` | StockInitController#reverse | inv.init_stock.reverse | inv.init_stock | reverse | 方法：inv.init_stock.reverse |
+| POST | `/init/stock/status` | StockInitController#status | inv.init_stock.view | inv.init_stock | view | 方法：inv.init_stock.view |
 
 ## inventory
 
@@ -534,6 +572,7 @@
 | GET | `/system/func/list` | PermissionQueryController#funcList | system.role.view | system.role | view | 方法：system.role.view |
 | POST | `/system/import-list/create` | SystemController#createImportTask | system.import_list.add | system.import_list | add | 方法：system.import_list.add |
 | POST | `/system/import-list/download-failures` | SystemController#downloadImportFailures | system.import_list.export | system.import_list | export | 方法：system.import_list.export |
+| GET | `/system/import-list/failure-file/{taskNo}` | SystemController#downloadFailureFile | system.import_list.export | system.import_list | export | 方法：system.import_list.export |
 | POST | `/system/import-list/page` | SystemController#importListPage | system.import_list.view | system.import_list | view | 方法：system.import_list.view |
 | POST | `/system/login-log/export` | SystemLogController#loginLogExport | system.login_log.export | system.login_log | export | 方法：system.login_log.export |
 | POST | `/system/login-log/page` | SystemLogController#loginLogPage | system.login_log.view | system.login_log | view | 方法：system.login_log.view |
