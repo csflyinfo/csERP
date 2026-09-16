@@ -369,6 +369,7 @@ const EXACT_TITLE_MAP = {
   '付款单号': ['paymentNo'],
   '收款日期': ['receiptDate'],
   '付款日期': ['paymentDate'],
+  '收款类型': ['receiptTypeText', 'receiptType'],
   '往来单位类型': ['counterpartyTypeText', 'counterpartyType'],
   '往来单位编码': ['counterpartyCode'],
   '往来单位名称': ['counterpartyName'],
@@ -791,6 +792,9 @@ function toDisplayValue(val, title) {
 
 function valueForTitle(title, record) {
   if (!title || !record) return ''
+  // PRD-35：预收收款/预收退款不参与应收核销，核销金额列显示「—」而非 0
+  // （后端 receiptPage 对非 SETTLE 单统一置 reconcileStatusText='—'，以此信号为准）
+  if (title === '核销金额' && record.reconcileStatusText === '—') return '—'
   // 精确匹配
   const keys = EXACT_TITLE_MAP[title]
   if (keys) {

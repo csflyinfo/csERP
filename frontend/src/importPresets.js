@@ -411,6 +411,20 @@ export const IMPORT_PRESETS = {
     endpoint: '/init/ar/import',
     extra: () => ({}),
   },
+  initAdv: {
+    title: '客户期初预收导入',
+    templateName: '客户期初预收_导入模板',
+    templateUrl: '/init/adv/import-template',
+    templateHeaders: ['客户编码', '客户名称', '原单据号', '原单据日期', '预收金额', '备注'],
+    fieldMap: {
+      '客户编码': 'customerCode', '客户名称': 'customerName',
+      '原单据号': 'originalBillNo', '原单据日期': 'originalBillDate',
+      '预收金额': 'advAmount', '备注': 'remark',
+    },
+    requiredKey: 'customerCode',
+    endpoint: '/init/adv/import',
+    extra: () => ({}),
+  },
   initAp: {
     title: '供应商应付期初导入',
     templateName: '供应商应付期初_导入模板',

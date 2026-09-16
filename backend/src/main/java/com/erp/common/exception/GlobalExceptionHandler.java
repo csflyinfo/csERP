@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -71,6 +72,18 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("数据完整性异常", ex.getMostSpecificCause() != null ? ex.getMostSpecificCause() : ex);
         return ApiResponse.fail("400", "数据校验未通过，请检查输入");
+    }
+
+    /**
+     * 请求方法不支持（如 GET 接口被 POST 调用）：这是客户端调用方式错误，不是服务端故障，
+     * 只记一行 WARN（不打整段堆栈刷屏），并回真实 HTTP 405，便于网络面板直接发现错配。
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
+    public ApiResponse<Void> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("请求方式不支持: {}（支持: {}）", ex.getMethod(),
+                ex.getSupportedHttpMethods() == null ? "" : ex.getSupportedHttpMethods());
+        return ApiResponse.fail("405", "请求方式不支持");
     }
 
     /**

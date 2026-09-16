@@ -1,11 +1,11 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-15 20:40:43
+> 生成时间：2026-09-16 17:07:44
 
-- 端点总数：861
-- 已挂 @RequirePerm：682
-- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：156
+- 端点总数：882
+- 已挂 @RequirePerm：703
+- 未纳管写端点（需在卡片5~7 补齐或加入豁免）：159
 
 ## base
 
@@ -138,11 +138,22 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
+| POST | `/finance/advance-writeoff/audit` | AdvanceWriteoffController#audit | fin.advance_writeoff.audit | fin.advance_writeoff | audit | 方法：fin.advance_writeoff.audit |
+| POST | `/finance/advance-writeoff/cancel-audit` | AdvanceWriteoffController#cancelAudit | fin.advance_writeoff.unaudit | fin.advance_writeoff | unaudit | 方法：fin.advance_writeoff.unaudit |
+| POST | `/finance/advance-writeoff/create` | AdvanceWriteoffController#create | fin.advance_writeoff.add | fin.advance_writeoff | add | 方法：fin.advance_writeoff.add |
+| POST | `/finance/advance-writeoff/delete` | AdvanceWriteoffController#delete | fin.advance_writeoff.delete | fin.advance_writeoff | delete | 方法：fin.advance_writeoff.delete |
+| POST | `/finance/advance-writeoff/detail` | AdvanceWriteoffController#detail | fin.advance_writeoff.view | fin.advance_writeoff | view | 方法：fin.advance_writeoff.view |
+| POST | `/finance/advance-writeoff/page` | AdvanceWriteoffController#page | fin.advance_writeoff.view | fin.advance_writeoff | view | 方法：fin.advance_writeoff.view |
+| POST | `/finance/advance-writeoff/update` | AdvanceWriteoffController#update | fin.advance_writeoff.edit | fin.advance_writeoff | edit | 方法：fin.advance_writeoff.edit |
 | POST | `/finance/ap-settlement/page` | FinanceController#apSettlementPage | fin.ap_settle.view | fin.ap_settle | view | 方法：fin.ap_settle.view |
 | POST | `/finance/ap/page` | FinanceController#apPage | fin.ap.view | fin.ap | view | 方法：fin.ap.view |
 | POST | `/finance/ar-settlement/page` | FinanceController#arSettlementPage | fin.ar_settle.view | fin.ar_settle | view | 方法：fin.ar_settle.view |
 | POST | `/finance/ar/page` | FinanceController#arPage | fin.ar_detail.view | fin.ar_detail | view | 方法：fin.ar_detail.view |
 | POST | `/finance/ar/settle` | FinanceController#arSettle | fin.ar_settle.settle | fin.ar_settle | settle | 方法：fin.ar_settle.settle |
+| POST | `/finance/customer-account/advance-balance` | CustomerAccountController#advanceBalance | fin.receipt.view | fin.receipt | view | 方法：fin.receipt.view |
+| POST | `/finance/customer-account/flow/page` | CustomerAccountController#flowPage | fin.customer_account.view | fin.customer_account | view | 方法：fin.customer_account.view |
+| POST | `/finance/customer-account/page` | CustomerAccountController#page | fin.customer_account.view | fin.customer_account | view | 方法：fin.customer_account.view |
+| POST | `/finance/customer-account/repair` | CustomerAccountController#repair | fin.customer_account.repair | fin.customer_account | repair | 方法：fin.customer_account.repair |
 | POST | `/finance/customer-statement/audit` | FinanceController#csAudit | fin.customer_recon.audit | fin.customer_recon | audit | 方法：fin.customer_recon.audit |
 | POST | `/finance/customer-statement/available-bills` | FinanceController#csAvailableBills | fin.customer_recon.view | fin.customer_recon | view | 方法：fin.customer_recon.view |
 | POST | `/finance/customer-statement/create` | FinanceController#csCreate | fin.customer_recon.add | fin.customer_recon | add | 方法：fin.customer_recon.add |
@@ -299,6 +310,16 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
+| POST | `/init/adv/clear` | AdvInitController#clear | fin.init_adv.delete | fin.init_adv | delete | 方法：fin.init_adv.delete |
+| POST | `/init/adv/import` | AdvInitController#importRows | fin.init_adv.import | fin.init_adv | import | 方法：fin.init_adv.import |
+| GET | `/init/adv/import-template` | AdvInitController#downloadTemplate | fin.init_adv.import | fin.init_adv | import | 方法：fin.init_adv.import |
+| POST | `/init/adv/line/delete` | AdvInitController#delete | fin.init_adv.delete | fin.init_adv | delete | 方法：fin.init_adv.delete |
+| POST | `/init/adv/line/page` | AdvInitController#linePage | fin.init_adv.view | fin.init_adv | view | 方法：fin.init_adv.view |
+| POST | `/init/adv/line/save` | AdvInitController#save | fin.init_adv.edit | fin.init_adv | edit | 方法：fin.init_adv.edit |
+| POST | `/init/adv/line/update` | AdvInitController#update | fin.init_adv.edit | fin.init_adv | edit | 方法：fin.init_adv.edit |
+| POST | `/init/adv/post` | AdvInitController#post | fin.init_adv.post | fin.init_adv | post | 方法：fin.init_adv.post |
+| POST | `/init/adv/reverse` | AdvInitController#reverse | fin.init_adv.reverse | fin.init_adv | reverse | 方法：fin.init_adv.reverse |
+| POST | `/init/adv/status` | AdvInitController#status | fin.init_adv.view | fin.init_adv | view | 方法：fin.init_adv.view |
 | POST | `/init/ap/clear` | ApInitController#clear | fin.init_ap.delete | fin.init_ap | delete | 方法：fin.init_ap.delete |
 | POST | `/init/ap/import` | ApInitController#importRows | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
 | GET | `/init/ap/import-template` | ApInitController#downloadTemplate | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
@@ -589,7 +610,7 @@
 | GET | `/system/menu/user-tree` | SystemController#userMenuTree | system.menu.view | system.menu | view | ❌ |
 | POST | `/system/notification/page` | SystemController#notificationPage | — | — | — | ❌ |
 | POST | `/system/notification/read` | SystemController#readNotification | — | — | — | ❌ |
-| GET | `/system/notification/unread-count` | SystemController#unreadCount | — | — | — | ❌ |
+| POST | `/system/notification/unread-count` | SystemController#unreadCount | — | — | — | ❌ |
 | GET | `/system/operation-log/detail/{logId}` | SystemLogController#operationLogDetail | system.log.view | system.log | view | 方法：system.log.view |
 | POST | `/system/operation-log/export` | SystemLogController#operationLogExport | system.log.export | system.log | export | 方法：system.log.export |
 | POST | `/system/operation-log/manual-cleanup` | SystemLogController#manualCleanup | system.log.biz_manual_cleanup | system.log | biz_manual_cleanup | 方法：system.log.biz_manual_cleanup |
@@ -633,8 +654,8 @@
 | POST | `/system/schedule-task/update` | SysScheduledTaskController#update | system.schedule_task.edit | system.schedule_task | edit | 方法：system.schedule_task.edit |
 | POST | `/system/todo/done` | SystemController#doneTodo | — | — | — | ❌ |
 | POST | `/system/todo/page` | SystemController#todoPage | — | — | — | ❌ |
-| GET | `/system/todo/pending-count` | SystemController#pendingCount | — | — | — | ❌ |
-| GET | `/system/todo/summary` | SystemController#todoSummary | — | — | — | ❌ |
+| POST | `/system/todo/pending-count` | SystemController#pendingCount | — | — | — | ❌ |
+| POST | `/system/todo/summary` | SystemController#todoSummary | — | — | — | ❌ |
 | POST | `/system/user/page` | SystemController#userPage | system.user.view | system.user | view | 方法：system.user.view |
 | POST | `/system/user/save` | SystemController#saveUser | system.user.edit | system.user | edit | 方法：system.user.edit |
 | POST | `/system/workflow/page` | SystemController#workflowPage | system.workflow.view | system.workflow | view | 方法：system.workflow.view |

@@ -112,6 +112,7 @@ const routes = [
 
       // 业务期初（PRD-34）
       { path: 'finance/init-ar', name: 'InitAr', component: () => import('@/views/init/InitAr.vue'), meta: { title: '客户应收期初', module: 'fin.init_ar' } },
+      { path: 'finance/init-adv', name: 'InitAdv', component: () => import('@/views/init/InitAdv.vue'), meta: { title: '客户期初预收', module: 'fin.init_adv' } },
       { path: 'finance/init-ap', name: 'InitAp', component: () => import('@/views/init/InitAp.vue'), meta: { title: '供应商应付期初', module: 'fin.init_ap' } },
 
       // 总账管理（PRD-31）
@@ -134,6 +135,11 @@ const routes = [
 
       // 业务日结（PRD-33，按日封单）
       { path: 'finance/day-close', name: 'FinanceDayClose', component: () => import('@/views/finance/DayClose.vue'), meta: { title: '日结管理', module: 'finance.day_close' } },
+
+      // 客户账户（PRD-35：应收/预收余额与往来流水）
+      { path: 'finance/customer-account', name: 'FinanceCustomerAccount', component: () => import('@/views/finance/CustomerAccount.vue'), meta: { title: '客户账户', module: 'fin.customer_account' } },
+      // 预收核销单（PRD-35 M3：预收冲应收）
+      { path: 'finance/advance-writeoff', name: 'FinanceAdvanceWriteoff', component: () => import('@/views/finance/AdvanceWriteoff.vue'), meta: { title: '预收核销单', module: 'fin.advance_writeoff' } },
 
       // 系统管理（PRD-28 RBAC：用户/角色/模块菜单管理）
       { path: 'user', name: 'User', component: () => import('@/views/system/UserManage.vue'), meta: { title: '用户管理', module: 'user' } },

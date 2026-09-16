@@ -376,6 +376,122 @@ public class GlHookService {
                 bd(head.get("totalAmount")), p);
     }
 
+    // ==================== 6b. 预收收款 ADVANCE_RECEIPT / 预收退款 ADVANCE_REFUND（PRD-35） ====================
+
+    public void onAdvanceReceiptAudited(String receiptNo) {
+        safe("ADVANCE_RECEIPT", receiptNo, () -> emitAdvanceReceipt(receiptNo, false));
+    }
+
+    public void onAdvanceReceiptUnaudited(String receiptNo) {
+        safe("ADVANCE_RECEIPT", receiptNo, () -> emitAdvanceReceipt(receiptNo, true));
+    }
+
+    public void onAdvanceRefundAudited(String receiptNo) {
+        safe("ADVANCE_REFUND", receiptNo, () -> emitAdvanceRefund(receiptNo, false));
+    }
+
+    public void onAdvanceRefundUnaudited(String receiptNo) {
+        safe("ADVANCE_REFUND", receiptNo, () -> emitAdvanceRefund(receiptNo, true));
+    }
+
+    /** 预收收款凭证载荷：借 资金科目 / 贷 2203 预收账款（客户辅助核算） */
+    private void emitAdvanceReceipt(String receiptNo, boolean reverse) {
+        Map<String, Object> head = head(
+                "SELECT receipt_no, receipt_date, counterparty_type, counterparty_code, counterparty_name, " +
+                        "total_amount, business_source FROM fin_receipt_bill WHERE receipt_no = ? OR receipt_id = ?",
+                receiptNo, receiptNo);
+        if (head == null) return;
+        String source = TmsUtil.str(head.get("businessSource"));
+        // 门店结算溢收自动转预收单是唯一显式放行的自动来源（设计 §6.8：凭证按 ADVANCE_RECEIPT）；
+        // 其余自动单（DRIVER_SETTLE 等）依旧不发 GL 事件
+        boolean overpayAdv =
+                com.erp.finance.account.CustomerAccountConst.SOURCE_DRIVER_OVERPAY_ADV.equals(source);
+        if (!isBackoffice(source) && !overpayAdv) return;
+        String billNo = TmsUtil.str(head.get("receiptNo"));
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", bd(head.get("totalAmount")));
+        applyCounterparty(p, TmsUtil.str(head.get("counterpartyType")),
+                TmsUtil.str(head.get("counterpartyCode")), TmsUtil.str(head.get("counterpartyName")));
+        applyFirstFund(p, billNo, "fin_receipt_detail");
+
+        if (reverse) emitter.emitReverse("ADVANCE_RECEIPT", "收款单", billNo,
+                TmsUtil.date(head.get("receiptDate")), bd(head.get("totalAmount")), p, null);
+        else emitter.emit("ADVANCE_RECEIPT", "收款单", billNo, TmsUtil.date(head.get("receiptDate")),
+                bd(head.get("totalAmount")), p);
+    }
+
+    /** 预收退款凭证载荷：借 2203 预收账款（客户辅助核算）/ 贷 资金科目 */
+    private void emitAdvanceRefund(String receiptNo, boolean reverse) {
+        Map<String, Object> head = head(
+                "SELECT receipt_no, receipt_date, counterparty_type, counterparty_code, counterparty_name, " +
+                        "total_amount, business_source FROM fin_receipt_bill WHERE receipt_no = ? OR receipt_id = ?",
+                receiptNo, receiptNo);
+        if (head == null) return;
+        if (!isBackoffice(TmsUtil.str(head.get("businessSource")))) return;
+        String billNo = TmsUtil.str(head.get("receiptNo"));
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", bd(head.get("totalAmount")));
+        applyCounterparty(p, TmsUtil.str(head.get("counterpartyType")),
+                TmsUtil.str(head.get("counterpartyCode")), TmsUtil.str(head.get("counterpartyName")));
+        applyFirstFund(p, billNo, "fin_receipt_detail");
+
+        if (reverse) emitter.emitReverse("ADVANCE_REFUND", "收款单", billNo,
+                TmsUtil.date(head.get("receiptDate")), bd(head.get("totalAmount")), p, null);
+        else emitter.emit("ADVANCE_REFUND", "收款单", billNo, TmsUtil.date(head.get("receiptDate")),
+                bd(head.get("totalAmount")), p);
+    }
+
+    // ==================== 6c. 预收核销 ADVANCE_WRITE_OFF（PRD-35 M3） ====================
+
+    public void onAdvanceWriteoffAudited(String writeoffNo) {
+        safe("ADVANCE_WRITE_OFF", writeoffNo, () -> emitAdvanceWriteoff(writeoffNo, false));
+    }
+
+    public void onAdvanceWriteoffUnaudited(String writeoffNo) {
+        safe("ADVANCE_WRITE_OFF", writeoffNo, () -> emitAdvanceWriteoff(writeoffNo, true));
+    }
+
+    /** 预收核销凭证载荷：借 2203 预收账款 / 贷 1122 应收账款（均客户辅助核算，纯往来转账无资金科目）。 */
+    private void emitAdvanceWriteoff(String writeoffNo, boolean reverse) {
+        Map<String, Object> head = head(
+                "SELECT writeoff_no, writeoff_date, customer_code, customer_name, total_amount "
+                        + "FROM fin_advance_writeoff WHERE writeoff_no = ? OR writeoff_id = ?",
+                writeoffNo, writeoffNo);
+        if (head == null) return;
+        String billNo = TmsUtil.str(head.get("writeoffNo"));
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", bd(head.get("totalAmount")));
+        applyCounterparty(p, "CUSTOMER",
+                TmsUtil.str(head.get("customerCode")), TmsUtil.str(head.get("customerName")));
+
+        if (reverse) emitter.emitReverse("ADVANCE_WRITE_OFF", "预收核销单", billNo,
+                TmsUtil.date(head.get("writeoffDate")), bd(head.get("totalAmount")), p, null);
+        else emitter.emit("ADVANCE_WRITE_OFF", "预收核销单", billNo,
+                TmsUtil.date(head.get("writeoffDate")), bd(head.get("totalAmount")), p);
+    }
+
+    /** 取单据第一条有金额明细行的资金账户，写入凭证载荷 */
+    private void applyFirstFund(Map<String, Object> p, String billNo, String detailTable) {
+        String idColumn = "fin_receipt_detail".equals(detailTable) ? "receipt_id" : "payment_id";
+        String headTable = "fin_receipt_detail".equals(detailTable)
+                ? "fin_receipt_bill" : "fin_payment_bill";
+        String noColumn = "fin_receipt_detail".equals(detailTable) ? "receipt_no" : "payment_no";
+        List<Map<String, Object>> details = TmsUtil.queryCamel(jdbc,
+                "SELECT fund_account, amount FROM " + detailTable + " d " +
+                        "WHERE d." + idColumn + " = (SELECT " + idColumn + " FROM " + headTable +
+                        " WHERE " + noColumn + " = ?) ORDER BY sort_order", billNo);
+        for (Map<String, Object> d : details) {
+            if (bd(d.get("amount")).signum() > 0) {
+                applyFund(p, TmsUtil.str(d.get("fundAccount")));
+                return;
+            }
+        }
+        applyFund(p, "");
+    }
+
     // ==================== 7. 付款 PAYMENT（仅后台手工单） ====================
 
     public void onPaymentAudited(String paymentNo) {

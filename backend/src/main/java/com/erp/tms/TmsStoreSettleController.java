@@ -504,7 +504,7 @@ public class TmsStoreSettleController {
     public Map<String, Object> approveStoreSettlements(String settlementId, String settlementNo) {
         List<Map<String, Object>> settles = TmsUtil.queryCamel(jdbcTemplate, """
                 SELECT settle_id, settle_no, receipt_id, receipt_no, received_amount, fin_status,
-                       offset_account_name, offset_amount
+                       offset_account_name, offset_amount, customer_code, customer_name
                 FROM tms_store_settlement
                 WHERE settlement_id = ?
                 ORDER BY create_time, settle_no
@@ -514,12 +514,18 @@ public class TmsStoreSettleController {
         int skipped = 0;
         BigDecimal amount = BigDecimal.ZERO;
         BigDecimal offsetTotal = BigDecimal.ZERO;
+        int overpayAdvCount = 0;
+        BigDecimal overpayAdvTotal = BigDecimal.ZERO;
         List<String> failures = new ArrayList<>();
+        // 溢收自动转预收开关（PRD-35 §6.8，默认开；关闭则维持原「仅留日志提示」行为）
+        boolean overpayToAdvance = sysParamService.getBool("tms.settle.overpay-to-advance", true);
 
         for (Map<String, Object> s : settles) {
             String settleId = TmsUtil.str(s.get("settleId"));
             String settleNo = TmsUtil.str(s.get("settleNo"));
             String receiptId = TmsUtil.str(s.get("receiptId"));
+            String customerCode = TmsUtil.str(s.get("customerCode"));
+            String customerName = TmsUtil.str(s.get("customerName"));
             BigDecimal received = TmsUtil.toBd(s.get("receivedAmount"));
             String offsetAcct = TmsUtil.str(s.get("offsetAccountName"));
             BigDecimal offsetAmt = TmsUtil.toBd(s.get("offsetAmount"));
@@ -552,18 +558,32 @@ public class TmsStoreSettleController {
                 // 放在同一个 try 里可保证收款入账失败时冲抵也不落单条。
                 financeController.writeOffsetLedger(offsetAcct, offsetAmt, settleNo, TmsUtil.currentUser());
                 if (offsetAmt.signum() > 0) offsetTotal = offsetTotal.add(offsetAmt);
+                BigDecimal unmatched = TmsUtil.toBd(res.get("unmatchedAmount"));
+                if (unmatched.signum() > 0) {
+                    // 收到的钱比未核销应收还多（客户预付、应收已被别处核销）。
+                    // 参数开（默认）：自动生成一张已审核的 ADVANCE 收款单转预收——
+                    // 资金已在上面的结算收款单里按实缴全额入过账，自动单只补预收流水/往来/GL，
+                    // 不重复记资金流水；放在置 APPROVED 之前，自动单失败则本张结算整体不落完成态。
+                    // 参数关：维持原行为，仅留日志由财务人工处理。
+                    String settleReceiptNo = TmsUtil.str(res.get("receiptNo"));
+                    if (overpayToAdvance) {
+                        String advNo = financeController.createAdvanceReceiptFromStoreOverpay(
+                                settleNo, settleReceiptNo, customerCode, customerName, unmatched);
+                        overpayAdvCount++;
+                        overpayAdvTotal = overpayAdvTotal.add(unmatched);
+                        TmsUtil.log(jdbcTemplate, "tms.storeSettle", "OVERPAY_ADV", settleNo,
+                                "收款单 " + settleReceiptNo + " 溢收 " + unmatched.toPlainString()
+                                        + " 自动转预收，预收收款单 " + advNo);
+                    } else {
+                        TmsUtil.log(jdbcTemplate, "tms.storeSettle", "RECONCILE_REMAIN", settleNo,
+                                "收款单 " + settleReceiptNo + " 有 " + unmatched.toPlainString()
+                                        + " 未匹配到应收，请财务确认是否转预收");
+                    }
+                }
                 jdbcTemplate.update(
                         "UPDATE tms_store_settlement SET fin_status='APPROVED' WHERE settle_id=?", settleId);
                 approved++;
                 amount = amount.add(received);
-                BigDecimal unmatched = TmsUtil.toBd(res.get("unmatchedAmount"));
-                if (unmatched.signum() > 0) {
-                    // 收到的钱比未核销应收还多（客户预付、应收已被别处核销），
-                    // 钱照样入账，但要留痕让财务决定是否转预收。
-                    TmsUtil.log(jdbcTemplate, "tms.storeSettle", "RECONCILE_REMAIN", settleNo,
-                            "收款单 " + TmsUtil.str(res.get("receiptNo")) + " 有 "
-                                    + unmatched.toPlainString() + " 未匹配到应收，请财务确认是否转预收");
-                }
             } catch (RuntimeException e) {
                 failures.add(settleNo + "：" + e.getMessage());
                 TmsUtil.log(jdbcTemplate, "tms.storeSettle", "APPROVE_FAIL", settleNo,

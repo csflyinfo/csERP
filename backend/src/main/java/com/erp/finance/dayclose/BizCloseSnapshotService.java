@@ -52,6 +52,20 @@ public class BizCloseSnapshotService {
                 "SELECT customer_code, customer_name FROM base_customer").forEach(r ->
                 nameToCode.put(str(r.get("CUSTOMER_NAME")), str(r.get("CUSTOMER_CODE"))));
 
+        // 客户账户预收余额（PRD-35 M4）：定版预收直接取客户账户 advance_balance，
+        // 不再依赖负应收重分类；负应收重分类列 advance_amount 保留作兜底核对
+        Map<String, BigDecimal> advanceByCode = new LinkedHashMap<>();
+        Map<String, String> accountNameByCode = new LinkedHashMap<>();
+        jdbcTemplate.queryForList(
+                "SELECT customer_code, customer_name, advance_balance FROM fin_customer_account "
+                        + "WHERE COALESCE(advance_balance,0) <> 0").forEach(r -> {
+            String code = str(r.get("CUSTOMER_CODE"));
+            if (!code.isEmpty()) {
+                advanceByCode.put(code, bd(r.get("ADVANCE_BALANCE")));
+                accountNameByCode.put(code, str(r.get("CUSTOMER_NAME")));
+            }
+        });
+
         // 只聚合未结清单据（unreceived ≠ 0，含退货红负）
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT customer, ar_amount, received_amount, unreceived_amount, due_date FROM fin_ar "
@@ -79,16 +93,25 @@ public class BizCloseSnapshotService {
                 }
             }
         }
+        // 只有预收余额、没有未结清应收的客户也要入定版行（否则预收定版漏户）
+        for (Map.Entry<String, BigDecimal> e : advanceByCode.entrySet()) {
+            if (e.getValue().signum() <= 0) continue;
+            aggMap.computeIfAbsent(e.getKey(), k -> {
+                String nm = accountNameByCode.getOrDefault(k, "");
+                return new ArAgg(k, nm.isBlank() ? k : nm);
+            });
+        }
         for (ArAgg agg : aggMap.values()) {
             jdbcTemplate.update("""
                     INSERT INTO biz_close_ar_daily(close_date, customer_code, customer_name,
                         ar_amount, received_amount, unreceived_amount, advance_amount,
-                        overdue_amount, bill_count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        advance_account_balance, overdue_amount, bill_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, java.sql.Date.valueOf(date), agg.code, agg.name,
                     money(agg.arAmount), money(agg.received),
                     money(agg.net.signum() > 0 ? agg.net : BigDecimal.ZERO),
                     money(agg.net.signum() < 0 ? agg.net.negate() : BigDecimal.ZERO),
+                    money(advanceByCode.getOrDefault(agg.code, BigDecimal.ZERO)),
                     money(agg.overdue), agg.billCount);
         }
     }

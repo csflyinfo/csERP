@@ -51,6 +51,16 @@ export function formatDate(v) {
 }
 
 /**
+ * 本地今天：'YYYY-MM-DD'。
+ * 不要用 new Date().toISOString().slice(0,10) —— toISOString 是 UTC 日期，
+ * 东八区凌晨 0~8 点会落到「昨天」，默认单据日期撞上已日结封单会直接无法审核。
+ */
+export function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/**
  * 按列表表头文案自动选择格式化：
  * - 表头含「时间」 → 时刻
  * - 表头含「日期」 → 日期

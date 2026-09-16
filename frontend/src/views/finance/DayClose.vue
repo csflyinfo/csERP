@@ -183,7 +183,9 @@ const LEDGER_COLS = {
   ar: [
     { p: 'customerCode', t: '客户编码' }, { p: 'customerName', t: '客户名称' },
     { p: 'arAmount', t: '应收总额', num: true }, { p: 'receivedAmount', t: '已收金额', num: true },
-    { p: 'unreceivedAmount', t: '未收余额', num: true }, { p: 'advanceAmount', t: '预收(重分类)', num: true },
+    { p: 'unreceivedAmount', t: '未收余额', num: true },
+    { p: 'advanceAccountBalance', t: '预收余额', num: true },
+    { p: 'advanceAmount', t: '预收(重分类)', num: true },
     { p: 'overdueAmount', t: '逾期金额', num: true }, { p: 'billCount', t: '单据数', num: true },
   ],
   ap: [
@@ -495,6 +497,16 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+          <div v-if="tie.k === 'ar'" class="tie-advance">
+            预收定版取客户账户：账户预收余额合计
+            <b class="money">{{ money(step5?.ar?.advanceAccountTotal) }}</b>；
+            负应收重分类兜底合计
+            <b :class="Number(step5?.ar?.advanceReclassTotal) > 0 ? 'warn-text' : ''">{{ money(step5?.ar?.advanceReclassTotal) }}</b>
+            <span class="muted">（正常数据应为 0）</span>
+            <div v-for="(x, i) in step5?.ar?.advanceReclassDiffs || []" :key="'ra' + i" class="reclass-row">
+              ⚠ {{ x.customer }} 负应收 {{ money(x.reclassAmount) }}（建议核对是否应转为客户预收）
+            </div>
+          </div>
         </div>
 
         <div class="tie-title">资金滚存（{{ step5?.fund?.accountCount || 0 }} 个账户：上日余额 + 入 − 出 = 末笔余额）</div>
@@ -781,6 +793,9 @@ onMounted(() => {
 }
 .tie-title { font-weight: 700; font-size: 13px; margin: 10px 0 4px; }
 .tie-block { margin-top: 6px; }
+.tie-advance { margin: 6px 0 0; font-size: 12px; color: #555; }
+.tie-advance .money { color: #cf1322; }
+.tie-advance .reclass-row { color: #b07010; margin-top: 2px; }
 .full-input { width: 100%; box-sizing: border-box; }
 .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .kpi-grid div { background: #fafbfc; border-radius: 4px; padding: 8px 10px; text-align: center; }

@@ -62,6 +62,8 @@ export const fallbackMenus = {
     { code: 'stockTake', name: '库存盘点' },
   ],
   财务管理: [
+    { code: 'fin.customer_account', name: '客户账户' },
+    { code: 'fin.advance_writeoff', name: '预收核销单' },
     { code: 'ar', name: '客户应收明细表' },
     { code: 'ap', name: '应付账款' },
     { code: 'receiptPayment', name: '收款单' },

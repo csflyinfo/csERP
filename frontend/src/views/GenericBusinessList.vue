@@ -2591,8 +2591,9 @@ async function handleAction(action, row = null) {
     if (actionStr === '批量审核') { batchAuditReceipt(); return }
     if (actionStr === '核销') { openReconcileDialog(row); return }
     if (/新建|编辑/.test(actionStr)) { openReceiptDrawer(row); return }
-    if (/审核/.test(actionStr)) { handleAuditAction(api, row); return }
+    // 必须先判「取消审核」：'取消审核' 也匹配 /审核/，顺序反了会把反审核误送审核接口
     if (/取消审核/.test(actionStr)) { handleCancelAuditAction(api, row); return }
+    if (/审核/.test(actionStr)) { handleAuditAction(api, row); return }
     if (/删除/.test(actionStr)) { handleDeleteAction(api, row); return }
   }
   // 客户/供应商对账单
@@ -3122,7 +3123,11 @@ function handleReset() {
   }
   pageNo.value = 1; loadRows(); show(`${config.value.title}查询条件已重置`)
 }
-function handleMore(fields) { openDialog('more', '更多查询条件', fields.join('、')) }
+function handleMore(fields) {
+  // 筛选可能是对象形式（{ label, type, options }），直接 join 会显示 [object Object]
+  const names = fields.map(f => (typeof f === 'string' ? f : (f?.label || ''))).filter(Boolean)
+  openDialog('more', '更多查询条件', names.join('、'))
+}
 function handleRowAction(action, row) { handleAction(action, row) }
 function handlePageChange(nextPageNo) { pageNo.value = Math.max(1, nextPageNo); loadRows() }
 function handlePageSizeChange(nextPageSize) { pageSize.value = nextPageSize; pageNo.value = 1; loadRows() }

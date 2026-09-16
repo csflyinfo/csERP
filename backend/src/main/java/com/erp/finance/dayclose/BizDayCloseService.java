@@ -432,7 +432,29 @@ public class BizDayCloseService {
                 BigDecimal.class, java.sql.Date.valueOf(date)));
         BigDecimal current = nz(jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(unreceived_amount), 0) FROM fin_ar", BigDecimal.class));
-        return rollTie("应收滚存", prior, added, settled, current);
+        Map<String, Object> tie = rollTie("应收滚存", prior, added, settled, current);
+
+        // PRD-35 §6.10：预收定版直接取客户账户 advance_balance；原「负应收重分类为预收」
+        // 逻辑保留作兜底——正常数据（溢收已自动转预收、期初预收已建账）重分类额应为 0。
+        // 该项为提示性核对，不参与硬勾稽 passed（历史数据允许存在负应收）。
+        BigDecimal advanceAccountTotal = nz(jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(advance_balance), 0) FROM fin_customer_account", BigDecimal.class));
+        List<Map<String, Object>> reclassRows = new ArrayList<>();
+        BigDecimal reclassTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : jdbcTemplate.queryForList(
+                "SELECT customer, SUM(unreceived_amount) net FROM fin_ar "
+                        + "WHERE unreceived_amount <> 0 GROUP BY customer HAVING SUM(unreceived_amount) < -0.004")) {
+            BigDecimal neg = bd(r.get("NET"));
+            reclassTotal = reclassTotal.add(neg.negate());
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("customer", str(r.get("CUSTOMER")));
+            d.put("reclassAmount", money(neg.negate()));
+            reclassRows.add(d);
+        }
+        tie.put("advanceAccountTotal", money(advanceAccountTotal));
+        tie.put("advanceReclassTotal", money(reclassTotal));
+        tie.put("advanceReclassDiffs", reclassRows);
+        return tie;
     }
 
     /** 应付滚存。 */
@@ -1000,7 +1022,8 @@ public class BizDayCloseService {
         }
         row.put("arDaily", TmsUtil.queryCamel(jdbcTemplate,
                 "SELECT customer_code, customer_name, ar_amount, received_amount, "
-                        + "unreceived_amount, advance_amount, overdue_amount, bill_count "
+                        + "unreceived_amount, advance_amount, advance_account_balance, "
+                        + "overdue_amount, bill_count "
                         + "FROM biz_close_ar_daily WHERE close_date = ? ORDER BY customer_code",
                 java.sql.Date.valueOf(date)));
         row.put("apDaily", TmsUtil.queryCamel(jdbcTemplate,
@@ -1077,7 +1100,7 @@ public class BizDayCloseService {
 
     public List<Map<String, Object>> listArDaily(LocalDate from, LocalDate to, String keyword) {
         return listDaily("SELECT close_date, customer_code, customer_name, ar_amount, received_amount, "
-                + "unreceived_amount, advance_amount, overdue_amount, bill_count "
+                + "unreceived_amount, advance_amount, advance_account_balance, overdue_amount, bill_count "
                 + "FROM biz_close_ar_daily", "customer_code", "customer_name", from, to, keyword);
     }
 

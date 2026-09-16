@@ -46,6 +46,7 @@ public class BillNoGenerator {
         public static final String SALES_RETURN_REQ = "XTSQ";
         public static final String SALES_RETURN_IN = "THRK";
         public static final String SALES_RETURN = "XSTH";
+        public static final String ADVANCE_WRITEOFF = "XH";     // 预收核销单（PRD-35）
         public static final String FLY_ORDER = "FD";            // 飞单
         public static final String TRANSFER_APPLY = "DBSQ";     // 调拨申请单
         public static final String TRANSFER_OUTBOUND = "DBCK";  // 调拨出库单
@@ -116,6 +117,7 @@ public class BillNoGenerator {
             Map.entry("fin_supplier_statement", Set.of("statement_no")),
             Map.entry("fin_ar", Set.of("ar_no")),
             Map.entry("fin_ap", Set.of("ap_no")),
+            Map.entry("fin_advance_writeoff", Set.of("writeoff_no")),
             Map.entry("tms_dispatch", Set.of("dispatch_no")),
             Map.entry("tms_delivery_trip", Set.of("trip_no")),
             Map.entry("tms_reschedule_return", Set.of("return_no")),

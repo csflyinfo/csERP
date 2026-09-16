@@ -642,8 +642,8 @@ Object.assign(moduleConfigs, {
   receiptPayment: {
     ...moduleConfigs.receiptPayment,
     title: '收款单', desc: '收款业务，支持新建/编辑/审核/取消审核，审核后生成核销记录与资金流水',
-    filters: ['收款单号', '往来单位', { label: '往来单位类型', type: 'select', options: ['客户', '供应商', '往来单位'] }, { label: '收款日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, { label: '业务来源', type: 'select', options: ['后台制单', '结算生成', '对账生成'] }, { label: '核销状态', type: 'select', options: ['全部', '未核销', '部分核销', '已核销'] }, '状态'],
-    columns: ['收款单号', '收款日期', '状态', '往来单位类型', '往来单位', '收款金额', '核销金额', '经手人', '业务来源', '关联单号', '摘要', '制单人', '制单时间', '审核人', '审核时间', '操作'],
+    filters: ['收款单号', '往来单位', { label: '收款类型', type: 'select', options: ['应收结算', '预收收款', '预收退款'] }, { label: '往来单位类型', type: 'select', options: ['客户', '供应商', '往来单位'] }, { label: '收款日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, { label: '业务来源', type: 'select', options: ['后台制单', '结算生成', '对账生成'] }, { label: '核销状态', type: 'select', options: ['全部', '未核销', '部分核销', '已核销'] }, '状态'],
+    columns: ['收款单号', '收款日期', '状态', '收款类型', '往来单位类型', '往来单位', '收款金额', '核销金额', '经手人', '业务来源', '关联单号', '摘要', '制单人', '制单时间', '审核人', '审核时间', '操作'],
     actions: ['新建', '导出'],
     sections: ['往来单位信息', '收款明细', '审核信息'],
   },

@@ -197,14 +197,15 @@ public class GlInitService {
     }
 
     /**
-     * 一键引入业务期初：应收（fin_ar→1122 客户辅助）、应付（fin_ap→2202 供应商辅助）、
-     * 库存商品（inv_stock_balance→1405 商品辅助，数量+成本金额）。
+     * 一键引入业务期初：应收（fin_ar→1122 客户辅助）、预收（fin_customer_account→2203 客户辅助）、
+     * 应付（fin_ap→2202 供应商辅助）、库存商品（inv_stock_balance→1405 商品辅助，数量+成本金额）。
      * 资金账户期初在 M4 档案映射上线后引入（base_fund_account.gl_account_code）。
      */
     public Map<String, Object> importBusiness() {
         if (isInitialized()) throw new IllegalArgumentException("总账已启用，不能再引入期初");
         ensureLeafSubject("1122");
         ensureLeafSubject("2202");
+        ensureLeafSubject("2203");
         ensureLeafSubject("1405");
         Map<String, Object> result = new LinkedHashMap<>();
 
@@ -224,6 +225,26 @@ public class GlInitService {
         }
         result.put("arCount", arCount);
         result.put("arTotal", arTotal);
+
+        // 预收：按客户汇总账户预收余额（PRD-35 M4；含期初预收 ADV_OPENING 与启用总账前的在线预收）。
+        // 取客户账户缓存列；该列由全部 ADVANCE 流水滚存，与「客户账户」页期末余额同口径。
+        List<Map<String, Object>> advRows = TmsUtil.queryCamel(jdbc,
+                "SELECT customer_code, customer_name, advance_balance bal FROM fin_customer_account " +
+                "WHERE COALESCE(advance_balance,0) > 0.004");
+        int advCount = 0;
+        BigDecimal advTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : advRows) {
+            String code = TmsUtil.str(r.get("customerCode"));
+            // 账户行建档时按客户档案回写名称；历史兜底账户可能无名称，用编码占位
+            String name = TmsUtil.str(r.get("customerName"));
+            if (name.isEmpty()) name = code;
+            upsertAuxBalance("2203", GlConst.DIM_CUSTOMER, code, name,
+                    BigDecimal.ZERO, TmsUtil.toBd(r.get("bal")), BigDecimal.ZERO);
+            advCount++;
+            advTotal = advTotal.add(TmsUtil.toBd(r.get("bal")));
+        }
+        result.put("advCount", advCount);
+        result.put("advTotal", advTotal);
 
         // 应付：按供应商汇总未付金额
         List<Map<String, Object>> apRows = TmsUtil.queryCamel(jdbc,
@@ -262,7 +283,8 @@ public class GlInitService {
         result.put("goodsTotal", goodsTotal);
         result.put("goodsQty", goodsQty);
         TmsUtil.log(jdbc, "finance.gl.init", "IMPORT", "",
-                "一键引入业务期初：应收 " + arCount + " 户/" + arTotal + "，应付 " + apCount + " 户/" + apTotal
+                "一键引入业务期初：应收 " + arCount + " 户/" + arTotal + "，预收 " + advCount + " 户/" + advTotal
+                        + "，应付 " + apCount + " 户/" + apTotal
                         + "，库存 " + goodsCount + " 品/" + goodsTotal);
         return result;
     }

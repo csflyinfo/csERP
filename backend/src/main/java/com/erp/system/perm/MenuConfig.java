@@ -114,9 +114,11 @@ public class MenuConfig {
 
     private MenuNode financeMenus() {
         MenuNode fin = MenuNode.rootDir("finance", "财务管理", "Money", "ERP")
+                .page("fin.customer_account", "客户账户", "/finance/customer-account")
                 .page("fin.ar_detail", "客户应收明细", "/finance/ar")
                 .page("fin.ap", "应付账款", "/finance/ap")
                 .page("fin.receipt", "收款单", "/finance/receipt")
+                .page("fin.advance_writeoff", "预收核销单", "/finance/advance-writeoff")
                 .page("fin.payment", "付款单", "/finance/payment")
                 .page("fin.receipt_writeoff", "收款核销流水", "/finance/reconcile-record")
                 .page("fin.ar_settle", "应收结算", "/finance/ar-settlement")
@@ -130,6 +132,7 @@ public class MenuConfig {
                 .page("fin.customer_recon", "客户对账", "/finance/customer-statement")
                 .page("fin.supplier_recon", "供应商对账", "/finance/supplier-statement")
                 .page("fin.init_ar", "客户应收期初", "/finance/init-ar")
+                .page("fin.init_adv", "客户期初预收", "/finance/init-adv")
                 .page("fin.init_ap", "供应商应付期初", "/finance/init-ap")
                 .page("finance.day_close", "日结管理", "/finance/day-close");
         // 三级示例：财务管理(L1) > 总账(L2 目录) > 凭证/账簿...(L3 页面)

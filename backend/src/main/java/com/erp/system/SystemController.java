@@ -598,7 +598,9 @@ public class SystemController {
         return ApiResponse.ok(true);
     }
 
-    @GetMapping("/notification/unread-count")
+    // ERP 端角标接口统一 POST（前端 apiClient 只走 post）；
+    // 曾误用 @GetMapping 导致每次轮询 405、全局异常刷 ERROR 堆栈，角标静默不显示
+    @PostMapping("/notification/unread-count")
     public ApiResponse<Map<String, Object>> unreadCount() {
         int count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_notification WHERE is_read = FALSE", Integer.class);
         return ApiResponse.ok(Map.of("count", count));
@@ -624,13 +626,13 @@ public class SystemController {
         return ApiResponse.ok(true);
     }
 
-    @GetMapping("/todo/pending-count")
+    @PostMapping("/todo/pending-count")
     public ApiResponse<Map<String, Object>> pendingCount() {
         int count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sys_todo WHERE status = 'PENDING'", Integer.class);
         return ApiResponse.ok(Map.of("count", count));
     }
 
-    @GetMapping("/todo/summary")
+    @PostMapping("/todo/summary")
     public ApiResponse<Map<String, Object>> todoSummary() {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT module_code moduleCode, COUNT(*) cnt

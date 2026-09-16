@@ -82,17 +82,18 @@ onMounted(async () => {
             <tr>
               <th>客户编码</th><th>客户名称</th><th class="num">应收总额</th>
               <th class="num">已收</th><th class="num">未收余额</th>
-              <th class="num">预收(重分类)</th><th class="num">逾期</th><th class="num">单据数</th>
+              <th class="num">预收余额</th><th class="num">预收(重分类)</th><th class="num">逾期</th><th class="num">单据数</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(r, i) in data.arDaily" :key="'ar' + i">
               <td>{{ r.customerCode }}</td><td>{{ r.customerName }}</td>
               <td class="num">{{ money(r.arAmount) }}</td><td class="num">{{ money(r.receivedAmount) }}</td>
-              <td class="num">{{ money(r.unreceivedAmount) }}</td><td class="num">{{ money(r.advanceAmount) }}</td>
+              <td class="num">{{ money(r.unreceivedAmount) }}</td><td class="num">{{ money(r.advanceAccountBalance) }}</td>
+              <td class="num">{{ money(r.advanceAmount) }}</td>
               <td class="num">{{ money(r.overdueAmount) }}</td><td class="num">{{ r.billCount }}</td>
             </tr>
-            <tr v-if="!data.arDaily?.length"><td colspan="8" class="empty">无数据</td></tr>
+            <tr v-if="!data.arDaily?.length"><td colspan="9" class="empty">无数据</td></tr>
           </tbody>
         </table>
 

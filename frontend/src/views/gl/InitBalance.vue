@@ -121,10 +121,10 @@ const fmt = v => (Number(v || 0)).toLocaleString('zh-CN', { minimumFractionDigit
 
 // ===== 一键引入业务期初 =====
 async function importBusiness() {
-  if (!confirm('将从应收/应付/库存业务数据引入期初：\n  应收账款 1122（按客户）\n  应付账款 2202（按供应商）\n  库存商品 1405（按商品，含数量成本）\n同键重复引入以业务数据覆盖，确认继续？')) return
+  if (!confirm('将从应收/预收/应付/库存业务数据引入期初：\n  应收账款 1122（按客户）\n  预收账款 2203（按客户）\n  应付账款 2202（按供应商）\n  库存商品 1405（按商品，含数量成本）\n同键重复引入以业务数据覆盖，确认继续？')) return
   try {
     const r = await post('/finance/gl/init/business-import')
-    show(`引入完成：应收 ${r.arCount} 户/${fmt(r.arTotal)} 元，应付 ${r.apCount} 户/${fmt(r.apTotal)} 元，库存 ${r.goodsCount} 种/${fmt(r.goodsTotal)} 元`)
+    show(`引入完成：应收 ${r.arCount} 户/${fmt(r.arTotal)} 元，预收 ${r.advCount || 0} 户/${fmt(r.advTotal)} 元，应付 ${r.apCount} 户/${fmt(r.apTotal)} 元，库存 ${r.goodsCount} 种/${fmt(r.goodsTotal)} 元`)
     await loadAll()
   } catch (e) { show('引入失败：' + (e?.message || e), 'err') }
 }
