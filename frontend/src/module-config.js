@@ -651,8 +651,8 @@ Object.assign(moduleConfigs, {
   paymentModule: {
     ...moduleConfigs.paymentModule,
     title: '付款单', desc: '付款业务，支持新建/编辑/审核/取消审核，审核后生成核销记录与资金流水',
-    filters: ['付款单号', '往来单位', { label: '往来单位类型', type: 'select', options: ['客户', '供应商', '往来单位'] }, { label: '付款日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, { label: '业务来源', type: 'select', options: ['后台制单', '结算生成', '对账生成'] }, '状态'],
-    columns: ['付款单号', '付款日期', '状态', '往来单位类型', '往来单位', '付款金额', '核销金额', '经手人', '业务来源', '关联单号', '摘要', '制单人', '制单时间', '审核人', '审核时间', '操作'],
+    filters: ['付款单号', '往来单位', { label: '往来单位类型', type: 'select', options: ['客户', '供应商', '往来单位'] }, { label: '付款类型', type: 'select', key: 'paymentType', options: [{ value: 'SETTLE', label: '应付结算' }, { value: 'PREPAY', label: '预付付款' }, { value: 'PREPAY_REFUND', label: '预付退款' }] }, { label: '付款日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, { label: '业务来源', type: 'select', options: ['后台制单', '结算生成', '对账生成'] }, '状态'],
+    columns: ['付款单号', '付款日期', '状态', '付款类型', '往来单位类型', '往来单位', '付款金额', '核销金额', '经手人', '业务来源', '关联单号', '摘要', '制单人', '制单时间', '审核人', '审核时间', '操作'],
     actions: ['新建', '导出'],
     sections: ['往来单位信息', '付款明细', '审核信息'],
   },
@@ -678,7 +678,7 @@ Object.assign(moduleConfigs, {
   moduleConfigs.customerStatement = {
     ...moduleConfigs.customerStatement,
     title: '客户对账单', desc: '按客户往来单据生成对账单，审核后进行收款结算',
-    filters: [{ label: '对账日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, '客户', '业务员', { label: '收款状态', type: 'select', options: ['全部', '未收款', '部分收款', '完成收款'] }, '备注'],
+    filters: [{ label: '对账日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, '客户', '业务员', { label: '收款状态', type: 'select', key: 'payStatus', options: ['全部', '未收款', '部分收款', '完成收款'] }, '备注'],
     columns: ['对账单号', '客户编号', '客户名称', '业务员', '对账日期', '预计回款日', '状态', '对账金额', '已收款金额', '抹零金额', '收款状态', '备注', '制单人', '制单时间', '审核人', '审核时间', '操作'],
     actions: ['新建', '收款结算', '导出'],
     sections: ['对账信息', '对账明细'],
@@ -687,7 +687,7 @@ Object.assign(moduleConfigs, {
   moduleConfigs.supplierStatement = {
     ...moduleConfigs.supplierStatement,
     title: '供应商对账单', desc: '按供应商往来单据生成对账单，审核后进行付款结算',
-    filters: [{ label: '对账日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, '供应商', '采购员', { label: '付款状态', type: 'select', options: ['全部', '未付款', '部分付款', '完成付款'] }, '备注'],
+    filters: [{ label: '对账日期', type: 'dateRange', keyFrom: 'dateFrom', keyTo: 'dateTo' }, '供应商', '采购员', { label: '付款状态', type: 'select', key: 'payStatus', options: ['全部', '未付款', '部分付款', '完成付款'] }, '备注'],
     columns: ['对账单号', '供应商编号', '供应商名称', '采购员', '对账日期', '预计付款日', '是否开票', '状态', '对账金额', '已付款金额', '抹零金额', '付款状态', '备注', '制单人', '制单时间', '审核人', '审核时间', '操作'],
     actions: ['新建', '付款结算', '导出'],
     sections: ['对账信息', '对账明细'],

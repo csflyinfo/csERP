@@ -9,8 +9,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 业务日结定版快照重建（PRD-33 §6.1/§7.3）。
@@ -145,6 +147,24 @@ public class BizCloseSnapshotService {
                 "SELECT supplier_code, supplier_name FROM base_supplier").forEach(r ->
                 nameToCode.put(str(r.get("SUPPLIER_NAME")), str(r.get("SUPPLIER_CODE"))));
 
+        // 供应商账户预付/费用余额直接取账户缓存列（与应收侧 advance_balance 同范式）：
+        // 只有预付/费用余额、没有未结清应付的供应商也要入定版行；与负应付重分类列 prepaid_amount 分列。
+        Map<String, BigDecimal> prepayByCode = new LinkedHashMap<>();
+        Map<String, BigDecimal> expenseByCode = new LinkedHashMap<>();
+        Map<String, String> accountNameByCode = new LinkedHashMap<>();
+        jdbcTemplate.queryForList(
+                "SELECT supplier_code, supplier_name, prepay_balance, expense_balance "
+                        + "FROM fin_supplier_account "
+                        + "WHERE COALESCE(prepay_balance,0) <> 0 OR COALESCE(expense_balance,0) <> 0")
+                .forEach(r -> {
+                    String code = str(r.get("SUPPLIER_CODE"));
+                    if (!code.isEmpty()) {
+                        prepayByCode.put(code, bd(r.get("PREPAY_BALANCE")));
+                        expenseByCode.put(code, bd(r.get("EXPENSE_BALANCE")));
+                        accountNameByCode.put(code, str(r.get("SUPPLIER_NAME")));
+                    }
+                });
+
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT supplier, ap_amount, paid_amount, unpaid_amount, due_date FROM fin_ap "
                         + "WHERE unpaid_amount <> 0");
@@ -168,16 +188,29 @@ public class BizCloseSnapshotService {
                 }
             }
         }
+        // 账户有预付/费用余额但无未结清应付（或负应付已被重分类）的供应商补入定版行
+        Set<String> accountCodes = new LinkedHashSet<>();
+        accountCodes.addAll(prepayByCode.keySet());
+        accountCodes.addAll(expenseByCode.keySet());
+        for (String code : accountCodes) {
+            aggMap.computeIfAbsent(code, k -> {
+                String nm = accountNameByCode.getOrDefault(k, "");
+                return new ApAgg(k, nm.isBlank() ? k : nm);
+            });
+        }
         for (ApAgg agg : aggMap.values()) {
             jdbcTemplate.update("""
                     INSERT INTO biz_close_ap_daily(close_date, supplier_code, supplier_name,
                         ap_amount, paid_amount, unpaid_amount, prepaid_amount,
+                        prepay_account_balance, expense_account_balance,
                         overdue_amount, bill_count)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, java.sql.Date.valueOf(date), agg.code, agg.name,
                     money(agg.apAmount), money(agg.paid),
                     money(agg.net.signum() > 0 ? agg.net : BigDecimal.ZERO),
                     money(agg.net.signum() < 0 ? agg.net.negate() : BigDecimal.ZERO),
+                    money(prepayByCode.getOrDefault(agg.code, BigDecimal.ZERO)),
+                    money(expenseByCode.getOrDefault(agg.code, BigDecimal.ZERO)),
                     money(agg.overdue), agg.billCount);
         }
     }

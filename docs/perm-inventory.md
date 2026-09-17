@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-16 17:07:44
+> 生成时间：2026-09-17 11:52:59
 
-- 端点总数：882
-- 已挂 @RequirePerm：703
+- 端点总数：927
+- 已挂 @RequirePerm：748
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：159
 
 ## base
@@ -181,6 +181,30 @@
 | POST | `/finance/expense/detail` | FinanceController#expenseDetail | fin.fee.view | fin.fee | view | 方法：fin.fee.view |
 | POST | `/finance/expense/page` | FinanceController#expensePage | fin.fee.view | fin.fee | view | 方法：fin.fee.view |
 | POST | `/finance/expense/update` | FinanceController#updateExpense | fin.fee.edit | fin.fee | edit | 方法：fin.fee.edit |
+| POST | `/finance/factory-expense/audit` | FactoryExpenseController#audit | fin.factory_expense.audit | fin.factory_expense | audit | 方法：fin.factory_expense.audit |
+| GET | `/finance/factory-expense/backfill-flag` | FactoryExpenseController#backfillFlag | fin.factory_expense.view | fin.factory_expense | view | 方法：fin.factory_expense.view |
+| POST | `/finance/factory-expense/cancel-audit` | FactoryExpenseController#cancelAudit | fin.factory_expense.unaudit | fin.factory_expense | unaudit | 方法：fin.factory_expense.unaudit |
+| POST | `/finance/factory-expense/create` | FactoryExpenseController#create | fin.factory_expense.add | fin.factory_expense | add | 方法：fin.factory_expense.add |
+| POST | `/finance/factory-expense/customer-expense-candidates` | FactoryExpenseController#customerExpenseCandidates | fin.factory_expense.view | fin.factory_expense | view | 方法：fin.factory_expense.view |
+| POST | `/finance/factory-expense/delete` | FactoryExpenseController#delete | fin.factory_expense.delete | fin.factory_expense | delete | 方法：fin.factory_expense.delete |
+| POST | `/finance/factory-expense/detail` | FactoryExpenseController#detail | fin.factory_expense.view | fin.factory_expense | view | 方法：fin.factory_expense.view |
+| POST | `/finance/factory-expense/export` | FactoryExpenseController#export | fin.factory_expense.export | fin.factory_expense | export | 方法：fin.factory_expense.export |
+| POST | `/finance/factory-expense/import` | FactoryExpenseController#importRows | fin.factory_expense.import | fin.factory_expense | import | 方法：fin.factory_expense.import |
+| GET | `/finance/factory-expense/import-template` | FactoryExpenseController#downloadTemplate | fin.factory_expense.import | fin.factory_expense | import | 方法：fin.factory_expense.import |
+| POST | `/finance/factory-expense/page` | FactoryExpenseController#page | fin.factory_expense.view | fin.factory_expense | view | 方法：fin.factory_expense.view |
+| POST | `/finance/factory-expense/red-create` | FactoryExpenseController#redCreate | fin.factory_expense.add | fin.factory_expense | add | 方法：fin.factory_expense.add |
+| POST | `/finance/factory-expense/update` | FactoryExpenseController#update | fin.factory_expense.edit | fin.factory_expense | edit | 方法：fin.factory_expense.edit |
+| POST | `/finance/factory-settle/ap-candidates` | FactorySettleController#apCandidates | fin.factory_settle.view | fin.factory_settle | view | 方法：fin.factory_settle.view |
+| POST | `/finance/factory-settle/audit` | FactorySettleController#audit | fin.factory_settle.audit | fin.factory_settle | audit | 方法：fin.factory_settle.audit |
+| POST | `/finance/factory-settle/cancel-audit` | FactorySettleController#cancelAudit | fin.factory_settle.unaudit | fin.factory_settle | unaudit | 方法：fin.factory_settle.unaudit |
+| POST | `/finance/factory-settle/create` | FactorySettleController#create | fin.factory_settle.add | fin.factory_settle | add | 方法：fin.factory_settle.add |
+| POST | `/finance/factory-settle/delete` | FactorySettleController#delete | fin.factory_settle.delete | fin.factory_settle | delete | 方法：fin.factory_settle.delete |
+| POST | `/finance/factory-settle/detail` | FactorySettleController#detail | fin.factory_settle.view | fin.factory_settle | view | 方法：fin.factory_settle.view |
+| POST | `/finance/factory-settle/export-notice` | FactorySettleController#exportNotice | fin.factory_settle.print | fin.factory_settle | print | 方法：fin.factory_settle.print |
+| POST | `/finance/factory-settle/jf-candidates` | FactorySettleController#jfCandidates | fin.factory_settle.view | fin.factory_settle | view | 方法：fin.factory_settle.view |
+| POST | `/finance/factory-settle/page` | FactorySettleController#page | fin.factory_settle.view | fin.factory_settle | view | 方法：fin.factory_settle.view |
+| POST | `/finance/factory-settle/print-data` | FactorySettleController#printData | fin.factory_settle.print | fin.factory_settle | print | 方法：fin.factory_settle.print |
+| POST | `/finance/factory-settle/update` | FactorySettleController#update | fin.factory_settle.edit | fin.factory_settle | edit | 方法：fin.factory_settle.edit |
 | POST | `/finance/fund-ledger/page` | FinanceController#fundLedgerPage | fin.fund_flow.view | fin.fund_flow | view | 方法：fin.fund_flow.view |
 | POST | `/finance/gl/account/create` | GlAccountController#create | finance.gl.account.add | finance.gl.account | add | 方法：finance.gl.account.add |
 | POST | `/finance/gl/account/leaf-options` | GlAccountController#leafOptions | finance.gl.account.view | finance.gl.account | view | 方法：finance.gl.account.view |
@@ -283,6 +307,13 @@
 | POST | `/finance/payment/reconcile` | FinanceController#reconcilePayment | fin.payment_verify.writeoff | fin.payment_verify | writeoff | 方法：fin.payment_verify.writeoff |
 | POST | `/finance/payment/unsettled-bills` | FinanceController#paymentUnsettledBills | fin.payment_verify.view | fin.payment_verify | view | 方法：fin.payment_verify.view |
 | POST | `/finance/payment/update` | FinanceController#updatePayment | fin.payment.edit | fin.payment | edit | 方法：fin.payment.edit |
+| POST | `/finance/prepay-writeoff/audit` | PrepayWriteoffController#audit | fin.prepay_writeoff.audit | fin.prepay_writeoff | audit | 方法：fin.prepay_writeoff.audit |
+| POST | `/finance/prepay-writeoff/cancel-audit` | PrepayWriteoffController#cancelAudit | fin.prepay_writeoff.unaudit | fin.prepay_writeoff | unaudit | 方法：fin.prepay_writeoff.unaudit |
+| POST | `/finance/prepay-writeoff/create` | PrepayWriteoffController#create | fin.prepay_writeoff.add | fin.prepay_writeoff | add | 方法：fin.prepay_writeoff.add |
+| POST | `/finance/prepay-writeoff/delete` | PrepayWriteoffController#delete | fin.prepay_writeoff.delete | fin.prepay_writeoff | delete | 方法：fin.prepay_writeoff.delete |
+| POST | `/finance/prepay-writeoff/detail` | PrepayWriteoffController#detail | fin.prepay_writeoff.view | fin.prepay_writeoff | view | 方法：fin.prepay_writeoff.view |
+| POST | `/finance/prepay-writeoff/page` | PrepayWriteoffController#page | fin.prepay_writeoff.view | fin.prepay_writeoff | view | 方法：fin.prepay_writeoff.view |
+| POST | `/finance/prepay-writeoff/update` | PrepayWriteoffController#update | fin.prepay_writeoff.edit | fin.prepay_writeoff | edit | 方法：fin.prepay_writeoff.edit |
 | POST | `/finance/receipt-payment/page` | FinanceController#receiptPaymentPage | fin.receipt.view | fin.receipt | view | 方法：fin.receipt.view |
 | POST | `/finance/receipt/audit` | FinanceController#auditReceipt | fin.receipt.audit | fin.receipt | audit | 方法：fin.receipt.audit |
 | POST | `/finance/receipt/batch-audit` | FinanceController#batchAuditReceipt | fin.receipt.audit | fin.receipt | audit | 方法：fin.receipt.audit |
@@ -297,6 +328,10 @@
 | POST | `/finance/reconcile-record/page` | FinanceController#reconcileRecordPage | fin.receipt_writeoff.view | fin.receipt_writeoff | view | 方法：fin.receipt_writeoff.view |
 | POST | `/finance/reconcile/pay` | FinanceController#payReconcile | fin.payment_verify.writeoff | fin.payment_verify | writeoff | 方法：fin.payment_verify.writeoff |
 | POST | `/finance/reconcile/receive` | FinanceController#receiveReconcile | fin.receipt_verify.writeoff | fin.receipt_verify | writeoff | 方法：fin.receipt_verify.writeoff |
+| POST | `/finance/supplier-account/flow/page` | SupplierAccountController#flowPage | fin.supplier_account.view | fin.supplier_account | view | 方法：fin.supplier_account.view |
+| POST | `/finance/supplier-account/page` | SupplierAccountController#page | fin.supplier_account.view | fin.supplier_account | view | 方法：fin.supplier_account.view |
+| POST | `/finance/supplier-account/prepay-balance` | SupplierAccountController#prepayBalance | fin.payment.view | fin.payment | view | 方法：fin.payment.view |
+| POST | `/finance/supplier-account/repair` | SupplierAccountController#repair | fin.supplier_account.repair | fin.supplier_account | repair | 方法：fin.supplier_account.repair |
 | POST | `/finance/supplier-statement/audit` | FinanceController#ssAudit | fin.supplier_recon.audit | fin.supplier_recon | audit | 方法：fin.supplier_recon.audit |
 | POST | `/finance/supplier-statement/available-bills` | FinanceController#ssAvailableBills | fin.supplier_recon.view | fin.supplier_recon | view | 方法：fin.supplier_recon.view |
 | POST | `/finance/supplier-statement/create` | FinanceController#ssCreate | fin.supplier_recon.add | fin.supplier_recon | add | 方法：fin.supplier_recon.add |
@@ -328,6 +363,16 @@
 | POST | `/init/ap/line/save` | ApInitController#save | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
 | POST | `/init/ap/line/update` | ApInitController#update | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
 | POST | `/init/ap/post` | ApInitController#post | fin.init_ap.post | fin.init_ap | post | 方法：fin.init_ap.post |
+| POST | `/init/ap/prepay-supplement/clear` | ApPrepaySupplementController#clear | fin.init_ap.delete | fin.init_ap | delete | 方法：fin.init_ap.delete |
+| POST | `/init/ap/prepay-supplement/import` | ApPrepaySupplementController#importRows | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
+| GET | `/init/ap/prepay-supplement/import-template` | ApPrepaySupplementController#downloadTemplate | fin.init_ap.import | fin.init_ap | import | 方法：fin.init_ap.import |
+| POST | `/init/ap/prepay-supplement/line/delete` | ApPrepaySupplementController#delete | fin.init_ap.delete | fin.init_ap | delete | 方法：fin.init_ap.delete |
+| POST | `/init/ap/prepay-supplement/line/page` | ApPrepaySupplementController#linePage | fin.init_ap.view | fin.init_ap | view | 方法：fin.init_ap.view |
+| POST | `/init/ap/prepay-supplement/line/save` | ApPrepaySupplementController#save | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
+| POST | `/init/ap/prepay-supplement/line/update` | ApPrepaySupplementController#update | fin.init_ap.edit | fin.init_ap | edit | 方法：fin.init_ap.edit |
+| POST | `/init/ap/prepay-supplement/post` | ApPrepaySupplementController#post | fin.init_ap.post | fin.init_ap | post | 方法：fin.init_ap.post |
+| POST | `/init/ap/prepay-supplement/reverse` | ApPrepaySupplementController#reverse | fin.init_ap.reverse | fin.init_ap | reverse | 方法：fin.init_ap.reverse |
+| POST | `/init/ap/prepay-supplement/status` | ApPrepaySupplementController#status | fin.init_ap.view | fin.init_ap | view | 方法：fin.init_ap.view |
 | POST | `/init/ap/reverse` | ApInitController#reverse | fin.init_ap.reverse | fin.init_ap | reverse | 方法：fin.init_ap.reverse |
 | POST | `/init/ap/status` | ApInitController#status | fin.init_ap.view | fin.init_ap | view | 方法：fin.init_ap.view |
 | POST | `/init/ar/clear` | ArInitController#clear | fin.init_ar.delete | fin.init_ar | delete | 方法：fin.init_ar.delete |

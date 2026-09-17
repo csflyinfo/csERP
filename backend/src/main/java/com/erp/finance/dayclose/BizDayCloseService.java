@@ -472,7 +472,55 @@ public class BizDayCloseService {
                 BigDecimal.class, java.sql.Date.valueOf(date)));
         BigDecimal current = nz(jdbcTemplate.queryForObject(
                 "SELECT COALESCE(SUM(unpaid_amount), 0) FROM fin_ap", BigDecimal.class));
-        return rollTie("应付滚存", prior, added, paid, current);
+        Map<String, Object> tie = rollTie("应付滚存", prior, added, paid, current);
+
+        // PRD-36 §6.13：预付/费用分列勾稽（提示性，不参与硬勾稽 passed）。
+        // 资产负债表「预付账款」= 供应商账户预付余额（1123）+ 2202 负应付重分类额，两个口径不要求相等，
+        // 但同一供应商两边都挂钱时给「双计」提示（不阻断日结），防同一笔负应付又录了期初/补录预付。
+        BigDecimal prepayAccountTotal = nz(jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(prepay_balance), 0) FROM fin_supplier_account", BigDecimal.class));
+        BigDecimal expenseAccountTotal = nz(jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(expense_balance), 0) FROM fin_supplier_account", BigDecimal.class));
+        Map<String, String> codeByName = new LinkedHashMap<>();
+        jdbcTemplate.queryForList("SELECT supplier_code, supplier_name FROM base_supplier")
+                .forEach(r -> codeByName.put(str(r.get("SUPPLIER_NAME")), str(r.get("SUPPLIER_CODE"))));
+        Map<String, BigDecimal> prepayByCode = new LinkedHashMap<>();
+        jdbcTemplate.queryForList(
+                "SELECT supplier_code, prepay_balance FROM fin_supplier_account "
+                        + "WHERE COALESCE(prepay_balance,0) > 0").forEach(r ->
+                prepayByCode.put(str(r.get("SUPPLIER_CODE")), bd(r.get("PREPAY_BALANCE"))));
+        List<Map<String, Object>> reclassRows = new ArrayList<>();
+        List<Map<String, Object>> doubleCountRows = new ArrayList<>();
+        BigDecimal reclassTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : jdbcTemplate.queryForList(
+                "SELECT supplier, SUM(unpaid_amount) net FROM fin_ap "
+                        + "WHERE unpaid_amount <> 0 GROUP BY supplier HAVING SUM(unpaid_amount) < -0.004")) {
+            BigDecimal neg = bd(r.get("NET"));
+            BigDecimal reclass = neg.negate();
+            reclassTotal = reclassTotal.add(reclass);
+            String name = str(r.get("SUPPLIER"));
+            Map<String, Object> d = new LinkedHashMap<>();
+            d.put("supplier", name);
+            d.put("reclassAmount", money(reclass));
+            reclassRows.add(d);
+            String code = codeByName.get(name);
+            if (code != null) {
+                BigDecimal accountPrepay = prepayByCode.get(code);
+                if (accountPrepay != null && accountPrepay.signum() > 0) {
+                    Map<String, Object> warn = new LinkedHashMap<>();
+                    warn.put("supplier", name);
+                    warn.put("reclassAmount", money(reclass));
+                    warn.put("prepayAccountBalance", money(accountPrepay));
+                    doubleCountRows.add(warn);
+                }
+            }
+        }
+        tie.put("prepayAccountTotal", money(prepayAccountTotal));
+        tie.put("prepayReclassTotal", money(reclassTotal));
+        tie.put("prepayReclassDiffs", reclassRows);
+        tie.put("prepayDoubleCount", doubleCountRows);
+        tie.put("expenseAccountTotal", money(expenseAccountTotal));
+        return tie;
     }
 
     private Map<String, Object> rollTie(String name, BigDecimal prior, BigDecimal added,
@@ -1028,7 +1076,8 @@ public class BizDayCloseService {
                 java.sql.Date.valueOf(date)));
         row.put("apDaily", TmsUtil.queryCamel(jdbcTemplate,
                 "SELECT supplier_code, supplier_name, ap_amount, paid_amount, unpaid_amount, "
-                        + "prepaid_amount, overdue_amount, bill_count "
+                        + "prepaid_amount, prepay_account_balance, expense_account_balance, "
+                        + "overdue_amount, bill_count "
                         + "FROM biz_close_ap_daily WHERE close_date = ? ORDER BY supplier_code",
                 java.sql.Date.valueOf(date)));
         row.put("fundDaily", TmsUtil.queryCamel(jdbcTemplate,
@@ -1106,7 +1155,8 @@ public class BizDayCloseService {
 
     public List<Map<String, Object>> listApDaily(LocalDate from, LocalDate to, String keyword) {
         return listDaily("SELECT close_date, supplier_code, supplier_name, ap_amount, paid_amount, "
-                + "unpaid_amount, prepaid_amount, overdue_amount, bill_count "
+                + "unpaid_amount, prepaid_amount, prepay_account_balance, expense_account_balance, "
+                + "overdue_amount, bill_count "
                 + "FROM biz_close_ap_daily", "supplier_code", "supplier_name", from, to, keyword);
     }
 

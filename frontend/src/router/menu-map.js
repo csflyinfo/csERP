@@ -78,7 +78,11 @@ export const MENU_PATH = {
 
   // 财务-出纳/往来
   'fin.customer_account': '/finance/customer-account',
+  'fin.supplier_account': '/finance/supplier-account',
   'fin.advance_writeoff': '/finance/advance-writeoff',
+  'fin.prepay_writeoff': '/finance/prepay-writeoff',
+  'fin.factory_expense': '/finance/factory-expense',
+  'fin.factory_settle': '/finance/factory-settle',
   'fin.ar_detail': '/ar',
   'fin.ap': '/ap',
   'fin.receipt': '/receipt-payment',

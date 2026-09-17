@@ -103,7 +103,9 @@ onMounted(async () => {
             <tr>
               <th>供应商编码</th><th>供应商名称</th><th class="num">应付总额</th>
               <th class="num">已付</th><th class="num">未付余额</th>
-              <th class="num">预付(重分类)</th><th class="num">逾期</th><th class="num">单据数</th>
+              <th class="num">预付(2202重分类)</th><th class="num">预付余额(1123账户)</th>
+              <th class="num">费用余额(1221)</th>
+              <th class="num">逾期</th><th class="num">单据数</th>
             </tr>
           </thead>
           <tbody>
@@ -111,11 +113,16 @@ onMounted(async () => {
               <td>{{ r.supplierCode }}</td><td>{{ r.supplierName }}</td>
               <td class="num">{{ money(r.apAmount) }}</td><td class="num">{{ money(r.paidAmount) }}</td>
               <td class="num">{{ money(r.unpaidAmount) }}</td><td class="num">{{ money(r.prepaidAmount) }}</td>
+              <td class="num">{{ money(r.prepayAccountBalance) }}</td><td class="num">{{ money(r.expenseAccountBalance) }}</td>
               <td class="num">{{ money(r.overdueAmount) }}</td><td class="num">{{ r.billCount }}</td>
             </tr>
-            <tr v-if="!data.apDaily?.length"><td colspan="8" class="empty">无数据</td></tr>
+            <tr v-if="!data.apDaily?.length"><td colspan="10" class="empty">无数据</td></tr>
           </tbody>
         </table>
+        <div class="table-note">
+          注：「预付(2202重分类)」为该供应商应付单负余额的报表重分类额；「预付余额(1123账户)」为供应商账户预付余额；
+          资产负债表预付账款=两者之和，分列不要求相等。
+        </div>
 
         <div class="sec-title">四、资金账户日余额（现金账户附实盘数）</div>
         <table class="rj-table">
@@ -217,6 +224,7 @@ onMounted(async () => {
 .goods-table tr.neg td { color: #d33; }
 .sign-row { display: flex; justify-content: space-around; margin-top: 30px; font-size: 13px; color: #333; }
 .foot-note { margin-top: 16px; color: #666; font-size: 11px; text-align: center; line-height: 1.7; }
+.table-note { color: #888; font-size: 11px; line-height: 1.6; margin: 4px 0 0; }
 @media print {
   .print-page { background: #fff; padding: 0; max-width: none; }
   .toolbar { display: none; }

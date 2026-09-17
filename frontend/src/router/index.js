@@ -138,8 +138,16 @@ const routes = [
 
       // 客户账户（PRD-35：应收/预收余额与往来流水）
       { path: 'finance/customer-account', name: 'FinanceCustomerAccount', component: () => import('@/views/finance/CustomerAccount.vue'), meta: { title: '客户账户', module: 'fin.customer_account' } },
+      // 供应商账户（PRD-36 M1：应付/预付/费用余额与往来流水）
+      { path: 'finance/supplier-account', name: 'FinanceSupplierAccount', component: () => import('@/views/finance/SupplierAccount.vue'), meta: { title: '供应商账户', module: 'fin.supplier_account' } },
       // 预收核销单（PRD-35 M3：预收冲应收）
       { path: 'finance/advance-writeoff', name: 'FinanceAdvanceWriteoff', component: () => import('@/views/finance/AdvanceWriteoff.vue'), meta: { title: '预收核销单', module: 'fin.advance_writeoff' } },
+      // 预付核销单（PRD-36 M2：预付冲应付）
+      { path: 'finance/prepay-writeoff', name: 'FinancePrepayWriteoff', component: () => import('@/views/finance/PrepayWriteoff.vue'), meta: { title: '预付核销单', module: 'fin.prepay_writeoff' } },
+      // 厂家费用单（PRD-36 M3：代垫/其他厂家费用跟踪）
+      { path: 'finance/factory-expense', name: 'FinanceFactoryExpense', component: () => import('@/views/finance/FactoryExpense.vue'), meta: { title: '厂家费用单', module: 'fin.factory_expense' } },
+      // 厂家费用兑现单（PRD-36 M3：现金/冲应付/其他方式兑现）
+      { path: 'finance/factory-settle', name: 'FinanceFactorySettle', component: () => import('@/views/finance/FactorySettle.vue'), meta: { title: '厂家费用兑现单', module: 'fin.factory_settle' } },
 
       // 系统管理（PRD-28 RBAC：用户/角色/模块菜单管理）
       { path: 'user', name: 'User', component: () => import('@/views/system/UserManage.vue'), meta: { title: '用户管理', module: 'user' } },

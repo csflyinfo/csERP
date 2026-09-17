@@ -188,15 +188,24 @@ public class GlReportService {
         List<Map<String, Object>> groups = new ArrayList<>();
         groups.add(reconcileAr(per));
         groups.add(reconcileAp(per));
+        groups.add(reconcilePrepay(per));
+        groups.add(reconcileFactoryExpense(per));
         groups.add(reconcileCash(per));
 
+        // 应收/应付/资金为硬平衡三组；预付/厂家费用为提示性对账（允许总账手工凭证解释差异），不翻总标志
         boolean matched = true;
-        for (Map<String, Object> g : groups)
-            if (!Boolean.TRUE.equals(g.get("matched"))) matched = false;
+        boolean hardMatched = true;
+        for (Map<String, Object> g : groups) {
+            if (!Boolean.TRUE.equals(g.get("matched"))) {
+                matched = false;
+                if (!Boolean.TRUE.equals(g.get("advisory"))) hardMatched = false;
+            }
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("period", per);
         result.put("matched", matched);
+        result.put("hardMatched", hardMatched);
         result.put("groups", groups);
         return result;
     }
@@ -230,6 +239,81 @@ public class GlReportService {
         }
         return group("ap", "应付账款（2202） vs 应付单未付", gl, biz,
                 "总账 2202 贷方余额", "业务应付单未付合计", mergeDetail(glDetail, bizDetail));
+    }
+
+    /** 预付账款 1123（借方向）vs 供应商账户预付余额（含 QCAP 同批期初与 QCYF 补录）。 */
+    private Map<String, Object> reconcilePrepay(String period) {
+        BigDecimal gl = calc.qm("1123", period);
+        BigDecimal biz = sum0("SELECT COALESCE(SUM(prepay_balance),0) FROM fin_supplier_account");
+        Map<String, String> supplierNames = nameMap("base_supplier", "supplier_code", "supplier_name");
+        Map<String, BigDecimal[]> glDetail = auxDetail("1123", "aux_supplier", period, supplierNames, true);
+        Map<String, BigDecimal> bizDetail = new LinkedHashMap<>();
+        for (Map<String, Object> r : TmsUtil.queryCamel(jdbc,
+                "SELECT supplier_name, SUM(prepay_balance) bal FROM fin_supplier_account "
+                        + "GROUP BY supplier_name HAVING COALESCE(SUM(prepay_balance),0) > 0.004")) {
+            bizDetail.merge(TmsUtil.str(r.get("supplierName")), bd(r.get("bal")), BigDecimal::add);
+        }
+        Map<String, Object> g = group("prepay", "预付账款（1123） vs 供应商账户预付余额", gl, biz,
+                "总账 1123 借方余额", "业务供应商账户预付余额", mergeDetail(glDetail, bizDetail));
+        // 提示性对账（设计 §10.4）：会计在总账直接做的 1123 供应商辅助手工凭证为允许的账财边界，差异可解释即可，不翻硬平衡总标志
+        g.put("advisory", true);
+        g.put("note", "提示性对账：总账手工凭证（如预付转入其他资产/费用）会形成可解释差异，不阻断结账");
+        return g;
+    }
+
+    /**
+     * 1221 其他应收款—厂家费用（借方向，供应商辅助）提示性对账（设计 §10.4，不参与硬平衡总标志）。
+     *
+     * <p>业务口径「费用余额 + 已兑现发生额」= EXPENSE 流水累计形成额；为可比，GL 侧取
+     * 供应商辅助期末借余 + 本年贷方累计（兑现贷记 1221），即总账口径的累计形成额。
+     * 差异来源：非厂家其他应收（押金/备用金走员工/客户辅助）与会计在总账直接做的
+     * 1221 供应商辅助手工凭证（允许的账财边界），差异表按供应商可解释即可。
+     */
+    private Map<String, Object> reconcileFactoryExpense(String period) {
+        Map<String, String> supplierNames = nameMap("base_supplier", "supplier_code", "supplier_name");
+        // 专用汇总：不能复用 auxDetail——它会跳过净额≈0 的户，已全额兑现（d=c）的供应商形成额会漏算
+        Map<String, BigDecimal[]> aux = auxDcWithYearCredit("1221", "aux_supplier", period, supplierNames);
+        BigDecimal glOutstanding = BigDecimal.ZERO;
+        BigDecimal glCreditYtd = BigDecimal.ZERO;
+        Map<String, BigDecimal[]> glFormedDetail = new LinkedHashMap<>();
+        for (Map.Entry<String, BigDecimal[]> e : aux.entrySet()) {
+            BigDecimal[] v = e.getValue();
+            glOutstanding = glOutstanding.add(v[0]);
+            glCreditYtd = glCreditYtd.add(v[3]);
+            // 形成口径 = 期末借余（含启用期初）+ 本年贷方发生（已贷记兑现的部分加回）
+            glFormedDetail.put(e.getKey(), new BigDecimal[]{v[0].add(v[3]), v[1], v[2]});
+        }
+
+        Map<String, BigDecimal> bizFormedDetail = new LinkedHashMap<>();
+        for (Map<String, Object> r : TmsUtil.queryCamel(jdbc,
+                "SELECT supplier_name, SUM(increase_amount) amt FROM fin_supplier_account_flow "
+                        + "WHERE account_type='EXPENSE' "
+                        + "AND biz_type IN ('FACTORY_EXP_FORM','FACTORY_EXP_RED','FACTORY_EXP_REVERSE') "
+                        + "AND COALESCE(reverse_status,'') <> 'REVERSED' "
+                        + "GROUP BY supplier_name")) {
+            BigDecimal amt = bd(r.get("amt"));
+            if (amt.abs().compareTo(TOL) >= 0) {
+                bizFormedDetail.merge(TmsUtil.str(r.get("supplierName")), amt, BigDecimal::add);
+            }
+        }
+        BigDecimal bizFormed = bizFormedDetail.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal bizOutstanding = sum0(
+                "SELECT COALESCE(SUM(expense_balance),0) FROM fin_supplier_account");
+        BigDecimal glFormed = glOutstanding.add(glCreditYtd);
+
+        Map<String, Object> g = group("factoryExpense",
+                "其他应收款—厂家费用（1221 供应商辅助） vs 费用余额+已兑现发生额",
+                glFormed, bizFormed,
+                "总账 1221 供应商辅助（期末余额+本年贷方兑现）",
+                "业务 EXPENSE 流水累计形成额", mergeDetail(glFormedDetail, bizFormedDetail));
+        g.put("advisory", true);
+        g.put("note", "提示性对账：总账手工凭证、非厂家其他应收（押金/员工备用金）会形成可解释差异，不阻断结账");
+        g.put("glOutstanding", glOutstanding);
+        g.put("bizOutstanding", bizOutstanding);
+        g.put("outstandingDiff", glOutstanding.subtract(bizOutstanding));
+        g.put("glCreditYtd", glCreditYtd);
+        g.put("bizSettled", bizFormed.subtract(bizOutstanding));
+        return g;
     }
 
     /** 资金科目（is_cash）vs 资金账户余额（base_fund_account.gl_account_code 映射）。 */
@@ -395,6 +479,44 @@ public class GlReportService {
             if (signed.abs().compareTo(TOL) < 0) continue;
             out.merge(name, new BigDecimal[]{signed, d, c}, (a, b) ->
                     new BigDecimal[]{a[0].add(b[0]), a[1].add(b[1]), a[2].add(b[2])});
+        }
+        return out;
+    }
+
+    /**
+     * 辅助核算 d/c 全量汇总（含本年贷方发生拆分），厂家费用 1221 专用。
+     * 与 {@link #auxDetail} 的区别：不按净额过滤——已全额兑现（d=c，净额≈0）的供应商
+     * 仍有累计形成额与本年贷方发生，必须保留。
+     * 返回 party(名称) -> [期末净额 d−c（含启用期初）, 累计借 d, 累计贷 c, 本年贷方发生]。
+     */
+    private Map<String, BigDecimal[]> auxDcWithYearCredit(String accountPrefix, String auxColumn, String period,
+                                                          Map<String, String> codeToName) {
+        String yearStart = period.substring(0, 4) + "01";
+        // 显式拼列名（auxColumn 来自内部常量，无注入面）
+        String sql =
+                "SELECT party, SUM(d) d, SUM(c) c, SUM(yc) yc FROM (" +
+                " SELECT e." + auxColumn + " party, SUM(e.debit_amount) d, SUM(e.credit_amount) c," +
+                "   SUM(CASE WHEN v.period >= ? THEN e.credit_amount ELSE 0 END) yc " +
+                " FROM fin_voucher_entry e JOIN fin_voucher v ON v.id = e.voucher_id " +
+                " WHERE e.account_code LIKE ? AND v.status IN ('已过账','已冲销') AND v.period <= ? " +
+                " GROUP BY e." + auxColumn +
+                " UNION ALL " +
+                " SELECT b." + auxColumn + ", SUM(b.open_debit), SUM(b.open_credit), 0 " +
+                " FROM fin_init_balance b WHERE b.account_code LIKE ? GROUP BY b." + auxColumn +
+                ") t GROUP BY party";
+        Map<String, BigDecimal[]> out = new LinkedHashMap<>();
+        for (Map<String, Object> r : TmsUtil.queryCamel(jdbc, sql,
+                yearStart, accountPrefix + "%", period, accountPrefix + "%")) {
+            String code = TmsUtil.str(r.get("party"));
+            if (code.isEmpty()) code = "（未挂辅助核算）";
+            String name = codeToName.getOrDefault(code, code);
+            BigDecimal d = bd(r.get("d"));
+            BigDecimal c = bd(r.get("c"));
+            BigDecimal yc = bd(r.get("yc"));
+            // 全零户（无发生无余额）不展示；d=c 的全额兑现户保留
+            if (d.abs().compareTo(TOL) < 0 && c.abs().compareTo(TOL) < 0) continue;
+            out.merge(name, new BigDecimal[]{d.subtract(c), d, c, yc}, (a, b) ->
+                    new BigDecimal[]{a[0].add(b[0]), a[1].add(b[1]), a[2].add(b[2]), a[3].add(b[3])});
         }
         return out;
     }

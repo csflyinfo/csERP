@@ -78,7 +78,8 @@ public class SensitiveFieldRegistry {
         bind("VIEW_AR_BALANCE", "arBalance", "ar_balance", "receivableBalance",
                 "receivable_balance", "arAmount", "ar_amount", "debtAmount", "debt_amount");
         bind("VIEW_AP_BALANCE", "apBalance", "ap_balance", "payableBalance",
-                "payable_balance", "apAmount", "ap_amount");
+                "payable_balance", "apAmount", "ap_amount",
+                "prepayBalance", "prepay_balance", "expenseBalance", "expense_balance");
         bind("VIEW_PRE_RECEIVED", "preReceived", "pre_received", "preReceivedAmount",
                 "pre_received_amount", "prepaid", "pre_paid", "prePayment", "pre_payment");
         bind("VIEW_FUND_ACCOUNT_BALANCE", "accountBalance", "account_balance", "fundBalance",

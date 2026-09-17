@@ -1,7 +1,7 @@
 <script setup>
 /**
- * 对账单收款/付款结算弹窗（PRD-35 M3：客户收款支持使用预收）
- * 预收部分自动生成并审核 XH 预收核销单（来源 STATEMENT_SETTLE），现金部分生 SK 收款单
+ * 对账单收款/付款结算弹窗（PRD-35 M3 客户预收 / PRD-36 M2 供应商预付）
+ * 预收/预付部分自动生成并审核 XH/FX 核销单（来源 STATEMENT_SETTLE），现金部分生 SK/FK 收付款单
  */
 import { ref, watch, computed } from 'vue'
 import { post } from '../api/client.js'
@@ -29,13 +29,17 @@ const header = ref({
   writeOffExpenseType: '',
 })
 
-// ===== 预收（仅客户收款，PRD-35 M3） =====
+// ===== 预收（客户）/ 预付（供应商） =====
 const advanceBalance = ref(0)
 const useAdvance = ref(false)
 const advanceAmount = ref(0)
 // props 在 <script setup> 里只能通过 props.xxx 访问（数组本身，无 .value）
 const customerCode = computed(() => props.selectedRows[0]?._raw?.customerCode || '')
 const customerName = computed(() => props.selectedRows[0]?._raw?.customerName || '')
+const supplierCode = computed(() => props.selectedRows[0]?._raw?.supplierCode || '')
+const supplierName = computed(() => props.selectedRows[0]?._raw?.supplierName || '')
+// 文案：收款侧「预收」，付款侧「预付」
+const advNoun = computed(() => isReceipt.value ? '预收' : '预付')
 
 // ===== 资金账户 =====
 const accounts = ref([{ fundAccount: '', amount: '' }])
@@ -55,7 +59,7 @@ const pendingAmount = netSettle  // 兼容模板旧名：净额
 const advanceCap = computed(() =>
   Math.round(Math.min(netSettle.value, Number(advanceBalance.value) || 0) * 100) / 100)
 const cashNeeded = computed(() =>
-  Math.round(Math.max(0, netSettle.value - (isReceipt.value && useAdvance.value ? Number(advanceAmount.value) || 0 : 0)) * 100) / 100)
+  Math.round(Math.max(0, netSettle.value - (useAdvance.value ? Number(advanceAmount.value) || 0 : 0)) * 100) / 100)
 
 const acctTotal = computed(() => accounts.value.reduce((s, a) => s + (Number(a.amount) || 0), 0))
 
@@ -70,11 +74,18 @@ async function loadAdvanceBalance() {
   advanceBalance.value = 0
   useAdvance.value = false
   advanceAmount.value = 0
-  if (!isReceipt.value) return
   try {
-    const body = customerCode.value ? { customerCode: customerCode.value } : { customerName: customerName.value }
-    const r = await post('/finance/customer-account/advance-balance', body)
-    advanceBalance.value = Number(r.advanceBalance) || 0
+    if (isReceipt.value) {
+      const body = customerCode.value ? { customerCode: customerCode.value } : { customerName: customerName.value }
+      const r = await post('/finance/customer-account/advance-balance', body)
+      advanceBalance.value = Number(r.advanceBalance) || 0
+    } else {
+      const body = supplierCode.value
+        ? { supplierCode: supplierCode.value, supplierName: supplierName.value }
+        : { supplierName: supplierName.value }
+      const r = await post('/finance/supplier-account/prepay-balance', body)
+      advanceBalance.value = Number(r.prepayBalance) || 0
+    }
   } catch (_) { advanceBalance.value = 0 }
 }
 
@@ -95,18 +106,18 @@ watch(() => props.visible, async (v) => {
 
 async function confirmSettle() {
   if (!header.value.handler) { alert('请选择经手人'); return }
-  const adv = isReceipt.value && useAdvance.value ? Math.round((Number(advanceAmount.value) || 0) * 100) / 100 : 0
-  if (isReceipt.value && useAdvance.value && adv <= 0) {
-    alert('请填写预收结算金额，或取消勾选「使用预收款」'); return
+  const adv = useAdvance.value ? Math.round((Number(advanceAmount.value) || 0) * 100) / 100 : 0
+  if (useAdvance.value && adv <= 0) {
+    alert(`请填写${advNoun.value}结算金额，或取消勾选「使用${advNoun.value}款」`); return
   }
   const filled = accounts.value.filter(a => a.fundAccount && Number(a.amount) > 0)
   if (cashNeeded.value > 0 && filled.length === 0) { alert('请至少填写一个资金账户'); return }
   const tot = Math.round(filled.reduce((s,a) => s + Number(a.amount), 0) * 100) / 100
   if (Math.abs(tot - cashNeeded.value) > 0.01) {
-    alert(`账户合计 ￥${tot.toFixed(2)} 须等于净额扣减预收后的金额 ￥${cashNeeded.value.toFixed(2)}`); return
+    alert(`账户合计 ￥${tot.toFixed(2)} 须等于净额扣减${advNoun.value}后的金额 ￥${cashNeeded.value.toFixed(2)}`); return
   }
   if (!confirm(`确认${isReceipt.value?'收':'付'}款结算 ${props.selectedRows.length} 张对账单？\n本次结算净额 ￥${netSettle.value.toFixed(2)}`
-    + (adv > 0 ? `\n其中预收结算 ￥${adv.toFixed(2)}，现金 ￥${cashNeeded.value.toFixed(2)}` : ''))) return
+    + (adv > 0 ? `\n其中${advNoun.value}结算 ￥${adv.toFixed(2)}，现金 ￥${cashNeeded.value.toFixed(2)}` : ''))) return
   loading.value = true
   try {
     const prefix = isReceipt.value ? 'customer' : 'supplier'
@@ -118,9 +129,10 @@ async function confirmSettle() {
       accounts: filled,
     }
     if (isReceipt.value) payload.useAdvanceAmount = adv
+    else payload.usePrepayAmount = adv
     const res = await post(`/finance/${prefix}-statement/settle`, payload)
     if (adv > 0 && res?.writeoffNos?.length) {
-      alert(`结算成功，预收已生成核销单：${res.writeoffNos.join('，')}`)
+      alert(`结算成功，${advNoun.value}已生成核销单：${res.writeoffNos.join('，')}`)
     }
     emit('saved')
   } catch (e) { alert('结算失败：'+ (e.message||'未知错误')) } finally { loading.value = false }
@@ -135,8 +147,8 @@ async function confirmSettle() {
         <div class="actions"><button class="btn" @click="emit('close')">关闭</button><button class="btn primary" @click="confirmSettle" :disabled="loading">确认{{ isReceipt?'收款':'付款' }}</button></div>
       </div>
       <div class="modal-lite-body">
-        <div v-if="isReceipt" class="settle-subtitle">
-          已选 {{ selectedRows.length }} 张单据，本次结算净额 ￥{{ netSettle.toFixed(2) }}，退货负单参与净额抵扣
+        <div class="settle-subtitle">
+          已选 {{ selectedRows.length }} 张单据，本次结算净额 ￥{{ netSettle.toFixed(2) }}，退货/红冲负单参与净额抵扣
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-bottom:10px">
           <div class="fi"><label>经手人 <span class="req">*</span></label><select v-model="header.handler"><option value="">请选择</option><option v-for="e in employeeList" :key="e.employeeCode||e.code" :value="e.employeeName||e.name">{{ e.employeeName||e.name }}</option></select></div>
@@ -144,25 +156,26 @@ async function confirmSettle() {
           <div class="fi" style="grid-column:1/-1"><label>备注</label><input v-model="header.remark" /></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 14px;margin-bottom:10px;padding:8px;background:#f5f7fa;border-radius:4px">
-          <div class="fi"><label>应收金额</label><b style="font-size:14px;color:#303133">{{ totalAmount.toFixed(2) }}</b></div>
+          <div class="fi"><label>{{ isReceipt ? '应收金额' : '应付金额' }}</label><b style="font-size:14px;color:#303133">{{ totalAmount.toFixed(2) }}</b></div>
           <div class="fi"><label>抹零金额</label><input type="number" step="0.01" v-model.number="header.writeOff" /></div>
           <div class="fi"><label>抹零费用类型</label><select v-model="header.writeOffExpenseType"><option value="">请选择</option><option v-for="et in expenseTypes" :key="et.expenseTypeCode||et.code" :value="et.expenseTypeName||et.name">{{ et.expenseTypeName||et.name }}</option></select></div>
           <div class="fi"><label>结算净额</label><b style="font-size:16px;color:#409eff">{{ netSettle.toFixed(2) }}</b></div>
-          <div class="fi" v-if="isReceipt"><label>其中预收</label><b style="font-size:14px" :style="{color:useAdvance?'#e6a23c':'#909399'}">{{ (useAdvance ? Number(advanceAmount)||0 : 0).toFixed(2) }}</b></div>
-          <div class="fi"><label>剩余应收</label><b style="font-size:14px" :style="{color:(cashNeeded-acctTotal)>0?'#e6a23c':'#67c23a'}">{{ (cashNeeded - acctTotal).toFixed(2) }}</b></div>
+          <div class="fi"><label>其中{{ advNoun }}</label><b style="font-size:14px" :style="{color:useAdvance?'#e6a23c':'#909399'}">{{ (useAdvance ? Number(advanceAmount)||0 : 0).toFixed(2) }}</b></div>
+          <div class="fi"><label>剩余{{ isReceipt ? '应收' : '应付' }}</label><b style="font-size:14px" :style="{color:(cashNeeded-acctTotal)>0?'#e6a23c':'#67c23a'}">{{ (cashNeeded - acctTotal).toFixed(2) }}</b></div>
         </div>
-        <!-- 使用预收款（仅客户收款，PRD-35 M3） -->
-        <fieldset v-if="isReceipt" style="margin-bottom:10px">
-          <legend>预收结算</legend>
+        <!-- 使用预收/预付（客户收款 PRD-35 / 供应商付款 PRD-36） -->
+        <fieldset style="margin-bottom:10px">
+          <legend>{{ advNoun }}结算</legend>
           <div class="advance-panel">
-            <div class="advance-balance">客户 ERP 预收余额：￥{{ (Number(advanceBalance) || 0).toFixed(2) }}</div>
-            <label class="advance-check"><input type="checkbox" v-model="useAdvance" /><b>使用预收款</b></label>
+            <div class="advance-balance">{{ isReceipt ? '客户' : '供应商' }} ERP {{ advNoun }}余额：￥{{ (Number(advanceBalance) || 0).toFixed(2) }}</div>
+            <label class="advance-check"><input type="checkbox" v-model="useAdvance" /><b>使用{{ advNoun }}款</b></label>
             <div v-if="useAdvance" class="advance-input-row">
-              <div class="fi"><label>预收结算金额</label>
+              <div class="fi"><label>{{ advNoun }}结算金额</label>
                 <input type="number" min="0" step="0.01" v-model.number="advanceAmount" />
               </div>
               <span class="advance-hint">最多 ￥{{ advanceCap.toFixed(2) }}，其余走资金账户</span>
             </div>
+            <div v-if="!(Number(advanceBalance) > 0)" class="advance-hint">该{{ isReceipt ? '客户' : '供应商' }}暂无可用{{ advNoun }}余额，可先做{{ isReceipt ? '预收收款单' : '预付付款单' }}</div>
           </div>
         </fieldset>
         <fieldset><legend>{{ isReceipt?'收款':'付款' }}账户（账户合计须 = ￥{{ cashNeeded.toFixed(2) }}）</legend>

@@ -53,3 +53,6 @@ tms_driver_app/*.png
 *.apk
 wms_pda_app/build/
 
+
+# PRD-36 隔离验证库（8082 端口 + H2 文件库 verify-prd36-m1，仅本地验收用）
+backend/verify-*/

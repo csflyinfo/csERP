@@ -198,12 +198,14 @@ public class GlInitService {
 
     /**
      * 一键引入业务期初：应收（fin_ar→1122 客户辅助）、预收（fin_customer_account→2203 客户辅助）、
-     * 应付（fin_ap→2202 供应商辅助）、库存商品（inv_stock_balance→1405 商品辅助，数量+成本金额）。
+     * 应付（fin_ap→2202 供应商辅助）、预付（fin_supplier_account.prepay_balance→1123 供应商辅助）、
+     * 库存商品（inv_stock_balance→1405 商品辅助，数量+成本金额）。
      * 资金账户期初在 M4 档案映射上线后引入（base_fund_account.gl_account_code）。
      */
     public Map<String, Object> importBusiness() {
         if (isInitialized()) throw new IllegalArgumentException("总账已启用，不能再引入期初");
         ensureLeafSubject("1122");
+        ensureLeafSubject("1123");
         ensureLeafSubject("2202");
         ensureLeafSubject("2203");
         ensureLeafSubject("1405");
@@ -263,6 +265,25 @@ public class GlInitService {
         result.put("apCount", apCount);
         result.put("apTotal", apTotal);
 
+        // 预付：按供应商汇总账户预付余额（PRD-36 M4；含应付期初同批 QCYF 与启用总账前的预付流水）。
+        // 取供应商账户缓存列，与「供应商账户」页预付余额同口径；资产类入借方。
+        List<Map<String, Object>> prepayRows = TmsUtil.queryCamel(jdbc,
+                "SELECT supplier_code, supplier_name, prepay_balance bal FROM fin_supplier_account " +
+                "WHERE COALESCE(prepay_balance,0) > 0.004");
+        int prepayCount = 0;
+        BigDecimal prepayTotal = BigDecimal.ZERO;
+        for (Map<String, Object> r : prepayRows) {
+            String code = TmsUtil.str(r.get("supplierCode"));
+            String name = TmsUtil.str(r.get("supplierName"));
+            if (name.isEmpty()) name = code;
+            upsertAuxBalance("1123", GlConst.DIM_SUPPLIER, code, name,
+                    TmsUtil.toBd(r.get("bal")), BigDecimal.ZERO, BigDecimal.ZERO);
+            prepayCount++;
+            prepayTotal = prepayTotal.add(TmsUtil.toBd(r.get("bal")));
+        }
+        result.put("prepayCount", prepayCount);
+        result.put("prepayTotal", prepayTotal);
+
         // 库存商品：按商品汇总实存数量与成本金额
         List<Map<String, Object>> goodsRows = TmsUtil.queryCamel(jdbc,
                 "SELECT goods_code, MAX(goods_name) goods_name, SUM(physical_qty) qty, SUM(stock_amount) amt " +
@@ -285,6 +306,7 @@ public class GlInitService {
         TmsUtil.log(jdbc, "finance.gl.init", "IMPORT", "",
                 "一键引入业务期初：应收 " + arCount + " 户/" + arTotal + "，预收 " + advCount + " 户/" + advTotal
                         + "，应付 " + apCount + " 户/" + apTotal
+                        + "，预付 " + prepayCount + " 户/" + prepayTotal
                         + "，库存 " + goodsCount + " 品/" + goodsTotal);
         return result;
     }

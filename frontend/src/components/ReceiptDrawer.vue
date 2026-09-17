@@ -25,6 +25,8 @@ const title = computed(() => {
   const prefix = isReceipt.value ? '收款单' : '付款单'
   return props.mode === 'edit' ? `编辑${prefix}` : `新建${prefix}`
 })
+const billDateLabel = computed(() => isReceipt.value ? '收款日期' : '付款日期')
+const typeRowLabel = computed(() => isReceipt.value ? '收款类型' : '付款类型')
 // 保存所需功能点：收款 fin.receipt.add/edit，付款 fin.payment.add/edit
 const savePermCode = computed(() =>
   `${isReceipt.value ? 'fin.receipt' : 'fin.payment'}.${props.mode === 'edit' ? 'edit' : 'add'}`)
@@ -43,7 +45,7 @@ const header = ref({
   receiptId: '',
   receiptNo: '',
   receiptDate: todayStr(),        // 本地日期（toISOString 在东八区凌晨会落到昨天，撞日结封单）
-  receiptType: 'SETTLE',          // PRD-35：SETTLE 应收结算 / ADVANCE 预收收款 / ADVANCE_REFUND 预收退款（仅收款单）
+  receiptType: 'SETTLE',          // 收款：SETTLE/ADVANCE/ADVANCE_REFUND（PRD-35）；付款：SETTLE/PREPAY/PREPAY_REFUND（PRD-36）
   counterpartyType: isReceipt.value ? 'CUSTOMER' : 'SUPPLIER',     // 收款默认客户，付款默认供应商
   counterpartyCode: '',
   counterpartyName: '',
@@ -55,13 +57,27 @@ const header = ref({
   createTime: '',
 })
 
-// 预收退款：客户当前预收余额（抽屉内提示；后端审核时仍强校验）
+// 退款余额提示：收款=客户预收余额；付款=供应商预付余额（抽屉内提示；后端审核时仍强校验）
 const advanceBalance = ref(null)
 const balanceLoading = ref(false)
 const isAdvanceType = computed(() => isReceipt.value && header.value.receiptType !== 'SETTLE')
 const isRefundType = computed(() => isReceipt.value && header.value.receiptType === 'ADVANCE_REFUND')
+// PRD-36：付款类型 PREPAY 预付付款 / PREPAY_REFUND 预付退款
+const isPrepayType = computed(() => !isReceipt.value && header.value.receiptType !== 'SETTLE')
+const isPrepayRefund = computed(() => !isReceipt.value && header.value.receiptType === 'PREPAY_REFUND')
+// 预收/预付类往来单位锁定：收款锁客户、付款锁供应商
+const cpLocked = computed(() => isAdvanceType.value || isPrepayType.value)
+const showRefundHint = computed(() =>
+  (isRefundType.value || isPrepayRefund.value) && !!header.value.counterpartyCode)
+const refundBalanceLabel = computed(() => isReceipt.value ? '当前预收余额' : '当前预付余额')
+const refundOverBalance = computed(() =>
+  showRefundHint.value && typeof advanceBalance.value === 'number' && Number(totalAmount.value) > advanceBalance.value)
 const receiptAmountLabel = computed(() => {
-  if (!isReceipt.value) return '付款金额'
+  if (!isReceipt.value) {
+    if (header.value.receiptType === 'PREPAY') return '预付金额'
+    if (header.value.receiptType === 'PREPAY_REFUND') return '退款金额'
+    return '付款金额'
+  }
   if (header.value.receiptType === 'ADVANCE') return '预收金额'
   if (header.value.receiptType === 'ADVANCE_REFUND') return '退款金额'
   return '收款金额'
@@ -92,13 +108,18 @@ function onTypeChange() {
   advanceBalance.value = null
 }
 
-/** PRD-35：收款类型切换。预收类往来单位强制客户；预收退款刷新客户预收余额提示 */
+/** 收/付款类型切换。预收/预付类锁定往来单位类型（收款客户/付款供应商）并清空已选单位 */
 function onReceiptTypeChange() {
-  if (!isReceipt.value) return
   if (isAdvanceType.value) {
     header.value.counterpartyType = 'CUSTOMER'
     header.value.counterpartyCode = ''
     header.value.counterpartyName = ''
+    advanceBalance.value = null
+  } else if (isPrepayType.value) {
+    header.value.counterpartyType = 'SUPPLIER'
+    header.value.counterpartyCode = ''
+    header.value.counterpartyName = ''
+    supplierAccounts.value = []
     advanceBalance.value = null
   }
 }
@@ -116,17 +137,26 @@ function onPartnerChange(code) {
   } else {
     supplierAccounts.value = []
   }
-  // 预收退款：查该客户当前预收余额
-  if (isRefundType.value && code) loadAdvanceBalance(code)
+  // 预收退款：查该客户当前预收余额；预付退款：查该供应商当前预付余额
+  if (isRefundType.value && code) loadRefundBalance(code)
+  else if (isPrepayRefund.value && code) loadRefundBalance(code)
   else advanceBalance.value = null
 }
 
-/** 查客户当前预收余额（失败不阻断制单，审核时后端还有硬校验） */
-async function loadAdvanceBalance(customerCode) {
+/** 查退款可用余额（收款查客户预收 / 付款查供应商预付；失败不阻断制单，审核时后端还有硬校验） */
+async function loadRefundBalance(cpCode) {
   balanceLoading.value = true
   try {
-    const r = await post('/finance/customer-account/advance-balance', { customerCode })
-    advanceBalance.value = r ? Number(r.advanceBalance) || 0 : null
+    if (isReceipt.value) {
+      const r = await post('/finance/customer-account/advance-balance', { customerCode: cpCode })
+      advanceBalance.value = r ? Number(r.advanceBalance) || 0 : null
+    } else {
+      const r = await post('/finance/supplier-account/prepay-balance', {
+        supplierCode: cpCode,
+        supplierName: header.value.counterpartyName,
+      })
+      advanceBalance.value = r ? Number(r.prepayBalance) || 0 : null
+    }
   } catch (_) {
     advanceBalance.value = null
   } finally {
@@ -175,7 +205,7 @@ async function loadExisting(adjustId) {
       receiptId: data.receiptId || '',
       receiptNo: data.receiptNo || '',
       receiptDate: (data.receiptDate || '').toString().slice(0, 10),
-      receiptType: data.receiptType || 'SETTLE',
+      receiptType: data.receiptType || data.paymentType || 'SETTLE',
       counterpartyType: data.counterpartyType || 'CUSTOMER',
       counterpartyCode: data.counterpartyCode || '',
       counterpartyName: data.counterpartyName || '',
@@ -192,9 +222,9 @@ async function loadExisting(adjustId) {
       remark: d.remark || '',
     }))
     if (details.value.length === 0) details.value.push(makeEmptyDetail())
-    // 编辑预收退款单：展示客户当前预收余额供参考
-    if (isRefundType.value && header.value.counterpartyCode) {
-      loadAdvanceBalance(header.value.counterpartyCode)
+    // 编辑退款单：展示对方当前预收/预付余额供参考
+    if ((isRefundType.value || isPrepayRefund.value) && header.value.counterpartyCode) {
+      loadRefundBalance(header.value.counterpartyCode)
     }
   } catch (e) {
     alert('加载收款单失败：' + (e.message || '未知错误'))
@@ -209,9 +239,12 @@ function removeDetailRow(i) { details.value.splice(i, 1) }
 function validate() {
   const err = {}
   if (!header.value.counterpartyCode) err.partner = '请选择往来单位'
-  // PRD-35：预收收款/预收退款只允许客户往来
+  // PRD-35：预收收款/预收退款只允许客户往来；PRD-36：预付付款/预付退款只允许供应商往来
   if (isAdvanceType.value && header.value.counterpartyType !== 'CUSTOMER') {
     err.partner = '预收收款/预收退款的往来单位必须是客户'
+  }
+  if (isPrepayType.value && header.value.counterpartyType !== 'SUPPLIER') {
+    err.partner = '预付付款/预付退款的往来单位必须是供应商'
   }
   const filled = details.value.filter(d => Number(d.amount) > 0)
   if (filled.length === 0) err.details = '请至少填写一条收款明细'
@@ -219,11 +252,12 @@ function validate() {
     const bad = filled.find(d => !d.fundAccount)
     if (bad) err.details = '请选择资金账户'
   }
-  // 预收退款：退款总额不得超过客户当前预收余额（与后端审核校验同文案口径）
-  if (isRefundType.value && filled.length > 0 && typeof advanceBalance.value === 'number') {
+  // 退款类：退款总额不得超过对方当前预收/预付余额（与后端审核校验同文案口径）
+  if ((isRefundType.value || isPrepayRefund.value) && filled.length > 0 && typeof advanceBalance.value === 'number') {
     const refundTotal = filled.reduce((s, d) => s + (Number(d.amount) || 0), 0)
     if (refundTotal > advanceBalance.value) {
-      err.details = `预收余额不足，当前预收余额 ${advanceBalance.value.toFixed(2)} 元，无法退款 ${refundTotal.toFixed(2)} 元`
+      const balName = isReceipt.value ? '预收' : '预付'
+      err.details = `${balName}余额不足，当前${balName}余额 ${advanceBalance.value.toFixed(2)} 元，无法退款 ${refundTotal.toFixed(2)} 元`
     }
   }
   formErrors.value = err
@@ -242,8 +276,11 @@ async function save() {
       : (isEdit ? '/finance/payment/update' : '/finance/payment/create')
     const payload = {
       receiptId: header.value.receiptId || undefined,
+      paymentId: isReceipt.value ? undefined : (header.value.receiptId || undefined),
       receiptDate: header.value.receiptDate,
+      paymentDate: isReceipt.value ? undefined : header.value.receiptDate,
       receiptType: isReceipt.value ? header.value.receiptType : undefined,
+      paymentType: isReceipt.value ? undefined : header.value.receiptType,
       counterpartyType: header.value.counterpartyType,
       counterpartyCode: header.value.counterpartyCode,
       counterpartyName: header.value.counterpartyName,
@@ -303,22 +340,29 @@ watch(() => props.visible, async (v) => {
         <!-- 主单信息 -->
         <div class="card" style="padding:10px 14px">
           <div class="form-grid">
-            <!-- PRD-35：收款类型（仅收款单；预收类强制客户往来，不参与应收核销） -->
-            <div v-if="isReceipt" class="field field-full">
-              <label>收款类型 <span class="req">*</span></label>
+            <!-- PRD-35/36：收款类型（仅收款单）/ 付款类型（仅付款单）；预收/预付类锁定往来单位 -->
+            <div class="field field-full">
+              <label>{{ typeRowLabel }} <span class="req">*</span></label>
               <div class="radio-row-sm">
-                <label class="radio-label-sm"><input type="radio" value="SETTLE" v-model="header.receiptType" @change="onReceiptTypeChange" />应收结算</label>
-                <label class="radio-label-sm"><input type="radio" value="ADVANCE" v-model="header.receiptType" @change="onReceiptTypeChange" />预收收款</label>
-                <label class="radio-label-sm"><input type="radio" value="ADVANCE_REFUND" v-model="header.receiptType" @change="onReceiptTypeChange" />预收退款</label>
+                <template v-if="isReceipt">
+                  <label class="radio-label-sm"><input type="radio" value="SETTLE" v-model="header.receiptType" @change="onReceiptTypeChange" />应收结算</label>
+                  <label class="radio-label-sm"><input type="radio" value="ADVANCE" v-model="header.receiptType" @change="onReceiptTypeChange" />预收收款</label>
+                  <label class="radio-label-sm"><input type="radio" value="ADVANCE_REFUND" v-model="header.receiptType" @change="onReceiptTypeChange" />预收退款</label>
+                </template>
+                <template v-else>
+                  <label class="radio-label-sm"><input type="radio" value="SETTLE" v-model="header.receiptType" @change="onReceiptTypeChange" />应付结算</label>
+                  <label class="radio-label-sm"><input type="radio" value="PREPAY" v-model="header.receiptType" @change="onReceiptTypeChange" />预付付款</label>
+                  <label class="radio-label-sm"><input type="radio" value="PREPAY_REFUND" v-model="header.receiptType" @change="onReceiptTypeChange" />预付退款</label>
+                </template>
               </div>
             </div>
-            <!-- 往来单位类型：独占一行，单选组用小号；预收类锁定为客户 -->
+            <!-- 往来单位类型：独占一行，单选组用小号；预收类锁定客户，预付类锁定供应商 -->
             <div class="field field-full">
               <label>往来单位类型 <span class="req">*</span></label>
               <div class="radio-row-sm">
-                <label class="radio-label-sm"><input type="radio" value="CUSTOMER" v-model="header.counterpartyType" @change="onTypeChange" />客户</label>
+                <label class="radio-label-sm" :class="{ 'radio-disabled': isPrepayType }"><input type="radio" value="CUSTOMER" v-model="header.counterpartyType" :disabled="isPrepayType" @change="onTypeChange" />客户</label>
                 <label class="radio-label-sm" :class="{ 'radio-disabled': isAdvanceType }"><input type="radio" value="SUPPLIER" v-model="header.counterpartyType" :disabled="isAdvanceType" @change="onTypeChange" />供应商</label>
-                <label class="radio-label-sm" :class="{ 'radio-disabled': isAdvanceType }"><input type="radio" value="COUNTERPARTY" v-model="header.counterpartyType" :disabled="isAdvanceType" @change="onTypeChange" />往来单位</label>
+                <label class="radio-label-sm" :class="{ 'radio-disabled': cpLocked }"><input type="radio" value="COUNTERPARTY" v-model="header.counterpartyType" :disabled="cpLocked" @change="onTypeChange" />往来单位</label>
               </div>
             </div>
             <!-- 往来单位：独占一行，紧跟类型下方；预收退款展示该客户当前预收余额 -->
@@ -333,14 +377,14 @@ watch(() => props.visible, async (v) => {
                     {{ p.customerName || p.supplierName || p.counterpartyName || p.name || '' }}
                   </option>
                 </select>
-                <span v-if="isRefundType && header.counterpartyCode" class="advance-hint"
-                      :class="{ 'advance-hint-warn': typeof advanceBalance === 'number' && Number(totalAmount) > advanceBalance }">
-                  {{ balanceLoading ? '余额查询中…' : (advanceBalance === null ? '' : `当前预收余额 ￥${Number(advanceBalance).toFixed(2)}`) }}
+                <span v-if="showRefundHint" class="advance-hint"
+                      :class="{ 'advance-hint-warn': refundOverBalance }">
+                  {{ balanceLoading ? '余额查询中…' : (advanceBalance === null ? '' : `${refundBalanceLabel} ￥${Number(advanceBalance).toFixed(2)}`) }}
                 </span>
               </div>
             </div>
             <div class="field">
-              <label>收款日期 <span class="req">*</span></label>
+              <label>{{ billDateLabel }} <span class="req">*</span></label>
               <input type="date" v-model="header.receiptDate" />
             </div>
             <div class="field">
@@ -366,8 +410,9 @@ watch(() => props.visible, async (v) => {
         <div class="card" style="padding:10px 14px;flex:1;display:flex;flex-direction:column;min-height:180px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
             <b style="font-size:13px">{{ isReceipt ? '收款明细' : '付款明细' }}</b>
-            <span v-if="isAdvanceType" style="font-size:11px;color:#909399">
-              （{{ header.receiptType === 'ADVANCE' ? '预收款计入客户预收余额，不核销应收' : '退款从客户预收余额中扣减，不核销应收' }}）
+            <span v-if="isAdvanceType || isPrepayType" style="font-size:11px;color:#909399">
+              <template v-if="isReceipt">（{{ header.receiptType === 'ADVANCE' ? '预收款计入客户预收余额，不核销应收' : '退款从客户预收余额中扣减，不核销应收' }}）</template>
+              <template v-else>（{{ header.receiptType === 'PREPAY' ? '预付款计入供应商预付余额，不核销应付' : '退款从供应商预付余额中扣减，不核销应付' }}）</template>
             </span>
             <span v-if="formErrors.details" style="color:#f56c6c;font-size:12px">{{ formErrors.details }}</span>
             <div style="flex:1"></div>

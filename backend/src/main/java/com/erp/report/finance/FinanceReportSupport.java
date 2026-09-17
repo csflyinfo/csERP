@@ -21,13 +21,14 @@ import java.util.List;
  */
 final class FinanceReportSupport {
 
-    /** 核销应收的四类业务类型（按 ar_no 归集）。 */
+    /** 核销应收的五类业务类型（按 ar_no 归集；ADVANCE_WRITE_OFF=预收冲应收，PRD-35）。 */
     static final List<String> AR_CASH_TYPES =
-            List.of("SALES_RECEIPT", "AR_SETTLE", "SALES_PAYMENT", "CUSTOMER_STATEMENT");
+            List.of("SALES_RECEIPT", "AR_SETTLE", "SALES_PAYMENT", "CUSTOMER_STATEMENT", "ADVANCE_WRITE_OFF");
 
-    /** 核销应付的三类业务类型（按 ap_no 归集）。 */
+    /** 核销应付的五类业务类型（按 ap_no 归集；PREPAY_WRITE_OFF=预付冲应付、FACTORY_EXPENSE_OFFSET=厂家费用账扣，PRD-36）。 */
     static final List<String> AP_CASH_TYPES =
-            List.of("PURCHASE_RECEIPT", "PURCHASE_PAYMENT", "SUPPLIER_STATEMENT");
+            List.of("PURCHASE_RECEIPT", "PURCHASE_PAYMENT", "SUPPLIER_STATEMENT",
+                    "PREPAY_WRITE_OFF", "FACTORY_EXPENSE_OFFSET");
 
     /** 账龄/余额比较零容差（金额 2 位小数）。 */
     static final double EPS = 0.005d;

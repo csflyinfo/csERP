@@ -191,7 +191,9 @@ const LEDGER_COLS = {
   ap: [
     { p: 'supplierCode', t: '供应商编码' }, { p: 'supplierName', t: '供应商名称' },
     { p: 'apAmount', t: '应付总额', num: true }, { p: 'paidAmount', t: '已付金额', num: true },
-    { p: 'unpaidAmount', t: '未付余额', num: true }, { p: 'prepaidAmount', t: '预付(重分类)', num: true },
+    { p: 'unpaidAmount', t: '未付余额', num: true }, { p: 'prepaidAmount', t: '预付(2202重分类)', num: true },
+    { p: 'prepayAccountBalance', t: '预付余额(1123账户)', num: true },
+    { p: 'expenseAccountBalance', t: '费用余额(1221)', num: true },
     { p: 'overdueAmount', t: '逾期金额', num: true }, { p: 'billCount', t: '单据数', num: true },
   ],
   fund: [
@@ -507,6 +509,22 @@ onMounted(() => {
               ⚠ {{ x.customer }} 负应收 {{ money(x.reclassAmount) }}（建议核对是否应转为客户预收）
             </div>
           </div>
+          <div v-if="tie.k === 'ap'" class="tie-advance">
+            预付/费用定版取供应商账户：账户预付余额（1123）合计
+            <b class="money">{{ money(step5?.ap?.prepayAccountTotal) }}</b>；
+            费用余额（1221 厂家费用）合计
+            <b class="money">{{ money(step5?.ap?.expenseAccountTotal) }}</b>；
+            2202 负应付重分类兜底合计
+            <b :class="Number(step5?.ap?.prepayReclassTotal) > 0 ? 'warn-text' : ''">{{ money(step5?.ap?.prepayReclassTotal) }}</b>
+            <span class="muted">（资产负债表预付=1123账户余额+2202负余额重分类，两口径不要求相等）</span>
+            <div v-for="(x, i) in step5?.ap?.prepayReclassDiffs || []" :key="'rp' + i" class="reclass-row">
+              ⚠ {{ x.supplier }} 负应付 {{ money(x.reclassAmount) }}（报表重分类为预付）
+            </div>
+            <div v-for="(x, i) in step5?.ap?.prepayDoubleCount || []" :key="'dp' + i" class="reclass-row double-count">
+              ⚠ {{ x.supplier }} 同时有 2202 负应付 {{ money(x.reclassAmount) }} 和 1123 账户预付 {{ money(x.prepayAccountBalance) }}，
+              请确认不是同一笔钱两边重复挂账
+            </div>
+          </div>
         </div>
 
         <div class="tie-title">资金滚存（{{ step5?.fund?.accountCount || 0 }} 个账户：上日余额 + 入 − 出 = 末笔余额）</div>
@@ -796,6 +814,7 @@ onMounted(() => {
 .tie-advance { margin: 6px 0 0; font-size: 12px; color: #555; }
 .tie-advance .money { color: #cf1322; }
 .tie-advance .reclass-row { color: #b07010; margin-top: 2px; }
+.tie-advance .reclass-row.double-count { color: #cf1322; }
 .full-input { width: 100%; box-sizing: border-box; }
 .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .kpi-grid div { background: #fafbfc; border-radius: 4px; padding: 8px 10px; text-align: center; }

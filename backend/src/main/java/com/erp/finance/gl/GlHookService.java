@@ -505,11 +505,31 @@ public class GlHookService {
     private void emitPayment(String paymentNo, boolean reverse) {
         Map<String, Object> head = head(
                 "SELECT payment_no, payment_date, counterparty_type, counterparty_code, counterparty_name, " +
-                        "total_amount, business_source FROM fin_payment_bill WHERE payment_no = ? OR payment_id = ?",
+                        "total_amount, business_source, payment_type FROM fin_payment_bill WHERE payment_no = ? OR payment_id = ?",
                 paymentNo, paymentNo);
         if (head == null) return;
-        if (!isBackoffice(TmsUtil.str(head.get("businessSource")))) return;
+        String source = TmsUtil.str(head.get("businessSource"));
+        if (!isBackoffice(source)) return;
         String billNo = TmsUtil.str(head.get("paymentNo"));
+        String paymentType = TmsUtil.str(head.get("paymentType"));
+
+        // PRD-36 M2：预付付款/预付退款走独立事件与模板（1123 预付账款，供应商辅助核算），
+        // 不核销应付、载荷不带 ap_bill_no
+        if (com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY.equals(paymentType)
+                || com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType)) {
+            boolean refund = com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType);
+            String eventCode = refund ? "PREPAY_REFUND" : "PREPAY_PAYMENT";
+            Map<String, Object> pp = new LinkedHashMap<>();
+            pp.put("amount_tax_incl", bd(head.get("totalAmount")));
+            applyCounterparty(pp, TmsUtil.str(head.get("counterpartyType")),
+                    TmsUtil.str(head.get("counterpartyCode")), TmsUtil.str(head.get("counterpartyName")));
+            applyFirstFund(pp, billNo, "fin_payment_detail");
+            if (reverse) emitter.emitReverse(eventCode, "付款单", billNo,
+                    TmsUtil.date(head.get("paymentDate")), bd(head.get("totalAmount")), pp, null);
+            else emitter.emit(eventCode, "付款单", billNo, TmsUtil.date(head.get("paymentDate")),
+                    bd(head.get("totalAmount")), pp);
+            return;
+        }
 
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("amount_tax_incl", bd(head.get("totalAmount")));
@@ -531,6 +551,166 @@ public class GlHookService {
                 TmsUtil.date(head.get("paymentDate")), bd(head.get("totalAmount")), p, null);
         else emitter.emit("PAYMENT", "付款单", billNo, TmsUtil.date(head.get("paymentDate")),
                 bd(head.get("totalAmount")), p);
+    }
+
+    // ==================== 7b. 预付核销 PREPAY_WRITE_OFF（PRD-36 M2） ====================
+
+    public void onPrepayWriteoffAudited(String writeoffNo) {
+        safe("PREPAY_WRITE_OFF", writeoffNo, () -> emitPrepayWriteoff(writeoffNo, false));
+    }
+
+    public void onPrepayWriteoffUnaudited(String writeoffNo) {
+        safe("PREPAY_WRITE_OFF", writeoffNo, () -> emitPrepayWriteoff(writeoffNo, true));
+    }
+
+    /** 预付核销凭证载荷：借 2202 应付账款 / 贷 1123 预付账款（均供应商辅助核算，纯往来转账无资金科目）。 */
+    private void emitPrepayWriteoff(String writeoffNo, boolean reverse) {
+        Map<String, Object> head = head(
+                "SELECT writeoff_no, writeoff_date, supplier_code, supplier_name, total_amount "
+                        + "FROM fin_prepay_writeoff WHERE writeoff_no = ? OR writeoff_id = ?",
+                writeoffNo, writeoffNo);
+        if (head == null) return;
+        String billNo = TmsUtil.str(head.get("writeoffNo"));
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", bd(head.get("totalAmount")));
+        applyCounterparty(p, "SUPPLIER",
+                TmsUtil.str(head.get("supplierCode")), TmsUtil.str(head.get("supplierName")));
+
+        if (reverse) emitter.emitReverse("PREPAY_WRITE_OFF", "预付核销单", billNo,
+                TmsUtil.date(head.get("writeoffDate")), bd(head.get("totalAmount")), p, null);
+        else emitter.emit("PREPAY_WRITE_OFF", "预付核销单", billNo,
+                TmsUtil.date(head.get("writeoffDate")), bd(head.get("totalAmount")), p);
+    }
+
+    // ==================== 7c. 厂家费用单 JF / 兑现单 DX（PRD-36 M3） ====================
+
+    public void onFactoryExpenseAudited(String jfNo) {
+        safe("FACTORY_EXPENSE", jfNo, () -> emitFactoryExpense(jfNo, false));
+    }
+
+    public void onFactoryExpenseUnaudited(String jfNo) {
+        safe("FACTORY_EXPENSE", jfNo, () -> emitFactoryExpense(jfNo, true));
+    }
+
+    /**
+     * 厂家费用立账凭证：借 1221（供应商辅助）/ 贷按明细行 gl_credit_subject 展开。
+     * 行科目在制单解析时已落到明细行（代垫=费用类型 gl_expense_account_code；
+     * 其他=factory_gl_credit_subject_code 或默认 5401），钩子直接取行值，无需再反查。
+     * 红字 JF 金额为负、走同构正向事件（同采购退货范式）；
+     * OPENING_BACKFILL 上线历史补录单不发事件（避免与 1221 期初余额重复记账）。
+     */
+    private void emitFactoryExpense(String jfNo, boolean reverse) {
+        Map<String, Object> h = head(
+                "SELECT factory_expense_no, expense_date, supplier_code, supplier_name, "
+                        + "total_amount, business_source, is_red "
+                        + "FROM fin_factory_expense WHERE factory_expense_no = ? OR factory_expense_id = ?",
+                jfNo, jfNo);
+        if (h == null) {
+            return;
+        }
+        if ("OPENING_BACKFILL".equals(TmsUtil.str(h.get("businessSource")))) {
+            return;
+        }
+        String billNo = TmsUtil.str(h.get("factoryExpenseNo"));
+        BigDecimal amount = bd(h.get("totalAmount"));
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", amount);
+        applyCounterparty(p, "SUPPLIER",
+                TmsUtil.str(h.get("supplierCode")), TmsUtil.str(h.get("supplierName")));
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (Map<String, Object> d : TmsUtil.queryCamel(jdbc,
+                "SELECT d.expense_type_name, d.gl_credit_subject, d.amount "
+                        + "FROM fin_factory_expense_detail d "
+                        + "JOIN fin_factory_expense h ON h.factory_expense_id = d.factory_expense_id "
+                        + "WHERE h.factory_expense_no = ? ORDER BY d.sort_order, d.detail_id", billNo)) {
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("expense_type_name", TmsUtil.str(d.get("expenseTypeName")));
+            line.put("subject_code", TmsUtil.str(d.get("glCreditSubject")));
+            // 红字单行金额为负，模板展开后借贷同为负，保持红字凭证语义
+            line.put("amount", bd(d.get("amount")));
+            lines.add(line);
+        }
+        p.put("lines", lines);
+
+        if (reverse) {
+            emitter.emitReverse("FACTORY_EXPENSE", "厂家费用单", billNo,
+                    TmsUtil.date(h.get("expenseDate")), amount, p, null);
+        } else {
+            emitter.emit("FACTORY_EXPENSE", "厂家费用单", billNo,
+                    TmsUtil.date(h.get("expenseDate")), amount, p);
+        }
+    }
+
+    public void onFactorySettleAudited(String dxNo) {
+        safe("FACTORY_SETTLE", dxNo, () -> emitFactorySettle(dxNo, false));
+    }
+
+    public void onFactorySettleUnaudited(String dxNo) {
+        safe("FACTORY_SETTLE", dxNo, () -> emitFactorySettle(dxNo, true));
+    }
+
+    /**
+     * 兑现凭证按 settle_type 选事件：
+     * CASH 借资金（fund_lines 展开，CF03）/贷1221；OFFSET 借2202/贷1221；
+     * OTHER 借顶置对方科目（@EXPENSE 取 vars.subject_code）/贷1221。
+     */
+    private void emitFactorySettle(String dxNo, boolean reverse) {
+        Map<String, Object> h = head(
+                "SELECT settle_no, settle_date, supplier_code, supplier_name, settle_type, total_amount, "
+                        + "contra_subject_code, contra_subject_name "
+                        + "FROM fin_factory_settle WHERE settle_no = ? OR settle_id = ?",
+                dxNo, dxNo);
+        if (h == null) {
+            return;
+        }
+        String billNo = TmsUtil.str(h.get("settleNo"));
+        String type = TmsUtil.str(h.get("settleType"));
+        BigDecimal amount = bd(h.get("totalAmount"));
+
+        String eventCode = switch (type) {
+            case "CASH" -> "FACTORY_SETTLE_CASH";
+            case "OFFSET" -> "FACTORY_SETTLE_OFFSET";
+            case "OTHER" -> "FACTORY_SETTLE_OTHER";
+            default -> "";
+        };
+        if (eventCode.isEmpty()) {
+            return;
+        }
+
+        Map<String, Object> p = new LinkedHashMap<>();
+        p.put("amount_tax_incl", amount);
+        applyCounterparty(p, "SUPPLIER",
+                TmsUtil.str(h.get("supplierCode")), TmsUtil.str(h.get("supplierName")));
+
+        if ("CASH".equals(type)) {
+            // 多资金账户按资金行展开（每行注入 fund_subject_code 等 @FUND 变量）
+            List<Map<String, Object>> fundLines = new ArrayList<>();
+            for (Map<String, Object> f : TmsUtil.queryCamel(jdbc,
+                    "SELECT f.fund_account, f.amount FROM fin_factory_settle_fund f "
+                            + "JOIN fin_factory_settle s ON s.settle_id = f.settle_id "
+                            + "WHERE s.settle_no = ? ORDER BY f.sort_order, f.id", billNo)) {
+                Map<String, Object> line = new LinkedHashMap<>();
+                applyFund(line, TmsUtil.str(f.get("fundAccount")));
+                line.put("amount", bd(f.get("amount")));
+                fundLines.add(line);
+            }
+            p.put("fund_lines", fundLines);
+        } else if ("OTHER".equals(type)) {
+            // @EXPENSE 顶置取 vars.subject_code；摘要用 contra_subject_name
+            p.put("subject_code", TmsUtil.str(h.get("contraSubjectCode")));
+            p.put("contra_subject_code", TmsUtil.str(h.get("contraSubjectCode")));
+            p.put("contra_subject_name", TmsUtil.str(h.get("contraSubjectName")));
+        }
+
+        if (reverse) {
+            emitter.emitReverse(eventCode, "厂家费用兑现单", billNo,
+                    TmsUtil.date(h.get("settleDate")), amount, p, null);
+        } else {
+            emitter.emit(eventCode, "厂家费用兑现单", billNo,
+                    TmsUtil.date(h.get("settleDate")), amount, p);
+        }
     }
 
     // ==================== 8/9. 费用单 EXPENSE（支出）/ OTHER_INCOME（收入） ====================

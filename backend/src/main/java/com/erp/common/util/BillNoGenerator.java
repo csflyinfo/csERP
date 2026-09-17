@@ -47,6 +47,9 @@ public class BillNoGenerator {
         public static final String SALES_RETURN_IN = "THRK";
         public static final String SALES_RETURN = "XSTH";
         public static final String ADVANCE_WRITEOFF = "XH";     // 预收核销单（PRD-35）
+        public static final String PREPAY_WRITEOFF = "FX";      // 预付核销单（PRD-36）
+        public static final String FACTORY_EXPENSE = "JF";      // 厂家费用单（PRD-36 M3）
+        public static final String FACTORY_SETTLE = "DX";       // 厂家费用兑现单（PRD-36 M3）
         public static final String FLY_ORDER = "FD";            // 飞单
         public static final String TRANSFER_APPLY = "DBSQ";     // 调拨申请单
         public static final String TRANSFER_OUTBOUND = "DBCK";  // 调拨出库单
@@ -118,6 +121,9 @@ public class BillNoGenerator {
             Map.entry("fin_ar", Set.of("ar_no")),
             Map.entry("fin_ap", Set.of("ap_no")),
             Map.entry("fin_advance_writeoff", Set.of("writeoff_no")),
+            Map.entry("fin_prepay_writeoff", Set.of("writeoff_no")),
+            Map.entry("fin_factory_expense", Set.of("factory_expense_no")),
+            Map.entry("fin_factory_settle", Set.of("settle_no")),
             Map.entry("tms_dispatch", Set.of("dispatch_no")),
             Map.entry("tms_delivery_trip", Set.of("trip_no")),
             Map.entry("tms_reschedule_return", Set.of("return_no")),

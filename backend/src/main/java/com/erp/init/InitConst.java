@@ -16,6 +16,16 @@ public final class InitConst {
     public static final String TYPE_AP = "AP";
     /** 客户期初预收（PRD-35 M4）：过账只写客户账户 ADV_OPENING 流水，不造单据不动资金。 */
     public static final String TYPE_ADV = "ADV";
+    /**
+     * 已上线供应商期初预付补录（PRD-36 M4）：独立批号、可多批，biz_init_post.init_type 长度 10 容得下。
+     * 注意补录不设「已建账」锁定标志（与 AR/AP/ADV 不同），过账后仍可继续导入新批次。
+     */
+    public static final String TYPE_AP_PREPAY = "AP_PREPAY";
+
+    /** fin_ap_init 行类别：初始化暂存行（默认）。 */
+    public static final String AP_LINE_KIND_INIT = "AP_INIT";
+    /** fin_ap_init 行类别：已上线后的期初预付补录行。 */
+    public static final String AP_LINE_KIND_PREPAY_SUPPLEMENT = "PREPAY_SUPPLEMENT";
 
     /** 暂存行状态。 */
     public static final String LINE_VALID = "VALID";
@@ -47,10 +57,14 @@ public final class InitConst {
     public static final String PREFIX_STOCK_LEDGER = "QTRK";
     /** 期初预收流水来源号前缀（fin_customer_account_flow.source_bill，bizKey 用 ADVO: 前缀）。 */
     public static final String PREFIX_ADV = "QCYK";
+    /** 期初预付流水来源号前缀（fin_supplier_account_flow.source_bill，bizKey 用 PPO: 前缀）。 */
+    public static final String PREFIX_AP_PREPAY = "QCYF";
 
     /** 导入任务模块编码（sys_import_task_runtime.module_code，「导入列表」按此展示）。 */
     public static final String TASK_MODULE_STOCK = "init_stock";
     public static final String TASK_MODULE_AR = "init_ar";
     public static final String TASK_MODULE_AP = "init_ap";
     public static final String TASK_MODULE_ADV = "init_adv";
+    /** 已上线供应商期初预付补录任务（独立模块编码，导入列表可区分批次来源）。 */
+    public static final String TASK_MODULE_AP_PREPAY = "init_ap_prepay";
 }

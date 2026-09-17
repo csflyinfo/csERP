@@ -1028,15 +1028,24 @@ public class BaseController {
         qw.orderByDesc("supplier_code");
         IPage<BaseSupplier> page = supplierService.page(toMpPage(request), qw);
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        // 三余额改取供应商账户（PRD-36）：base_supplier.ap_balance 旧列停用只留历史值
+        Map<String, Map<String, Object>> accountMap = loadSupplierAccounts(page.getRecords().stream()
+                .map(BaseSupplier::getSupplierCode).filter(java.util.Objects::nonNull).distinct().toList());
         java.util.List<Map<String, Object>> mapped = new java.util.ArrayList<>();
         for (BaseSupplier s : page.getRecords()) {
             @SuppressWarnings("unchecked")
             Map<String, Object> row = mapper.convertValue(s, Map.class);
             row.put("settlementText", settlementSummary(s.getSettlementType(), s.getTermType(),
                     s.getTermDays(), s.getCutoffDay(), s.getPaymentMode(), s.getTermMonths(), s.getPaymentDay()));
+            Map<String, Object> acct = accountMap.get(s.getSupplierCode());
+            if (acct != null) {
+                row.put("apBalance", acct.get("ap_balance"));
+                row.put("prepayBalance", acct.get("prepay_balance"));
+                row.put("expenseBalance", acct.get("expense_balance"));
+            }
             mapped.add(row);
         }
-        // 字段脱敏：应付余额按字段权限置 null
+        // 字段脱敏：应付/预付/费用余额按字段权限 VIEW_AP_BALANCE 置 null
         fieldMasker.mask(mapped);
         PageResult<Map<String, Object>> result = new PageResult<>(mapped, (int) page.getCurrent(),
                 (int) page.getSize(), page.getTotal(), Map.of());
@@ -1065,8 +1074,13 @@ public class BaseController {
         if (entity == null) return ApiResponse.fail("404", "供应商不存在");
         java.util.Map<String, Object> before = masterSnapshot(entity);
         String originalCode = entity.getSupplierCode();
+        String oldStatus = entity.getStatus();
         fillSupplierEntity(entity, request);
         entity.setSupplierCode(originalCode);
+        // PRD-36 §6.14 / AC-26：编辑抽屉把状态改为停用同样必须过五守卫（/supplier/stop 之外的唯一停用入口）
+        if (!"STOPPED".equals(oldStatus) && "STOPPED".equals(entity.getStatus())) {
+            assertSupplierBusinessFinished(entity, "停用");
+        }
         supplierService.updateById(entity);
         saveSupplierBankAccounts(originalCode, request.get("bankAccounts"));
         BaseSupplier afterEntity = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", originalCode));
@@ -1337,12 +1351,66 @@ public class BaseController {
         return ApiResponse.ok(null);
     }
 
+    /** 批量取供应商账户三余额（key=supplier_code）；档案列表余额改取账户，旧实体列停用。 */
+    private Map<String, Map<String, Object>> loadSupplierAccounts(List<String> codes) {
+        Map<String, Map<String, Object>> out = new java.util.HashMap<>();
+        if (codes == null || codes.isEmpty()) return out;
+        String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+        jdbcTemplate.queryForList("SELECT supplier_code, ap_balance, prepay_balance, expense_balance "
+                + "FROM fin_supplier_account WHERE supplier_code IN (" + placeholders + ")",
+                codes.toArray()).forEach(r -> out.put(String.valueOf(r.get("supplier_code")), r));
+        return out;
+    }
+
+    /**
+     * 供应商停用/删除前业务完结守卫（PRD-36 §6.14 / AC-26）：
+     * 账户三余额非零、未结应付、已审未全兑厂家费用单、未作废兑现单/预付核销单任一存在即中文拒绝。
+     */
+    private void assertSupplierBusinessFinished(BaseSupplier supplier, String action) {
+        String code = supplier.getSupplierCode();
+        String name = supplier.getSupplierName();
+        java.util.List<String> reasons = new java.util.ArrayList<>();
+        BigDecimal threshold = new BigDecimal("0.005");
+        jdbcTemplate.query("SELECT ap_balance, prepay_balance, expense_balance FROM fin_supplier_account WHERE supplier_code = ?",
+                (java.sql.ResultSet rs) -> {
+                    java.util.List<String> bals = new java.util.ArrayList<>();
+                    BigDecimal ap = rs.getBigDecimal("ap_balance");
+                    BigDecimal prepay = rs.getBigDecimal("prepay_balance");
+                    BigDecimal expense = rs.getBigDecimal("expense_balance");
+                    if (ap != null && ap.abs().compareTo(threshold) > 0) bals.add("应付余额 " + ap.toPlainString());
+                    if (prepay != null && prepay.abs().compareTo(threshold) > 0) bals.add("预付余额 " + prepay.toPlainString());
+                    if (expense != null && expense.abs().compareTo(threshold) > 0) bals.add("费用余额 " + expense.toPlainString());
+                    if (!bals.isEmpty()) reasons.add("供应商账户仍有余额（" + String.join("、", bals) + "）");
+                }, code);
+        Integer apOpen = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fin_ap WHERE supplier = ? AND ABS(COALESCE(unpaid_amount, 0)) > 0.005",
+                Integer.class, name);
+        if (apOpen != null && apOpen > 0) reasons.add("存在 " + apOpen + " 张未结清应付单");
+        Integer jfOpen = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fin_factory_expense WHERE supplier_code = ? AND status = 'APPROVED' "
+                        + "AND COALESCE(unsettled_amount, 0) > 0.005", Integer.class, code);
+        if (jfOpen != null && jfOpen > 0) reasons.add("存在 " + jfOpen + " 张已审核未全部兑现的厂家费用单");
+        Integer dxOpen = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fin_factory_settle WHERE supplier_code = ? AND status IN ('PENDING','APPROVED')",
+                Integer.class, code);
+        if (dxOpen != null && dxOpen > 0) reasons.add("存在 " + dxOpen + " 张未作废的厂家费用兑现单");
+        Integer fxOpen = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fin_prepay_writeoff WHERE supplier_code = ? AND status IN ('PENDING','APPROVED')",
+                Integer.class, code);
+        if (fxOpen != null && fxOpen > 0) reasons.add("存在 " + fxOpen + " 张未作废的预付核销单");
+        if (!reasons.isEmpty()) {
+            throw new IllegalArgumentException("无法" + action + "供应商「" + name + "」："
+                    + String.join("；", reasons) + "。请先处理完毕后再" + action + "。");
+        }
+    }
+
     // ---------- supplier ----------
     @RequirePerm(value = "base.supplier.delete", name = "删除")
     @PostMapping("/supplier/delete")
     public ApiResponse<Map<String, Object>> deleteSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
         BaseSupplier before = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
+        if (before != null) assertSupplierBusinessFinished(before, "删除");
         boolean removed = supplierService.remove(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
         if (!removed) return ApiResponse.fail("404", "供应商不存在或删除失败");
         if (before != null) {
@@ -1360,6 +1428,7 @@ public class BaseController {
     public ApiResponse<Void> stopSupplier(@RequestBody Map<String, Object> request) {
         String biz = pickBizKey(request, "supplierCode", "supplierId", "bizId");
         BaseSupplier before = supplierService.getOne(new QueryWrapper<BaseSupplier>().eq("supplier_code", biz).or().eq("supplier_id", biz));
+        if (before != null) assertSupplierBusinessFinished(before, "停用");
         boolean updated = supplierService.update(new UpdateWrapper<BaseSupplier>()
                 .eq("supplier_code", biz).or().eq("supplier_id", biz).set("status", "STOPPED"));
         if (!updated) return ApiResponse.fail("404", "供应商不存在");
@@ -1398,6 +1467,15 @@ public class BaseController {
             banks = new java.util.ArrayList<>();
         }
         result.put("bankAccounts", banks);
+        // 三余额改取供应商账户（PRD-36）
+        Map<String, Map<String, Object>> acctMap = loadSupplierAccounts(List.of(entity.getSupplierCode()));
+        Map<String, Object> acct = acctMap.get(entity.getSupplierCode());
+        if (acct != null) {
+            result.put("apBalance", acct.get("ap_balance"));
+            result.put("prepayBalance", acct.get("prepay_balance"));
+            result.put("expenseBalance", acct.get("expense_balance"));
+        }
+        fieldMasker.mask(result);
         return ApiResponse.ok(result);
     }
 

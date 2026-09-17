@@ -370,6 +370,7 @@ const EXACT_TITLE_MAP = {
   '收款日期': ['receiptDate'],
   '付款日期': ['paymentDate'],
   '收款类型': ['receiptTypeText', 'receiptType'],
+  '付款类型': ['paymentTypeText', 'paymentType'],
   '往来单位类型': ['counterpartyTypeText', 'counterpartyType'],
   '往来单位编码': ['counterpartyCode'],
   '往来单位名称': ['counterpartyName'],
@@ -559,7 +560,8 @@ const EXACT_TITLE_MAP = {
   '对账状态': ['reconcileStatusText', 'reconcileStatus'],
   '勾稽状态': ['matchStatus'],
   '认证状态': ['certStatus', 'authStatus'],
-  '付款状态': ['paymentStatus'],
+  // PRD-36：采购订单取 paymentStatus；供应商对账单后端返回 payStatus（与客户对账单同字段名）
+  '付款状态': ['paymentStatus', 'payStatus'],
   '到货状态': ['arrivalStatus'],
   '入库状态': ['inboundStatus'],
   '出库状态': ['outboundStatus'],

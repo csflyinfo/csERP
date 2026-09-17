@@ -46,6 +46,8 @@ public class FinanceController {
     private final com.erp.finance.dayclose.BizDayCloseGuard dayCloseGuard;
     private final com.erp.finance.account.CustomerAccountService customerAccountService;
     private final com.erp.finance.account.AdvanceWriteoffService advanceWriteoffService;
+    private final com.erp.finance.account.SupplierAccountService supplierAccountService;
+    private final com.erp.finance.account.PrepayWriteoffService prepayWriteoffService;
 
     public FinanceController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                              com.erp.system.OperationLogService opLog,
@@ -54,7 +56,9 @@ public class FinanceController {
                              com.erp.common.security.FieldMasker fieldMasker,
                              com.erp.finance.dayclose.BizDayCloseGuard dayCloseGuard,
                              com.erp.finance.account.CustomerAccountService customerAccountService,
-                             com.erp.finance.account.AdvanceWriteoffService advanceWriteoffService) {
+                             com.erp.finance.account.AdvanceWriteoffService advanceWriteoffService,
+                             com.erp.finance.account.SupplierAccountService supplierAccountService,
+                             com.erp.finance.account.PrepayWriteoffService prepayWriteoffService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
@@ -64,6 +68,8 @@ public class FinanceController {
         this.dayCloseGuard = dayCloseGuard;
         this.customerAccountService = customerAccountService;
         this.advanceWriteoffService = advanceWriteoffService;
+        this.supplierAccountService = supplierAccountService;
+        this.prepayWriteoffService = prepayWriteoffService;
     }
 
     /** 收款单收款类型归一：空=SETTLE；非法值中文报错；预收类只允许客户往来。 */
@@ -86,6 +92,31 @@ public class FinanceController {
         if (com.erp.finance.account.CustomerAccountConst.RECEIPT_ADVANCE.equals(t)) return "预收收款";
         if (com.erp.finance.account.CustomerAccountConst.RECEIPT_ADVANCE_REFUND.equals(t)) return "预收退款";
         return "应收结算";
+    }
+
+    /**
+     * PRD-36 M2：付款类型归一化。空值（历史数据/前端未传）按 SETTLE 应付结算；
+     * 预付付款/预付退款的往来单位必须是供应商。
+     */
+    private static String normalizePaymentType(String raw, String cpType) {
+        String t = raw == null || raw.isBlank()
+                ? com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE : raw.trim();
+        if (!com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE.equals(t)
+                && !com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY.equals(t)
+                && !com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(t)) {
+            throw new IllegalArgumentException("付款类型不正确：" + t);
+        }
+        if (!com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE.equals(t)
+                && !"SUPPLIER".equals(cpType)) {
+            throw new IllegalArgumentException("预付付款/预付退款的往来单位必须是供应商");
+        }
+        return t;
+    }
+
+    private static String paymentTypeText(String t) {
+        if (com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY.equals(t)) return "预付付款";
+        if (com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(t)) return "预付退款";
+        return "应付结算";
     }
 
     // ============================================================
@@ -550,6 +581,9 @@ public class FinanceController {
         BigDecimal total = sumDetails(body);
         String cpName = str(body.get("counterpartyName"));
         assertCpVisible(str(body.get("counterpartyType")), cpName);
+        // PRD-36 M2：付款类型 SETTLE/PREPAY/PREPAY_REFUND（预付类强制供应商往来）
+        String paymentType = normalizePaymentType(str(body.get("paymentType")),
+                str(body.get("counterpartyType")));
         String firstFundAcct = "";
         Object raw = body.get("details");
         if (raw instanceof List<?> list && !list.isEmpty() && list.get(0) instanceof Map<?, ?> m)
@@ -559,14 +593,14 @@ public class FinanceController {
                     counterparty_type, counterparty_code, counterparty_name,
                     handler, related_bill_no, summary, business_source,
                     total_amount, verified_amount,
-                    object_name, fund_account, amount,
+                    object_name, fund_account, amount, payment_type,
                     creator_name, create_time)
-                VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, 'BACKOFFICE', ?, 0, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, 'BACKOFFICE', ?, 0, ?, ?, ?, ?, ?, ?)
                 """, paymentId, paymentNo, date(body, "paymentDate"),
                 str(body.get("counterpartyType")), str(body.get("counterpartyCode")),
                 cpName, str(body.get("handler")),
                 str(body.get("relatedBillNo")), str(body.get("summary")),
-                total, cpName, firstFundAcct, total,
+                total, cpName, firstFundAcct, total, paymentType,
                 operator, java.sql.Timestamp.valueOf(now));
         insertPaymentDetails(paymentId, body);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.CREATE,
@@ -611,8 +645,10 @@ public class FinanceController {
         // PRD-28：按客户数据范围收窄；结算金额随应收余额脱敏
         var scope = dataScope.target().customer("customer").build();
         if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        // 日期前缀在 Java 层拼接：H2 MODE=MySQL 不支持 DATE_FORMAT（旧写法在 H2 下整页 500）
+        String day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
         StringBuilder sql = new StringBuilder("""
-                SELECT CONCAT('ARS', DATE_FORMAT(NOW(), '%Y%m%d'), '0001') settlementNo,
+                SELECT CONCAT('ARS', ?, '0001') settlementNo,
                        customer,
                        SUM(unreceived_amount) settlementAmount,
                        0.00 discountAmount,
@@ -621,6 +657,7 @@ public class FinanceController {
                 WHERE status <> 'VERIFIED'
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        args.add(day);
         scope.appendTo(sql, args);
         sql.append(" GROUP BY customer");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
@@ -634,8 +671,10 @@ public class FinanceController {
         // PRD-28：按供应商数据范围收窄；结算金额随应付余额脱敏
         var scope = dataScope.target().supplier("supplier").build();
         if (scope.isDenyAll()) return ApiResponse.ok(PageResult.of(java.util.List.of(), request));
+        // 日期前缀在 Java 层拼接：H2 MODE=MySQL 不支持 DATE_FORMAT（旧写法在 H2 下整页 500）
+        String day = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
         StringBuilder sql = new StringBuilder("""
-                SELECT CONCAT('APS', DATE_FORMAT(NOW(), '%Y%m%d'), '0001') settlementNo,
+                SELECT CONCAT('APS', ?, '0001') settlementNo,
                        supplier,
                        SUM(unpaid_amount) settlementAmount,
                        0.00 discountAmount,
@@ -644,6 +683,7 @@ public class FinanceController {
                 WHERE status <> 'VERIFIED'
                 """);
         List<Object> args = new java.util.ArrayList<>();
+        args.add(day);
         scope.appendTo(sql, args);
         sql.append(" GROUP BY supplier");
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
@@ -2118,15 +2158,18 @@ public class FinanceController {
         assertCpVisible(str(body.get("counterpartyType")), str(body.get("counterpartyName")));
         String paymentNo = str(exist.get(0).get("paymentNo"));
         BigDecimal total = sumDetails(body);
+        // PRD-36 M2：待审核单允许改付款类型（预付类强制供应商往来）
+        String paymentType = normalizePaymentType(str(body.get("paymentType")),
+                str(body.get("counterpartyType")));
         jdbcTemplate.update("""
                 UPDATE fin_payment_bill SET payment_date = ?, counterparty_type = ?,
                     counterparty_code = ?, counterparty_name = ?,
-                    handler = ?, related_bill_no = ?, summary = ?, total_amount = ?
+                    handler = ?, related_bill_no = ?, summary = ?, total_amount = ?, payment_type = ?
                 WHERE payment_id = ?
                 """, date(body, "paymentDate"), str(body.get("counterpartyType")),
                 str(body.get("counterpartyCode")), str(body.get("counterpartyName")),
                 str(body.get("handler")), str(body.get("relatedBillNo")),
-                str(body.get("summary")), total, id);
+                str(body.get("summary")), total, paymentType, id);
         jdbcTemplate.update("DELETE FROM fin_payment_detail WHERE payment_id = ?", id);
         insertPaymentDetails(id, body);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.UPDATE,
@@ -2164,7 +2207,18 @@ public class FinanceController {
         if (!"PENDING".equals(str(r.get("status"))))
             return ApiResponse.fail("400", "仅待审核单据可审核");
         assertHeadCpVisible(r);
+        doAuditPayment(r);
+        return ApiResponse.ok(GenericResult.row("paymentNo", str(r.get("paymentNo")), "status", "APPROVED"));
+    }
 
+    /**
+     * 付款单审核内核（PRD-36 M2，按 payment_type 三分支；单审/批量审核共用）。
+     * SETTLE 应付结算：FIFO 核销 AP + 供应商账户在线 AP_SETTLE_CASH 流水 + 资金 OUT + 往来台账；
+     * PREPAY 预付付款：只动预付余额（+）+ 资金 OUT + 往来台账，不核销 AP；
+     * PREPAY_REFUND 预付退款：预付余额（−，内含余额守卫）+ 资金 IN + 往来台账。
+     */
+    private void doAuditPayment(Map<String, Object> r) {
+        String id = str(r.get("paymentId"));
         LocalDateTime now = LocalDateTime.now();
         String auditor = currentUser();
         String paymentNo = str(r.get("paymentNo"));
@@ -2178,37 +2232,101 @@ public class FinanceController {
         String cpName = str(r.get("counterpartyName"));
         BigDecimal total = toBd(r.get("totalAmount"));
         String summary = str(r.get("summary"));
+        String paymentType = str(r.get("paymentType"));
+        if (paymentType.isEmpty()) paymentType = com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE;
+        // 预付类只认供应商；历史单/名称兜底：编码为空时按名称解析（口径同账户流水归属）
+        String supplierCode = cpCode;
+        if (!com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE.equals(paymentType)
+                && supplierCode.isEmpty()) {
+            supplierCode = supplierAccountService.resolveCodeByName(cpName);
+        }
 
-        // 1. 写核销记录：按明细行逐条匹配待核销 AP
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM fin_payment_detail WHERE payment_id = ? ORDER BY sort_order", id);
-        BigDecimal remaining = total;
-        for (Map<String, Object> d : details) {
-            String fundAccount = str(d.get("fundAccount"));
-            BigDecimal lineAmount = toBd(d.get("amount"));
-            if (lineAmount.signum() <= 0 || remaining.signum() <= 0) continue;
-            BigDecimal actual = lineAmount.min(remaining);
-            // 匹配该供应商名下未核销的 AP
-            remaining = remaining.subtract(reconcileAndRecord(paymentNo, paymentDate, cpType, cpCode, cpName,
-                    actual, summary, str(d.get("remark"))));
-        }
 
-        // 2. 写资金流水（OUT）+ 更新账户余额（流水归属日 = 记账日期，v1.3）
-        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
-        for (Map<String, Object> d : details) {
-            BigDecimal amt = toBd(d.get("amount"));
-            if (amt.signum() <= 0) continue;
-            String fundAcct = str(d.get("fundAccount"));
-            BigDecimal bal = getFundBalance(fundAcct).subtract(amt);
-            insertFundLedgerV2(fundAcct, "OUT", amt, paymentNo, bal, auditor, paymentDate.toLocalDate());
-            updateFundBalance(fundAcct, bal);
-            touchedFundAccounts.add(fundAcct);
-        }
-        touchedFundAccounts.forEach(this::rebuildFundChain);
+        if (com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY.equals(paymentType)
+                || com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType)) {
+            boolean refund = com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType);
+            // 1. 资金：预付付款 OUT，预付退款 IN（退款内含预付余额守卫，失败整单回滚）
+            java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
+            for (Map<String, Object> d : details) {
+                BigDecimal amt = toBd(d.get("amount"));
+                if (amt.signum() <= 0) continue;
+                String fundAcct = str(d.get("fundAccount"));
+                BigDecimal bal = refund ? getFundBalance(fundAcct).add(amt)
+                        : getFundBalance(fundAcct).subtract(amt);
+                insertFundLedgerV2(fundAcct, refund ? "IN" : "OUT", amt, paymentNo, bal,
+                        auditor, paymentDate.toLocalDate());
+                updateFundBalance(fundAcct, bal);
+                touchedFundAccounts.add(fundAcct);
+            }
+            touchedFundAccounts.forEach(this::rebuildFundChain);
 
-        // 3. 写往来流水（OUT：付款给供应商 → 往来余额减少）
-        BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).subtract(total);
-        writeCounterpartyLedger(cpType, cpCode, cpName, "OUT", total, paymentNo, "PAYMENT", cpBal, summary);
+            // 2. 往来台账
+            BigDecimal cpBal = refund ? getCounterpartyBalance(cpType, cpCode).add(total)
+                    : getCounterpartyBalance(cpType, cpCode).subtract(total);
+            writeCounterpartyLedger(cpType, cpCode, cpName, refund ? "IN" : "OUT", total, paymentNo,
+                    refund ? "PAYMENT_REFUND" : "PREPAY_PAYMENT", cpBal, summary);
+
+            // 3. 供应商预付账户流水（postPrepayRefund 内含「预付余额不足」中文校验）
+            if (refund) {
+                supplierAccountService.postPrepayRefund(paymentNo, paymentDate.toLocalDate(),
+                        supplierCode, cpName, total, summary);
+            } else {
+                supplierAccountService.postPrepayPayment(paymentNo, paymentDate.toLocalDate(),
+                        supplierCode, cpName, total, summary);
+            }
+        } else {
+            // 1. 写核销记录：按明细行逐条 FIFO 匹配待核销 AP
+            BigDecimal remaining = total;
+            for (Map<String, Object> d : details) {
+                BigDecimal lineAmount = toBd(d.get("amount"));
+                if (lineAmount.signum() <= 0 || remaining.signum() <= 0) continue;
+                BigDecimal actual = lineAmount.min(remaining);
+                // 匹配该供应商名下未核销的 AP
+                BigDecimal unmatched = reconcileAndRecord(paymentNo, paymentDate, cpType, cpCode, cpName,
+                        actual, summary, str(d.get("remark")));
+                remaining = remaining.subtract(actual.subtract(unmatched));
+            }
+
+            // 1b. 供应商账户在线 AP 结算流水（bizKey APR:<核销记录id>，与数据修复补缺同源幂等）
+            List<com.erp.finance.account.SupplierAccountService.ApCashLine> cashLines = new java.util.ArrayList<>();
+            List<Map<String, Object>> apRecs = queryCamel(
+                    "SELECT r.record_id, COALESCE(NULLIF(r.ar_no,''), r.business_no) ap_no, "
+                            + "r.reconcile_amount, r.source_bill "
+                            + "FROM fin_reconcile_record r "
+                            + "WHERE r.receipt_no=? AND EXISTS (SELECT 1 FROM fin_ap a "
+                            + "WHERE a.ap_no=COALESCE(NULLIF(r.ar_no,''), r.business_no))", paymentNo);
+            for (Map<String, Object> rec : apRecs) {
+                cashLines.add(new com.erp.finance.account.SupplierAccountService.ApCashLine(
+                        str(rec.get("recordId")), str(rec.get("apNo")), str(rec.get("sourceBill")),
+                        toBd(rec.get("reconcileAmount")), paymentNo));
+            }
+            if (!cashLines.isEmpty()) {
+                String code = supplierAccountService.resolveApSupplierCodeByApNo(
+                        cashLines.get(0).apNo);
+                if (code.isEmpty()) code = cpCode.isEmpty()
+                        ? supplierAccountService.resolveCodeByName(cpName) : cpCode;
+                supplierAccountService.postApCashSettle(paymentDate.toLocalDate(), code, cpName, cashLines);
+            }
+
+            // 2. 写资金流水（OUT）+ 更新账户余额（流水归属日 = 记账日期，v1.3）
+            java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
+            for (Map<String, Object> d : details) {
+                BigDecimal amt = toBd(d.get("amount"));
+                if (amt.signum() <= 0) continue;
+                String fundAcct = str(d.get("fundAccount"));
+                BigDecimal bal = getFundBalance(fundAcct).subtract(amt);
+                insertFundLedgerV2(fundAcct, "OUT", amt, paymentNo, bal, auditor, paymentDate.toLocalDate());
+                updateFundBalance(fundAcct, bal);
+                touchedFundAccounts.add(fundAcct);
+            }
+            touchedFundAccounts.forEach(this::rebuildFundChain);
+
+            // 3. 写往来流水（OUT：付款给供应商 → 往来余额减少）
+            BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).subtract(total);
+            writeCounterpartyLedger(cpType, cpCode, cpName, "OUT", total, paymentNo, "PAYMENT", cpBal, summary);
+        }
 
         // 4. 更新付款单状态（记账日期为空时持久化当天）
         if (paymentDateMissing) {
@@ -2222,13 +2340,14 @@ public class FinanceController {
                     WHERE payment_id = ?
                     """, auditor, java.sql.Timestamp.valueOf(now), id);
         }
+        // GL：钩子内按 payment_type 分流 PAYMENT / PREPAY_PAYMENT / PREPAY_REFUND 事件
         glHooks.onPaymentAudited(paymentNo);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
-                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "审核付款单 " + paymentNo);
-        return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "APPROVED"));
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo,
+                "审核付款单 " + paymentNo + "（" + paymentTypeText(paymentType) + "）");
     }
 
-    /** 付款单取消审核：回退 AP 核销 + 冲减资金流水(IN) + 冲减往来流水(IN) */
+    /** 付款单取消审核：按付款类型对称冲回（预付类无核销；结算类级联作废自动 FX 单）。 */
     @RequirePerm(value = "fin.payment.unaudit", name = "反审核")
     @PostMapping("/payment/cancel-audit")
     @Transactional
@@ -2244,54 +2363,202 @@ public class FinanceController {
         String paymentNo = str(r.get("paymentNo"));
         String cpType = str(r.get("counterpartyType"));
         String cpCode = str(r.get("counterpartyCode"));
+        String cpName = str(r.get("counterpartyName"));
         BigDecimal total = toBd(r.get("totalAmount"));
+        String paymentType = str(r.get("paymentType"));
+        if (paymentType.isEmpty()) paymentType = com.erp.finance.account.SupplierAccountConst.PAYMENT_SETTLE;
         // v1.3：反审核按付款记账日期判封单
         java.sql.Date paymentDate = r.get("paymentDate") instanceof java.sql.Date d ? d : null;
-        dayCloseGuard.assertWritable(paymentDate == null ? null : paymentDate.toLocalDate(),
-                "付款单", paymentNo);
+        LocalDate flowDate = paymentDate == null ? LocalDate.now() : paymentDate.toLocalDate();
+        dayCloseGuard.assertWritable(flowDate, "付款单", paymentNo);
 
-        // 1. 取核销记录，逐条回退 AP
-        List<Map<String, Object>> records = queryCamel(
-                "SELECT * FROM fin_reconcile_record WHERE receipt_no = ?", paymentNo);
-        for (Map<String, Object> rec : records) {
-            String bizNo = str(rec.get("businessNo"));
-            BigDecimal amt = toBd(rec.get("reconcileAmount"));
-            jdbcTemplate.update(
-                "UPDATE fin_ap SET paid_amount = paid_amount - ?, unpaid_amount = unpaid_amount + ?, status = 'UNVERIFIED' WHERE ap_no = ?",
-                amt, amt, bizNo);
-        }
-
-        // 2. 删除核销流水
-        jdbcTemplate.update("DELETE FROM fin_reconcile_record WHERE receipt_no = ?", paymentNo);
-
-        // 3. 冲减资金流水：写对冲记录（IN，归属日同原记账日期）
         List<Map<String, Object>> details = queryCamel(
                 "SELECT * FROM fin_payment_detail WHERE payment_id = ? ORDER BY sort_order", id);
         String auditor = currentUser();
         java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
-        for (Map<String, Object> d : details) {
-            BigDecimal amt = toBd(d.get("amount"));
-            if (amt.signum() <= 0) continue;
-            String fa = str(d.get("fundAccount"));
-            BigDecimal bal = getFundBalance(fa).add(amt);
-            insertFundLedgerV2(fa, "IN", amt, paymentNo + "(取消审核)", bal, auditor,
-                    paymentDate == null ? null : paymentDate.toLocalDate());
-            updateFundBalance(fa, bal);
-            touchedFundAccounts.add(fa);
-        }
-        touchedFundAccounts.forEach(this::rebuildFundChain);
 
-        // 4. 冲减往来流水（IN：取消付款 → 往来余额恢复）
-        BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
-        writeCounterpartyLedger(cpType, cpCode, str(r.get("counterpartyName")), "IN", total,
-                paymentNo + "(取消审核)", "PAYMENT_CANCEL", cpBal, "取消审核");
+        if (com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY.equals(paymentType)
+                || com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType)) {
+            boolean refund = com.erp.finance.account.SupplierAccountConst.PAYMENT_PREPAY_REFUND.equals(paymentType);
+            String supplierCode = cpCode.isEmpty()
+                    ? supplierAccountService.resolveCodeByName(cpName) : cpCode;
+            // 1. 供应商预付流水对称冲回（内含「该预付款已被核销/退款使用」中文守卫，失败整单回滚）
+            if (refund) {
+                supplierAccountService.reversePrepayRefund(paymentNo, flowDate, supplierCode, cpName,
+                        total, str(r.get("summary")));
+            } else {
+                supplierAccountService.reversePrepayPayment(paymentNo, flowDate, supplierCode, cpName,
+                        total, str(r.get("summary")));
+            }
+            // 2. 资金对称反向：预付付款 OUT→IN，预付退款 IN→OUT
+            for (Map<String, Object> d : details) {
+                BigDecimal amt = toBd(d.get("amount"));
+                if (amt.signum() <= 0) continue;
+                String fa = str(d.get("fundAccount"));
+                BigDecimal bal = refund ? getFundBalance(fa).subtract(amt)
+                        : getFundBalance(fa).add(amt);
+                insertFundLedgerV2(fa, refund ? "OUT" : "IN", amt, paymentNo + "(取消审核)", bal,
+                        auditor, paymentDate == null ? null : flowDate);
+                updateFundBalance(fa, bal);
+                touchedFundAccounts.add(fa);
+            }
+            touchedFundAccounts.forEach(this::rebuildFundChain);
+
+            // 3. 往来台账对称冲回
+            BigDecimal cpBal = refund ? getCounterpartyBalance(cpType, cpCode).subtract(total)
+                    : getCounterpartyBalance(cpType, cpCode).add(total);
+            writeCounterpartyLedger(cpType, cpCode, cpName, refund ? "OUT" : "IN", total,
+                    paymentNo + "(取消审核)",
+                    refund ? "PAYMENT_REFUND_CANCEL" : "PREPAY_PAYMENT_CANCEL", cpBal, "取消审核");
+        } else {
+            String bizSource = str(r.get("businessSource"));
+
+            // 0. PRD-36 M2：先级联反审核自动 FX 预付核销单（预付真值/流水先回滚，自动单置 CANCELLED）。
+            //    AP_SETTLE 锚点按 FK 单号查；供应商对账单结算按 related_bill_no 里的对账单号查。
+            List<String> autoFxKeys = new java.util.ArrayList<>();
+            if ("AP_SETTLE".equals(bizSource)) {
+                autoFxKeys.addAll(prepayWriteoffService.findAutoWriteoffNos(
+                        com.erp.finance.account.PrepayWriteoffService.SOURCE_AP_SETTLE, List.of(paymentNo)));
+            } else if ("SUPPLIER_STATEMENT".equals(bizSource)) {
+                String related = str(r.get("relatedBillNo"));
+                if (!related.isEmpty()) {
+                    autoFxKeys.addAll(prepayWriteoffService.findAutoWriteoffNos(
+                            com.erp.finance.account.PrepayWriteoffService.SOURCE_STATEMENT_SETTLE,
+                            java.util.Arrays.asList(related.split(","))));
+                }
+            }
+            // 对账单回退用：级联前记下每张 FX 的核销合计与所属对账单
+            java.util.Map<String, BigDecimal> fxTotalByStmt = new java.util.LinkedHashMap<>();
+            for (String fxNo : autoFxKeys) {
+                List<Map<String, Object>> fxHeads = queryCamel(
+                        "SELECT total_amount,source_bill_no FROM fin_prepay_writeoff WHERE writeoff_no=?", fxNo);
+                if (!fxHeads.isEmpty()) {
+                    fxTotalByStmt.merge(str(fxHeads.get(0).get("sourceBillNo")),
+                            toBd(fxHeads.get(0).get("totalAmount")), BigDecimal::add);
+                }
+                prepayWriteoffService.cancelByCascade(fxNo, auditor);
+            }
+
+            // 1. 取核销记录，逐条回退 AP（FX 的 PREPAY_WRITE_OFF 记录已在级联中删除并自行回退，
+            //    这里只剩现金结算记录，不能重复回退）
+            List<Map<String, Object>> records = queryCamel(
+                    "SELECT * FROM fin_reconcile_record WHERE receipt_no = ?", paymentNo);
+            java.util.Map<String, java.util.List<com.erp.finance.account.SupplierAccountService.ApCashLine>> reverseByCode =
+                    new java.util.LinkedHashMap<>();
+            for (Map<String, Object> rec : records) {
+                String recType = str(rec.get("businessType"));
+                if (com.erp.finance.account.SupplierAccountConst.BIZ_PREPAY_WRITE_OFF.equals(recType)
+                        || "EXPENSE_WRITEOFF".equals(recType)) {
+                    // 预付核销记录已由 FX 级联自行回退；抹零记录只冲对账单 write_off_amount，都不回 AP
+                    continue;
+                }
+                String bizNo = str(rec.get("businessNo"));
+                if (!str(rec.get("arNo")).isEmpty()) bizNo = str(rec.get("arNo"));
+                BigDecimal amt = toBd(rec.get("reconcileAmount"));
+                jdbcTemplate.update(
+                    "UPDATE fin_ap SET paid_amount = paid_amount - ?, unpaid_amount = unpaid_amount + ?, status = 'UNVERIFIED' WHERE ap_no = ?",
+                    amt, amt, bizNo);
+                // 在线 AP 现金结算流水红字冲回行（编码按 AP 真值解析）
+                List<Map<String, Object>> aps = queryCamel(
+                        "SELECT source_bill FROM fin_ap WHERE ap_no=?", bizNo);
+                String sourceBill = str(rec.get("sourceBill"));
+                if (!aps.isEmpty() && sourceBill.isEmpty()) sourceBill = str(aps.get(0).get("sourceBill"));
+                String code = supplierAccountService.resolveApSupplierCodeByApNo(bizNo);
+                if (code.isEmpty()) code = cpCode.isEmpty()
+                        ? supplierAccountService.resolveCodeByName(cpName) : cpCode;
+                reverseByCode.computeIfAbsent(code, k -> new java.util.ArrayList<>())
+                        .add(new com.erp.finance.account.SupplierAccountService.ApCashLine(
+                                str(rec.get("recordId")), bizNo, sourceBill, amt, paymentNo));
+            }
+
+            // 2. 删除核销流水
+            jdbcTemplate.update("DELETE FROM fin_reconcile_record WHERE receipt_no = ?", paymentNo);
+            // 在线 AP 现金流水红字冲回（真值已回退，形成行标志按真值复位；历史无在线行自动跳过）
+            reverseByCode.forEach((code, lines) ->
+                    supplierAccountService.reverseApCashSettle(flowDate, code, cpName, lines));
+
+            // 2b. 供应商对账单结算：按单回退已付（现金=核销记录映射，预付=FX 合计）
+            if ("SUPPLIER_STATEMENT".equals(bizSource) && !str(r.get("relatedBillNo")).isEmpty()) {
+                java.util.Map<String, BigDecimal> cashByStmt = new java.util.LinkedHashMap<>();
+                java.util.Map<String, BigDecimal> woByStmt = new java.util.LinkedHashMap<>();
+                for (Map<String, Object> rec : records) {
+                    String recType = str(rec.get("businessType"));
+                    BigDecimal amt = toBd(rec.get("reconcileAmount"));
+                    if ("SUPPLIER_STATEMENT".equals(recType)) {
+                        String stmtNo = supplierStmtNoBySourceBill(str(rec.get("sourceBill")),
+                                str(r.get("relatedBillNo")));
+                        if (!stmtNo.isEmpty()) cashByStmt.merge(stmtNo, amt, BigDecimal::add);
+                    } else if ("EXPENSE_WRITEOFF".equals(recType)) {
+                        // 抹零真值记录 business_no=对账单号
+                        woByStmt.merge(str(rec.get("businessNo")), amt, BigDecimal::add);
+                    }
+                }
+                for (String raw : str(r.get("relatedBillNo")).split(",")) {
+                    String stmtNo = raw.trim();
+                    if (stmtNo.isEmpty()) continue;
+                    BigDecimal woBack = woByStmt.getOrDefault(stmtNo, BigDecimal.ZERO);
+                    BigDecimal back = cashByStmt.getOrDefault(stmtNo, BigDecimal.ZERO)
+                            .add(fxTotalByStmt.getOrDefault(stmtNo, BigDecimal.ZERO))
+                            .add(woBack);
+                    if (back.signum() == 0 && woBack.signum() == 0) continue;
+                    // H2 同一 UPDATE 的 SET 右侧读旧行值，pay_status 直接在 SQL 里按旧 paid_amount 计算（镜像客户侧）
+                    jdbcTemplate.update("UPDATE fin_supplier_statement SET "
+                            + "paid_amount=CASE WHEN paid_amount-?<0 THEN 0 ELSE paid_amount-? END, "
+                            + "write_off_amount=CASE WHEN write_off_amount-?<0 THEN 0 ELSE write_off_amount-? END, "
+                            + "pay_status=CASE WHEN paid_amount-?>=total_amount THEN '完成付款' "
+                            + "WHEN paid_amount-?>0 THEN '部分付款' ELSE '未付款' END "
+                            + "WHERE statement_no=?",
+                            back, back, woBack, woBack, back, back, stmtNo);
+                }
+            }
+
+            // 3. 冲减资金流水：写对冲记录（IN，归属日同原记账日期）
+            for (Map<String, Object> d : details) {
+                BigDecimal amt = toBd(d.get("amount"));
+                if (amt.signum() <= 0) continue;
+                String fa = str(d.get("fundAccount"));
+                BigDecimal bal = getFundBalance(fa).add(amt);
+                insertFundLedgerV2(fa, "IN", amt, paymentNo + "(取消审核)", bal, auditor,
+                        paymentDate == null ? null : flowDate);
+                updateFundBalance(fa, bal);
+                touchedFundAccounts.add(fa);
+            }
+            touchedFundAccounts.forEach(this::rebuildFundChain);
+
+            // 4. 冲减往来流水（IN：取消付款 → 往来余额恢复；0 额锚点单不写）
+            if (total.signum() > 0) {
+                BigDecimal cpBal = getCounterpartyBalance(cpType, cpCode).add(total);
+                writeCounterpartyLedger(cpType, cpCode, cpName, "IN", total,
+                        paymentNo + "(取消审核)", "PAYMENT_CANCEL", cpBal, "取消审核");
+            }
+        }
 
         // 5. 改回待审核
         jdbcTemplate.update("UPDATE fin_payment_bill SET status = 'PENDING', auditor_name = NULL, audit_time = NULL WHERE payment_id = ?", id);
         glHooks.onPaymentUnaudited(paymentNo);
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.UN_AUDIT,
-                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo, "反审核付款单 " + paymentNo);
+                com.erp.system.KeyFields.BIZ_FIN_PAYMENT, paymentNo,
+                "反审核付款单 " + paymentNo + "（" + paymentTypeText(paymentType) + "）");
         return ApiResponse.ok(GenericResult.row("paymentNo", paymentNo, "status", "PENDING"));
+    }
+
+    /** 来源单号 → 所属供应商对账单号（限定在本付款单关联的对账单范围内查明细）。 */
+    private String supplierStmtNoBySourceBill(String sourceBill, String relatedStmtNos) {
+        if (sourceBill == null || sourceBill.isEmpty()
+                || relatedStmtNos == null || relatedStmtNos.isEmpty()) {
+            return "";
+        }
+        for (String raw : relatedStmtNos.split(",")) {
+            String no = raw.trim();
+            if (no.isEmpty()) continue;
+            Integer cnt = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM fin_supplier_statement_detail sd "
+                            + "JOIN fin_supplier_statement s ON s.statement_id = sd.statement_id "
+                            + "WHERE s.statement_no = ? AND sd.source_bill_no = ?",
+                    Integer.class, no, sourceBill);
+            if (cnt != null && cnt > 0) return no;
+        }
+        return "";
     }
 
     @RequirePerm(value = "fin.payment.audit", name = "审核")
@@ -2310,23 +2577,9 @@ public class FinanceController {
             Map<String, Object> r = heads.get(0);
             if (!"PENDING".equals(str(r.get("status")))) { skip++; continue; }
             assertHeadCpVisible(r);
-            // v1.3：批量审核同样按付款记账日期判封单，为空按当天并持久化
-            boolean dateMissing = !(r.get("paymentDate") instanceof java.sql.Date);
-            java.sql.Date paymentDate = dateMissing
-                    ? java.sql.Date.valueOf(LocalDate.now()) : (java.sql.Date) r.get("paymentDate");
-            dayCloseGuard.assertWritable(paymentDate.toLocalDate(), "付款单", str(r.get("paymentNo")));
-            if (dateMissing) {
-                jdbcTemplate.update("""
-                        UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?, payment_date = ?
-                        WHERE payment_id = ?
-                        """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), paymentDate, id);
-            } else {
-                jdbcTemplate.update("""
-                        UPDATE fin_payment_bill SET status = 'APPROVED', auditor_name = ?, audit_time = ?
-                        WHERE payment_id = ?
-                        """, currentUser(), java.sql.Timestamp.valueOf(LocalDateTime.now()), id);
-            }
-            glHooks.onPaymentAudited(str(r.get("paymentNo")));
+            // PRD-36 M2：批量审核与单审同口径（核销/预付/退款全流程），不再只翻状态，
+            // 否则预付类批量审核余额不动、核销记录不写
+            doAuditPayment(r);
             ok++;
         }
         finLog(com.erp.system.OperationModule.FIN_PAYMENT, com.erp.system.OperationAction.AUDIT,
@@ -2959,6 +3212,14 @@ public class FinanceController {
         BigDecimal writeOff = toBd(body.get("writeOff"));
         String writeOffExpType = str(body.get("writeOffExpenseType"));
         Object acctsRaw = body.get("accounts");
+        // PRD-36 M2：本次使用预付（≤ min(净额, 供应商预付余额)，FIFO 优先冲最早到期应付行）
+        BigDecimal usePrepay = toBd(body.get("usePrepayAmount"));
+        if (usePrepay == null || usePrepay.signum() < 0) usePrepay = BigDecimal.ZERO;
+
+        // 资金账户实付合计（现金部分）
+        BigDecimal acctTotal = BigDecimal.ZERO;
+        if (acctsRaw instanceof List<?> al0) for (Object o : al0)
+            if (o instanceof Map<?,?> am0) acctTotal = acctTotal.add(toBd(am0.get("amount")));
 
         // 校验同一供应商
         String firstSupp = ""; String firstSuppName = "";
@@ -2980,19 +3241,85 @@ public class FinanceController {
         // PRD-28：禁止直接构造请求结算不可见供应商的对账单
         assertCpVisible("SUPPLIER", firstSuppName);
 
-        BigDecimal settleAmount = totalAmount.subtract(writeOff);
+        BigDecimal netSettle = totalAmount.subtract(writeOff);
+        if (netSettle.signum() < 0) {
+            throw new IllegalArgumentException("抹零金额不能超过结算总额 " + totalAmount + " 元");
+        }
+        BigDecimal cashNet = netSettle.subtract(usePrepay);
+        if (cashNet.signum() < 0) {
+            throw new IllegalArgumentException("抹零与使用预付合计不能超过结算总额 " + totalAmount + " 元");
+        }
+        if (acctTotal.compareTo(cashNet) != 0) {
+            throw new IllegalArgumentException("资金账户合计 " + acctTotal.toPlainString()
+                    + " 元须等于净额扣减预付后的金额 " + cashNet.toPlainString() + " 元");
+        }
+        if (usePrepay.signum() > 0) {
+            BigDecimal prepayBal = supplierAccountService.getPrepayBalanceByName(firstSupp, firstSuppName);
+            if (usePrepay.compareTo(prepayBal) > 0) {
+                throw new IllegalArgumentException("使用预付金额不能超过供应商预付余额 " + prepayBal + " 元");
+            }
+        }
         java.sql.Date settleDateSql = java.sql.Date.valueOf(settleDate.isEmpty()?LocalDate.now().toString():settleDate);
         // v1.3：结算资金按用户录入结算日期归属，已封日期拒绝结算
         dayCloseGuard.assertWritable(settleDateSql.toLocalDate(), "供应商对账结算", "");
         LocalDateTime now = LocalDateTime.now(); String op = currentUser();
 
-        // 生成付款单
+        // 供应商账户编码（对账单头理论上必带，兜底按名称解析供账户流水使用）
+        String suppCode = firstSupp.isEmpty() ? supplierAccountService.resolveCodeByName(firstSuppName) : firstSupp;
+
+        // 生成核销计划：跨对账单明细收集 AP 行（同 AP 全局只核销一次），再按到期日 FIFO
+        // PlanMeta: [所属对账单号, 本次核销额, 预付份额, 现金份额]
+        java.util.Map<String, Object[]> planMeta = new java.util.LinkedHashMap<>();
+        java.util.List<Map<String, Object>> planRows = new java.util.ArrayList<>();
+        for (Map<String, Object> h : statements) {
+            String stmtNo = str(h.get("statementNo"));
+            List<Map<String, Object>> details = queryCamel(
+                "SELECT * FROM fin_supplier_statement_detail WHERE statement_id=? ORDER BY sort_order,detail_id",
+                str(h.get("statementId")));
+            for (Map<String, Object> d : details) {
+                String sourceBillNo = str(d.get("sourceBillNo"));
+                List<Map<String, Object>> apRows = queryCamel(
+                    "SELECT * FROM fin_ap WHERE ap_no=? OR source_bill=?", sourceBillNo, sourceBillNo);
+                if (apRows.isEmpty()) continue;
+                Map<String, Object> ap = apRows.get(0);
+                String apNo = str(ap.get("apNo"));
+                if (planMeta.containsKey(apNo)) continue;
+                BigDecimal unpaid = toBd(ap.get("unpaidAmount"));
+                if (unpaid.signum() <= 0) continue;
+                BigDecimal recAmt = toBd(d.get("reconcileAmount")).min(unpaid);
+                if (recAmt.signum() <= 0) continue;
+                planMeta.put(apNo, new Object[]{stmtNo, recAmt, BigDecimal.ZERO, BigDecimal.ZERO});
+                planRows.add(ap);
+            }
+        }
+        planRows.sort(java.util.Comparator.comparing(
+                (Map<String, Object> a) -> a.get("dueDate") instanceof java.sql.Date d ? d : java.sql.Date.valueOf("9999-12-31")));
+        BigDecimal prepayRemain = usePrepay;
+        for (Map<String, Object> ap : planRows) {
+            Object[] meta = planMeta.get(str(ap.get("apNo")));
+            BigDecimal recAmt = (BigDecimal) meta[1];
+            BigDecimal prepayPart = recAmt.min(prepayRemain);
+            prepayRemain = prepayRemain.subtract(prepayPart);
+            meta[2] = prepayPart;
+            meta[3] = recAmt.subtract(prepayPart);
+        }
+        if (prepayRemain.signum() > 0) {
+            throw new IllegalArgumentException("使用预付金额超出本次可核销的应付金额，剩余 " + prepayRemain + " 元");
+        }
+
+        // 始终生成付款单（即便全额预付，金额为 0）：结算锚点 + 反审核入口，
+        // related_bill_no 带对账单号，自动 FX 单按对账单号挂接，反审核付款单即级联反核销
+        String stmtNos = statements.stream().map(h -> str(h.get("statementNo")))
+                .filter(s -> !s.isEmpty()).collect(java.util.stream.Collectors.joining(","));
+        String relatedBills = stmtNos.length() > 100 ? stmtNos.substring(0, 100) : stmtNos;
         String paymentNo = billNoGen.nextNo("FK","fin_payment_bill","payment_no");
         String paymentId = "FK"+UUID.randomUUID().toString().replace("-","").substring(0,12).toUpperCase();
         String firstAcct = "";
         if (acctsRaw instanceof List<?> al && !al.isEmpty() && al.get(0) instanceof Map<?,?> am) firstAcct = str(am.get("fundAccount"));
-        jdbcTemplate.update("INSERT INTO fin_payment_bill(payment_id,payment_no,payment_date,status,counterparty_type,counterparty_code,counterparty_name,object_name,total_amount,verified_amount,fund_account,amount,business_source,handler,summary,creator_name,create_time,auditor_name,audit_time) VALUES(?,?,?,'APPROVED','SUPPLIER',?,?,?,?,?,?,?,'SUPPLIER_STATEMENT',?,?,?,?,?,?)",
-                paymentId,paymentNo,settleDateSql, firstSupp,firstSupp,firstSupp,settleAmount.abs(),settleAmount.abs(),firstAcct,settleAmount.abs(),handler,remark,op,java.sql.Timestamp.valueOf(now),op,java.sql.Timestamp.valueOf(now));
+        jdbcTemplate.update("INSERT INTO fin_payment_bill(payment_id,payment_no,payment_date,status,counterparty_type,counterparty_code,counterparty_name,object_name,total_amount,verified_amount,fund_account,amount,payment_type,business_source,handler,related_bill_no,summary,creator_name,create_time,auditor_name,audit_time) "
+                + "VALUES(?,?,?,'APPROVED','SUPPLIER',?,?,?,?,?,?,?,'SETTLE','SUPPLIER_STATEMENT',?,?,?,?,?,?,?)",
+                paymentId,paymentNo,settleDateSql, firstSupp,firstSuppName,firstSuppName,cashNet,cashNet,firstAcct,cashNet,
+                handler,relatedBills,remark,op,java.sql.Timestamp.valueOf(now),op,java.sql.Timestamp.valueOf(now));
 
         // 写付款单明细（资金账户行）
         if (acctsRaw instanceof List<?> al) {
@@ -3005,64 +3332,107 @@ public class FinanceController {
             }
         }
 
-        // 核销每个对账单明细里的 AP 记录
+        // 对账单已付/抹零回写：已付=该单现金+预付实际核销额，抹零归第一张单
+        java.util.Map<String, BigDecimal> appliedPerStmt = new java.util.LinkedHashMap();
+        for (Object[] meta : planMeta.values()) {
+            appliedPerStmt.merge((String) meta[0], ((BigDecimal) meta[2]).add((BigDecimal) meta[3]), BigDecimal::add);
+        }
+        boolean firstStmt = true;
         for (Map<String, Object> h : statements) {
             String stmtId = str(h.get("statementId"));
-            // 更新对账单已付金额
-            BigDecimal paid = toBd(h.get("paidAmount")).add(settleAmount.abs());
-            // H2 同一条 UPDATE 的 SET 右侧读旧行值，pay_status 在 Java 侧按新已付额判定
+            String stmtNo = str(h.get("statementNo"));
+            BigDecimal writeOffPart = firstStmt ? writeOff : BigDecimal.ZERO;
+            firstStmt = false;
+            BigDecimal paid = toBd(h.get("paidAmount"))
+                    .add(appliedPerStmt.getOrDefault(stmtNo, BigDecimal.ZERO)).add(writeOffPart);
+            BigDecimal writeOffTotal = toBd(h.get("writeOffAmount")).add(writeOffPart);
+            // H2 同一条 UPDATE 的 SET 右侧一律读旧行值，pay_status 在 Java 侧按新已付额算好再落库
             String payStatus = paid.compareTo(toBd(h.get("totalAmount"))) >= 0 ? "完成付款"
                     : paid.signum() > 0 ? "部分付款" : "未付款";
             jdbcTemplate.update("UPDATE fin_supplier_statement SET paid_amount=?,write_off_amount=?,pay_status=? WHERE statement_id=?",
-                paid,writeOff,payStatus,stmtId);
-
-            // 逐明细核销 AP
-            List<Map<String, Object>> details = queryCamel(
-                "SELECT * FROM fin_supplier_statement_detail WHERE statement_id=?", stmtId);
-            for (Map<String, Object> d : details) {
-                String sourceBillNo = str(d.get("sourceBillNo"));
-                List<Map<String, Object>> apRows = queryCamel(
-                    "SELECT * FROM fin_ap WHERE ap_no=? OR source_bill=?", sourceBillNo, sourceBillNo);
-                if (apRows.isEmpty()) continue;
-                Map<String, Object> ap = apRows.get(0);
-                BigDecimal unpaid = toBd(ap.get("unpaidAmount"));
-                if (unpaid.signum() <= 0) continue;
-                BigDecimal payAmt = toBd(d.get("reconcileAmount")).min(unpaid);
-                BigDecimal newPaid = toBd(ap.get("paidAmount")).add(payAmt);
-                BigDecimal newUnpaid = toBd(ap.get("apAmount")).subtract(newPaid);
-                jdbcTemplate.update("UPDATE fin_ap SET paid_amount=?, unpaid_amount=?, status=? WHERE ap_no=?",
-                    newPaid, newUnpaid, newUnpaid.signum()<=0?"VERIFIED":"UNVERIFIED", str(ap.get("apNo")));
-                // 写核销记录
-                writeReconcileRecord(paymentNo, settleDateSql, str(ap.get("apNo")),
-                    "SUPPLIER_STATEMENT", str(ap.get("dueDate")), "SUPPLIER", firstSupp, firstSuppName,
-                    payAmt, remark, "");
+                paid,writeOffTotal,payStatus,stmtId);
+            // 抹零真值记录挂对账单号（镜像客户侧 EXPENSE_WRITEOFF），供锚点付款单反审核时按单冲回 write_off_amount
+            if (writeOffPart.signum() != 0) {
+                writeReconcileRecordV2(paymentNo, settleDateSql, stmtNo, stmtNo,
+                        "EXPENSE_WRITEOFF", "", "SUPPLIER", suppCode, firstSuppName,
+                        writeOffPart, remark, "对账单结算抹零");
             }
         }
 
-        // 写资金流水（OUT）+ 更新资金账户余额（归属日 = 结算日期，v1.3）
-        java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
-        if (acctsRaw instanceof List<?> al) {
-            for (Object item : al) {
-                if (!(item instanceof Map<?,?> am)) continue;
-                String acct = str(am.get("fundAccount"));
-                BigDecimal amt = toBd(am.get("amount"));
-                if (amt.signum() <= 0) continue;
-                BigDecimal bal = getFundBalance(acct).subtract(amt);
-                insertFundLedgerV2(acct, "OUT", amt, paymentNo, bal, op, settleDateSql.toLocalDate());
-                updateFundBalance(acct, bal);
-                touchedFundAccounts.add(acct);
-            }
+        // 现金部分逐 AP 落真值：本端更新 fin_ap + V2 核销记录；预付部分交自动 FX 单。
+        // 必须先落现金再建 FX：FX 审核按当前未结额校验，现金冲完后剩余未结额恰好等于预付份额
+        java.util.List<com.erp.finance.account.SupplierAccountService.ApCashLine> cashLines = new java.util.ArrayList<>();
+        for (Map<String, Object> ap : planRows) {
+            String apNo = str(ap.get("apNo"));
+            Object[] meta = planMeta.get(apNo);
+            BigDecimal cashPart = (BigDecimal) meta[3];
+            if (cashPart.signum() <= 0) continue;
+            String sourceBill = str(ap.get("sourceBill"));
+            BigDecimal newPaid = toBd(ap.get("paidAmount")).add(cashPart);
+            BigDecimal newUnpaid = toBd(ap.get("apAmount")).subtract(newPaid);
+            jdbcTemplate.update("UPDATE fin_ap SET paid_amount=?, unpaid_amount=?, status=? WHERE ap_no=?",
+                newPaid, newUnpaid, newUnpaid.signum()<=0?"VERIFIED":"UNVERIFIED", apNo);
+            String recordId = writeReconcileRecordV2(paymentNo, settleDateSql, apNo, sourceBill,
+                "SUPPLIER_STATEMENT", str(ap.get("dueDate")), "SUPPLIER", suppCode, firstSuppName,
+                cashPart, remark, "");
+            cashLines.add(new com.erp.finance.account.SupplierAccountService.ApCashLine(
+                    recordId, apNo, sourceBill, cashPart, paymentNo));
         }
-        touchedFundAccounts.forEach(this::rebuildFundChain);
+        // 现金部分在线写供应商账户 AP 结算流水
+        if (!cashLines.isEmpty()) {
+            supplierAccountService.postApCashSettle(settleDateSql.toLocalDate(), suppCode, firstSuppName, cashLines);
+        }
 
-        // 写往来流水（OUT：付款给供应商 → 往来余额减少）
-        BigDecimal cpBal = getCounterpartyBalance("SUPPLIER", firstSupp).subtract(settleAmount.abs());
-        writeCounterpartyLedger("SUPPLIER", firstSupp, firstSuppName, "OUT", settleAmount.abs(),
-            paymentNo, "SUPPLIER_STATEMENT_SETTLE", cpBal, remark);
+        // 预付部分：按对账单各生一张自动 FX 单（source_bill_no=对账单号），FX 审核自行回写 fin_ap
+        java.util.List<String> autoWriteoffNos = new java.util.ArrayList<>();
+        java.util.Map<String, java.util.List<Map<String, Object>>> prepayByStmt = new java.util.LinkedHashMap<>();
+        for (Map<String, Object> ap : planRows) {
+            String apNo = str(ap.get("apNo"));
+            Object[] meta = planMeta.get(apNo);
+            BigDecimal prepayPart = (BigDecimal) meta[2];
+            if (prepayPart.signum() <= 0) continue;
+            prepayByStmt.computeIfAbsent((String) meta[0], k -> new java.util.ArrayList<>());
+            Map<String, Object> line = new java.util.LinkedHashMap<>();
+            line.put("apNo", apNo);
+            line.put("amount", prepayPart);
+            prepayByStmt.get((String) meta[0]).add(line);
+        }
+        for (java.util.Map.Entry<String, java.util.List<Map<String, Object>>> e : prepayByStmt.entrySet()) {
+            String fxNo = prepayWriteoffService.createAutoFromSettle(suppCode, firstSuppName,
+                    settleDateSql.toLocalDate(), handler,
+                    com.erp.finance.account.PrepayWriteoffService.SOURCE_STATEMENT_SETTLE,
+                    e.getKey(), remark, e.getValue());
+            if (!fxNo.isEmpty()) autoWriteoffNos.add(fxNo);
+        }
+
+        // 写资金流水（OUT）+ 更新资金账户余额（仅现金部分；归属日 = 结算日期，v1.3）
+        if (cashNet.signum() > 0) {
+            java.util.Set<String> touchedFundAccounts = new java.util.LinkedHashSet<>();
+            if (acctsRaw instanceof List<?> al) {
+                for (Object item : al) {
+                    if (!(item instanceof Map<?,?> am)) continue;
+                    String acct = str(am.get("fundAccount"));
+                    BigDecimal amt = toBd(am.get("amount"));
+                    if (amt.signum() <= 0) continue;
+                    BigDecimal bal = getFundBalance(acct).subtract(amt);
+                    insertFundLedgerV2(acct, "OUT", amt, paymentNo, bal, op, settleDateSql.toLocalDate());
+                    updateFundBalance(acct, bal);
+                    touchedFundAccounts.add(acct);
+                }
+            }
+            touchedFundAccounts.forEach(this::rebuildFundChain);
+
+            // 写往来流水（仅现金部分，OUT：付款给供应商 → 往来余额减少；0 额锚点单不写）
+            BigDecimal cpBal = getCounterpartyBalance("SUPPLIER", firstSupp).subtract(cashNet);
+            writeCounterpartyLedger("SUPPLIER", firstSupp, firstSuppName, "OUT", cashNet,
+                paymentNo, "SUPPLIER_STATEMENT_SETTLE", cpBal, remark);
+        }
 
         java.util.Map<String,Object> resp = new java.util.LinkedHashMap<>();
         resp.put("paymentNo", paymentNo);
-        resp.put("amount", settleAmount.abs());
+        resp.put("amount", cashNet);
+        resp.put("prepayAmount", usePrepay);
+        resp.put("writeoffNos", autoWriteoffNos);
         fieldMasker.mask(resp, java.util.Map.of("amount", "VIEW_SETTLE_DETAIL"));
         return ApiResponse.ok(resp);
     }
@@ -3432,7 +3802,8 @@ public class FinanceController {
                        p.counterparty_type, p.counterparty_code, p.counterparty_name,
                        p.total_amount, p.verified_amount, p.handler,
                        p.business_source, p.related_bill_no, p.summary,
-                       p.creator_name, p.create_time, p.auditor_name, p.audit_time
+                       p.creator_name, p.create_time, p.auditor_name, p.audit_time,
+                       p.payment_type
                 FROM fin_payment_bill p
                 WHERE 1=1
                 """);
@@ -3449,6 +3820,9 @@ public class FinanceController {
         if (!dateTo.isEmpty()) { sql.append(" AND p.payment_date <= ?"); args.add(dateTo); }
         String bizSrc = trimF(filters, "businessSource");
         if (!bizSrc.isEmpty()) { sql.append(" AND p.business_source = ?"); args.add(bizSrc); }
+        // PRD-36：按付款类型（应付结算/预付付款/预付退款）筛选
+        String paymentType = trimF(filters, "paymentType");
+        if (!paymentType.isEmpty()) { sql.append(" AND p.payment_type = ?"); args.add(paymentType); }
         String reconcileStatus = trimF(filters, "reconcileStatus");
         if (!reconcileStatus.isEmpty()) {
             switch (reconcileStatus) {
@@ -3473,6 +3847,7 @@ public class FinanceController {
             r.put("counterpartyTypeText", "CUSTOMER".equals(ct) ? "客户"
                     : "SUPPLIER".equals(ct) ? "供应商"
                     : "COUNTERPARTY".equals(ct) ? "往来单位" : ct);
+            r.put("paymentTypeText", paymentTypeText(str(r.get("paymentType"))));
             BigDecimal total = toBd(r.get("totalAmount"));
             BigDecimal verified = toBd(r.get("verifiedAmount"));
             if (total.signum() <= 0) r.put("reconcileStatusText", "—");
