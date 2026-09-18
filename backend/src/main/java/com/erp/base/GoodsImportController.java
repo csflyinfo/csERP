@@ -1,6 +1,5 @@
 package com.erp.base;
 
-import com.alibaba.excel.EasyExcel;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.erp.base.entity.BaseCategory;
 import com.erp.base.entity.BaseGoods;
@@ -10,10 +9,8 @@ import com.erp.common.security.RequirePerm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.File;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.net.URLEncoder;
@@ -71,22 +68,20 @@ public class GoodsImportController {
             {"备注", "remark"},
     };
 
-    private static final File FAILURE_DIR = new File("data/import-failures");
-
     private final BaseGoodsService goodsService;
     private final GoodsImportSupport support;
-    private final JdbcTemplate jdbcTemplate;
     private final com.erp.system.OperationLogService opLog;
+    private final com.erp.system.ImportTaskRecorder taskRecorder;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public GoodsImportController(BaseGoodsService goodsService,
                                  GoodsImportSupport support,
-                                 JdbcTemplate jdbcTemplate,
-                                 com.erp.system.OperationLogService opLog) {
+                                 com.erp.system.OperationLogService opLog,
+                                 com.erp.system.ImportTaskRecorder taskRecorder) {
         this.goodsService = goodsService;
         this.support = support;
-        this.jdbcTemplate = jdbcTemplate;
         this.opLog = opLog;
+        this.taskRecorder = taskRecorder;
     }
 
     // ============================ 模板下载 ============================
@@ -134,7 +129,7 @@ public class GoodsImportController {
                 failures.add(failure(rowNo, "保存失败：" + safeMsg(e)));
             }
         }
-        String taskNo = recordTask("商品导入新增", fileName, inserted, failures, ADD_FIELDS, rows);
+        String taskNo = taskRecorder.record("goods", "商品导入新增", fileName, inserted, failures, ADD_FIELDS, rows);
         opLog.log("base.goods", com.erp.system.OperationAction.IMPORT, taskNo,
                 "商品导入新增（文件 " + fileName + "）：成功 " + inserted + " 行，失败 " + failures.size() + " 行");
 
@@ -258,7 +253,7 @@ public class GoodsImportController {
                 failures.add(failure(rowNo, "更新失败：" + safeMsg(e)));
             }
         }
-        String taskNo = recordTask("商品导入修改", fileName, updated, failures, UPDATE_FIELDS, rows);
+        String taskNo = taskRecorder.record("goods", "商品导入修改", fileName, updated, failures, UPDATE_FIELDS, rows);
         opLog.log("base.goods", com.erp.system.OperationAction.IMPORT, taskNo,
                 "商品导入修改（文件 " + fileName + "）：更新 " + updated + " 行，失败 " + failures.size() + " 行");
 
@@ -593,53 +588,6 @@ public class GoodsImportController {
                 }
             }
         }
-    }
-
-    // ============================ 任务留痕与失败文件 ============================
-
-    private String recordTask(String taskName, String fileName, int success,
-                              List<Map<String, Object>> failures, String[][] fields,
-                              List<Map<String, Object>> rawRows) {
-        String taskNo = "IMP" + System.currentTimeMillis()
-                + String.format("%03d", new Random().nextInt(1000));
-        String failureFile = null;
-        if (!failures.isEmpty()) {
-            try {
-                if (!FAILURE_DIR.exists() && !FAILURE_DIR.mkdirs()) {
-                    throw new IllegalStateException("无法创建失败文件目录：" + FAILURE_DIR.getAbsolutePath());
-                }
-                File out = new File(FAILURE_DIR, taskNo + ".xlsx");
-                List<List<String>> head = new ArrayList<>();
-                head.add(Collections.singletonList("Excel行号"));
-                for (String[] f : fields) head.add(Collections.singletonList(f[0]));
-                head.add(Collections.singletonList("失败原因"));
-                List<List<Object>> data = new ArrayList<>();
-                for (Map<String, Object> fail : failures) {
-                    int rowNo = ((Number) fail.get("rowNo")).intValue();
-                    Map<String, Object> raw = rawRows.get(rowNo - 2);
-                    List<Object> line = new ArrayList<>();
-                    line.add(rowNo);
-                    for (String[] f : fields) line.add(raw == null ? "" : str(raw.get(f[1])));
-                    line.add(fail.get("reason"));
-                    data.add(line);
-                }
-                EasyExcel.write(out).sheet("失败明细").head(head).doWrite(data);
-                failureFile = "import-failures/" + taskNo + ".xlsx";
-            } catch (Exception e) {
-                // 失败文件落盘失败不阻断导入结果，任务仍写库（仅无文件可下）
-                failureFile = null;
-            }
-        }
-        jdbcTemplate.update(
-                "INSERT INTO sys_import_task_runtime "
-                        + "(task_id, task_no, module_code, task_name, file_name, success_rows, failed_rows, status, result_text, failure_file, created_at, finished_at) "
-                        + "VALUES (?, ?, 'goods', ?, ?, ?, ?, 'FINISHED', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                "IMP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase(),
-                taskNo, taskName, fileName, success, failures.size(),
-                failures.isEmpty() ? "导入完成，成功 " + success + " 条"
-                        : "成功 " + success + " 条，失败 " + failures.size() + " 条（可下载失败文件）",
-                failureFile);
-        return taskNo;
     }
 
     // BaseController.fillGoodsEntity 为私有，这里保持同一套落库口径

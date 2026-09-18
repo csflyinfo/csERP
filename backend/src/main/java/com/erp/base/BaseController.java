@@ -780,6 +780,13 @@ public class BaseController {
         if (keyword != null && !keyword.isBlank()) {
             qw.and(w -> w.like("customer_code", keyword).or().like("customer_name", keyword).or().like("mobile", keyword));
         }
+        // 导入查询：按客户编号集合精确过滤（filter 模式导入弹窗 → filters.customerCodeList，逗号分隔）
+        Object customerCodeListObj = request.filters() == null ? null : request.filters().get("customerCodeList");
+        if (customerCodeListObj != null && !String.valueOf(customerCodeListObj).isBlank()) {
+            java.util.List<String> codes = java.util.Arrays.stream(String.valueOf(customerCodeListObj).split(","))
+                    .map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+            if (!codes.isEmpty()) qw.in("customer_code", codes);
+        }
         // 数据范围：客户档案按客户维度收窄（指定客户/SELF 归属业务员/片区；档案模式未配维度全可见）
         applyArchiveScope(qw, dataScope.target().customer("customer_name").archiveMode().build());
         qw.orderByDesc("customer_code");

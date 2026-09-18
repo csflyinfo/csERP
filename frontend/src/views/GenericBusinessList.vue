@@ -972,20 +972,23 @@ async function handleImport(rows, meta = {}) {
   const key = importDialog.value.presetKey
   const preset = IMPORT_PRESETS[key]
   if (!preset) return
-  // filter 模式：不发后端 upsert，直接把商品编号列表填进 queryFilters
+  // filter 模式：不发后端 upsert，直接把编号列表填进 queryFilters（商品/客户等通用）
   if (preset.mode === 'filter') {
+    const codeKey = preset.filterKey || 'goodsCode'
+    const listKey = preset.filterListKey || 'goodsCodeList'
+    const codeLabel = preset.templateHeaders?.[0] || '编号'
     const seen = new Set()
     const codes = []
     rows.forEach(r => {
-      const c = String(r.goodsCode ?? '').trim()
+      const c = String(r[codeKey] ?? '').trim()
       if (c && !seen.has(c)) { seen.add(c); codes.push(c) }
     })
-    if (codes.length === 0) { show('未识别到商品编号'); return }
-    queryFilters.value = { ...queryFilters.value, goodsCodeList: codes.join(',') }
+    if (codes.length === 0) { show(`未识别到${codeLabel}`); return }
+    queryFilters.value = { ...queryFilters.value, [listKey]: codes.join(',') }
     pageNo.value = 1
     closeImportDialog()
     await loadRows()
-    show(`已按 ${codes.length} 条商品编号筛选`)
+    show(preset.filterToast ? preset.filterToast(codes.length) : `已按 ${codes.length} 条${codeLabel}筛选`)
     return
   }
   try {
@@ -994,8 +997,8 @@ async function handleImport(rows, meta = {}) {
     const payload = { ...extra, rows, fileName: meta.fileName || '' }
     if (meta.fields) payload.fields = meta.fields
     const res = await post(preset.endpoint, payload)
-    if (key === 'goodsAdd' || key === 'goodsUpdate') {
-      // 商品导入：成功/失败条数 + 失败文件走【导入列表】下载
+    if (['goodsAdd', 'goodsUpdate', 'customerAdd', 'customerUpdate'].includes(key)) {
+      // 商品/客户导入：成功/失败条数 + 失败文件走【导入列表】下载
       const success = (res?.inserted ?? 0) + (res?.updated ?? 0)
       const failed = res?.failed ?? 0
       show(res?.message || `导入完成：成功 ${success} 条，失败 ${failed} 条，失败明细可在【导入列表】下载`)

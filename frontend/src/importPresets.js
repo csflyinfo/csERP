@@ -58,7 +58,31 @@ const GOODS_UPDATE_FIELDS = [
 ]
 const goodsFieldMapOf = (fields) => Object.fromEntries(fields.map(([label, key]) => [label, key]))
 
-// customer/supplier 的详细字段较多，先给出核心必填 + 常用；用户可按模板扩展
+// ============================ 客户档案导入三件套 ============================
+// 导入新增 23 列：{中文表头, 驼峰键}，必须与后端 CustomerImportController.ADD_FIELDS 列序一致
+const CUSTOMER_ADD_FIELDS = [
+  ['客户编码', 'customerCode'], ['客户名称', 'customerName'], ['渠道类型', 'channelType'],
+  ['联系人', 'contactName'], ['手机号', 'mobile'], ['片区', 'territory'],
+  ['线路', 'routeLine'], ['业务员', 'salesman'], ['客户等级', 'customerLevel'],
+  ['价格组编码', 'priceGroupCode'], ['信用额度', 'creditLimit'], ['发票抬头', 'invoiceTitle'],
+  ['税号', 'taxNo'], ['收货地址', 'shippingAddress'], ['经度', 'longitude'],
+  ['纬度', 'latitude'], ['结算方式', 'settlementType'], ['账期类型', 'termType'],
+  ['账期天数', 'termDays'], ['截账日', 'cutoffDay'], ['付款模式', 'paymentMode'],
+  ['账期月数', 'termMonths'], ['付款日', 'paymentDay'],
+]
+// 导入修改 24 列（含锁定的客户编码，末列状态）；与后端 UPDATE_FIELDS 一致
+const CUSTOMER_UPDATE_FIELDS = [
+  ['客户编码', 'customerCode'], ['客户名称', 'customerName'], ['渠道类型', 'channelType'],
+  ['联系人', 'contactName'], ['手机号', 'mobile'], ['片区', 'territory'],
+  ['线路', 'routeLine'], ['业务员', 'salesman'], ['客户等级', 'customerLevel'],
+  ['价格组编码', 'priceGroupCode'], ['信用额度', 'creditLimit'], ['发票抬头', 'invoiceTitle'],
+  ['税号', 'taxNo'], ['收货地址', 'shippingAddress'], ['经度', 'longitude'],
+  ['纬度', 'latitude'], ['结算方式', 'settlementType'], ['账期类型', 'termType'],
+  ['账期天数', 'termDays'], ['截账日', 'cutoffDay'], ['付款模式', 'paymentMode'],
+  ['账期月数', 'termMonths'], ['付款日', 'paymentDay'], ['状态', 'status'],
+]
+const customerFieldMapOf = (fields) => Object.fromEntries(fields.map(([label, key]) => [label, key]))
+
 export const IMPORT_PRESETS = {
   // ============ 基础资料 ============
   category: masterPreset('category', {
@@ -342,6 +366,51 @@ export const IMPORT_PRESETS = {
     templateHeaders: ['商品编号'],
     fieldMap: { '商品编号': 'goodsCode' },
     requiredKey: 'goodsCode',
+    filterKey: 'goodsCode',
+    filterListKey: 'goodsCodeList',
+    filterToast: (n) => `已按 ${n} 条商品编号筛选`,
+  },
+  // ============ 客户档案：导入新增（模板走后端真实双页签文件，解析只读第一个页签） ============
+  customerAdd: {
+    title: '导入新增客户',
+    templateUrl: '/base/customer/import-template',
+    templateName: '客户档案_导入模板',
+    templateHeaders: CUSTOMER_ADD_FIELDS.map(([label]) => label),
+    fieldMap: customerFieldMapOf(CUSTOMER_ADD_FIELDS),
+    requiredKey: 'customerName',
+    endpoint: '/base/customer/import',
+    extra: () => ({}),
+  },
+  // ============ 客户档案：导入修改（先勾选字段 → 按勾选列生成模板 → 空值不更新） ============
+  customerUpdate: {
+    title: '导入修改客户',
+    templateName: '客户导入修改模板',
+    templateHeaders: CUSTOMER_UPDATE_FIELDS.map(([label]) => label),
+    fieldMap: customerFieldMapOf(CUSTOMER_UPDATE_FIELDS),
+    requiredKey: 'customerCode',
+    endpoint: '/base/customer/import-update',
+    extra: () => ({}),
+    fieldSelector: {
+      fields: CUSTOMER_UPDATE_FIELDS.map(([label, key]) => ({ label, key, locked: key === 'customerCode' })),
+      lockedKey: 'customerCode',
+      warnings: [
+        '1、账期字段存在依赖：结算方式为预付/货到付款时不可填写任何账期字段；账期时账期类型必填；月结还须填截账日和付款模式（A=截账后N天，B=截账后N月第M天）。',
+        '2、空单元格不更新原值；修改账期结构（结算方式/账期类型/付款模式）时，不适用的账期列会自动清空，请在同次导入中填全目标结构所需字段。',
+      ],
+      // 默认只勾选锁定的客户编码，其余字段由用户按需勾选（弹窗提供全选/取消全选）
+    },
+  },
+  // ============ 客户档案：导入查询（模板仅客户编号列，上传后按编号过滤列表） ============
+  customerQuery: {
+    mode: 'filter',
+    title: '导入查询客户',
+    templateName: '客户查询导入模板',
+    templateHeaders: ['客户编号'],
+    fieldMap: { '客户编号': 'customerCode' },
+    requiredKey: 'customerCode',
+    filterKey: 'customerCode',
+    filterListKey: 'customerCodeList',
+    filterToast: (n) => `已按 ${n} 条客户编号筛选`,
   },
   // 其他出库单导入：按「仓库 + 单据日期+ 客户/供应商」分组生成其他出库单
   otherOutbound: {
@@ -471,6 +540,7 @@ export const MODULE_DEFAULT_IMPORT = {
   counterpartyType: 'counterpartyType',
   counterparty: 'counterparty',
   goods: 'goodsAdd',
+  customer: 'customerAdd',
   damage: 'damage',
   otherInbound: 'otherInbound',
   otherOutbound: 'otherOutbound',
@@ -487,5 +557,10 @@ export const MODULE_IMPORT_MENU = {
     { key: 'goodsAdd', label: '导入新增' },
     { key: 'goodsUpdate', label: '导入修改' },
     { key: 'goodsQuery', label: '导入查询' },
+  ],
+  customer: [
+    { key: 'customerAdd', label: '导入新增' },
+    { key: 'customerUpdate', label: '导入修改' },
+    { key: 'customerQuery', label: '导入查询' },
   ],
 }
