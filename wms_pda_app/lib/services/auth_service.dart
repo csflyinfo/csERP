@@ -150,6 +150,14 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(AppConfig.tokenKey) ?? '';
     if (token.isEmpty) return false;
+    // 客户端预校验：JWT 必须带 appType=WMS_PDA 且未过期，否则后端
+    // PdaAppGuardInterceptor 会一律 401（老版本无 appType 令牌 / ERP 端令牌
+    // 被复用 / 已过期令牌）。校验失败直接清本地会话，跳登录页重签。
+    if (!_isPdaTokenValid(token)) {
+      await prefs.remove(AppConfig.tokenKey);
+      await prefs.remove(AppConfig.sessionKey);
+      return false;
+    }
     final raw = prefs.getString(AppConfig.sessionKey);
     if (raw == null || raw.isEmpty) return false;
     try {
@@ -261,6 +269,36 @@ class AuthService {
       'oldPassword': oldPassword,
       'newPassword': newPassword,
     });
+  }
+
+  /// 客户端 JWT 预校验：appType 必须为 WMS_PDA，且 exp 未过期。
+  /// 不引入外部 JWT 库——JWT 是 base64url 编码的 JSON，手动解码即可。
+  /// 校验失败后端 PdaAppGuardInterceptor 也会 401，这里提前拦下避免一次往返。
+  static bool _isPdaTokenValid(String token) {
+    final payload = _decodeJwtPayload(token);
+    if (payload == null) return false;
+    if ((payload['appType']?.toString() ?? '') != 'WMS_PDA') return false;
+    final exp = payload['exp'];
+    if (exp is num) {
+      final expiryMs = exp.toInt() * 1000;
+      if (DateTime.now().millisecondsSinceEpoch >= expiryMs) return false;
+    }
+    return true;
+  }
+
+  /// 解析 JWT 三段式结构的中间 payload 段为 Map；非法格式返回 null。
+  static Map<String, dynamic>? _decodeJwtPayload(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      String p = parts[1];
+      // base64Url codec 要求输入长度为 4 的倍数，缺位补 '='
+      p += '=' * ((4 - p.length % 4) % 4);
+      final decoded = jsonDecode(utf8.decode(base64Url.decode(p)));
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 递归拍平菜单树取 code 集合。
