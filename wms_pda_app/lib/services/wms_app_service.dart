@@ -378,6 +378,40 @@ class WmsAppService {
           .post('/wms/app/move/complete', body: {'taskId': taskId}).then(_asMap);
 
   // ============== 盘点 ==============
+  /// 盘点任务列表（当前仓）。status 传空=全部；后端自动按 PDA 仓库隔离。
+  Future<List<dynamic>> stocktakeList({String status = ''}) async {
+    final r = await ApiService.instance.post('/wms/app/stocktake/list', body: {
+      if (status.isNotEmpty) 'status': status,
+    });
+    return (r as List?) ?? const [];
+  }
+
+  /// 盘点单详情：{master:{...}, bins:[...]}。
+  Future<Map<String, dynamic>> stocktakeDetail(String taskId) =>
+      ApiService.instance.post('/wms/app/stocktake/detail',
+          body: {'taskId': taskId}).then(_asMap);
+
+  /// 新建盘点任务。countType: DYNAMIC 动盘 / CYCLE 循环盘 / SAMPLE 抽盘。
+  /// countMode: BLIND 暗盘 / OPEN 明盘（留空走系统参数 WMS_COUNT_MODE_DEFAULT）。
+  /// freezeFlag: Y/N（留空走 WMS_COUNT_FREEZE_BIN 默认）。
+  /// binCodes 可选，限定盘点范围；为空则按 warehouse 全量快照。
+  Future<Map<String, dynamic>> stocktakeCreate({
+    String countType = 'DYNAMIC',
+    String scopeText = '',
+    List<String> binCodes = const [],
+    String countMode = '',
+    String freezeFlag = '',
+    String remark = '',
+  }) =>
+      ApiService.instance.post('/wms/app/stocktake/create', body: {
+        'countType': countType,
+        if (scopeText.isNotEmpty) 'scopeText': scopeText,
+        if (binCodes.isNotEmpty) 'binCodes': binCodes,
+        if (countMode.isNotEmpty) 'countMode': countMode,
+        if (freezeFlag.isNotEmpty) 'freezeFlag': freezeFlag,
+        if (remark.isNotEmpty) 'remark': remark,
+      }).then(_asMap);
+
   /// PDA 扫/输盘点任务号拉明细。action=scan 需要 stocktake.scan。
   Future<List<dynamic>> stocktakeBins(String taskId, {bool scan = false}) async {
     final r = await ApiService.instance.post('/wms/app/stocktake/bins', body: {
@@ -576,6 +610,17 @@ class WmsAppService {
         'fromBin': fromBin,
         'toBin': toBin,
         if (toZoneCode.isNotEmpty) 'toZoneCode': toZoneCode,
+      }).then(_asMap);
+
+  // ============== 全局扫码 ==============
+
+  /// 全局扫码条码智能识别（方案 V1.1 优化项一）。
+  /// 后端在当前作业仓范围内反查业务对象，返回
+  /// {type, id, title, subtitle, route, params}；
+  /// type=unknown 表示未识别，params 为路由附加参数（taskId/waveId/keyword 等）。
+  Future<Map<String, dynamic>> barcodeIdentify(String barcode) =>
+      ApiService.instance.post('/wms/app/barcode/identify', body: {
+        'barcode': barcode,
       }).then(_asMap);
 
   // ============== 工具 ==============

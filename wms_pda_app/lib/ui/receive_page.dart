@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../config/pda_perms.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/multi_unit_qty_field.dart';
 
 /// 入库类型标签：与后端 WmsInboundService 约定一致。
 const Map<String, String> _inboundTypeLabels = {
@@ -72,6 +73,31 @@ class _ReceivePageState extends State<ReceivePage> {
     super.initState();
     _load();
   }
+
+  /// 接收全局扫码路由参数：arguments={'taskId':...} 时直接进入收货明细页。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && !_consumedDeepLink) {
+      final taskId = args['taskId']?.toString() ?? '';
+      if (taskId.isNotEmpty) {
+        _consumedDeepLink = true;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ReceiveDetailPage(
+              taskId: taskId,
+              taskNo: args['taskNo']?.toString() ?? '',
+            ),
+          ),
+        ).then((_) => _load());
+      }
+    }
+  }
+
+  /// 直达明细链接是否已消费（防止 didChangeDependencies 多次触发重复入栈）。
+  bool _consumedDeepLink = false;
 
   @override
   void dispose() {
@@ -1673,30 +1699,19 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
               // 数量
               const Text('本次实收数量', style: PdaStyles.label),
               const SizedBox(height: 6),
-              Row(children: [
-                _qtyStepper(Icons.remove, () {
-                  final v = num.tryParse(_qtyCtrl.text) ?? 0;
-                  if (v > 1) _qtyCtrl.text = '${v - 1}';
+              MultiUnitQtyField(
+                value: num.tryParse(_qtyCtrl.text) ?? 0,
+                unit: unit,
+                convertQty: pickNum(
+                    widget.detail, ['convertQty', 'convert_qty'], 1),
+                baseUnit: pickStr(widget.detail, ['baseUnit', 'base_unit']),
+                label: '本次实收数量',
+                maxValue: widget.canOverReceive ? null : _remaining,
+                onChanged: (v) => setState(() {
+                  _qtyCtrl.text =
+                      v == v.toInt() ? v.toInt().toString() : v.toString();
                 }),
-                Expanded(
-                  child: TextField(
-                    controller: _qtyCtrl,
-                    textAlign: TextAlign.center,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: PdaTheme.textPrimary),
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(vertical: 10),
-                    ),
-                  ),
-                ),
-                _qtyStepper(Icons.add, () {
-                  final v = num.tryParse(_qtyCtrl.text) ?? 0;
-                  _qtyCtrl.text = '${v + 1}';
-                }),
-              ]),
+              ),
               const SizedBox(height: 14),
 
               // 生产日期（大按钮 + 日期控件）
@@ -1838,23 +1853,6 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
             ),
           ),
         ]),
-      ),
-    );
-  }
-
-  Widget _qtyStepper(IconData icon, VoidCallback onTap) {
-    return Material(
-      color: PdaTheme.surface2,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          width: 48,
-          height: 56,
-          alignment: Alignment.center,
-          child: Icon(icon, color: PdaTheme.primary, size: 26),
-        ),
       ),
     );
   }

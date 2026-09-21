@@ -21,6 +21,8 @@ import 'ui/performance_page.dart';
 import 'ui/profile_page.dart';
 import 'ui/placeholder_page.dart';
 import 'ui/settings_page.dart';
+import 'services/hardware_scan_key.dart';
+import 'config/glove_mode.dart';
 
 /// 全局导航 key：401（含旧 ERP token 访问 /wms/app/* 被守卫拒绝）时
 /// 不依赖页面 context 也能回登录页。
@@ -28,7 +30,9 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  HardwareScanKey.bindNavigatorKey(navigatorKey);
   await AppConfig.loadOverride();
+  await GloveMode.instance.load();
   ApiService.instance.applyBaseUrl();
   await AuthService.instance.restore();
   ApiService.instance.onUnauthorized(() async {

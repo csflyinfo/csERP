@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_config.dart';
+import '../config/glove_mode.dart';
 import '../services/api_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
@@ -15,12 +16,51 @@ class _SettingsPageState extends State<SettingsPage> {
       TextEditingController(text: AppConfig.hasOverride ? AppConfig.apiBase : '');
 
   @override
+  void initState() {
+    super.initState();
+    GloveMode.instance.addListener(_onGloveChange);
+  }
+
+  @override
+  void dispose() {
+    GloveMode.instance.removeListener(_onGloveChange);
+    super.dispose();
+  }
+
+  void _onGloveChange() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final glove = GloveMode.instance;
     return PdaScaffold(
-      title: '服务器地址',
+      title: '设置',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 手套模式（防误触）
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: PdaTheme.surface,
+              borderRadius: BorderRadius.circular(PdaSpacing.radius),
+              border: Border.all(color: PdaTheme.border),
+            ),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: PdaTheme.primary,
+              title: const Text('手套模式', style: PdaStyles.title),
+              subtitle: Text(
+                '开启后增大按钮热区与字号，减少戴手套误触',
+                style: PdaStyles.sub,
+              ),
+              value: glove.on,
+              onChanged: (v) => GloveMode.instance.setOn(v),
+            ),
+          ),
+          const SizedBox(height: 16),
           PdaAlert.info('当前生效：\n${AppConfig.apiBase}'),
           const SizedBox(height: 16),
           const Text('自定义地址（留空恢复默认）', style: PdaStyles.title),

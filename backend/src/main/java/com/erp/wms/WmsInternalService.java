@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -60,6 +61,218 @@ public class WmsInternalService {
         this.permissionService = permissionService;
         this.dayCloseGuard = dayCloseGuard;
         this.binStockService = binStockService;
+    }
+
+    // ==================== 全局扫码：条码智能识别 ====================
+
+    /**
+     * PDA 全局扫码条码智能识别（方案 V1.1 优化项一）。
+     *
+     * <p>输入扫码枪/手动录入的条码，在当前作业仓范围内按优先级反查业务对象，
+     * 返回 {type, id, title, subtitle, route, params} 供前端直接路由到目标页。
+     * <ul>
+     *   <li>所有查询都带 warehouse=当前登录仓，杜绝跨仓误识别；</li>
+     *   <li>优先级：库位 → 容器 → 入库任务 → 波次(拣货/复核/装车) →
+     *       盘点任务 → 移库任务 → 补货任务 → 报损单 → 商品；</li>
+     *   <li>全部未命中时返回 type=UNKNOWN，前端提示"未识别条码"并允许手动选择去向；</li>
+     *   <li>单据编号同时匹配精确值与 LIKE（兼容条码带前后缀的场景），但精确命中优先。</li>
+     * </ul>
+     *
+     * @param barcode 扫描到的条码（已 trim）
+     * @return 识别结果 Map，永不为 null
+     */
+    public Map<String, Object> identifyBarcode(String barcode) {
+        String code = barcode == null ? "" : barcode.trim();
+        String warehouse = warehouseResolver.currentWarehouseName();
+        if (code.isEmpty()) {
+            throw new IllegalArgumentException("条码不能为空");
+        }
+        final String upper = code.toUpperCase(Locale.ROOT);
+
+        Map<String, Object> hit;
+
+        // 1. 库位 → 库位库存查询
+        hit = matchOne(
+                "SELECT bin_code, zone_code, bin_name FROM wms_bin " +
+                        "WHERE warehouse=? AND (UPPER(bin_code)=? OR bin_code=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("location",
+                        str(m.get("bin_code")),
+                        "库位 " + str(m.get("bin_code")),
+                        strOr(m.get("zone_code"), "") + " " + strOr(m.get("bin_name"), ""),
+                        "/stock-query",
+                        Map.entry("binCode", str(m.get("bin_code")))));
+        if (hit != null) return hit;
+
+        // 2. 容器 → 容器内容/上架
+        hit = matchOne(
+                "SELECT container_code, container_type, bin_code FROM wms_container " +
+                        "WHERE warehouse=? AND (UPPER(container_code)=? OR container_code=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("container",
+                        str(m.get("container_code")),
+                        "容器 " + str(m.get("container_code")),
+                        strOr(m.get("container_type"), "") + " " + strOr(m.get("bin_code"), ""),
+                        "/putaway",
+                        Map.entry("containerCode", str(m.get("container_code")))));
+        if (hit != null) return hit;
+
+        // 3. 入库任务 → 收货明细
+        hit = matchOne(
+                "SELECT task_id, task_no, inbound_type, supplier_name FROM wms_inbound_task " +
+                        "WHERE warehouse=? AND (UPPER(task_no)=? OR task_no=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("inbound",
+                        str(m.get("task_id")),
+                        "入库 " + str(m.get("task_no")),
+                        strOr(m.get("inbound_type"), "") + " " + strOr(m.get("supplier_name"), ""),
+                        routeOfInbound(str(m.get("inbound_type"))),
+                        Map.entry("taskId", str(m.get("task_id")))));
+        if (hit != null) return hit;
+
+        // 4. 波次 → 根据波次状态落到 拣货/复核/装车
+        hit = matchOne(
+                "SELECT wave_id, wave_no, status, order_count FROM wms_wave " +
+                        "WHERE warehouse=? AND (UPPER(wave_no)=? OR wave_no=?)",
+                List.of(warehouse, upper, code),
+                m -> {
+                    String status = str(m.get("status"));
+                    String route = routeOfWave(status);
+                    return buildResult("wave",
+                            str(m.get("wave_id")),
+                            "波次 " + str(m.get("wave_no")),
+                            status + " · " + strOr(m.get("order_count"), "0") + " 单",
+                            route,
+                            Map.entry("waveId", str(m.get("wave_id"))));
+                });
+        if (hit != null) return hit;
+
+        // 5. 盘点任务 → 盘点明细
+        hit = matchOne(
+                "SELECT task_id, task_no, status FROM wms_stocktake_task " +
+                        "WHERE warehouse=? AND (UPPER(task_no)=? OR task_no=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("stocktake",
+                        str(m.get("task_id")),
+                        "盘点 " + str(m.get("task_no")),
+                        strOr(m.get("status"), ""),
+                        "/stocktake",
+                        Map.entry("taskId", str(m.get("task_id")))));
+        if (hit != null) return hit;
+
+        // 6. 移库任务 → 移库
+        hit = matchOne(
+                "SELECT task_id, task_no, from_bin, to_bin FROM wms_move_task " +
+                        "WHERE warehouse=? AND (UPPER(task_no)=? OR task_no=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("move",
+                        str(m.get("task_id")),
+                        "移库 " + str(m.get("task_no")),
+                        str(m.get("from_bin")) + " → " + str(m.get("to_bin")),
+                        "/move",
+                        Map.entry("taskId", str(m.get("task_id")))));
+        if (hit != null) return hit;
+
+        // 7. 补货任务 → 补货
+        hit = matchOne(
+                "SELECT task_id, task_no, to_bin FROM wms_replenish_task " +
+                        "WHERE warehouse=? AND (UPPER(task_no)=? OR task_no=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("replenish",
+                        str(m.get("task_id")),
+                        "补货 " + str(m.get("task_no")),
+                        strOr(m.get("to_bin"), ""),
+                        "/replenish",
+                        Map.entry("taskId", str(m.get("task_id")))));
+        if (hit != null) return hit;
+
+        // 8. 报损单 → 报损
+        hit = matchOne(
+                "SELECT damage_id, damage_no, status FROM wms_damage_record " +
+                        "WHERE warehouse=? AND (UPPER(damage_no)=? OR damage_no=?)",
+                List.of(warehouse, upper, code),
+                m -> buildResult("damage",
+                        str(m.get("damage_id")),
+                        "报损 " + str(m.get("damage_no")),
+                        strOr(m.get("status"), ""),
+                        "/damage",
+                        Map.entry("damageId", str(m.get("damage_id")))));
+        if (hit != null) return hit;
+
+        // 9. 商品（条码/编码/简拼）→ 库存查询
+        hit = matchOne(
+                "SELECT goods_code, goods_name, spec, barcode FROM base_goods " +
+                        "WHERE status='NORMAL' AND (" +
+                        "UPPER(barcode)=? OR UPPER(goods_code)=? OR UPPER(simple_code)=?)",
+                List.of(upper, upper, upper),
+                m -> buildResult("goods",
+                        str(m.get("goods_code")),
+                        strOr(m.get("goods_name"), "商品"),
+                        strOr(m.get("spec"), "") + " " + strOr(m.get("barcode"), ""),
+                        "/stock-query",
+                        Map.entry("keyword", str(m.get("goods_code")))));
+        if (hit != null) return hit;
+
+        // 10. 全部未命中
+        return buildResult("unknown", code, "未识别条码", code, "", Map.entry("code", code));
+    }
+
+    /**
+     * 执行查询并取首行，用 mapper 转成结果 Map；无命中返回 null。
+     * SQL 参数用 List 显式传入（避免与 mapper 形成可变参数歧义）。
+     */
+    private Map<String, Object> matchOne(String sql, List<Object> args,
+                                         java.util.function.Function<Map<String, Object>, Map<String, Object>> mapper) {
+        try {
+            List<Map<String, Object>> rows = jdbc.queryForList(sql, args.toArray());
+            if (rows.isEmpty()) return null;
+            return mapper.apply(rows.get(0));
+        } catch (Exception e) {
+            // 单类反查失败（表/字段差异等）不阻断后续类型识别
+            return null;
+        }
+    }
+
+    /** 组装统一识别结果。params 为路由附加参数（键值对，奇数项忽略）。 */
+    @SafeVarargs
+    private static Map<String, Object> buildResult(String type, String id,
+                                                   String title, String subtitle,
+                                                   String route,
+                                                   Map.Entry<String, String>... params) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("type", type);
+        r.put("id", id);
+        r.put("title", title);
+        r.put("subtitle", subtitle);
+        r.put("route", route);
+        Map<String, Object> p = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : params) {
+            p.put(e.getKey(), e.getValue());
+        }
+        r.put("params", p);
+        return r;
+    }
+
+    /** 入库类型 → PDA 对应路由（采购/退货/其他分组）。 */
+    private static String routeOfInbound(String inboundType) {
+        String t = inboundType == null ? "" : inboundType.toUpperCase(Locale.ROOT);
+        if ("SALES_RETURN".equals(t) || "RETURN".equals(t) || "REJECT".equals(t)) {
+            return "/receive-return";
+        }
+        if ("OTHER".equals(t) || "TRANSFER".equals(t)) {
+            return "/other-inbound";
+        }
+        return "/receive";
+    }
+
+    /** 波次状态 → 应进入的作业页：待拣/拣货中→拣货；复核中→复核；其余→装车。 */
+    private static String routeOfWave(String status) {
+        String s = status == null ? "" : status.toUpperCase(Locale.ROOT);
+        return switch (s) {
+            case "PENDING", "RELEASED", "PICKING", "SUSPENDED" -> "/pick";
+            case "PICKED", "CHECKING" -> "/check";
+            default -> "/load";
+        };
     }
 
     // ==================== 补货 ====================
@@ -644,6 +857,21 @@ public class WmsInternalService {
                 """, taskId);
     }
 
+    /** 盘点单详情：master 头信息 + bins 列表。供 PDA /stocktake/detail 端点使用。 */
+    public Map<String, Object> stocktakeDetail(String taskId) {
+        assertStocktakeWarehouse(taskId);
+        List<Map<String, Object>> heads = TmsUtil.queryCamel(jdbc, """
+                SELECT task_id, task_no, count_type, count_mode, scope_text, warehouse, status,
+                       total_bins, counted_bins, diff_count, assignee, freeze_flag, remark, created_at, finished_at
+                FROM wms_stocktake_task WHERE task_id = ?
+                """, taskId);
+        if (heads.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("master", heads.get(0));
+        result.put("bins", stocktakeBins(taskId));
+        return result;
+    }
+
     /** 盘点单仓库断言（PDA 隔离，PDA-007）。 */
     private void assertStocktakeWarehouse(String taskId) {
         warehouseResolver.assertIfPda(stocktakeWarehouseOf(taskId));
@@ -1171,6 +1399,8 @@ public class WmsInternalService {
         if (o instanceof Number n) return BigDecimal.valueOf(n.doubleValue());
         try { return new BigDecimal(String.valueOf(o).trim()); } catch (Exception e) { return BigDecimal.ZERO; }
     }
+
+    private static String str(Object o) { return o == null ? "" : String.valueOf(o).trim(); }
 
     private static String strOr(Object o, String dft) {
         if (o == null) return dft;

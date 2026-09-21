@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/multi_unit_qty_field.dart';
 
 /// 移库作业：列出当前仓移库单 → 确认完成；有 move.add 可在 PDA 直接建单。
 /// 按钮裁剪：move.add 新建（FAB）、move.confirm 确认完成；后端同口径强制。
@@ -208,10 +209,13 @@ class _MovePageState extends State<MovePage> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: TextField(
-                    controller: qtyCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '数量 *'),
+                  child: MultiUnitQtyField(
+                    value: num.tryParse(qtyCtrl.text) ?? 0,
+                    label: '数量 *',
+                    onChanged: (v) => setSheet(
+                      () => qtyCtrl.text =
+                          v == v.toInt() ? v.toInt().toString() : v.toString(),
+                    ),
                   ),
                 ),
               ]),
