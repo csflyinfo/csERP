@@ -107,6 +107,7 @@ async function loadFromOrder(orderNo) {
       remainQty: Number(d.remainQty || 0),
       receivedQty: Number(d.remainQty || 0),   // 默认全部收
       price: Number(d.price || 0),             // 只读
+      convertQty: Number(d.convertQty || 1),   // 1单据单位=N最小单位,用于展示基本单位数量
       batchNo: defaultBatch,
       batchNoTouched: false,
       productionDate: '',
@@ -304,6 +305,7 @@ function closeDrawer() { emit('close') }
                   <th style="width:80px">已入库</th>
                   <th style="width:80px">剩余</th>
                   <th style="width:100px">实收数量 <span class="req">*</span></th>
+                  <th style="width:90px">基本单位数量</th>
                   <th style="width:80px" v-if="canView('单价')">单价</th>
                   <th style="width:90px" v-if="canView('金额')">金额</th>
                   <th style="min-width:120px">批次号</th>
@@ -330,6 +332,9 @@ function closeDrawer() { emit('close') }
                       v-model.number="row.receivedQty"
                       style="width:100%;height:24px;text-align:right"
                     />
+                  </td>
+                  <td style="text-align:right;color:#5d7896">
+                    {{ (Number(row.receivedQty || 0) * Number(row.convertQty || 1)).toFixed(2) }}
                   </td>
                   <td style="text-align:right" v-if="canView('单价')">{{ Number(row.price).toFixed(4) }}</td>
                   <td style="text-align:right;font-weight:700" v-if="canView('金额')">

@@ -1,0 +1,21 @@
+-- ============================================
+-- V132: 采购入库单明细增加"基本单位数量"字段
+--
+-- 业务背景:
+--   采购按大单位(如"箱")下单,PDA 按大单位收货,但审核入库写库存时
+--   需按 base_goods.unit_config JSON 中的 convertQty 把收货数量换算为
+--   最小单位数量(如 5箱 × 24 = 120个),否则 inv_batch_stock.qty /
+--   inv_stock_balance.physical_qty 存的是箱数,与实际库存对不上。
+--
+--   base_unit_qty 记录换算后的最小单位数量,用于:
+--     1. 审核时传给 InventoryCostService 增加库存(替代 received_qty)
+--     2. 明细列表展示,让库管员看到"大单位数量 vs 基本单位数量"对照
+--
+-- 老数据处理:
+--   base_unit_qty 为 NULL 的历史明细,审核时按 received_qty 兜底
+--   (等价不换算,向后兼容,避免老数据被破壞)。
+--
+-- H2 限制:必须用 ADD COLUMN IF NOT EXISTS。
+-- ============================================
+
+ALTER TABLE pur_inbound_detail ADD COLUMN IF NOT EXISTS base_unit_qty DECIMAL(18,2);

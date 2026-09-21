@@ -26,6 +26,10 @@ public class PurchaseInboundDetail {
     private BigDecimal beforeCost;
     private BigDecimal afterCost;
     private BigDecimal allocatedExpense;
+    /** 基本单位数量(最小单位数量)= receivedQty × convertQty(来自 base_goods.unit_config)。
+     *  审核入库时按此数量写入 inv_batch_stock / inv_stock_balance,保证库存以最小单位存储。
+     *  老数据为 NULL,审核时按 receivedQty 兜底(等价不换算)。 */
+    private BigDecimal baseUnitQty;
 
     public String getDetailId() { return detailId; }
     public void setDetailId(String detailId) { this.detailId = detailId; }
@@ -59,4 +63,6 @@ public class PurchaseInboundDetail {
     public void setAfterCost(BigDecimal afterCost) { this.afterCost = afterCost; }
     public BigDecimal getAllocatedExpense() { return allocatedExpense; }
     public void setAllocatedExpense(BigDecimal allocatedExpense) { this.allocatedExpense = allocatedExpense; }
+    public BigDecimal getBaseUnitQty() { return baseUnitQty; }
+    public void setBaseUnitQty(BigDecimal baseUnitQty) { this.baseUnitQty = baseUnitQty; }
 }

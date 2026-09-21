@@ -82,6 +82,42 @@ public class PurchaseController {
         this.dayCloseGuard = dayCloseGuard;
     }
 
+    /** 用于解析 base_goods.unit_config JSON,查询单位换算率。ObjectMapper 线程安全,可全局复用。 */
+    private static final com.fasterxml.jackson.databind.ObjectMapper UNIT_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * 按商品编码 + 单位名称查 base_goods.unit_config JSON,取该单位的 convertQty
+     * (1 个此单位 = convertQty 个最小单位)。
+     * <p>用于采购入库审核时把大单位数量换算为最小单位数量写库存,避免库存数对不上。
+     * <p>unit_config 为空 / 单位找不到 / 解析异常时返回 {@link BigDecimal#ONE},
+     * 等价不换算(向后兼容:商品未配多单位时按 1:1 处理)。
+     */
+    private BigDecimal resolveConvertQty(String goodsCode, String unitName) {
+        if (goodsCode == null || goodsCode.isBlank()) return BigDecimal.ONE;
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT unit_config FROM base_goods WHERE goods_code = ?", goodsCode);
+            if (rows.isEmpty()) return BigDecimal.ONE;
+            Object cfg = rows.get(0).get("unit_config");
+            if (cfg == null || cfg.toString().isBlank()) return BigDecimal.ONE;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> units = UNIT_MAPPER.readValue(cfg.toString(), List.class);
+            for (Map<String, Object> u : units) {
+                Object name = u.get("unitName");
+                if (name != null && name.toString().equals(unitName)) {
+                    Object cq = u.get("convertQty");
+                    if (cq == null) return BigDecimal.ONE;
+                    try { return new BigDecimal(cq.toString()); }
+                    catch (NumberFormatException ignored) { return BigDecimal.ONE; }
+                }
+            }
+            return BigDecimal.ONE;
+        } catch (Exception e) {
+            return BigDecimal.ONE;
+        }
+    }
+
     /** 把 JdbcTemplate 风格的 {@code ?} 片段转成 MyBatis-QueryWrapper.apply 需要的 {0}{1} 占位。 */
     private static String toMpPlaceholders(String sql) {
         StringBuilder out = new StringBuilder(sql.length());
@@ -251,6 +287,8 @@ public class PurchaseController {
             line.put("inboundedQty", inboundedQty);
             line.put("remainQty", remainQty);        // 前端默认按此填 received_qty
             line.put("price", toBd(pick(d, "price"))); // 只读
+            // 返回单位换算率(1单据单位=N最小单位),前端据此展示"基本单位数量 = receivedQty × convertQty"
+            line.put("convertQty", resolveConvertQty(goodsCode, str(pick(d, "unit_name"))));
             lines.add(line);
         }
 
@@ -420,6 +458,10 @@ public class PurchaseController {
             detail.setUnitName(str(line.get("unitName")));
             detail.setExpectedQty(q);      // V1.0：应入=实收，Step 后续如需支持部分收货可拆
             detail.setReceivedQty(q);
+            // 按基本单位换算:receivedQty(单据单位) × convertQty(1单据单位=N最小单位) = baseUnitQty
+            // 审核时按 baseUnitQty 写库存,避免库存数对不上(如 5箱 写成 5 而非 5×24=120个)
+            BigDecimal convertQty = resolveConvertQty(str(line.get("goodsCode")), str(line.get("unitName")));
+            detail.setBaseUnitQty(q.multiply(convertQty).setScale(2, RoundingMode.HALF_UP));
             detail.setBatchNo(batchNo);
             detail.setProductionDate(productionDate);
             detail.setExpiryDate(expiryDate);
@@ -454,19 +496,28 @@ public class PurchaseController {
         );
 
         // 使用成本核算引擎处理库存更新和成本重算（按批次写 inv_batch_stock + 移动平均法更新 inv_stock_balance）
+        // 按基本单位换算:库存以最小单位存储,金额守恒(原金额 = 基本数量 × 基本单价)
+        // base_unit_qty 为 NULL 的老数据按 received_qty 兜底,等价不换算(向后兼容)
         for (PurchaseInboundDetail detail : details) {
+            BigDecimal baseUnitQty = (detail.getBaseUnitQty() != null && detail.getBaseUnitQty().signum() > 0)
+                    ? detail.getBaseUnitQty() : detail.getReceivedQty();
+            BigDecimal originalAmount = (detail.getAmount() != null && detail.getAmount().signum() > 0)
+                    ? detail.getAmount() : detail.getReceivedQty().multiply(detail.getPrice());
+            BigDecimal baseUnitPrice = baseUnitQty.signum() > 0
+                    ? originalAmount.divide(baseUnitQty, 4, RoundingMode.HALF_UP)
+                    : detail.getPrice();
             inventoryCostService.purchaseInbound(
                     detail.getGoodsCode(),
                     detail.getGoodsName(),
                     detail.getWarehouse(),
                     detail.getBatchNo(),
-                    detail.getReceivedQty(),
-                    detail.getAfterCost() != null ? detail.getAfterCost() : detail.getPrice(),
+                    baseUnitQty,
+                    baseUnitPrice,
                     inbound.getInboundNo(),
                     detail.getProductionDate()   // 必须透传：否则 inv_batch_stock.production_date 为空，
                                                  // 下游按批次退货/出库时选批次带不出生产日期
             );
-            // 同步 base_goods.latest_purchase_price（作为参考进价，非成本）
+            // 同步 base_goods.latest_purchase_price（作为参考进价,非成本;保留单据单位单价,用户视角的进价）
             jdbcTemplate.update(
                     "UPDATE base_goods SET latest_purchase_price = ? WHERE goods_code = ?",
                     detail.getPrice(), detail.getGoodsCode());
