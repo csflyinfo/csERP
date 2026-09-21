@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/multi_unit_qty_field.dart';
 
 /// 报损中心：当前仓报损单列表 + PDA 登记 + 主管审批。
 /// damage.add 登记（照片受参数 WMS_DAMAGE_NEED_PHOTO 控制）、damage.audit 审批。
@@ -283,11 +284,13 @@ class _DamagePageState extends State<DamagePage> {
                   ),
                 ]),
                 const SizedBox(height: 8),
-                TextField(
-                  controller: qtyCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: '报损数量 *'),
+                MultiUnitQtyField(
+                  value: num.tryParse(qtyCtrl.text) ?? 0,
+                  label: '报损数量 *',
+                  onChanged: (v) => setSheet(
+                    () => qtyCtrl.text =
+                        v == v.toInt() ? v.toInt().toString() : v.toString(),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(

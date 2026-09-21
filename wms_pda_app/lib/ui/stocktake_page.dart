@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/multi_unit_qty_field.dart';
 
 /// 盘点作业：扫描/输入盘点任务号 → 逐行录实盘 → 整单提交 → 主管审核。
 /// 按钮裁剪：stocktake.scan 扫码进入、stocktake.input 录数/复盘、
@@ -149,53 +150,56 @@ class _StocktakePageState extends State<StocktakePage> {
     final sys = pickNum(line, ['bookQty', 'book_qty']);
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: PdaTheme.surface,
-        title: Text(recount
-            ? '复盘 · ${pickStr(line, ['binCode', 'bin_code'])}'
-            : pickStr(line, ['binCode', 'bin_code'])),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('商品：${pickStr(line, ['goodsCode', 'goods_code'])}',
-                style: PdaStyles.sub),
-            const SizedBox(height: 4),
-            Text('系统库存：$sys', style: PdaStyles.sub),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              autofocus: true,
-              decoration:
-                  InputDecoration(labelText: recount ? '复盘数量' : '实盘数量'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          backgroundColor: PdaTheme.surface,
+          title: Text(recount
+              ? '复盘 · ${pickStr(line, ['binCode', 'bin_code'])}'
+              : pickStr(line, ['binCode', 'bin_code'])),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('商品：${pickStr(line, ['goodsCode', 'goods_code'])}',
+                  style: PdaStyles.sub),
+              const SizedBox(height: 4),
+              Text('系统库存：$sys', style: PdaStyles.sub),
+              const SizedBox(height: 12),
+              MultiUnitQtyField(
+                value: num.tryParse(ctrl.text) ?? 0,
+                label: recount ? '复盘数量' : '实盘数量',
+                onChanged: (v) => setSheet(
+                  () => ctrl.text =
+                      v == v.toInt() ? v.toInt().toString() : v.toString(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+            ElevatedButton(
+              onPressed: () async {
+                final q = num.tryParse(ctrl.text);
+                if (q == null) {
+                  toast(ctx, '请输入数字', error: true);
+                  return;
+                }
+                Navigator.pop(ctx);
+                final id = line['id']?.toString() ?? '';
+                final r = await runWithBusy(
+                  context,
+                  () => recount
+                      ? _svc.stocktakeRecount(id, q)
+                      : _svc.stocktakeCount(id, q),
+                  successMsg: recount ? '复盘已记录' : '已记录',
+                );
+                if (r != null) _load();
+              },
+              child: const Text('确认'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () async {
-              final q = num.tryParse(ctrl.text);
-              if (q == null) {
-                toast(ctx, '请输入数字', error: true);
-                return;
-              }
-              Navigator.pop(ctx);
-              final id = line['id']?.toString() ?? '';
-              final r = await runWithBusy(
-                context,
-                () => recount
-                    ? _svc.stocktakeRecount(id, q)
-                    : _svc.stocktakeCount(id, q),
-                successMsg: recount ? '复盘已记录' : '已记录',
-              );
-              if (r != null) _load();
-            },
-            child: const Text('确认'),
-          ),
-        ],
       ),
     );
   }

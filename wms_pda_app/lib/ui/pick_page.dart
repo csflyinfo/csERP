@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/multi_unit_qty_field.dart';
 
 /// 拣货作业：我的 / 可支援 /（主管）全部 tab。
 ///
@@ -338,59 +339,70 @@ class _PickPageState extends State<PickPage>
         text: pickStr(line, ['allocBinCode', 'alloc_bin_code']));
     final batchCtrl = TextEditingController(
         text: pickStr(line, ['allocBatchNo', 'alloc_batch_no']));
+    // 待拣数量上限：分配拣货量 - 已拣量（防止超拣）
+    final allocQty = pickNum(line, ['allocQty', 'alloc_qty']);
+    final pickedQty = pickNum(line, ['pickedQty', 'picked_qty']);
+    final num? maxQty =
+        allocQty > 0 ? (allocQty - pickedQty) : null;
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: PdaTheme.surface,
-        title: Text(pickStr(line, ['goodsName', 'goods_name'])),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '库位：${pickStr(line, ['allocBinCode', 'alloc_bin_code'])} · 批次：${pickStr(line, ['allocBatchNo', 'alloc_batch_no'])}',
-              style: PdaStyles.sub),
-            const SizedBox(height: 12),
-            TextField(
-              controller: qtyCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '本次拣货数量'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: binCtrl,
-              decoration: const InputDecoration(labelText: '实拣库位（空=推荐）'),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: batchCtrl,
-              decoration: const InputDecoration(labelText: '实拣批次（空=推荐）'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => AlertDialog(
+          backgroundColor: PdaTheme.surface,
+          title: Text(pickStr(line, ['goodsName', 'goods_name'])),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '库位：${pickStr(line, ['allocBinCode', 'alloc_bin_code'])} · 批次：${pickStr(line, ['allocBatchNo', 'alloc_batch_no'])}',
+                style: PdaStyles.sub),
+              const SizedBox(height: 12),
+              MultiUnitQtyField(
+                value: num.tryParse(qtyCtrl.text) ?? 0,
+                label: '本次拣货数量',
+                maxValue: maxQty,
+                onChanged: (v) => setSheet(
+                  () => qtyCtrl.text =
+                      v == v.toInt() ? v.toInt().toString() : v.toString(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: binCtrl,
+                decoration: const InputDecoration(labelText: '实拣库位（空=推荐）'),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: batchCtrl,
+                decoration: const InputDecoration(labelText: '实拣批次（空=推荐）'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+            ElevatedButton(
+              onPressed: () async {
+                final q = num.tryParse(qtyCtrl.text) ?? 1;
+                Navigator.pop(ctx);
+                final r = await runWithBusy(
+                  context,
+                  () => _svc.pickItem(
+                    taskId: _detail!['taskId'].toString(),
+                    detailId: line['detailId'].toString(),
+                    qty: q,
+                    actualBin: binCtrl.text.trim(),
+                    actualBatchNo: batchCtrl.text.trim(),
+                  ),
+                  successMsg: '已登记拣货',
+                );
+                if (r != null) _refreshDetail();
+              },
+              child: const Text('确认拣货'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消')),
-          ElevatedButton(
-            onPressed: () async {
-              final q = num.tryParse(qtyCtrl.text) ?? 1;
-              Navigator.pop(ctx);
-              final r = await runWithBusy(
-                context,
-                () => _svc.pickItem(
-                  taskId: _detail!['taskId'].toString(),
-                  detailId: line['detailId'].toString(),
-                  qty: q,
-                  actualBin: binCtrl.text.trim(),
-                  actualBatchNo: batchCtrl.text.trim(),
-                ),
-                successMsg: '已登记拣货',
-              );
-              if (r != null) _refreshDetail();
-            },
-            child: const Text('确认拣货'),
-          ),
-        ],
       ),
     );
   }
