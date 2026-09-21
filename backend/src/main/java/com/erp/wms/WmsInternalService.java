@@ -644,6 +644,21 @@ public class WmsInternalService {
                 """, taskId);
     }
 
+    /** 盘点单详情：master 头信息 + bins 列表。供 PDA /stocktake/detail 端点使用。 */
+    public Map<String, Object> stocktakeDetail(String taskId) {
+        assertStocktakeWarehouse(taskId);
+        List<Map<String, Object>> heads = TmsUtil.queryCamel(jdbc, """
+                SELECT task_id, task_no, count_type, count_mode, scope_text, warehouse, status,
+                       total_bins, counted_bins, diff_count, assignee, freeze_flag, remark, created_at, finished_at
+                FROM wms_stocktake_task WHERE task_id = ?
+                """, taskId);
+        if (heads.isEmpty()) throw new IllegalArgumentException("盘点单不存在");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("master", heads.get(0));
+        result.put("bins", stocktakeBins(taskId));
+        return result;
+    }
+
     /** 盘点单仓库断言（PDA 隔离，PDA-007）。 */
     private void assertStocktakeWarehouse(String taskId) {
         warehouseResolver.assertIfPda(stocktakeWarehouseOf(taskId));

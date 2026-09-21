@@ -94,6 +94,7 @@ public class WmsAppController {
     private static final String F_TAKE_INPUT = "wms_pda.stocktake.input";
     private static final String F_TAKE_SUBMIT = "wms_pda.stocktake.submit";
     private static final String F_TAKE_AUDIT = "wms_pda.stocktake.audit";
+    private static final String F_TAKE_CREATE = "wms_pda.stocktake.create";
 
     private static final String F_DAMAGE_VIEW = "wms_pda.damage.view";
     private static final String F_DAMAGE_ADD = "wms_pda.damage.add";
@@ -544,6 +545,29 @@ public class WmsAppController {
     }
 
     // ==================== 盘点 ====================
+
+    /** 盘点任务列表（当前仓）。body:{status?} 传空=全部 */
+    @PostMapping("/stocktake/list")
+    @RequirePerm(F_TAKE_VIEW)
+    public ApiResponse<List<Map<String, Object>>> stocktakeList(@RequestBody(required = false) Map<String, Object> req) {
+        Map<String, Object> r = req == null ? Map.of() : req;
+        String status = str(r.get("status"));
+        return ApiResponse.ok(internal.listStocktake(status.isBlank() ? null : status));
+    }
+
+    /** 盘点单详情（头 + bins）。body:{taskId} */
+    @PostMapping("/stocktake/detail")
+    @RequirePerm(F_TAKE_VIEW)
+    public ApiResponse<Map<String, Object>> stocktakeDetail(@RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(internal.stocktakeDetail(str(req.get("taskId"))));
+    }
+
+    /** 新建盘点任务（KEEPER/LEADER）。入参含 countType/scopeText/binCodes/countMode/freezeFlag/remark */
+    @PostMapping("/stocktake/create")
+    @RequirePerm(value = F_TAKE_CREATE, name = "新建盘点", type = "ACTION")
+    public ApiResponse<Map<String, Object>> stocktakeCreate(@RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(internal.createStocktake(req, operator()));
+    }
 
     /** 盘点任务明细。action=scan（扫库位进入）为载荷 stocktake.scan。body:{taskId, action?} */
     @PostMapping("/stocktake/bins")

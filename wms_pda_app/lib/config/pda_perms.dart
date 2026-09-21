@@ -89,6 +89,7 @@ class PdaPerm {
   static const takeInput = 'wms_pda.stocktake.input';
   static const takeSubmit = 'wms_pda.stocktake.submit';
   static const takeAudit = 'wms_pda.stocktake.audit';
+  static const takeCreate = 'wms_pda.stocktake.create';
 
   // 报损
   static const damageView = 'wms_pda.damage.view';
