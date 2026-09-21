@@ -5,6 +5,7 @@ import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/global_scan_sheet.dart';
 import '../services/hardware_scan_key.dart';
+import '../widgets/function_card_grid.dart';
 import 'task_board_page.dart';
 
 /// 首页（PRD-28 卡片9）：顶部用户/仓库条 + 待办统计 + 按登录菜单树裁剪的入口网格。
@@ -333,12 +334,20 @@ class _HomePageState extends State<HomePage> {
           for (final section in _sections) ...[
             if (visible.any((t) => t.section == section)) ...[
               const SizedBox(height: PdaSpacing.lg),
-              _sectionTitle(section),
-              const SizedBox(height: PdaSpacing.sm),
-              _grid([
-                for (final t in visible.where((t) => t.section == section))
-                  _tile(t, _badges[t.code], () => _open(t)),
-              ]),
+              FunctionCardGrid(
+                sectionTitle: section,
+                cards: [
+                  for (final t in visible.where((t) => t.section == section))
+                    FunctionCardData(
+                      id: t.code,
+                      title: t.title,
+                      glyph: t.emoji,
+                      color: t.color,
+                      badge: _badges[t.code],
+                      onTap: () => _open(t),
+                    ),
+                ],
+              ),
             ],
           ],
           if (!_loading && visible.isEmpty)
@@ -485,110 +494,6 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ]),
-    );
-  }
-
-  Widget _sectionTitle(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 2),
-      child: Row(children: [
-        Container(width: 3, height: 14, color: PdaTheme.primary),
-        const SizedBox(width: 8),
-        Text(text,
-            style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: PdaTheme.textPrimary)),
-      ]),
-    );
-  }
-
-  /// 三列等宽网格，不滚动；按 0.96 的宽高比给出"近方形"卡片。
-  Widget _grid(List<Widget> children) {
-    return GridView.count(
-      crossAxisCount: 3,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: PdaSpacing.sm,
-      crossAxisSpacing: PdaSpacing.sm,
-      childAspectRatio: 0.96,
-      children: children,
-    );
-  }
-
-  /// 单个九宫格入口卡片，badge 右上角红点。
-  Widget _tile(_TileDef def, int? badge, VoidCallback onTap) {
-    final hasBadge = badge != null && badge > 0;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(PdaSpacing.radius),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: PdaTheme.surface,
-                borderRadius: BorderRadius.circular(PdaSpacing.radius),
-                border: Border.all(color: PdaTheme.border),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: def.color.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(def.emoji,
-                        style: const TextStyle(fontSize: 26, height: 1.1)),
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      def.title,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: PdaTheme.textPrimary,
-                          fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (hasBadge)
-              Positioned(
-                top: -4,
-                right: -2,
-                child: Container(
-                  constraints: const BoxConstraints(minWidth: 22),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: PdaTheme.danger,
-                    borderRadius: BorderRadius.circular(11),
-                    border: Border.all(color: PdaTheme.bg, width: 2),
-                  ),
-                  child: Text('$badge',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          height: 1.1)),
-                ),
-              ),
-          ],
-        ),
-      ),
     );
   }
 }
