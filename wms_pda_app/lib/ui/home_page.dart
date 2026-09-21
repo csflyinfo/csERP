@@ -3,6 +3,7 @@ import '../config/pda_perms.dart';
 import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
+import '../widgets/global_scan_sheet.dart';
 
 /// 首页（PRD-28 卡片9）：顶部用户/仓库条 + 待办统计 + 按登录菜单树裁剪的入口网格。
 ///
@@ -32,6 +33,10 @@ class _HomePageState extends State<HomePage> {
   final _auth = AuthService.instance;
   final Map<String, int> _badges = {};
   bool _loading = true;
+
+  /// 底部导航当前 Tab：0 首页 / 1 任务（P0-4 占位）/ 2 我的。
+  /// 扫码 FAB 不切 Tab，直接弹扫码快捷入口（showGlobalScanSheet）。
+  int _currentIndex = 0;
 
   /// 业务卡片目录：code 与后端菜单码逐字一致；顺序即展示顺序。
   static const List<_TileDef> _catalog = [
@@ -177,69 +182,289 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.current;
-    final name = user?.displayName ?? user?.username ?? '操作员';
-    final visible = _visible;
     return Scaffold(
       appBar: AppBar(
         title: const Text('WMS 仓库作业'),
         actions: [
-          IconButton(
-            tooltip: '刷新',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: _refresh,
-          ),
-          if (_auth.hasMenu(PdaMenu.profile))
+          if (_currentIndex == 0)
             IconButton(
-              tooltip: '我的',
-              icon: const Icon(Icons.person_outline),
-              onPressed: () => Navigator.pushNamed(context, '/profile')
-                  .then((_) {
-                if (mounted) setState(() {});
-                _refresh();
-              }),
+              tooltip: '刷新',
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: _refresh,
             ),
+          IconButton(
+            tooltip: '设置',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () =>
+                Navigator.pushNamed(context, '/settings').then((_) {
+              if (mounted) setState(() {});
+            }),
+          ),
         ],
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          color: PdaTheme.primary,
-          child: ListView(
-            padding: const EdgeInsets.all(PdaSpacing.md),
+        child: IndexedStack(
+          index: _currentIndex,
+          children: [
+            _buildHomeTab(),
+            _buildTaskTab(),
+            _buildProfileTab(),
+          ],
+        ),
+      ),
+      // 中央凸起的扫码按钮：在所有 Tab 都可用，按 homeScan 权限显隐
+      floatingActionButton: _auth.can(PdaPerm.homeScan)
+          ? FloatingActionButton(
+              tooltip: '扫码',
+              backgroundColor: PdaTheme.primary,
+              foregroundColor: Colors.white,
+              elevation: 4,
+              highlightElevation: 8,
+              onPressed: () => showGlobalScanSheet(context),
+              child: const Icon(Icons.qr_code_scanner, size: 28),
+            )
+          : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      // 底部导航：BottomAppBar 留中间 notch 给 FAB；左侧 首页/任务，右侧 我的/设置
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 6,
+        color: PdaTheme.surface,
+        child: SizedBox(
+          height: 56,
+          child: Row(
             children: [
-              _welcomeCard(name, user?.warehouseName ?? ''),
-              const SizedBox(height: PdaSpacing.md),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(
-                      child:
-                          CircularProgressIndicator(color: PdaTheme.primary)),
-                ),
-              for (final section in _sections) ...[
-                if (visible.any((t) => t.section == section)) ...[
-                  const SizedBox(height: PdaSpacing.lg),
-                  _sectionTitle(section),
-                  const SizedBox(height: PdaSpacing.sm),
-                  _grid([
-                    for (final t in visible.where((t) => t.section == section))
-                      _tile(t, _badges[t.code], () => _open(t)),
-                  ]),
-                ],
-              ],
-              if (!_loading && visible.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 64),
-                  child: Center(
-                    child: Text('当前账号未分配任何 PDA 菜单，请联系管理员',
-                        style: PdaStyles.sub),
-                  ),
-                ),
+              _navTabItem(
+                icon: Icons.home_rounded,
+                label: '首页',
+                index: 0,
+                onTap: () => setState(() => _currentIndex = 0),
+              ),
+              _navTabItem(
+                icon: Icons.task_alt_rounded,
+                label: '任务',
+                index: 1,
+                onTap: () => setState(() => _currentIndex = 1),
+              ),
+              const SizedBox(width: 48), // 中间留空给 FAB notch
+              _navTabItem(
+                icon: Icons.person_rounded,
+                label: '我的',
+                index: 2,
+                onTap: () => setState(() => _currentIndex = 2),
+              ),
+              IconButton(
+                tooltip: '设置',
+                icon: const Icon(Icons.settings_outlined,
+                    color: PdaTheme.textSecondary),
+                onPressed: () =>
+                    Navigator.pushNamed(context, '/settings').then((_) {
+                  if (mounted) setState(() {});
+                }),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _navTabItem({
+    required IconData icon,
+    required String label,
+    required int index,
+    required VoidCallback onTap,
+  }) {
+    final selected = _currentIndex == index;
+    final color = selected ? PdaTheme.primary : PdaTheme.textSecondary;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 首页 Tab：原九宫格 + 待办统计 + 仓库欢迎条。
+  Widget _buildHomeTab() {
+    final user = _auth.current;
+    final name = user?.displayName ?? user?.username ?? '操作员';
+    final visible = _visible;
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: PdaTheme.primary,
+      child: ListView(
+        padding: const EdgeInsets.all(PdaSpacing.md),
+        children: [
+          _welcomeCard(name, user?.warehouseName ?? ''),
+          const SizedBox(height: PdaSpacing.md),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(
+                  child:
+                      CircularProgressIndicator(color: PdaTheme.primary)),
+            ),
+          for (final section in _sections) ...[
+            if (visible.any((t) => t.section == section)) ...[
+              const SizedBox(height: PdaSpacing.lg),
+              _sectionTitle(section),
+              const SizedBox(height: PdaSpacing.sm),
+              _grid([
+                for (final t in visible.where((t) => t.section == section))
+                  _tile(t, _badges[t.code], () => _open(t)),
+              ]),
+            ],
+          ],
+          if (!_loading && visible.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 64),
+              child: Center(
+                child: Text('当前账号未分配任何 PDA 菜单，请联系管理员',
+                    style: PdaStyles.sub),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 任务 Tab：占位，P0-4 实现真实聚合看板。
+  Widget _buildTaskTab() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: PdaTheme.primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(Icons.assignment_outlined,
+                size: 36, color: PdaTheme.primary),
+          ),
+          const SizedBox(height: PdaSpacing.md),
+          const Text('任务聚合看板', style: PdaStyles.title),
+          const SizedBox(height: 6),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'Pick / Receive / Move / Stocktake / Putaway 待办汇总即将上线（P0-4）',
+              style: PdaStyles.sub,
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: PdaSpacing.lg),
+          OutlinedButton.icon(
+            icon: const Icon(Icons.refresh_rounded, size: 18),
+            label: const Text('刷新首页待办'),
+            onPressed: () {
+              setState(() => _currentIndex = 0);
+              _refresh();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 我的 Tab：精简个人摘要，点击「查看完整资料」进 ProfilePage。
+  Widget _buildProfileTab() {
+    final user = _auth.current;
+    final name = user?.displayName ?? user?.username ?? '操作员';
+    return ListView(
+      padding: const EdgeInsets.all(PdaSpacing.md),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(PdaSpacing.lg),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF1F2A44), PdaTheme.surface],
+            ),
+            borderRadius: BorderRadius.circular(PdaSpacing.radiusLg),
+            border: Border.all(color: PdaTheme.border),
+          ),
+          child: Row(children: [
+            Container(
+              width: 56,
+              height: 56,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: PdaTheme.primary.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.person_rounded,
+                  color: PdaTheme.primary, size: 32),
+            ),
+            const SizedBox(width: PdaSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: PdaStyles.title),
+                  const SizedBox(height: 4),
+                  Text(
+                    user?.username ?? '',
+                    style: PdaStyles.sub,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    const Icon(Icons.warehouse_outlined,
+                        size: 13, color: PdaTheme.textSecondary),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        user?.warehouseName ?? '未绑定作业仓库',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: PdaStyles.sub,
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: PdaSpacing.lg),
+        if (_auth.hasMenu(PdaMenu.profile))
+          ElevatedButton.icon(
+            icon: const Icon(Icons.badge_outlined, size: 18),
+            label: const Text('查看完整资料'),
+            onPressed: () => Navigator.pushNamed(context, '/profile').then((_) {
+              if (mounted) setState(() {});
+            }),
+          ),
+        const SizedBox(height: PdaSpacing.sm),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.settings_outlined, size: 18),
+          label: const Text('系统设置'),
+          onPressed: () => Navigator.pushNamed(context, '/settings').then((_) {
+            if (mounted) setState(() {});
+          }),
+        ),
+      ],
     );
   }
 
