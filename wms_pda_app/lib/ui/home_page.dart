@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/global_scan_sheet.dart';
+import 'task_board_page.dart';
 
 /// 首页（PRD-28 卡片9）：顶部用户/仓库条 + 待办统计 + 按登录菜单树裁剪的入口网格。
 ///
@@ -345,47 +346,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 任务 Tab：占位，P0-4 实现真实聚合看板。
-  Widget _buildTaskTab() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: PdaTheme.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(Icons.assignment_outlined,
-                size: 36, color: PdaTheme.primary),
-          ),
-          const SizedBox(height: PdaSpacing.md),
-          const Text('任务聚合看板', style: PdaStyles.title),
-          const SizedBox(height: 6),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              'Pick / Receive / Move / Stocktake / Putaway 待办汇总即将上线（P0-4）',
-              style: PdaStyles.sub,
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: PdaSpacing.lg),
-          OutlinedButton.icon(
-            icon: const Icon(Icons.refresh_rounded, size: 18),
-            label: const Text('刷新首页待办'),
-            onPressed: () {
-              setState(() => _currentIndex = 0);
-              _refresh();
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  /// 任务 Tab：聚合看板（P0-4）。
+  Widget _buildTaskTab() => const TaskBoardPage();
 
   /// 我的 Tab：精简个人摘要，点击「查看完整资料」进 ProfilePage。
   Widget _buildProfileTab() {
