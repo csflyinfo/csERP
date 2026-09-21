@@ -3,8 +3,10 @@ import '../config/pda_perms.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
+import '../services/submit_guard.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
+import '../widgets/confirm_button.dart';
 import '../widgets/multi_unit_qty_field.dart';
 
 /// 报损中心：当前仓报损单列表 + PDA 登记 + 主管审批。
@@ -314,10 +316,11 @@ class _DamagePageState extends State<DamagePage> {
                           fontSize: 13, color: PdaTheme.danger)),
                 ],
                 const SizedBox(height: 14),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.check),
-                  label: const Text('提交报损'),
-                  onPressed: () async {
+                ConfirmButton(
+                  label: '提交报损',
+                  armLabel: '报损不可逆，再点确认',
+                  icon: Icons.report_problem_rounded,
+                  onConfirm: () async {
                     final qty = num.tryParse(qtyCtrl.text.trim());
                     if (codeCtrl.text.trim().isEmpty ||
                         reasonCtrl.text.trim().isEmpty) {
@@ -332,10 +335,17 @@ class _DamagePageState extends State<DamagePage> {
                       setSheet(() => error = '当前仓库参数要求报损必须上传照片');
                       return;
                     }
-                    Navigator.pop(ctx);
-                    final r = await runWithBusy(
-                      context,
-                      () => _svc.damageAdd(
+                    // 同商品+原因 3 秒内去重，防重复提交
+                    final key =
+                        'damage:${codeCtrl.text.trim()}:${qty.toString()}:${reasonCtrl.text.trim()}';
+                    final allowed = SubmitGuard.instance.tryBegin(key);
+                    if (!allowed) {
+                      setSheet(() => error = '请勿重复提交');
+                      return;
+                    }
+                    try {
+                      Navigator.pop(ctx);
+                      await _svc.damageAdd(
                         goodsCode: codeCtrl.text.trim(),
                         goodsName: nameCtrl.text.trim(),
                         batchNo: batchCtrl.text.trim(),
@@ -343,10 +353,14 @@ class _DamagePageState extends State<DamagePage> {
                         qty: qty,
                         reason: reasonCtrl.text.trim(),
                         imageUrl: imageCtrl.text.trim(),
-                      ),
-                      successMsg: '报损单已提交',
-                    );
-                    if (r != null) _load();
+                      );
+                      if (mounted) {
+                        toast(context, '报损单已提交');
+                      }
+                      _load();
+                    } finally {
+                      SubmitGuard.instance.complete(key);
+                    }
                   },
                 ),
               ],
