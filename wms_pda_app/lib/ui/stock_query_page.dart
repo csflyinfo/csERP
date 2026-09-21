@@ -49,6 +49,26 @@ class _StockQueryPageState extends State<StockQueryPage> {
     _query();
   }
 
+  /// 接收全局扫码路由参数：arguments={'keyword':...} 或 {'binCode':...}
+  /// 预填关键字后重新查询（扫商品/库位即查库存）。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_deepLinkConsumed) return;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! Map) return;
+    _deepLinkConsumed = true;
+    final keyword = args['keyword']?.toString() ?? '';
+    final binCode = args['binCode']?.toString() ?? '';
+    final v = keyword.isNotEmpty ? keyword : binCode;
+    if (v.isNotEmpty) {
+      _keywordCtrl.text = v;
+      _query();
+    }
+  }
+
+  bool _deepLinkConsumed = false;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

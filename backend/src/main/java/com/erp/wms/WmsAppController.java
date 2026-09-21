@@ -765,6 +765,18 @@ public class WmsAppController {
         return ApiResponse.ok(binding.transfer(req));
     }
 
+    // ==================== 全局扫码：条码智能识别 ====================
+
+    /**
+     * 全局扫码条码智能识别。body: {barcode}
+     * 按当前仓反查业务对象（库位/容器/单据/商品），返回目标路由与参数。
+     */
+    @PostMapping("/barcode/identify")
+    @RequirePerm(value = F_HOME_SCAN, name = "全局扫码")
+    public ApiResponse<Map<String, Object>> barcodeIdentify(@RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(internal.identifyBarcode(str(req.get("barcode"))));
+    }
+
     // ==================== helpers ====================
 
     /** 当前自然人（PdaAppGuard 已保证 WMS_PDA 登录态，这里直接取）。 */

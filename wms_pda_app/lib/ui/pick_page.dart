@@ -60,6 +60,48 @@ class _PickPageState extends State<PickPage>
     _loadList();
   }
 
+  /// 全局扫码待处理波次 ID：arguments={'waveId':...} 时，
+  /// 列表加载完成后自动打开该波次的拣货任务（扫波次即作业）。
+  String? _pendingWaveId;
+
+  /// 接收全局扫码路由参数。波次扫码没有直接的 pickTaskId，
+  /// 记录 waveId 待列表加载后匹配任务；若直接给了 taskId 则立即打开。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_deepLinkConsumed) return;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is! Map) return;
+    _deepLinkConsumed = true;
+    final taskId = args['taskId']?.toString() ?? '';
+    final waveId = args['waveId']?.toString() ?? '';
+    if (taskId.isNotEmpty) {
+      _openTask({'taskId': taskId, 'status': ''});
+    } else if (waveId.isNotEmpty) {
+      _pendingWaveId = waveId;
+      if (!_loading) _resolveWaveTask();
+    }
+  }
+
+  bool _deepLinkConsumed = false;
+
+  /// 在已加载的任务数据里按 wave_id 匹配待作业任务并打开。
+  Future<void> _resolveWaveTask() async {
+    final waveId = _pendingWaveId;
+    if (waveId == null) return;
+    for (final list in _data) {
+      for (final raw in list) {
+        final t = Map<String, dynamic>.from(raw as Map);
+        final wid = pickStr(t, ['waveId', 'wave_id']);
+        if (wid == waveId) {
+          _pendingWaveId = null;
+          await _openTask(t);
+          return;
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _tab.dispose();
@@ -82,6 +124,9 @@ class _PickPageState extends State<PickPage>
       _data[i] = results[i];
     }
     if (mounted) setState(() => _loading = false);
+    if (_pendingWaveId != null) {
+      await _resolveWaveTask();
+    }
   }
 
   Future<void> _refreshDetail() async {

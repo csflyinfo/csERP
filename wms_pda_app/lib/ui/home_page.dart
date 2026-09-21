@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/global_scan_sheet.dart';
+import '../services/hardware_scan_key.dart';
 import 'task_board_page.dart';
 
 /// 首页（PRD-28 卡片9）：顶部用户/仓库条 + 待办统计 + 按登录菜单树裁剪的入口网格。
@@ -93,7 +94,14 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    HardwareScanKey.instance.attach();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    HardwareScanKey.instance.detach();
+    super.dispose();
   }
 
   Future<int> _quiet(Future<int> Function() f) async {

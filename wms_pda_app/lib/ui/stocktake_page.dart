@@ -60,6 +60,20 @@ class _StocktakePageState extends State<StocktakePage> {
     _loadList();
   }
 
+  /// 接收全局扫码路由参数：arguments={'taskId':...} 时直接进入详情态，
+  /// 省去"列表里再找任务"的步骤（智能路由）。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && _taskId == null) {
+      final taskId = args['taskId']?.toString() ?? '';
+      if (taskId.isNotEmpty) {
+        _enterDetail(taskId);
+      }
+    }
+  }
+
   // ==================== 列表态 ====================
 
   Future<void> _loadList() async {

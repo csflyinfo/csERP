@@ -612,6 +612,17 @@ class WmsAppService {
         if (toZoneCode.isNotEmpty) 'toZoneCode': toZoneCode,
       }).then(_asMap);
 
+  // ============== 全局扫码 ==============
+
+  /// 全局扫码条码智能识别（方案 V1.1 优化项一）。
+  /// 后端在当前作业仓范围内反查业务对象，返回
+  /// {type, id, title, subtitle, route, params}；
+  /// type=unknown 表示未识别，params 为路由附加参数（taskId/waveId/keyword 等）。
+  Future<Map<String, dynamic>> barcodeIdentify(String barcode) =>
+      ApiService.instance.post('/wms/app/barcode/identify', body: {
+        'barcode': barcode,
+      }).then(_asMap);
+
   // ============== 工具 ==============
   static Map<String, dynamic> _asMap(dynamic v) {
     if (v is Map<String, dynamic>) return v;

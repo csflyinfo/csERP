@@ -74,6 +74,31 @@ class _ReceivePageState extends State<ReceivePage> {
     _load();
   }
 
+  /// 接收全局扫码路由参数：arguments={'taskId':...} 时直接进入收货明细页。
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && !_consumedDeepLink) {
+      final taskId = args['taskId']?.toString() ?? '';
+      if (taskId.isNotEmpty) {
+        _consumedDeepLink = true;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ReceiveDetailPage(
+              taskId: taskId,
+              taskNo: args['taskNo']?.toString() ?? '',
+            ),
+          ),
+        ).then((_) => _load());
+      }
+    }
+  }
+
+  /// 直达明细链接是否已消费（防止 didChangeDependencies 多次触发重复入栈）。
+  bool _consumedDeepLink = false;
+
   @override
   void dispose() {
     _searchCtrl.dispose();
