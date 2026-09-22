@@ -239,6 +239,7 @@ class _DamagePageState extends State<DamagePage> {
     final reasonCtrl = TextEditingController();
     final imageCtrl = TextEditingController();
     String? error;
+    Map<String, dynamic>? goodsInfo;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -257,11 +258,32 @@ class _DamagePageState extends State<DamagePage> {
               children: [
                 const Text('报损登记', style: PdaStyles.title),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: codeCtrl,
-                  decoration: const InputDecoration(
-                      labelText: '商品编码 *', prefixIcon: Icon(Icons.qr_code)),
-                ),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: codeCtrl,
+                      decoration: const InputDecoration(
+                          labelText: '商品编码 *', prefixIcon: Icon(Icons.qr_code)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () async {
+                      try {
+                        final r = await _svc.resolveGoods(codeCtrl.text.trim());
+                        setSheet(() {
+                          goodsInfo = r;
+                          if (nameCtrl.text.isEmpty) {
+                            nameCtrl.text = r['goodsName']?.toString() ?? '';
+                          }
+                        });
+                      } catch (e) {
+                        setSheet(() => error = ApiService.friendlyError(e));
+                      }
+                    },
+                    child: const Text('解析'),
+                  ),
+                ]),
                 const SizedBox(height: 8),
                 TextField(
                   controller: nameCtrl,
@@ -289,6 +311,8 @@ class _DamagePageState extends State<DamagePage> {
                 MultiUnitQtyField(
                   value: num.tryParse(qtyCtrl.text) ?? 0,
                   label: '报损数量 *',
+                  unitConfig: goodsInfo?['unitConfig'],
+                  baseUnit: goodsInfo?['baseUnit']?.toString() ?? '',
                   onChanged: (v) => setSheet(
                     () => qtyCtrl.text =
                         v == v.toInt() ? v.toInt().toString() : v.toString(),

@@ -612,6 +612,15 @@ class WmsAppService {
         if (toZoneCode.isNotEmpty) 'toZoneCode': toZoneCode,
       }).then(_asMap);
 
+  // ============== 商品解析 ==============
+
+  /// 按商品编码解析商品档案（手工录入页）。
+  /// 返回 goodsName/baseUnit/unitConfig，供数量框做整件+零头录入。
+  Future<Map<String, dynamic>> resolveGoods(String goodsCode) =>
+      ApiService.instance.post('/wms/app/goods/resolve', body: {
+        'goodsCode': goodsCode,
+      }).then(_asMap);
+
   // ============== 全局扫码 ==============
 
   /// 全局扫码条码智能识别（方案 V1.1 优化项一）。

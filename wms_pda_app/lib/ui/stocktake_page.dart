@@ -331,6 +331,8 @@ class _StocktakePageState extends State<StocktakePage> {
               MultiUnitQtyField(
                 value: num.tryParse(ctrl.text) ?? 0,
                 label: recount ? '复盘数量' : '实盘数量',
+                unitConfig: line['unitConfig'],
+                baseUnit: pickStr(line, ['baseUnit','base_unit']),
                 onChanged: (v) => setSheet(
                   () => ctrl.text =
                       v == v.toInt() ? v.toInt().toString() : v.toString(),

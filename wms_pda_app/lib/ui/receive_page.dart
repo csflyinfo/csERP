@@ -6,6 +6,7 @@ import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/multi_unit_qty_field.dart';
+import '../widgets/unit_qty_text.dart';
 
 /// 入库类型标签：与后端 WmsInboundService 约定一致。
 const Map<String, String> _inboundTypeLabels = {
@@ -1682,15 +1683,32 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
                       Text('条码：$barcode', style: PdaStyles.sub),
                     Text('存储：$storage', style: PdaStyles.sub),
                     const SizedBox(height: 6),
-                    Row(children: [
-                      Text('应收 ', style: PdaStyles.sub),
-                      Text('$expected',
-                          style: PdaStyles.numHuge
-                              .copyWith(color: PdaTheme.primary)),
-                      Text(' $unit', style: PdaStyles.sub),
-                      const SizedBox(width: 16),
-                      Text('已收 $got $unit', style: PdaStyles.sub),
-                    ]),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                          Text('应收 ', style: PdaStyles.sub),
+                          const SizedBox(width: 4),
+                          UnitQtyText(
+                            value: expected,
+                            unitConfig: widget.detail['unitConfig'],
+                            baseUnit: pickStr(widget.detail, ['baseUnit','base_unit']),
+                            unit: unit,
+                            convertQty: pickNum(widget.detail, ['convertQty','convert_qty'], 1),
+                          ),
+                        ]),
+                        const SizedBox(height: 4),
+                        UnitQtyText(
+                          value: got,
+                          unitConfig: widget.detail['unitConfig'],
+                          baseUnit: pickStr(widget.detail, ['baseUnit','base_unit']),
+                          unit: unit,
+                          convertQty: pickNum(widget.detail, ['convertQty','convert_qty'],1),
+                          numberStyle: PdaStyles.label.copyWith(color: PdaTheme.textPrimary),
+                          unitStyle: PdaStyles.sub,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -1701,6 +1719,7 @@ class _ReceiveLinePageState extends State<ReceiveLinePage> {
               const SizedBox(height: 6),
               MultiUnitQtyField(
                 value: num.tryParse(_qtyCtrl.text) ?? 0,
+                unitConfig: widget.detail['unitConfig'],
                 unit: unit,
                 convertQty: pickNum(
                     widget.detail, ['convertQty', 'convert_qty'], 1),

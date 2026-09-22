@@ -777,6 +777,14 @@ public class WmsAppController {
         return ApiResponse.ok(internal.identifyBarcode(str(req.get("barcode"))));
     }
 
+    // ==================== 商品解析（手工录入页取多单位配置） ====================
+
+    /** body:{goodsCode} 返回商品名/最小单位/unit_config，供移库、报损等数量框做整件+零头录入。 */
+    @PostMapping("/goods/resolve")
+    public ApiResponse<Map<String, Object>> resolveGoods(@RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(internal.resolveGoods(str(req.get("goodsCode"))));
+    }
+
     // ==================== helpers ====================
 
     /** 当前自然人（PdaAppGuard 已保证 WMS_PDA 登录态，这里直接取）。 */

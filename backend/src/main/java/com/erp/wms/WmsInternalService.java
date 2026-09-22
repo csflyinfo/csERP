@@ -766,6 +766,27 @@ public class WmsInternalService {
         return Map.of("taskId", taskId, "status", "DONE");
     }
 
+    /**
+     * ????????????????????/?????
+     * ?????????????????? PDA ?????? + ?????
+     */
+    public Map<String, Object> resolveGoods(String goodsCode) {
+        String code = goodsCode == null ? "" : goodsCode.trim();
+        if (code.isEmpty()) throw new IllegalArgumentException("请先填写商品编码");
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT goods_code, goods_name, base_unit, unit_config " +
+                "FROM base_goods WHERE status = 'NORMAL' AND goods_code = ? LIMIT 1", code);
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("商品不存在或已停用：" + code);
+        }
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("goodsCode", TmsUtil.str(rows.get(0).get("goods_code")));
+        r.put("goodsName", TmsUtil.str(rows.get(0).get("goods_name")));
+        r.put("baseUnit", TmsUtil.str(rows.get(0).get("base_unit")));
+        r.put("unitConfig", rows.get(0).get("unit_config"));
+        return r;
+    }
+
     // ==================== 盘点 ====================
 
     @Transactional
@@ -850,10 +871,13 @@ public class WmsInternalService {
     public List<Map<String, Object>> stocktakeBins(String taskId) {
         assertStocktakeWarehouse(taskId);
         return TmsUtil.queryCamel(jdbc, """
-                SELECT id, task_id, bin_code, goods_code, goods_name, batch_no, book_qty, real_qty,
-                       diff_qty, recounted, counter, counted_at, status
-                FROM wms_stocktake_bin WHERE task_id = ?
-                ORDER BY bin_code, goods_code
+                SELECT b.id, b.task_id, b.bin_code, b.goods_code, b.goods_name, b.batch_no, b.book_qty, b.real_qty,
+                       b.diff_qty, b.recounted, b.counter, b.counted_at, b.status,
+                       g.base_unit AS base_unit, g.unit_config AS unit_config
+                FROM wms_stocktake_bin b
+                LEFT JOIN base_goods g ON g.goods_code = b.goods_code
+                WHERE b.task_id = ?
+                ORDER BY b.bin_code, b.goods_code
                 """, taskId);
     }
 
