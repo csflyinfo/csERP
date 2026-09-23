@@ -52,9 +52,13 @@ class MultiUnitQtyField extends StatefulWidget {
 class _MultiUnitQtyFieldState extends State<MultiUnitQtyField> {
   List<UnitLevel> _resolveUnits() {
     final cfg = widget.unitConfig;
+    final fallback =
+        widget.baseUnit.isNotEmpty ? widget.baseUnit : widget.unit;
     if (cfg != null && !(cfg is String && cfg.isEmpty)) {
       final levels = UnitBreakdown.parseUnits(cfg, baseUnit: widget.baseUnit);
-      if (levels.length > 1) return levels;
+      if (levels.length > 1) {
+        return UnitBreakdown.fillEmptyNames(levels, fallback);
+      }
     }
     final levels = <UnitLevel>[];
     if (widget.unit.isNotEmpty && widget.convertQty > 1) {
@@ -63,7 +67,7 @@ class _MultiUnitQtyFieldState extends State<MultiUnitQtyField> {
     levels.add(UnitLevel(
         name: widget.baseUnit.isNotEmpty ? widget.baseUnit : widget.unit,
         convertQty: 1));
-    return levels;
+    return UnitBreakdown.fillEmptyNames(levels, fallback);
   }
 
   late final List<UnitLevel> _units = _resolveUnits();

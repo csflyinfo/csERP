@@ -15,12 +15,15 @@ class UnitLevel {
     final cq = num.tryParse('${j['convertQty'] ?? 1}') ?? 1;
     return UnitLevel(name: name, convertQty: cq <= 0 ? 1 : cq);
   }
+
+  UnitLevel copyWith({String? name}) =>
+      UnitLevel(name: name ?? this.name, convertQty: convertQty);
 }
 
 /// 多单位拆分结果：一个最小单位总量被拆成"大件 + 零头"。
 ///
 /// 如最小单位 39 瓶、1 件=12 瓶 → 3 件 + 3 瓶。
-/// 支持任意级数（件 / 中包装 / 最小单位）。
+/// 支持任意级数与任意存储顺序（按换算率识别层级，不依赖数组物理顺序）。
 class UnitBreakdown {
   /// 从大到小的单位数量（与 [units] 同序，末位为最小单位零头）。
   final List<num> amounts;
@@ -33,8 +36,14 @@ class UnitBreakdown {
   /// 解析商品 unit_config（JSON 字符串或 List），返回从大到小、
   /// 仅含启用单位的层级，并自动补全最小单位。
   ///
-  /// [baseUnit] 为商品 base_unit，用于 unit_config 缺失最小单位时兜底；
-  /// 返回的列表末位一定是 convertQty=1 的最小单位。
+  /// 规则（健壮性）：
+  /// - `enabled == false` 显式禁用的单位跳过；
+  /// - 换算率 < 1 的非法单位跳过；
+  /// - 按换算率从大到小识别层级，故「小/大/中」「小/中/大」均兼容；
+  /// - 相同换算率只保留一个（去重）；
+  /// - 末位一定补一个 convertQty=1 的最小单位。
+  ///
+  /// [baseUnit] 为商品 base_unit，用于最小单位缺失/无名时兜底。
   static List<UnitLevel> parseUnits(dynamic raw, {String baseUnit = ''}) {
     List list;
     if (raw is List) {
@@ -49,26 +58,43 @@ class UnitBreakdown {
     } else {
       list = const [];
     }
+
     final levels = <UnitLevel>[];
+    final seenRates = <num>{};
     for (final e in list) {
-      if (e is Map) {
-        if (e['enabled'] == false) continue;
-        levels.add(UnitLevel.fromJson(Map<String, dynamic>.from(e)));
-      }
+      if (e is! Map) continue;
+      if (e['enabled'] == false) continue;
+      final lv = UnitLevel.fromJson(Map<String, dynamic>.from(e));
+      if (lv.convertQty < 1) continue;
+      // 相同换算率去重（保留先出现的）
+      if (!seenRates.add(lv.convertQty)) continue;
+      levels.add(lv);
     }
-    // unit_config 按"小→大"存储，统一反转为"大→小"便于拆分
+
+    // 按换算率降序：统一为 大→小，兼容任意存储顺序
     levels.sort((a, b) => b.convertQty.compareTo(a.convertQty));
-    // 确保末位是最小单位（convertQty=1）
-    if (levels.isEmpty || levels.last.convertQty != 1) {
-      final smallest = baseUnit.isNotEmpty
-          ? baseUnit
-          : (levels.isNotEmpty ? levels.last.name : '');
-      levels.add(UnitLevel(name: smallest, convertQty: 1));
-    }
+
+    // 去掉末尾已存在的最小单位后，保证末位为 convertQty=1
+    levels.removeWhere((l) => l.convertQty == 1);
+    final smallestName = baseUnit.isNotEmpty
+        ? baseUnit
+        : (levels.isNotEmpty ? '' : '');
+    levels.add(UnitLevel(name: smallestName, convertQty: 1));
     return levels;
   }
 
-  /// 把最小单位总量拆成"大单位 + 零头"。
+  /// 用 [fallback] 填充所有空单位名（典型：明细行 unit_name），
+  /// 避免出现"39 "后无单位的光秃显示。不会覆盖已有名称。
+  static List<UnitLevel> fillEmptyNames(
+      List<UnitLevel> units, String fallback) {
+    final fb = fallback.trim();
+    return [
+      for (final u in units)
+        u.name.trim().isEmpty ? u.copyWith(name: fb) : u,
+    ];
+  }
+
+  /// 把最小单位总量拆成"大单位 + 零头"。换算率为整数倍时逐级取整。
   static UnitBreakdown split(num total, List<UnitLevel> units) {
     var remain = total;
     final amounts = <num>[];

@@ -43,7 +43,9 @@ class UnitQtyText extends StatelessWidget {
     }
     list.add(UnitLevel(
         name: baseUnit.isNotEmpty ? baseUnit : unit, convertQty: 1));
-    return list;
+    // ????????????? unit_name???"39 "????
+    final fallback = baseUnit.isNotEmpty ? baseUnit : unit;
+    return UnitBreakdown.fillEmptyNames(list, fallback);
   }
 
   @override
