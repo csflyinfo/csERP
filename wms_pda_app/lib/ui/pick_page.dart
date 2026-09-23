@@ -405,6 +405,8 @@ class _PickPageState extends State<PickPage>
               MultiUnitQtyField(
                 value: num.tryParse(qtyCtrl.text) ?? 0,
                 label: '本次拣货数量',
+                unitConfig: line['unitConfig'],
+                baseUnit: pickStr(line, ['baseUnit','base_unit']),
                 maxValue: maxQty,
                 onChanged: (v) => setSheet(
                   () => qtyCtrl.text =
