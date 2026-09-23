@@ -160,6 +160,7 @@ class _MovePageState extends State<MovePage> {
     final qtyCtrl = TextEditingController(text: '1');
     final remarkCtrl = TextEditingController();
     String? error;
+    Map<String, dynamic>? goodsInfo;
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -189,11 +190,32 @@ class _MovePageState extends State<MovePage> {
                     labelText: '目标库位 *', prefixIcon: Icon(Icons.download)),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: codeCtrl,
-                decoration: const InputDecoration(
-                    labelText: '商品编码 *', prefixIcon: Icon(Icons.qr_code)),
-              ),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: codeCtrl,
+                    decoration: const InputDecoration(
+                        labelText: '商品编码 *', prefixIcon: Icon(Icons.qr_code)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton(
+                  onPressed: () async {
+                    try {
+                      final r = await _svc.resolveGoods(codeCtrl.text.trim());
+                      setSheet(() {
+                        goodsInfo = r;
+                        if (nameCtrl.text.isEmpty) {
+                          nameCtrl.text = r['goodsName']?.toString() ?? '';
+                        }
+                      });
+                    } catch (e) {
+                      setSheet(() => error = ApiService.friendlyError(e));
+                    }
+                  },
+                  child: const Text('解析'),
+                ),
+              ]),
               const SizedBox(height: 8),
               TextField(
                 controller: nameCtrl,
@@ -212,6 +234,8 @@ class _MovePageState extends State<MovePage> {
                   child: MultiUnitQtyField(
                     value: num.tryParse(qtyCtrl.text) ?? 0,
                     label: '数量 *',
+                    unitConfig: goodsInfo?['unitConfig'],
+                    baseUnit: goodsInfo?['baseUnit']?.toString() ?? '',
                     onChanged: (v) => setSheet(
                       () => qtyCtrl.text =
                           v == v.toInt() ? v.toInt().toString() : v.toString(),

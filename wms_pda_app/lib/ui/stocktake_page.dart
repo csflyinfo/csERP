@@ -6,6 +6,7 @@ import '../services/wms_app_service.dart';
 import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/multi_unit_qty_field.dart';
+import '../widgets/unit_qty_text.dart';
 import 'stocktake_create_page.dart';
 
 /// 盘点作业：当前仓任务列表 → 进入明细逐行录实盘 → 整单提交 → 主管审核。
@@ -310,8 +311,10 @@ class _StocktakePageState extends State<StocktakePage> {
 
   Future<void> _countDialog(Map<String, dynamic> line,
       {required bool recount}) async {
-    final ctrl = TextEditingController();
     final sys = pickNum(line, ['bookQty', 'book_qty']);
+    // ????????????????????????????
+    final ctrl = TextEditingController(
+        text: sys == sys.toInt() ? sys.toInt().toString() : sys.toString());
     await showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -326,11 +329,23 @@ class _StocktakePageState extends State<StocktakePage> {
               Text('商品：${pickStr(line, ['goodsCode', 'goods_code'])}',
                   style: PdaStyles.sub),
               const SizedBox(height: 4),
-              Text('系统库存：$sys', style: PdaStyles.sub),
+              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Text('系统库存 ', style: PdaStyles.sub),
+                const SizedBox(width: 4),
+                UnitQtyText(
+                  value: sys,
+                  unitConfig: line['unitConfig'],
+                  baseUnit: pickStr(line, ['baseUnit','base_unit']),
+                  numberStyle: PdaStyles.label.copyWith(color: PdaTheme.textPrimary),
+                  unitStyle: PdaStyles.sub,
+                ),
+              ]),
               const SizedBox(height: 12),
               MultiUnitQtyField(
                 value: num.tryParse(ctrl.text) ?? 0,
                 label: recount ? '复盘数量' : '实盘数量',
+                unitConfig: line['unitConfig'],
+                baseUnit: pickStr(line, ['baseUnit','base_unit']),
                 onChanged: (v) => setSheet(
                   () => ctrl.text =
                       v == v.toInt() ? v.toInt().toString() : v.toString(),

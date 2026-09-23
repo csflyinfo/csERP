@@ -136,6 +136,7 @@ public class WmsInboundService {
                        d.recommend_bin, d.recommend_zone_code, d.recommend_zone_name, d.recommend_storage_prop,
                        d.actual_bin, d.status, d.remark,
                        g.spec, g.barcode, COALESCE(g.storage_property,'常温') AS storage_property,
+                       g.base_unit, g.unit_config,
                        COALESCE(g.shelf_life_days,0) AS shelf_life_days,
                        (SELECT COUNT(*) FROM wms_putaway_task p
                           WHERE p.inbound_task_id = d.task_id AND p.status = 'DONE'

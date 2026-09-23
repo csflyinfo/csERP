@@ -542,12 +542,14 @@ public class WmsOutboundService {
         Map<String, Object> task = TmsUtil.camelize(h.get(0));
         // 汇总拣：同 SKU 合并应拣数量并列出分播去向；按单拣：带订单号逐条
         List<Map<String, Object>> lines = TmsUtil.queryCamel(jdbc, """
-                SELECT detail_id, source_order_no, customer_name, goods_code, goods_name, unit_name,
-                       required_qty, picked_qty, alloc_batch_no, alloc_bin_code, alloc_zone_code,
-                       collection_bin_code, sort_destination, status, expedited, pick_seq
-                FROM wms_wave_detail
-                WHERE pick_task_id = ? OR (wave_id = ? AND COALESCE(alloc_zone_code,'') = COALESCE(?,''))
-                ORDER BY pick_seq, source_order_no
+                SELECT wd.detail_id, wd.source_order_no, wd.customer_name, wd.goods_code, wd.goods_name, wd.unit_name,
+                       wd.required_qty, wd.picked_qty, wd.alloc_batch_no, wd.alloc_bin_code, wd.alloc_zone_code,
+                       wd.collection_bin_code, wd.sort_destination, wd.status, wd.expedited, wd.pick_seq,
+                       g.base_unit AS base_unit, g.unit_config AS unit_config
+                FROM wms_wave_detail wd
+                LEFT JOIN base_goods g ON g.goods_code = wd.goods_code
+                WHERE wd.pick_task_id = ? OR (wd.wave_id = ? AND COALESCE(wd.alloc_zone_code,'') = COALESCE(?,''))
+                ORDER BY wd.pick_seq, wd.source_order_no
                 """, taskId, str(task.get("waveId")), str(task.get("zoneCode")));
         task.put("lines", lines);
         return task;
