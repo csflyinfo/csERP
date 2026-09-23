@@ -7,7 +7,7 @@ import '../theme/pda_theme.dart';
 import '../widgets/common.dart';
 import '../widgets/multi_unit_qty_field.dart';
 
-/// 拣货作业：我的 / 可支援 /（主管）全部 tab。
+/// 拣货作业：待领取 / 我的 /（主管）全部 tab。
 ///
 /// PRD-28 卡片9：tab 数量与按钮全部按功能点裁剪——
 /// - pick.view 看列表，task_assign.view 才有"全部"池；
@@ -26,8 +26,8 @@ class _PickPageState extends State<PickPage>
   final _auth = AuthService.instance;
 
   late final List<String> _scopes = [
-    'mine',
     'help',
+    'mine',
     if (_auth.can(PdaPerm.assignView)) 'all',
   ];
   late final TabController _tab =
@@ -46,7 +46,7 @@ class _PickPageState extends State<PickPage>
 
   String _scopeLabel(String s) => switch (s) {
         'mine' => '我的',
-        'help' => '可支援',
+        'help' => '待领取',
         'all' => '全部',
         _ => s,
       };
@@ -108,7 +108,7 @@ class _PickPageState extends State<PickPage>
     super.dispose();
   }
 
-  /// 每个 scope 独立容错：主管池 403/网络失败不影响"我的/可支援"。
+  /// 每个 scope 独立容错：主管池 403/网络失败不影响"待领取/我的"。
   Future<void> _loadList() async {
     setState(() => _loading = true);
     final results = await Future.wait(
@@ -247,7 +247,7 @@ class _PickPageState extends State<PickPage>
       }
       final ok = await runWithBusy(
         context,
-        () => _svc.pickClaim(taskId, help: _tab.index == 1),
+        () => _svc.pickClaim(taskId),
         successMsg: '已领取',
       );
       if (ok == null) return;
