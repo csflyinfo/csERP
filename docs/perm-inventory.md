@@ -1,10 +1,10 @@
 # 权限盘点清单（自动生成，请勿手改）
 
 > 由 `PermInventoryDumper` 在 dev 启动时依据 RequestMapping 反射生成（PRD-28 §18.1）。
-> 生成时间：2026-09-17 11:52:59
+> 生成时间：2026-09-22 09:19:02
 
-- 端点总数：927
-- 已挂 @RequirePerm：748
+- 端点总数：934
+- 已挂 @RequirePerm：755
 - 未纳管写端点（需在卡片5~7 补齐或加入豁免）：159
 
 ## base
@@ -36,6 +36,9 @@
 | POST | `/base/customer/addresses` | BaseController#customerAddresses | base.customer.view | base.customer | view | 方法：base.customer.view |
 | POST | `/base/customer/create` | BaseController#createCustomer | base.customer.add | base.customer | add | 方法：base.customer.add |
 | POST | `/base/customer/delete` | BaseController#deleteCustomer | base.customer.delete | base.customer | delete | 方法：base.customer.delete |
+| POST | `/base/customer/import` | CustomerImportController#importCustomers | base.customer.import | base.customer | import | 方法：base.customer.import |
+| GET | `/base/customer/import-template` | CustomerImportController#downloadTemplate | base.customer.import | base.customer | import | 方法：base.customer.import |
+| POST | `/base/customer/import-update` | CustomerImportController#importUpdate | base.customer.import | base.customer | import | 方法：base.customer.import |
 | POST | `/base/customer/page` | BaseController#customerPage | base.customer.view | base.customer | view | 方法：base.customer.view |
 | POST | `/base/customer/stop` | BaseController#stopCustomer | base.customer.biz_stop | base.customer | biz_stop | 方法：base.customer.biz_stop |
 | POST | `/base/customer/update` | BaseController#updateCustomer | base.customer.edit | base.customer | edit | 方法：base.customer.edit |
@@ -851,6 +854,7 @@
 
 | HTTP | 路径 | Handler | 建议功能点编码 | 归属菜单 | 动作 | @RequirePerm |
 | --- | --- | --- | --- | --- | --- | --- |
+| POST | `/wms/app/barcode/identify` | WmsAppController#barcodeIdentify | wms_pda.home.scan | wms_pda.home | scan | 方法：wms_pda.home.scan |
 | POST | `/wms/app/binding/bind` | WmsAppController#bindingBind | wms_pda.putaway.free_bin | wms_pda.putaway | free_bin | 方法：wms_pda.putaway.free_bin |
 | POST | `/wms/app/binding/lookup` | WmsAppController#bindingLookup | wms_pda.putaway.view | wms_pda.putaway | view | 方法：wms_pda.putaway.view |
 | POST | `/wms/app/binding/transfer` | WmsAppController#bindingTransfer | wms_pda.putaway.free_bin | wms_pda.putaway | free_bin | 方法：wms_pda.putaway.free_bin |
@@ -904,6 +908,9 @@
 | POST | `/wms/app/stocktake/audit` | WmsAppController#stocktakeAudit | wms_pda.stocktake.audit | wms_pda.stocktake | audit | 方法：wms_pda.stocktake.audit |
 | POST | `/wms/app/stocktake/bins` | WmsAppController#stocktakeBins | wms_pda.stocktake.view | wms_pda.stocktake | view | 方法：wms_pda.stocktake.view |
 | POST | `/wms/app/stocktake/count` | WmsAppController#stocktakeCount | wms_pda.stocktake.input | wms_pda.stocktake | input | 方法：wms_pda.stocktake.input |
+| POST | `/wms/app/stocktake/create` | WmsAppController#stocktakeCreate | wms_pda.stocktake.create | wms_pda.stocktake | create | 方法：wms_pda.stocktake.create |
+| POST | `/wms/app/stocktake/detail` | WmsAppController#stocktakeDetail | wms_pda.stocktake.view | wms_pda.stocktake | view | 方法：wms_pda.stocktake.view |
+| POST | `/wms/app/stocktake/list` | WmsAppController#stocktakeList | wms_pda.stocktake.view | wms_pda.stocktake | view | 方法：wms_pda.stocktake.view |
 | POST | `/wms/app/stocktake/recount` | WmsAppController#stocktakeRecount | wms_pda.stocktake.input | wms_pda.stocktake | input | 方法：wms_pda.stocktake.input |
 | POST | `/wms/app/stocktake/submit` | WmsAppController#stocktakeSubmit | wms_pda.stocktake.submit | wms_pda.stocktake | submit | 方法：wms_pda.stocktake.submit |
 | POST | `/wms/app/task-assign/assign` | WmsAppController#assign | wms_pda.task_assign.assign | wms_pda.task_assign | assign | 方法：wms_pda.task_assign.assign |
