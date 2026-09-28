@@ -668,8 +668,9 @@ const EXACT_TITLE_MAP = {
   '创建时间': ['createdAt'],
   '完成时间': ['finishedAt'],
   '操作时间': ['operateAt'],
-  // 操作日志列表：操作人显示操作账号；优先账号，缺账号时回落姓名（不影响其它模块的"操作人"列）
-  '操作人': ['operatorAccount', 'operatorName'],
+  // 操作日志列表「操作人」显示用户姓名，姓名缺失时回落登录账号
+  // （其它模块的"操作人"列记录里本来就只有 operatorName，不受影响）
+  '操作人': ['operatorName', 'operatorAccount'],
   '创建人': ['creatorName'],
   '创建人/时间': ['creatorInfo'],
   '审核信息': ['auditInfo'],

@@ -914,7 +914,8 @@ const columns = computed(() => (config.value.columns || []).map((title, index) =
   key: `c${index}`,
   title,
   num: /金额|数量|库存|单价|成本|余额|已收|未收|已付|未付|原价|现价|进价|税额|毛利|额度/.test(title),
-  action: /操作/.test(title),
+  // 仅「操作」列是动作列：标题包含匹配会把「操作时间/操作人」误判为动作列
+  action: title === '操作',
 })))
 // 加上「字段级权限」过滤：销售/采购模块的价格/成本/毛利/往来款等敏感列，
 // 无 VIEW_* 字段权限时直接从可选列里排除（后端响应也已把值置 null，双保险）
@@ -1953,8 +1954,8 @@ async function exportCurrentModuleXlsx() {
       }
     })
   }
-  // 用 mapRecordToRow 生成对齐 columns 的行数据（不含"操作"列）
-  const visibleCols = (config.value.columns || []).filter(t => !/操作/.test(t))
+  // 用 mapRecordToRow 生成对齐 columns 的行数据（不含"操作"列；操作时间/操作人保留）
+  const visibleCols = (config.value.columns || []).filter(t => t !== '操作')
   const rows = derived.map(record => {
     const row = mapRecordToRow(record, { columns: visibleCols })
     const obj = {}
@@ -3229,7 +3230,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
         </template>
       </div>
 
-      <QueryBar :fields="dynamicFilters" :defaults="filterDefaults" :prefill="reportPrefill" :max-visible="moduleCode === 'priceChangeLog' ? 6 : 4" @query="handleQuery" @reset="handleReset" @more="handleMore">
+      <QueryBar :fields="dynamicFilters" :defaults="filterDefaults" :prefill="reportPrefill" :max-visible="moduleCode === 'priceChangeLog' ? 6 : (moduleCode === 'log' ? 8 : 4)" @query="handleQuery" @reset="handleReset" @more="handleMore">
         <template #after-reset>
           <template v-if="moduleCode === 'priceGroupItem'">
             <button
@@ -3286,7 +3287,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
             <span v-else style="color:#909399">{{ row[col.key] || 0 }}</span>
           </span>
           <!-- PRD-28 卡片6：行内操作列容器指令，按按钮文本统一裁决（含动态 v-for 动作按钮） -->
-          <span v-else-if="/操作/.test(col.title)" v-action-perms="actionHidden">
+          <span v-else-if="col.title === '操作'" v-action-perms="actionHidden">
             <!-- PRD-31 采购/销售订单：查看本单据操作记录时间线（独立于下方状态化操作，始终可见） -->
             <button v-if="BIZ_TIMELINE_MAP[moduleCode]" class="link link-btn" @click="openTimeline(row)">记录</button>
             <!-- PRD-31 操作日志：行内"详情"打开改前改后抽屉 -->

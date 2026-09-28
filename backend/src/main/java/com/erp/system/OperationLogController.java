@@ -58,6 +58,14 @@ public class OperationLogController {
                 "ORDER BY operate_at ASC, log_id ASC",
                 this::mapTimelineRow, bizType, bizNo);
 
+        // 动作中文名实时回填（历史行 action_name 可能存的是原始码）
+        for (Map<String, Object> row : rows) {
+            Object action = row.get("action");
+            if (action != null) {
+                row.put("actionName", OperationAction.name(String.valueOf(action)));
+            }
+        }
+
         boolean admin = isAdmin();
         for (Map<String, Object> row : rows) {
             row.put("beforeValue", maskJson(row.get("beforeValue"), admin));

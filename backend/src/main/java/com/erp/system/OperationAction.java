@@ -139,6 +139,7 @@ public final class OperationAction {
         NAMES.put("PUTAWAY", "上架");
         NAMES.put("AUTO_AUDIT_SALES_RETURN", "销售退货自动审核");
         NAMES.put("FREEZE", "冻结");
+        NAMES.put("CONFIRM_MOVE", "确认移库");
     }
 
     private OperationAction() {}

@@ -70,6 +70,7 @@ public class SystemLogController {
         pageArgs.add(pageSize);
         pageArgs.add((long) (pageNo - 1) * pageSize);
         List<Map<String, Object>> rows = jdbc.query(sql, this::mapRow, pageArgs.toArray());
+        fillActionName(rows);
 
         return ApiResponse.ok(new PageResult<>(rows, pageNo, pageSize, total == null ? 0 : total, Map.of()));
     }
@@ -99,8 +100,22 @@ public class SystemLogController {
                 "FROM sys_operation_log_runtime" + where +
                 " ORDER BY operate_at DESC LIMIT " + EXPORT_LIMIT;
         List<Map<String, Object>> rows = jdbc.query(sql, this::mapRow, args.toArray());
+        fillActionName(rows);
         opLog.log(OperationModule.OP_LOG, OperationAction.EXPORT, null, "导出操作日志 " + rows.size() + " 条");
         return ApiResponse.ok(rows);
+    }
+
+    /**
+     * 动作中文名按当前 {@link OperationAction} 映射实时回填：历史日志写入时若动作码尚无中文名，
+     * DB 里存的 action_name 是原始码（如 CONFIRM_MOVE），不能依赖存量值。
+     */
+    private void fillActionName(List<Map<String, Object>> rows) {
+        for (Map<String, Object> r : rows) {
+            Object action = r.get("action");
+            if (action != null) {
+                r.put("actionName", OperationAction.name(String.valueOf(action)));
+            }
+        }
     }
 
     /** 手动触发保留期清理。 */
@@ -159,7 +174,8 @@ public class SystemLogController {
 
     private void appendOpFilters(StringBuilder where, List<Object> args, Map<String, Object> f) {
         like(where, args, "module_code", f.get("moduleCode"));
-        eq(where, args, "action", f.get("action"));
+        // 动作支持多选（前端 multiSelect 回传数组）；兼容历史单值字符串
+        inList(where, args, "action", f.get("action"));
         eq(where, args, "biz_type", f.get("bizType"));
         eq(where, args, "result", f.get("result"));
         eq(where, args, "sensitive", f.get("sensitive"));
@@ -195,6 +211,28 @@ public class SystemLogController {
             where.append(" AND ").append(col).append(" = ?");
             args.add(v);
         }
+    }
+
+    /** 多值过滤：List 展开为 IN（去空去重）；非 List 退化为单值 =。 */
+    private void inList(StringBuilder where, List<Object> args, String col, Object val) {
+        java.util.LinkedHashSet<String> vals = new java.util.LinkedHashSet<>();
+        if (val instanceof List<?> list) {
+            for (Object o : list) {
+                String s = str(o);
+                if (s != null) vals.add(s);
+            }
+        } else {
+            String single = str(val);
+            if (single != null) vals.add(single);
+        }
+        if (vals.isEmpty()) return;
+        where.append(" AND ").append(col).append(" IN (");
+        for (String v : vals) {
+            where.append("?,");
+            args.add(v);
+        }
+        where.setLength(where.length() - 1);
+        where.append(")");
     }
 
     private void like(StringBuilder where, List<Object> args, String col, Object val) {
