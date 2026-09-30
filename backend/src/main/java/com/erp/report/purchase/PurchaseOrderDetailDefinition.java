@@ -72,6 +72,7 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
     public List<ReportColumnDef> columns() {
         return List.of(
                 ReportColumnDef.dim("orderNo", "订单号"),
+                ReportColumnDef.dim("bizType", "业务类型"),
                 ReportColumnDef.dim("billDate", "订单日期"),
                 ReportColumnDef.dim("statusText", "审核状态"),
                 ReportColumnDef.dim("inboundStatusText", "入库状态"),
@@ -176,6 +177,7 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
                   SELECT po.order_id AS order_id, po.order_no AS order_no, po.bill_date AS bill_date,
                          po.status AS status, po.supplier_code AS supplier_code,
                          po.supplier_name AS supplier_name, po.buyer AS buyer,
+                         po.biz_type AS biz_type,
                          (SELECT COUNT(*) FROM purchase_order_detail d0
                           LEFT JOIN rpt_dim_goods gg ON gg.goods_code = d0.goods_code
                           WHERE d0.order_id = po.order_id %1$s %2$s) AS line_cnt
@@ -194,7 +196,8 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
         // z：只 JOIN 与本页行号区间相交的单据头，页内行号 = 累计前缀 + 单内 ROW_NUMBER
         String zCte = """
                 , z AS (
-                  SELECT hdr.order_no AS order_no, hdr.bill_date AS bill_date, hdr.status AS status,
+                  SELECT hdr.order_no AS order_no, hdr.biz_type AS biz_type,
+                         hdr.bill_date AS bill_date, hdr.status AS status,
                          CASE hdr.status WHEN 'PENDING' THEN '待审核'
                                         WHEN 'APPROVED' THEN '已审核'
                                         WHEN 'AUDITED' THEN '已审核'
@@ -269,7 +272,9 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
     private static String windowFinalSelect() {
         String b = baseQty("z");
         return """
-                SELECT z.order_no AS order_no, z.bill_date AS bill_date, z.status AS status,
+                SELECT z.order_no AS order_no,
+                       CASE WHEN z.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
+                       z.bill_date AS bill_date, z.status AS status,
                        z.status_text AS status_text, z.inbound_status_text AS inbound_status_text,
                        z.supplier_code AS supplier_code, z.supplier_name AS supplier_name, z.buyer AS buyer,
                        z.goods_code AS goods_code, z.goods_name AS goods_name,
@@ -301,7 +306,9 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
     private static String legacyDetailSelect() {
         String b = baseQty("t");
         return """
-                SELECT t.order_no AS order_no, t.bill_date AS bill_date, t.status AS status,
+                SELECT t.order_no AS order_no,
+                       CASE WHEN t.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
+                       t.bill_date AS bill_date, t.status AS status,
                        CASE t.status WHEN 'PENDING' THEN '待审核'
                                      WHEN 'APPROVED' THEN '已审核'
                                      WHEN 'AUDITED' THEN '已审核'
@@ -345,6 +352,7 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
                 SELECT po.order_no AS order_no, po.bill_date AS bill_date, po.status AS status,
                        po.supplier_code AS supplier_code, po.supplier_name AS supplier_name,
                        po.buyer AS buyer, po.warehouse AS warehouse,
+                       po.biz_type AS biz_type,
                        d.goods_code AS goods_code, d.goods_name AS goods_name,
                        d.unit_name AS unit_name, d.qty AS qty_raw, d.convert_qty AS convert_qty_raw,
                        d.base_qty AS base_qty_raw, d.amount AS amount,
@@ -484,6 +492,11 @@ public class PurchaseOrderDetailDefinition implements ReportDefinition {
         if (warehouse != null) {
             sql.append(" AND ").append(po).append(".warehouse = ? ");
             if (args != null) args.add(warehouse);
+        }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append(" AND ").append(po).append(".biz_type = ? ");
+            if (args != null) args.add(bizType);
         }
     }
 

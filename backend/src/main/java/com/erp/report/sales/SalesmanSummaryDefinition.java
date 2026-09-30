@@ -245,5 +245,10 @@ public class SalesmanSummaryDefinition implements ReportDefinition {
             sql.append(" AND d.warehouse = ? ");
             args.add(warehouse);
         }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append(" AND d.biz_type = ? ");
+            args.add(bizType);
+        }
     }
 }

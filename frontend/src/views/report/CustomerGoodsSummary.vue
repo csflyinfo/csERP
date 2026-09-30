@@ -77,7 +77,7 @@ const STORE_KEY = 'rpt:customer_goods_summary:state'
 const FROM_NAME = { customer_summary: '客户销售汇总表' }
 const FROM_PATH = { customer_summary: '/report/customer-summary' }
 const DRILL_FILTER_KEYS = ['customer', 'customerLevel', 'territory', 'routeLine',
-  'salesman', 'warehouse', 'goods', 'categoryName', 'brandName', 'storageProperty']
+  'salesman', 'warehouse', 'bizType', 'goods', 'categoryName', 'brandName', 'storageProperty']
 
 const route = useRoute()
 const router = useRouter()
@@ -138,7 +138,7 @@ function applyDrillQuery() {
 function filterLabel(k) {
   return {
     customer: '客户', customerLevel: '客户等级', territory: '区域', routeLine: '路线',
-    salesman: '业务员', warehouse: '仓库', goods: '商品', categoryName: '分类',
+    salesman: '业务员', warehouse: '仓库', bizType: '业务类型', goods: '商品', categoryName: '分类',
     brandName: '品牌', storageProperty: '存储属性',
   }[k] || k
 }
@@ -276,6 +276,7 @@ function onDrill({ group, dims, row, col }) {
   const f = filters.value
   if (f.routeLine) q.routeLine = f.routeLine
   if (f.warehouse) q.warehouse = f.warehouse
+  if (f.bizType) q.bizType = f.bizType
   router.push({ path: '/report/sales-move', query: q })
 }
 
@@ -287,6 +288,7 @@ function filterText() {
   if (f.customer) parts.push(`客户：${f.customer}`)
   if (f.salesman) parts.push(`业务员：${f.salesman}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   if (f.goods) parts.push(`商品：${f.goods}`)
   return parts.join('；')
 }

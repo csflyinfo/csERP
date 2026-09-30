@@ -208,6 +208,7 @@ function onDrill({ group, dims, row, col }) {
   if (f.territory) q.territory = f.territory
   if (f.routeLine) q.routeLine = f.routeLine
   if (f.warehouse) q.warehouse = f.warehouse
+  if (f.bizType) q.bizType = f.bizType
   router.push({ path: '/report/sales-move', query: q })
 }
 
@@ -219,6 +220,7 @@ function filterText() {
   if (f.customer) parts.push(`客户：${f.customer}`)
   if (f.salesman) parts.push(`业务员：${f.salesman}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   if (f.goods) parts.push(`商品：${f.goods}`)
   if (f.categoryName) parts.push(`分类：${f.categoryName}`)
   if (f.brandName) parts.push(`品牌：${f.brandName}`)

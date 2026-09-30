@@ -6,6 +6,8 @@ import com.erp.common.api.PageResult;
 import com.erp.common.security.RequirePerm;
 import com.erp.common.util.BillNoGenerator;
 import com.erp.finance.dayclose.BizDayCloseGuard;
+import com.erp.purchase.PurchaseController;
+import com.erp.purchase.PurchaseReceiptController;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +17,12 @@ import java.time.LocalDate;
 import java.util.*;
 
 /**
- * 飞单模块：供应商直送客户，跳过仓库入库/出库。
- * <p>审核时一键生成采购订单(APPROVED) + 销售订单(APPROVED) + 应付(fin_ap) + 应收(fin_ar)。
- * <p>不调用 InventoryCostService，不写 inv_batch_stock / inv_stock_balance。
+ * 飞单模块：供应商直送客户，飞单指定一个正常状态的虚拟仓作为账面对转仓库。
+ * <p>审核时按正常采销流程一键生成并自动审核全链路：
+ * 采购订单 → 采购入库单 → 采购收货单 → 应付(fin_ap)；
+ * 销售订单 → 销售出库单 → 销售发货单(全部签收) → 应收(fin_ar)。
+ * <p>六张采销单据 biz_type='FLY_DIRECT'（飞单直发），进入采销报表取数范围并可与正常单区分。
+ * <p>虚拟仓内采购入库加库存、销售出库扣库存，批次/余额最终结存为 0，不经过实物仓。
  */
 @RestController
 public class FlyOrderController {
@@ -37,13 +42,27 @@ public class FlyOrderController {
     private final com.erp.common.security.FieldMasker fieldMasker;
     private final BizDayCloseGuard dayCloseGuard;
     private final com.erp.base.GoodsImportSupport goodsImportSupport;
+    private final PurchaseController purchaseController;
+    private final PurchaseReceiptController purchaseReceiptController;
+    private final SalesOutboundController salesOutboundController;
+    private final SalesReceiptController salesReceiptController;
+    private final com.erp.report.dws.PurchaseDwsService purchaseDwsService;
+    private final com.erp.report.dws.SalesDwsService salesDwsService;
+    private final com.erp.report.dws.ReportDimGoodsService dimGoodsService;
 
     public FlyOrderController(JdbcTemplate jdbcTemplate, BillNoGenerator billNoGen,
                               com.erp.system.OperationLogService opLog,
                               com.erp.common.security.datascope.DataScopeService dataScope,
                               com.erp.common.security.FieldMasker fieldMasker,
                               BizDayCloseGuard dayCloseGuard,
-                              com.erp.base.GoodsImportSupport goodsImportSupport) {
+                              com.erp.base.GoodsImportSupport goodsImportSupport,
+                              PurchaseController purchaseController,
+                              PurchaseReceiptController purchaseReceiptController,
+                              SalesOutboundController salesOutboundController,
+                              SalesReceiptController salesReceiptController,
+                              com.erp.report.dws.PurchaseDwsService purchaseDwsService,
+                              com.erp.report.dws.SalesDwsService salesDwsService,
+                              com.erp.report.dws.ReportDimGoodsService dimGoodsService) {
         this.jdbcTemplate = jdbcTemplate;
         this.billNoGen = billNoGen;
         this.opLog = opLog;
@@ -51,6 +70,13 @@ public class FlyOrderController {
         this.fieldMasker = fieldMasker;
         this.dayCloseGuard = dayCloseGuard;
         this.goodsImportSupport = goodsImportSupport;
+        this.purchaseController = purchaseController;
+        this.purchaseReceiptController = purchaseReceiptController;
+        this.salesOutboundController = salesOutboundController;
+        this.salesReceiptController = salesReceiptController;
+        this.purchaseDwsService = purchaseDwsService;
+        this.salesDwsService = salesDwsService;
+        this.dimGoodsService = dimGoodsService;
     }
 
     /** 飞单保存（创建/编辑）时校验商品可销售，首个违规商品抛中文异常。 */
@@ -61,8 +87,29 @@ public class FlyOrderController {
     }
 
     /**
+     * 校验仓库编码对应「状态正常的虚拟仓」，返回仓库行（含 warehouse_name）。
+     * 不存在/已停用/非虚拟仓均抛中文 IllegalArgumentException。
+     */
+    private Map<String, Object> assertNormalVirtualWarehouse(String warehouseCode) {
+        if (warehouseCode.isBlank()) throw new IllegalArgumentException("请选择仓库");
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT warehouse_code, warehouse_name, warehouse_type, status
+                FROM base_warehouse
+                WHERE warehouse_code = ? OR warehouse_id = ?
+                """, warehouseCode, warehouseCode);
+        if (rows.isEmpty()) throw new IllegalArgumentException("仓库不存在：" + warehouseCode);
+        Map<String, Object> w = rows.get(0);
+        if (!"NORMAL".equals(str(pickCS(w, "status")))) {
+            throw new IllegalArgumentException("仓库 " + str(pickCS(w, "warehouse_name")) + " 已停用，无法选择");
+        }
+        if (!"虚拟仓".equals(str(pickCS(w, "warehouse_type")))) {
+            throw new IllegalArgumentException("仓库仅可选择虚拟仓，" + str(pickCS(w, "warehouse_name")) + " 不是虚拟仓");
+        }
+        return w;
+    }
+
+    /**
      * 飞单数据范围目标：客户/供应商/业务员/建档人 + 商品分类/品牌按明细行。
-     * 飞单不经过仓库（即时购销），故无 WAREHOUSE 维度。
      */
     private com.erp.common.security.datascope.DataScopeService.ScopeTarget flyScopeTarget() {
         return dataScope.target()
@@ -84,6 +131,7 @@ public class FlyOrderController {
         String customerCode = str(req.get("customerCode"));
         String customerName = str(req.get("customerName"));
         String salesman = str(req.get("salesman"));
+        String warehouseCode = str(req.get("warehouseCode"));
         LocalDate billDate = parseDate(req.get("billDate"));
         String remark = str(req.get("remark"));
 
@@ -99,16 +147,22 @@ public class FlyOrderController {
         }
         BigDecimal profit = salesTotal.subtract(purchaseTotal);
 
+        // 仓库：仅允许状态正常的虚拟仓
+        Map<String, Object> warehouse = assertNormalVirtualWarehouse(warehouseCode);
+        String warehouseName = str(pickCS(warehouse, "warehouse_name"));
+
         // 采销准入：飞单是销售通道，设备辅材/包装物/兑换物不可销售
         assertSaleAllowed(details);
 
         jdbcTemplate.update("""
                 INSERT INTO fly_order (fly_id, fly_no, supplier_code, supplier_name, customer_code, customer_name,
-                    salesman, bill_date, purchase_amount, sales_amount, profit_amount, status, remark, creator_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
+                    salesman, warehouse_code, warehouse_name, bill_date, purchase_amount, sales_amount, profit_amount,
+                    status, remark, creator_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
                 """,
                 flyId, flyNo, supplierCode, supplierName, customerCode, customerName,
-                salesman, billDate, purchaseTotal, salesTotal, profit, remark, "系统管理员");
+                salesman, warehouseCode, warehouseName, billDate, purchaseTotal, salesTotal, profit,
+                remark, "系统管理员");
 
         for (Map<String, Object> d : details) {
             String detailId = "FDD" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
@@ -155,6 +209,7 @@ public class FlyOrderController {
         String customerCode = str(req.get("customerCode"));
         String customerName = str(req.get("customerName"));
         String salesman = str(req.get("salesman"));
+        String warehouseCode = str(req.get("warehouseCode"));
         LocalDate billDate = parseDate(req.get("billDate"));
         String remark = str(req.get("remark"));
 
@@ -170,16 +225,22 @@ public class FlyOrderController {
         }
         BigDecimal profit = salesTotal.subtract(purchaseTotal);
 
+        // 仓库：仅允许状态正常的虚拟仓
+        Map<String, Object> warehouse = assertNormalVirtualWarehouse(warehouseCode);
+        String warehouseName = str(pickCS(warehouse, "warehouse_name"));
+
         // 采销准入：改单明细同样必须满足可销售约束
         assertSaleAllowed(details);
 
         jdbcTemplate.update("""
                 UPDATE fly_order SET supplier_code=?, supplier_name=?, customer_code=?, customer_name=?,
-                    salesman=?, bill_date=?, purchase_amount=?, sales_amount=?, profit_amount=?, remark=?
+                    salesman=?, warehouse_code=?, warehouse_name=?, bill_date=?, purchase_amount=?, sales_amount=?,
+                    profit_amount=?, remark=?
                 WHERE fly_id=?
                 """,
                 supplierCode, supplierName, customerCode, customerName,
-                salesman, billDate, purchaseTotal, salesTotal, profit, remark, flyId);
+                salesman, warehouseCode, warehouseName, billDate, purchaseTotal, salesTotal, profit,
+                remark, flyId);
 
         jdbcTemplate.update("DELETE FROM fly_order_detail WHERE fly_id = ?", flyId);
         for (Map<String, Object> d : details) {
@@ -219,11 +280,12 @@ public class FlyOrderController {
         String supplierCode = filters != null ? str(filters.get("supplierCode")) : "";
         String status = filters != null ? str(filters.get("status")).trim() : "";
 
-        // 数据范围（PRD-28 §5.3）：飞单无仓库维度，按客户/供应商/业务员/建档人 + 商品明细行过滤
+        // 数据范围（PRD-28 §5.3）：按客户/供应商/业务员/建档人 + 商品明细行过滤
         var scope = flyScopeTarget().build();
         StringBuilder sql = new StringBuilder("""
                 SELECT f.fly_id, f.fly_no, f.supplier_code, f.supplier_name, f.customer_code, f.customer_name,
-                       f.salesman, f.bill_date, f.purchase_amount, f.sales_amount, f.profit_amount, f.status,
+                       f.salesman, f.warehouse_code, f.warehouse_name, f.bill_date, f.purchase_amount,
+                       f.sales_amount, f.profit_amount, f.status,
                        f.purchase_order_no, f.sales_order_no, f.remark, f.creator_name, f.create_time,
                        f.audit_user, f.audit_time
                 FROM fly_order f WHERE 1=1
@@ -243,6 +305,8 @@ public class FlyOrderController {
         List<Map<String, Object>> mapped = new ArrayList<>();
         for (Map<String, Object> r : rows) {
             Map<String, Object> row = camelize(r);
+            // 列表「仓库」列按 warehouse 取值（EXACT_TITLE_MAP），补同名别名
+            row.put("warehouse", row.get("warehouseName"));
             String st = String.valueOf(row.getOrDefault("status", ""));
             row.put("statusText", switch (st) {
                 case "DRAFT" -> "待审核";
@@ -449,12 +513,20 @@ public class FlyOrderController {
         String customerCode = str(pickCS(fly, "customer_code"));
         String customerName = str(pickCS(fly, "customer_name"));
         String salesman = str(pickCS(fly, "salesman"));
+        String warehouseCode = str(pickCS(fly, "warehouse_code"));
+        String warehouseName = str(pickCS(fly, "warehouse_name"));
+        if (warehouseCode.isBlank() || warehouseName.isBlank()) {
+            throw new IllegalArgumentException("飞单未指定仓库，无法审核");
+        }
         BigDecimal purchaseTotal = toBd(pickCS(fly, "purchase_amount"));
         BigDecimal salesTotal = toBd(pickCS(fly, "sales_amount"));
 
         // 查明细
         List<Map<String, Object>> details = jdbcTemplate.queryForList(
                 "SELECT * FROM fly_order_detail WHERE fly_id = ? ORDER BY detail_id", realFlyId);
+
+        // 同商品采购入库/销售出库使用同一批次：未指定批次时按审核日（当天）生成 YYYYMMDD
+        String todayBatch = effectiveDate.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
 
         // ============ 1. 生成采购订单 (purchase_order + pur_order) ============
         String poId = "PO" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
@@ -463,10 +535,10 @@ public class FlyOrderController {
         jdbcTemplate.update("""
                 INSERT INTO purchase_order (order_id, order_no, supplier_code, supplier_name, buyer, warehouse,
                     bill_date, amount, paid_amount, unpaid_amount, inbound_status, payment_status,
-                    status, creator_name, audit_info, remark)
-                VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, '无需入库', '未付款', 'APPROVED', ?, '飞单审核自动生成', ?)
+                    status, creator_name, audit_info, remark, biz_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '未入库', '未付款', 'APPROVED', ?, '飞单审核自动生成', ?, 'FLY_DIRECT')
                 """,
-                poId, poNo, supplierCode, supplierName, salesman, effectiveDate,
+                poId, poNo, supplierCode, supplierName, salesman, warehouseName, effectiveDate,
                 purchaseTotal, purchaseTotal, "系统管理员",
                 "飞单 " + str(pickCS(fly, "fly_no")) + " 自动生成");
 
@@ -489,9 +561,9 @@ public class FlyOrderController {
         jdbcTemplate.update("""
                 INSERT INTO pur_order (order_id, order_no, supplier, buyer, warehouse, bill_date, amount,
                     inbound_amount, payment_status, arrival_status, status, creator_info, cost_amount, audit_info)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, 0, '未付款', '无需入库', 'APPROVED', ?, ?, '飞单审核自动生成')
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, '未付款', '未入库', 'APPROVED', ?, ?, '飞单审核自动生成')
                 """,
-                poId, poNo, supplierName, salesman, effectiveDate, purchaseTotal,
+                poId, poNo, supplierName, salesman, warehouseName, effectiveDate, purchaseTotal,
                 "系统管理员", purchaseTotal);
 
         for (Map<String, Object> d : details) {
@@ -508,17 +580,62 @@ public class FlyOrderController {
                     toBd(pickCS(d, "purchase_amount")));
         }
 
-        // ============ 2. 生成销售订单 (sales_order) ============
+        // ============ 2. 采购订单 → 采购入库单（PENDING 后立即审核） ============
+        List<Map<String, Object>> inboundDetails = new ArrayList<>();
+        for (Map<String, Object> d : details) {
+            Map<String, Object> line = new HashMap<>();
+            line.put("goodsCode", str(pickCS(d, "goods_code")));
+            line.put("goodsName", str(pickCS(d, "goods_name")));
+            line.put("unitName", str(pickCS(d, "unit_name")));
+            line.put("receivedQty", toBd(pickCS(d, "qty")));
+            line.put("price", toBd(pickCS(d, "purchase_price")));
+            line.put("batchNo", todayBatch);
+            line.put("productionDate", effectiveDate.toString());
+            inboundDetails.add(line);
+        }
+        Map<String, Object> inboundReq = new HashMap<>();
+        inboundReq.put("sourceOrder", poNo);
+        inboundReq.put("supplier", supplierName);
+        inboundReq.put("warehouse", warehouseName);
+        inboundReq.put("billDate", effectiveDate.toString());
+        inboundReq.put("details", inboundDetails);
+        Map<String, Object> inboundCreated = unwrap(
+                purchaseController.createInbound(inboundReq), "生成采购入库单");
+        String inboundId = str(inboundCreated.get("inboundId"));
+        String inboundNo = str(inboundCreated.get("inboundNo"));
+        jdbcTemplate.update("UPDATE pur_inbound SET biz_type = 'FLY_DIRECT' WHERE inbound_id = ?", inboundId);
+
+        // ============ 3. 审核采购入库单（写虚拟仓库存，自动生成采购收货单） ============
+        Map<String, Object> inboundAudited = unwrap(
+                purchaseController.auditInbound(new PurchaseController.AuditRequest(inboundId, null)),
+                "审核采购入库单");
+        String cgshNo = str(inboundAudited.get("receiptNo"));
+        if (cgshNo.isBlank()) {
+            throw new IllegalArgumentException("采购入库单审核未返回收货单号：" + inboundNo);
+        }
+        List<Map<String, Object>> cgshHeads = jdbcTemplate.queryForList(
+                "SELECT receipt_id FROM pur_receipt WHERE receipt_no = ?", cgshNo);
+        if (cgshHeads.isEmpty()) throw new IllegalArgumentException("采购收货单不存在：" + cgshNo);
+        String cgshId = str(pickCS(cgshHeads.get(0), "receipt_id"));
+        jdbcTemplate.update("UPDATE pur_receipt SET biz_type = 'FLY_DIRECT' WHERE receipt_id = ?", cgshId);
+
+        // ============ 4. 审核采购收货单 → 应付 fin_ap ============
+        Map<String, Object> cgshAudited = unwrap(
+                purchaseReceiptController.auditReceipt(new PurchaseReceiptController.AuditRequest(cgshId, null)),
+                "审核采购收货单");
+        String apNo = str(cgshAudited.get("apNo"));
+
+        // ============ 5. 生成销售订单 (sales_order) ============
         String soId = "SO" + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase();
         String soNo = billNoGen.nextNo(BillNoGenerator.BillType.SALES_ORDER, "sales_order", "order_no");
 
         jdbcTemplate.update("""
                 INSERT INTO sales_order (order_id, order_no, customer, customer_code, salesman, warehouse,
                     bill_date, amount, paid_amount, unpaid_amount, outbound_status, status, cost_amount,
-                    creator_name, audit_info, remark)
-                VALUES (?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, '无需出库', 'APPROVED', ?, ?, '飞单审核自动生成', ?)
+                    creator_name, audit_info, remark, biz_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '待出库', 'APPROVED', ?, ?, '飞单审核自动生成', ?, 'FLY_DIRECT')
                 """,
-                soId, soNo, customerName, customerCode, salesman, effectiveDate,
+                soId, soNo, customerName, customerCode, salesman, warehouseName, effectiveDate,
                 salesTotal, salesTotal, purchaseTotal,
                 "系统管理员", "飞单 " + str(pickCS(fly, "fly_no")) + " 自动生成");
 
@@ -539,48 +656,89 @@ public class FlyOrderController {
                     toBd(pickCS(d, "purchase_price")), toBd(pickCS(d, "purchase_amount")));
         }
 
-        // ============ 3. 生成应付 fin_ap ============
-        String apId = "AP" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
-        String apNo = billNoGen.nextNo("AP", "fin_ap", "ap_no");
-        jdbcTemplate.update("""
-                INSERT INTO fin_ap (ap_id, ap_no, source_bill, supplier, ap_amount, paid_amount, unpaid_amount,
-                    due_date, status)
-                VALUES (?, ?, ?, ?, ?, 0, ?, DATEADD('DAY', 30, CURRENT_DATE), 'UNVERIFIED')
-                """,
-                apId, apNo, poNo, supplierName, purchaseTotal, purchaseTotal);
+        // ============ 6. 销售订单 → 销售出库单 ============
+        List<Map<String, Object>> outboundDetails = new ArrayList<>();
+        for (Map<String, Object> d : details) {
+            Map<String, Object> line = new HashMap<>();
+            line.put("goodsCode", str(pickCS(d, "goods_code")));
+            line.put("goodsName", str(pickCS(d, "goods_name")));
+            line.put("unitName", str(pickCS(d, "unit_name")));
+            line.put("qty", toBd(pickCS(d, "qty")));
+            line.put("price", toBd(pickCS(d, "sales_price")));
+            line.put("batchNo", todayBatch);
+            line.put("productionDate", effectiveDate.toString());
+            outboundDetails.add(line);
+        }
+        Map<String, Object> outboundReq = new HashMap<>();
+        outboundReq.put("sourceOrder", soNo);
+        outboundReq.put("customer", customerName);
+        outboundReq.put("warehouse", warehouseName);
+        outboundReq.put("salesman", salesman);
+        outboundReq.put("billDate", effectiveDate.toString());
+        outboundReq.put("details", outboundDetails);
+        Map<String, Object> outboundCreated = unwrap(
+                salesOutboundController.create(outboundReq), "生成销售出库单");
+        String outboundId = str(outboundCreated.get("outboundId"));
+        String outboundNo = str(outboundCreated.get("outboundNo"));
+        jdbcTemplate.update("UPDATE sales_outbound SET biz_type = 'FLY_DIRECT' WHERE outbound_id = ?", outboundId);
 
-        // ============ 4. 生成应收 fin_ar ============
-        String arId = "AR" + UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase();
-        String arNo = billNoGen.nextNo("AR", "fin_ar", "ar_no");
-        jdbcTemplate.update("""
-                INSERT INTO fin_ar (ar_id, ar_no, source_bill, customer, salesman, ar_amount,
-                    received_amount, unreceived_amount, due_date, overdue_days, invoice_status, status)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?, DATEADD('DAY', 30, CURRENT_DATE), 0, '未开票', 'UNVERIFIED')
-                """,
-                arId, arNo, soNo, customerName, salesman, salesTotal, salesTotal);
+        // ============ 7. 审核销售出库单（扣虚拟仓库存，自动生成销售发货单） ============
+        Map<String, Object> outboundAudited = unwrap(
+                salesOutboundController.audit(new SalesOutboundController.AuditRequest(outboundId, null, null, null)),
+                "审核销售出库单");
+        String xsfhNo = str(outboundAudited.get("receiptNo"));
+        if (xsfhNo.isBlank()) throw new IllegalArgumentException("销售出库单审核未返回发货单号：" + outboundNo);
+        List<Map<String, Object>> xsfhHeads = jdbcTemplate.queryForList(
+                "SELECT receipt_id FROM sales_receipt WHERE receipt_no = ?", xsfhNo);
+        if (xsfhHeads.isEmpty()) throw new IllegalArgumentException("销售发货单不存在：" + xsfhNo);
+        String xsfhId = str(pickCS(xsfhHeads.get(0), "receipt_id"));
+        jdbcTemplate.update("UPDATE sales_receipt SET biz_type = 'FLY_DIRECT' WHERE receipt_id = ?", xsfhId);
 
-        // ============ 5. 更新飞单状态 ============
+        // ============ 8. 销售发货单全部签收（自动审核生成应收 fin_ar） ============
+        Map<String, Object> signed = unwrap(
+                salesReceiptController.sign(Map.of("receiptId", xsfhId)), "销售发货单签收");
+        String arNo = str(signed.get("arNo"));
+        if (arNo.isBlank()) throw new IllegalArgumentException("发货单签收未生成应收单号：" + xsfhNo);
+
+        // ============ 9. 更新飞单状态与全链路单据引用 ============
         // 业务日结【回填】：头表业务日期回填为审核生效日（当天）
         jdbcTemplate.update("""
                 UPDATE fly_order SET status = 'APPROVED', bill_date = CURRENT_DATE,
                     purchase_order_id = ?, purchase_order_no = ?,
-                    sales_order_id = ?, sales_order_no = ?, audit_user = ?, audit_time = CURRENT_TIMESTAMP,
-                    audit_info = ?
+                    inbound_id = ?, inbound_no = ?, receipt_id = ?, receipt_no = ?,
+                    sales_order_id = ?, sales_order_no = ?,
+                    outbound_id = ?, outbound_no = ?, delivery_id = ?, delivery_no = ?,
+                    audit_user = ?, audit_time = CURRENT_TIMESTAMP, audit_info = ?
                 WHERE fly_id = ?
                 """,
-                poId, poNo, soId, soNo, "系统管理员",
-                "审核通过：采购单 " + poNo + " + 销售单 " + soNo + " + 应付 " + apNo + " + 应收 " + arNo,
+                poId, poNo, inboundId, inboundNo, cgshId, cgshNo,
+                soId, soNo, outboundId, outboundNo, xsfhId, xsfhNo,
+                "系统管理员",
+                "审核通过：采购订单 " + poNo + " + 采购入库单 " + inboundNo + " + 采购收货单 " + cgshNo
+                        + " + 应付 " + apNo + "；销售订单 " + soNo + " + 销售出库单 " + outboundNo
+                        + " + 销售发货单 " + xsfhNo + " + 应收 " + arNo,
                 realFlyId);
+
+        // ============ 10. 刷新维度与当日采销 DWS，报表立即可见 ============
+        dimGoodsService.refreshAll();
+        purchaseDwsService.refreshRange(effectiveDate, effectiveDate);
+        salesDwsService.refreshRange(effectiveDate, effectiveDate);
 
         Map<String, Object> out = new HashMap<>();
         out.put("flyId", realFlyId);
         out.put("status", "APPROVED");
         out.put("purchaseOrderNo", poNo);
+        out.put("inboundNo", inboundNo);
+        out.put("cgshNo", cgshNo);
         out.put("salesOrderNo", soNo);
+        out.put("outboundNo", outboundNo);
+        out.put("xsfhNo", xsfhNo);
         out.put("apNo", apNo);
         out.put("arNo", arNo);
         out.put("success", true);
-        out.put("effect", "已生成采购订单(" + poNo + ") + 销售订单(" + soNo + ") + 应付(" + apNo + ") + 应收(" + arNo + ")，未经过仓库");
+        out.put("effect", "已生成采购订单(" + poNo + ")→采购入库单(" + inboundNo + ")→采购收货单(" + cgshNo
+                + ")→应付(" + apNo + ")；销售订单(" + soNo + ")→销售出库单(" + outboundNo
+                + ")→销售发货单(" + xsfhNo + ")→应收(" + arNo + ")");
         flyLog(com.erp.system.OperationAction.AUDIT,
                 String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
                 "审核快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
@@ -610,60 +768,145 @@ public class FlyOrderController {
         dayCloseGuard.assertBillWritable("fly_order", "bill_date", "fly_id", realFlyId, "快速开单");
 
         String poNo = str(pickCS(fly, "purchase_order_no"));
+        String inboundNo = str(pickCS(fly, "inbound_no"));
+        String cgshNo = str(pickCS(fly, "receipt_no"));
         String soNo = str(pickCS(fly, "sales_order_no"));
+        String outboundNo = str(pickCS(fly, "outbound_no"));
+        String xsfhNo = str(pickCS(fly, "delivery_no"));
+        String warehouseName = str(pickCS(fly, "warehouse_name"));
 
-        // 检查是否已付款/收款
-        if (!poNo.isBlank()) {
+        // 付款守卫：应付来源采购收货单、应收来源销售发货单（新链路 AP/AR 的 source_bill 不再是订单号）
+        if (!cgshNo.isBlank()) {
             List<Map<String, Object>> apRows = jdbcTemplate.queryForList(
-                    "SELECT paid_amount FROM fin_ap WHERE source_bill = ?", poNo);
+                    "SELECT paid_amount FROM fin_ap WHERE source_bill = ?", cgshNo);
             for (Map<String, Object> ap : apRows) {
                 if (toBd(pickCS(ap, "paid_amount")).signum() > 0) {
-                    return ApiResponse.fail("400", "采购订单 " + poNo + " 已有付款记录，无法反审核");
+                    return ApiResponse.fail("400", "采购收货单 " + cgshNo + " 已有付款记录，无法反审核");
                 }
             }
         }
-        if (!soNo.isBlank()) {
+        if (!xsfhNo.isBlank()) {
             List<Map<String, Object>> arRows = jdbcTemplate.queryForList(
-                    "SELECT received_amount FROM fin_ar WHERE source_bill = ?", soNo);
+                    "SELECT received_amount FROM fin_ar WHERE source_bill = ?", xsfhNo);
             for (Map<String, Object> ar : arRows) {
                 if (toBd(pickCS(ar, "received_amount")).signum() > 0) {
-                    return ApiResponse.fail("400", "销售订单 " + soNo + " 已有收款记录，无法反审核");
+                    return ApiResponse.fail("400", "销售发货单 " + xsfhNo + " 已有收款记录，无法反审核");
                 }
             }
         }
 
-        // 删除关联单据
-        if (!poNo.isBlank()) {
-            // 删 fin_ap
-            jdbcTemplate.update("DELETE FROM fin_ap WHERE source_bill = ?", poNo);
-            // 删 pur_order_detail + pur_order
-            jdbcTemplate.update("DELETE FROM pur_order_detail WHERE order_id IN (SELECT order_id FROM pur_order WHERE order_no = ?)", poNo);
-            jdbcTemplate.update("DELETE FROM pur_order WHERE order_no = ?", poNo);
-            // 删 purchase_order_detail + purchase_order
-            jdbcTemplate.update("DELETE FROM purchase_order_detail WHERE order_id IN (SELECT order_id FROM purchase_order WHERE order_no = ?)", poNo);
-            jdbcTemplate.update("DELETE FROM purchase_order WHERE order_no = ?", poNo);
-        }
-        if (!soNo.isBlank()) {
-            // 删 fin_ar
-            jdbcTemplate.update("DELETE FROM fin_ar WHERE source_bill = ?", soNo);
-            // 删 sales_order_detail + sales_order
-            jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id IN (SELECT order_id FROM sales_order WHERE order_no = ?)", soNo);
-            jdbcTemplate.update("DELETE FROM sales_order WHERE order_no = ?", soNo);
+        // 退货守卫：已对该出库单发起销售退货申请（含草稿）时拦截，避免删单后退货链路悬空
+        if (!outboundNo.isBlank()) {
+            Integer returnApplies = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sales_return_apply WHERE source_outbound_no = ?",
+                    Integer.class, outboundNo);
+            if (returnApplies != null && returnApplies > 0) {
+                return ApiResponse.fail("400", "销售出库单 " + outboundNo + " 已存在销售退货申请，无法反审核");
+            }
         }
 
-        // 飞单回退到草稿
+        // 批次安全守卫：收集本单入库批次，批次结存必须为 0 且除本单入库/出库外无其他流水
+        // （采购退货、调拨、其他飞单共用批次等都会以"其他来源流水"被识别）
+        List<Map<String, Object>> batchRows = jdbcTemplate.queryForList("""
+                SELECT DISTINCT batch_no AS bn FROM pur_inbound_detail
+                WHERE inbound_id = (SELECT inbound_id FROM pur_inbound WHERE inbound_no = ?)
+                """, inboundNo);
+        List<String> goodsCodes = new ArrayList<>();
+        for (Map<String, Object> br : batchRows) {
+            String batchNo = str(pickCS(br, "bn"));
+            List<Map<String, Object>> batchStocks = jdbcTemplate.queryForList("""
+                    SELECT goods_code AS gc, COALESCE(qty,0) AS q, COALESCE(locked_qty,0) AS lq
+                    FROM inv_batch_stock WHERE warehouse = ? AND batch_no = ?
+                    """, warehouseName, batchNo);
+            for (Map<String, Object> bs : batchStocks) {
+                goodsCodes.add(str(pickCS(bs, "gc")));
+                if (toBd(pickCS(bs, "q")).signum() != 0 || toBd(pickCS(bs, "lq")).signum() != 0) {
+                    throw new IllegalArgumentException("批次 " + batchNo + " 结存不为 0，无法反审核");
+                }
+            }
+            Integer otherLedgers = jdbcTemplate.queryForObject("""
+                    SELECT COUNT(*) FROM inv_stock_ledger
+                    WHERE warehouse = ? AND batch_no = ?
+                      AND COALESCE(source_bill, '') NOT IN (?, ?)
+                    """, Integer.class, warehouseName, batchNo, inboundNo, outboundNo);
+            if (otherLedgers != null && otherLedgers > 0) {
+                return ApiResponse.fail("400", "批次 " + batchNo + " 已被其他单据引用，无法反审核");
+            }
+        }
+
+        // 1. 删应收 + 销售发货单（先确认无拒收入库引用；飞单全签收本就不生成 JSRK）
+        jdbcTemplate.update("DELETE FROM fin_ar WHERE source_bill = ?", xsfhNo);
+        jdbcTemplate.update(
+                "DELETE FROM sales_receipt_detail WHERE receipt_id IN "
+                        + "(SELECT receipt_id FROM sales_receipt WHERE receipt_no = ?)", xsfhNo);
+        jdbcTemplate.update("DELETE FROM sales_receipt WHERE receipt_no = ?", xsfhNo);
+
+        // 2. 删本单库存流水 + 批次库存 + 商品余额（结存已校验为 0）
+        jdbcTemplate.update("""
+                DELETE FROM inv_stock_ledger
+                WHERE warehouse = ? AND source_bill IN (?, ?)
+                """, warehouseName, inboundNo, outboundNo);
+        for (Map<String, Object> br : batchRows) {
+            jdbcTemplate.update("DELETE FROM inv_batch_stock WHERE warehouse = ? AND batch_no = ?",
+                    warehouseName, str(pickCS(br, "bn")));
+        }
+        for (String goodsCode : new LinkedHashSet<>(goodsCodes)) {
+            jdbcTemplate.update("""
+                    DELETE FROM inv_stock_balance
+                    WHERE warehouse = ? AND goods_code = ?
+                      AND COALESCE(physical_qty,0) = 0 AND COALESCE(locked_qty,0) = 0
+                    """, warehouseName, goodsCode);
+        }
+
+        // 3. 删销售出库单
+        jdbcTemplate.update(
+                "DELETE FROM sales_outbound_detail WHERE outbound_id IN "
+                        + "(SELECT outbound_id FROM sales_outbound WHERE outbound_no = ?)", outboundNo);
+        jdbcTemplate.update("DELETE FROM sales_outbound WHERE outbound_no = ?", outboundNo);
+
+        // 4. 删应付 + 采购收货单
+        jdbcTemplate.update("DELETE FROM fin_ap WHERE source_bill = ?", cgshNo);
+        jdbcTemplate.update(
+                "DELETE FROM pur_receipt_detail WHERE receipt_id IN "
+                        + "(SELECT receipt_id FROM pur_receipt WHERE receipt_no = ?)", cgshNo);
+        jdbcTemplate.update("DELETE FROM pur_receipt WHERE receipt_no = ?", cgshNo);
+
+        // 5. 删采购入库单
+        jdbcTemplate.update(
+                "DELETE FROM pur_inbound_detail WHERE inbound_id IN "
+                        + "(SELECT inbound_id FROM pur_inbound WHERE inbound_no = ?)", inboundNo);
+        jdbcTemplate.update("DELETE FROM pur_inbound WHERE inbound_no = ?", inboundNo);
+
+        // 6. 删 legacy pur_order + purchase_order
+        jdbcTemplate.update("DELETE FROM pur_order_detail WHERE order_id IN (SELECT order_id FROM pur_order WHERE order_no = ?)", poNo);
+        jdbcTemplate.update("DELETE FROM pur_order WHERE order_no = ?", poNo);
+        jdbcTemplate.update("DELETE FROM purchase_order_detail WHERE order_id IN (SELECT order_id FROM purchase_order WHERE order_no = ?)", poNo);
+        jdbcTemplate.update("DELETE FROM purchase_order WHERE order_no = ?", poNo);
+
+        // 7. 删销售订单
+        jdbcTemplate.update("DELETE FROM sales_order_detail WHERE order_id IN (SELECT order_id FROM sales_order WHERE order_no = ?)", soNo);
+        jdbcTemplate.update("DELETE FROM sales_order WHERE order_no = ?", soNo);
+
+        // 飞单回退到草稿，清空全链路引用
         jdbcTemplate.update("""
                 UPDATE fly_order SET status = 'DRAFT', purchase_order_id = NULL, purchase_order_no = NULL,
-                    sales_order_id = NULL, sales_order_no = NULL, audit_user = NULL, audit_time = NULL,
-                    audit_info = NULL
+                    inbound_id = NULL, inbound_no = NULL, receipt_id = NULL, receipt_no = NULL,
+                    sales_order_id = NULL, sales_order_no = NULL,
+                    outbound_id = NULL, outbound_no = NULL, delivery_id = NULL, delivery_no = NULL,
+                    audit_user = NULL, audit_time = NULL, audit_info = NULL
                 WHERE fly_id = ?
                 """, realFlyId);
+
+        // 刷新当日采销 DWS，反审核后报表不再含本单
+        LocalDate billDate = parseDate(pickCS(fly, "bill_date"));
+        purchaseDwsService.refreshRange(billDate, billDate);
+        salesDwsService.refreshRange(billDate, billDate);
 
         flyLog(com.erp.system.OperationAction.UN_AUDIT,
                 String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))),
                 "反审核快速开单 " + String.valueOf(req.getOrDefault("flyNo", req.getOrDefault("flyId", ""))));
         return ApiResponse.ok(Map.of("flyId", realFlyId, "status", "DRAFT", "success", true,
-                "effect", "已删除关联的采购订单、销售订单、应付和应收单据"));
+                "effect", "已删除全链路采销单据（采购订单/入库单/收货单/应付、销售订单/出库单/发货单/应收）及对应库存流水"));
     }
 
     // ====================== 作废 ======================
@@ -795,7 +1038,8 @@ public class FlyOrderController {
         // 导出与列表同一数据范围口径，防止绕过列表限制拉全部（PRD-28 §5.3）
         var scope = flyScopeTarget().build();
         StringBuilder sql = new StringBuilder("""
-                SELECT fly_no AS 飞单号, supplier_name AS 供应商, customer_name AS 客户, salesman AS 业务员,
+                SELECT fly_no AS 飞单号, warehouse_name AS 仓库, supplier_name AS 供应商, customer_name AS 客户,
+                       salesman AS 业务员,
                        bill_date AS 单据日期, purchase_amount AS 采购金额, sales_amount AS 销售金额,
                        profit_amount AS 毛利, status AS 状态,
                        purchase_order_no AS 关联采购单, sales_order_no AS 关联销售单,
@@ -868,6 +1112,14 @@ public class FlyOrderController {
     /** PRD-31 快速开单操作日志：统一走 OperationLogService。注意：日志文案不得包含采购价/利润等敏感数值。 */
     private void flyLog(String action, String flyNo, String detail) {
         opLog.log("sales.flyOrder", action, "fly_order", null, flyNo, detail);
+    }
+
+    /** 内部链路调用结果解包：非成功（或无数据）抛中文异常，由调用方事务统一回滚。 */
+    private static Map<String, Object> unwrap(ApiResponse<Map<String, Object>> resp, String step) {
+        if (resp == null || !"0".equals(resp.code()) || resp.data() == null) {
+            throw new IllegalArgumentException(step + "失败：" + (resp == null ? "无响应" : resp.message()));
+        }
+        return resp.data();
     }
 
     private static String str(Object o) { return o == null ? "" : String.valueOf(o); }

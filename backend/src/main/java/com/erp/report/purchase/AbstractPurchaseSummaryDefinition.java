@@ -249,6 +249,11 @@ public abstract class AbstractPurchaseSummaryDefinition implements ReportDefinit
             sql.append(" AND d.warehouse = ? ");
             args.add(warehouse);
         }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append(" AND d.biz_type = ? ");
+            args.add(bizType);
+        }
         String goods = req.text("goods");
         if (goods != null) {
             // 条码在商品维度表：IN 半连接（子查询只跑一次），编码/名称走 DWS 冗余列

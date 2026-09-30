@@ -36,6 +36,14 @@
         </select>
       </div>
       <div class="ff"><label>单据号</label><input v-model="filters.billNo" placeholder="发货/退货入库单号" @keyup.enter="onSearch"></div>
+      <div class="ff">
+        <label>业务类型</label>
+        <select v-model="filters.bizType" @change="onSearch">
+          <option value="">全部</option>
+          <option value="NORMAL">正常</option>
+          <option value="FLY_DIRECT">飞单直发</option>
+        </select>
+      </div>
       <div class="ff"><label>客户</label><input v-model="filters.customer" placeholder="编号/名称" @keyup.enter="onSearch"></div>
       <div class="ff">
         <label>仓库</label>
@@ -136,7 +144,7 @@ const FROM_PATH = {
   salesman_goods_summary: '/report/salesman-goods-summary',
 }
 const DRILL_FILTER_KEYS = ['billType', 'billNo', 'sourceBillNo', 'customer', 'salesman',
-  'driver', 'territory', 'routeLine', 'warehouse', 'goods', 'categoryName', 'brandName', 'storageProperty']
+  'driver', 'territory', 'routeLine', 'warehouse', 'bizType', 'goods', 'categoryName', 'brandName', 'storageProperty']
 
 const route = useRoute()
 const router = useRouter()
@@ -153,6 +161,7 @@ const GROUP_META = [
   { key: 'salesman', title: '业务员', outputKey: 'salesman' },
   { key: 'territory', title: '区域', outputKey: 'territory' },
   { key: 'warehouse', title: '仓库', outputKey: 'warehouse' },
+  { key: 'bizType', title: '业务类型', outputKey: 'bizType' },
   { key: 'goods', title: '商品', outputKey: 'goodsName' },
   { key: 'category', title: '商品类别', outputKey: 'categoryName' },
   { key: 'brand', title: '品牌', outputKey: 'brandName' },
@@ -178,6 +187,7 @@ const drillBanner = ref(null)
 // 键名与后端 SalesMoveDetailDefinition 28 列严格一致
 const ALL_COLUMNS = [
   { key: 'billNo', title: '单据号', link: true, width: 150, sortable: true },
+  { key: 'bizType', title: '业务类型', width: 90 },
   { key: 'billDate', title: '单据日期', width: 100, sortable: true },
   { key: 'billType', title: '单据类型', width: 90 },
   { key: 'sourceBillNo', title: '销售订单号', width: 150 },
@@ -213,6 +223,7 @@ const GROUP_DIM_COLUMNS = {
   salesman: { key: 'salesman', title: '业务员', width: 90 },
   territory: { key: 'territory', title: '区域', width: 90 },
   warehouse: { key: 'warehouse', title: '仓库', width: 90 },
+  bizType: { key: 'bizType', title: '业务类型', width: 90 },
   goods: { key: 'goodsName', title: '商品名称', width: 180 },
   category: { key: 'categoryName', title: '商品类别', width: 110 },
   brand: { key: 'brandName', title: '品牌', width: 110 },
@@ -267,8 +278,8 @@ function filterLabel(k) {
   return {
     billType: '类型', billNo: '单据号', sourceBillNo: '订单号', customer: '客户',
     salesman: '业务员', driver: '司机', territory: '区域', routeLine: '路线',
-    warehouse: '仓库', goods: '商品', categoryName: '分类', brandName: '品牌',
-    storageProperty: '存储属性',
+    warehouse: '仓库', bizType: '业务类型', goods: '商品', categoryName: '分类',
+    brandName: '品牌', storageProperty: '存储属性',
   }[k] || k
 }
 
@@ -339,6 +350,7 @@ function filterText() {
   if (f.salesman) parts.push(`业务员：${f.salesman}`)
   if (f.driver) parts.push(`司机：${f.driver}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   if (f.goods) parts.push(`商品：${f.goods}`)
   return parts.join('；')
 }

@@ -34,6 +34,14 @@
         </select>
       </div>
       <div class="ff"><label>单据号</label><input v-model="filters.billNo" placeholder="入库/退货单号" @keyup.enter="onSearch"></div>
+      <div class="ff">
+        <label>业务类型</label>
+        <select v-model="filters.bizType" @change="onSearch">
+          <option value="">全部</option>
+          <option value="NORMAL">正常</option>
+          <option value="FLY_DIRECT">飞单直发</option>
+        </select>
+      </div>
       <div class="ff"><label>供应商</label><input v-model="filters.supplier" placeholder="编号/名称" @keyup.enter="onSearch"></div>
       <div class="ff">
         <label>仓库</label>
@@ -151,6 +159,7 @@ const GROUP_META = [
   { key: 'supplier', title: '供应商', outputKey: 'supplierName' },
   { key: 'buyer', title: '采购员', outputKey: 'buyer' },
   { key: 'warehouse', title: '仓库', outputKey: 'warehouse' },
+  { key: 'bizType', title: '业务类型', outputKey: 'bizType' },
   { key: 'goods', title: '商品', outputKey: 'goodsName' },
   { key: 'category', title: '商品类别', outputKey: 'categoryName' },
   { key: 'brand', title: '品牌', outputKey: 'brandName' },
@@ -173,6 +182,7 @@ const treeGroupKeys = computed(() =>
 
 const ALL_COLUMNS = [
   { key: 'billNo', title: '单据号', link: true, width: 150, sortable: true },
+  { key: 'bizType', title: '业务类型', width: 90 },
   { key: 'billDate', title: '单据日期', width: 100, sortable: true },
   { key: 'billType', title: '单据类型', width: 90 },
   { key: 'sourceBillNo', title: '源单号', width: 150 },
@@ -200,6 +210,7 @@ const GROUP_DIM_COLUMNS = {
   supplier: { key: 'supplierName', title: '供应商', width: 160 },
   buyer: { key: 'buyer', title: '采购员', width: 90 },
   warehouse: { key: 'warehouse', title: '仓库', width: 90 },
+  bizType: { key: 'bizType', title: '业务类型', width: 90 },
   goods: { key: 'goodsName', title: '商品名称', width: 180 },
   category: { key: 'categoryName', title: '商品类别', width: 110 },
   brand: { key: 'brandName', title: '品牌', width: 110 },
@@ -218,7 +229,7 @@ const visibleColumns = computed(() => {
   return [...dims, ...GROUP_MEASURE_COLUMNS]
 })
 
-const DRILL_FILTER_KEYS = ['billType', 'supplier', 'buyer', 'warehouse', 'goods', 'categoryName', 'brandName', 'storageProperty']
+const DRILL_FILTER_KEYS = ['billType', 'supplier', 'buyer', 'warehouse', 'bizType', 'goods', 'categoryName', 'brandName', 'storageProperty']
 
 onMounted(async () => {
   dicts.load().catch(() => {})
@@ -252,7 +263,7 @@ function applyDrillQuery() {
 
 function filterLabel(k) {
   return {
-    billType: '类型', supplier: '供应商', buyer: '采购员', warehouse: '仓库',
+    billType: '类型', supplier: '供应商', buyer: '采购员', warehouse: '仓库', bizType: '业务类型',
     goods: '商品', categoryName: '分类', brandName: '品牌', storageProperty: '存储属性',
   }[k] || k
 }
@@ -328,6 +339,7 @@ function filterText() {
   if (f.supplier) parts.push(`供应商：${f.supplier}`)
   if (f.buyer) parts.push(`采购员：${f.buyer}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   if (f.goods) parts.push(`商品：${f.goods}`)
   return parts.join('；')
 }

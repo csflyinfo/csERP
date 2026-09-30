@@ -51,6 +51,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
     public List<ReportColumnDef> columns() {
         return List.of(
                 ReportColumnDef.dim("billNo", "单据号"),
+                ReportColumnDef.dim("bizType", "业务类型"),
                 ReportColumnDef.dim("billDate", "单据日期"),
                 ReportColumnDef.dim("billType", "单据类型"),
                 ReportColumnDef.dim("sourceBillNo", "源单号"),
@@ -84,7 +85,8 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
             Map.entry("goods", "v.goods_code"),
             Map.entry("category", "g.category_name"),
             Map.entry("brand", "g.brand_name"),
-            Map.entry("storage", "g.storage_property"));
+            Map.entry("storage", "g.storage_property"),
+            Map.entry("bizType", "v.biz_type"));
 
     @Override
     public Plan build(ReportQueryRequest req) {
@@ -150,6 +152,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         }
         appendLike(req, plan, "buyer", "v.buyer");
         appendEq(req, plan, "warehouse", "v.warehouse");
+        appendEq(req, plan, "bizType", "v.biz_type");
         String goods = req.text("goods");
         if (goods != null) {
             plan.fromWhere.append(" AND (v.goods_code LIKE ? OR v.goods_name LIKE ? OR g.barcode LIKE ?) ");
@@ -212,6 +215,10 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
                 case "storage" -> {
                     dims.append("       g.storage_property AS storage_property,\n");
                     groupBy.append("g.storage_property, ");
+                }
+                case "bizType" -> {
+                    dims.append("       CASE WHEN v.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,\n");
+                    groupBy.append("v.biz_type, ");
                 }
                 default -> { }
             }
@@ -278,6 +285,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         // K5：小单位单价=金额÷基本数量；退货行金额/数量同为负，相除单价自然为正（红冲负数量、正单价）。
         plan.detailSelect = """
                 SELECT v.bill_no AS bill_no, v.bill_date AS bill_date, v.bill_type AS bill_type,
+                       CASE WHEN v.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
                        CASE WHEN v.source_bill_no IS NULL OR v.source_bill_no = ''
                             THEN '无订单采购' ELSE v.source_bill_no END AS source_bill_no,
                        v.supplier_code AS supplier_code, v.supplier_name AS supplier_name,
@@ -436,6 +444,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         sb.append("         h.supplier AS supplier_name,\n");
         sb.append("         COALESCE(po.buyer, sup.default_buyer, '') AS buyer,\n");
         sb.append("         h.warehouse AS header_warehouse,\n");
+        sb.append("         h.biz_type AS biz_type,\n");
         sb.append("         (SELECT COUNT(*) FROM pur_inbound_detail d\n");
         sb.append("          LEFT JOIN rpt_dim_goods gg ON gg.goods_code = d.goods_code\n");
         sb.append("          WHERE d.inbound_id = h.inbound_id\n");
@@ -450,7 +459,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         args.add(req.range().endDate());
         appendHeaderPreds(req, sb, args, "h.inbound_no", "h.source_order",
                 "sup.supplier_code", "h.supplier",
-                "COALESCE(po.buyer, sup.default_buyer, '')");
+                "COALESCE(po.buyer, sup.default_buyer, '')", "h.biz_type");
         hScope.appendTo(sb, args);
         return sb.toString();
     }
@@ -467,6 +476,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         sb.append("         h.supplier_name AS supplier_name,\n");
         sb.append("         COALESCE(sup.default_buyer, '') AS buyer,\n");
         sb.append("         h.warehouse AS header_warehouse,\n");
+        sb.append("         'NORMAL' AS biz_type,\n");
         sb.append("         (SELECT COUNT(*) FROM pur_return_detail d\n");
         sb.append("          LEFT JOIN rpt_dim_goods gg ON gg.goods_code = d.goods_code\n");
         sb.append("          WHERE d.return_id = h.return_id\n");
@@ -479,7 +489,8 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         args.add(req.range().startDate());
         args.add(req.range().endDate());
         appendHeaderPreds(req, sb, args, "h.return_no", "h.source_apply_no",
-                "h.supplier_code", "h.supplier_name", "COALESCE(sup.default_buyer, '')");
+                "h.supplier_code", "h.supplier_name", "COALESCE(sup.default_buyer, '')",
+                "'NORMAL'");
         hScope.appendTo(sb, args);
         return sb.toString();
     }
@@ -490,6 +501,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         StringBuilder sb = new StringBuilder();
         sb.append("  SELECT 'I' AS doc_type, hdr.doc_id, hdr.bill_no, hdr.bill_date, hdr.source_bill_no,\n");
         sb.append("         hdr.supplier_code, hdr.supplier_name, hdr.buyer, hdr.header_warehouse,\n");
+        sb.append("         hdr.biz_type,\n");
         sb.append("         d.goods_code, d.goods_name, d.unit_name AS order_unit,\n");
         sb.append("         d.received_qty AS order_qty, d.warehouse AS line_warehouse,\n");
         sb.append("         d.amount AS raw_amount, CAST(0 AS DECIMAL(18,2)) AS tax_amount,\n");
@@ -521,6 +533,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         StringBuilder sb = new StringBuilder();
         sb.append("  SELECT 'R' AS doc_type, hdr.doc_id, hdr.bill_no, hdr.bill_date, hdr.source_bill_no,\n");
         sb.append("         hdr.supplier_code, hdr.supplier_name, hdr.buyer, hdr.header_warehouse,\n");
+        sb.append("         hdr.biz_type,\n");
         sb.append("         d.goods_code, d.goods_name, d.unit_name AS order_unit,\n");
         sb.append("         -d.qty AS order_qty, CAST(NULL AS VARCHAR(100)) AS line_warehouse,\n");
         sb.append("         -d.amount AS raw_amount, -COALESCE(d.tax_amount,0) AS tax_amount,\n");
@@ -556,6 +569,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         return """
                 SELECT z.bill_no AS bill_no, z.bill_date AS bill_date,
                        CASE z.doc_type WHEN 'I' THEN '采购入库' WHEN 'R' THEN '采购退货' END AS bill_type,
+                       CASE WHEN z.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
                        CASE WHEN z.source_bill_no IS NULL OR z.source_bill_no = ''
                             THEN '无订单采购' ELSE z.source_bill_no END AS source_bill_no,
                        z.supplier_code AS supplier_code, z.supplier_name AS supplier_name,
@@ -582,7 +596,7 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
     private static void appendHeaderPreds(ReportQueryRequest req, StringBuilder sql, List<Object> args,
                                           String billNoCol, String sourceCol,
                                           String supplierCodeCol, String supplierNameCol,
-                                          String buyerExpr) {
+                                          String buyerExpr, String bizTypeExpr) {
         String billNo = req.text("billNo");
         if (billNo != null) {
             sql.append("  AND ").append(billNoCol).append(" LIKE ?\n");
@@ -604,6 +618,11 @@ public class PurchaseMoveDetailDefinition implements ReportDefinition {
         if (buyer != null) {
             sql.append("  AND ").append(buyerExpr).append(" LIKE ?\n");
             args.add("%" + buyer + "%");
+        }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append("  AND ").append(bizTypeExpr).append(" = ?\n");
+            args.add(bizType);
         }
     }
 

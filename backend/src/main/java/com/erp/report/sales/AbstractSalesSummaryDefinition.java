@@ -290,6 +290,7 @@ public abstract class AbstractSalesSummaryDefinition implements ReportDefinition
             sql.append(" AND d.warehouse = ? ");
             args.add(warehouse);
         }
+        appendEq(req, sql, args, "bizType", "d.biz_type");
         String goods = req.text("goods");
         if (goods != null) {
             sql.append(" AND (d.goods_code LIKE ? OR d.goods_name LIKE ?")

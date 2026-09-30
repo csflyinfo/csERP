@@ -35,7 +35,7 @@ public class PurchaseDwsService {
         int rows = jdbc.update("""
                 INSERT INTO rpt_dws_purchase_d
                     (bill_date, supplier_code, supplier_name, supplier_type, buyer, goods_code,
-                     warehouse, goods_name, brand_name, category_name, storage_property,
+                     warehouse, goods_name, brand_name, category_name, storage_property, biz_type,
                      inbound_qty_base, inbound_package_qty, inbound_amount,
                      return_qty_base, return_package_qty, return_amount, updated_at)
                 SELECT v.bill_date, v.supplier_code, MAX(v.supplier_name),
@@ -43,6 +43,7 @@ public class PurchaseDwsService {
                        v.goods_code, v.warehouse,
                        MAX(dg.goods_name), MAX(dg.brand_name), MAX(dg.category_name),
                        MAX(dg.storage_property),
+                       COALESCE(MAX(v.biz_type), 'NORMAL'),
                        SUM(CASE WHEN v.base_qty > 0 THEN v.base_qty ELSE 0 END),
                        SUM(CASE WHEN v.base_qty > 0 AND COALESCE(dg.large_convert_qty,0) > 0
                                 THEN v.base_qty / dg.large_convert_qty
@@ -58,7 +59,7 @@ public class PurchaseDwsService {
                 LEFT JOIN rpt_dim_goods dg ON dg.goods_code = v.goods_code
                 LEFT JOIN base_supplier sup ON sup.supplier_code = v.supplier_code
                 WHERE v.bill_date BETWEEN ? AND ?
-                GROUP BY v.bill_date, v.supplier_code, v.buyer, v.goods_code, v.warehouse
+                GROUP BY v.bill_date, v.supplier_code, v.buyer, v.goods_code, v.warehouse, v.biz_type
                 """, start, end);
         log.info("rpt_dws_purchase_d 重算 {} ~ {} 完成：{} 行", start, end, rows);
         return rows;

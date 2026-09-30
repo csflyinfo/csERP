@@ -14,6 +14,14 @@
       <option v-for="w in warehouses" :key="w" :value="w">{{ w }}</option>
     </select>
   </div>
+  <div class="ff">
+    <label>业务类型</label>
+    <select v-model="filters.bizType" @change="$emit('search')">
+      <option value="">全部</option>
+      <option value="NORMAL">正常</option>
+      <option value="FLY_DIRECT">飞单直发</option>
+    </select>
+  </div>
   <div class="ff"><label>商品</label><input v-model="filters.goods" placeholder="编号/名称/条码" @keyup.enter="$emit('search')"></div>
   <div class="ff"><label>商品分类</label><input v-model="filters.categoryName" @keyup.enter="$emit('search')"></div>
   <div class="ff"><label>品牌</label><input v-model="filters.brandName" @keyup.enter="$emit('search')"></div>

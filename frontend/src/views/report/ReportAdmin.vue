@@ -112,6 +112,9 @@ async function doSnapshot() {
 <style scoped>
 @import './report-page.css';
 
+/* 运维页是表单卡片而非固定表格窗口，保留整页滚动 */
+.rpt-page { overflow: auto; }
+
 .admin-card {
   background: #fff;
   border-radius: 6px;

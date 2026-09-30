@@ -31,6 +31,14 @@
         </select>
       </div>
       <div class="ff">
+        <label>业务类型</label>
+        <select v-model="filters.bizType" @change="onSearch">
+          <option value="">全部</option>
+          <option value="NORMAL">正常</option>
+          <option value="FLY_DIRECT">飞单直发</option>
+        </select>
+      </div>
+      <div class="ff">
         <label>入库状态</label>
         <select v-model="filters.inboundStatus">
           <option value="">全部</option>
@@ -129,6 +137,7 @@ const warehouses = ref([])
 
 const ALL_COLUMNS = [
   { key: 'orderNo', title: '订单号', link: true, width: 150, sortable: true },
+  { key: 'bizType', title: '业务类型', width: 90 },
   { key: 'billDate', title: '订单日期', width: 100, sortable: true },
   { key: 'statusText', title: '审核状态', width: 90 },
   { key: 'inboundStatusText', title: '入库状态', width: 90 },
@@ -210,6 +219,7 @@ function filterText() {
   if (f.supplier) parts.push(`供应商：${f.supplier}`)
   if (f.buyer) parts.push(`采购员：${f.buyer}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   if (f.goods) parts.push(`商品：${f.goods}`)
   return parts.join('；')
 }

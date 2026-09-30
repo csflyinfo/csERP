@@ -63,6 +63,7 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
     public List<ReportColumnDef> columns() {
         return List.of(
                 ReportColumnDef.dim("orderNo", "订单号"),
+                ReportColumnDef.dim("bizType", "业务类型"),
                 ReportColumnDef.dim("billDate", "订单日期"),
                 ReportColumnDef.dim("statusText", "审核状态"),
                 ReportColumnDef.dim("outboundStatusText", "出库状态"),
@@ -183,6 +184,7 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
         String h0Cte = """
                 WITH h0 AS (
                   SELECT po.order_id AS order_id, po.order_no AS order_no, po.bill_date AS bill_date,
+                         po.biz_type AS biz_type,
                          po.status AS status, po.customer_code AS customer_code,
                          po.customer AS customer_name, po.salesman AS salesman,
                          COALESCE(bc.territory, '') AS territory,
@@ -204,7 +206,8 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
                 """;
         String zCte = """
                 , z AS (
-                  SELECT hdr.order_no AS order_no, hdr.bill_date AS bill_date, hdr.status AS status,
+                  SELECT hdr.order_no AS order_no, hdr.biz_type AS biz_type,
+                         hdr.bill_date AS bill_date, hdr.status AS status,
                          CASE hdr.status WHEN 'PENDING' THEN '待审核'
                                         WHEN 'APPROVED' THEN '已审核'
                                         WHEN 'AUDITED' THEN '已审核'
@@ -287,7 +290,9 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
     private static String windowFinalSelect() {
         String b = baseQty("z");
         return """
-                SELECT z.order_no AS order_no, z.bill_date AS bill_date, z.status AS status,
+                SELECT z.order_no AS order_no,
+                       CASE WHEN z.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
+                       z.bill_date AS bill_date, z.status AS status,
                        z.status_text AS status_text,
                        CAST(NULL AS VARCHAR(20)) AS outbound_status_text,
                        CAST(NULL AS VARCHAR(20)) AS sign_status_text,
@@ -332,7 +337,9 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
     private static String legacyDetailSelect() {
         String b = baseQty("t");
         return """
-                SELECT t.order_no AS order_no, t.bill_date AS bill_date, t.status AS status,
+                SELECT t.order_no AS order_no,
+                       CASE WHEN t.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
+                       t.bill_date AS bill_date, t.status AS status,
                        CASE t.status WHEN 'PENDING' THEN '待审核'
                                      WHEN 'APPROVED' THEN '已审核'
                                      WHEN 'AUDITED' THEN '已审核'
@@ -389,6 +396,7 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
         fw.append(" FROM (");
         fw.append("""
                 SELECT po.order_no AS order_no, po.bill_date AS bill_date, po.status AS status,
+                       po.biz_type AS biz_type,
                        COALESCE(po.customer_code, '') AS customer_code,
                        po.customer AS customer_name, po.salesman AS salesman,
                        po.warehouse AS warehouse,
@@ -593,6 +601,11 @@ public class SalesOrderDetailDefinition implements ReportDefinition {
         if (warehouse != null) {
             sql.append(" AND ").append(po).append(".warehouse = ? ");
             if (args != null) args.add(warehouse);
+        }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append(" AND ").append(po).append(".biz_type = ? ");
+            if (args != null) args.add(bizType);
         }
     }
 

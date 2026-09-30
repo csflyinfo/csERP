@@ -1,6 +1,12 @@
-/* 报表中心页面共享样式：页头、按钮、筛选项、钻取回条、分组维度选择等 */
+/* 报表中心页面共享样式：页头、按钮、筛选项、钻取回条、分组维度选择等。
+   页面整体固定不滚动（flex 列 + overflow:hidden），只有表格区内部滚动 */
 .rpt-page {
-  padding: 12px 14px 20px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 14px 8px;
 }
 .rpt-header {
   display: flex;
@@ -190,6 +196,6 @@
 .ok-text { color: #67c23a; }
 .muted { color: #909399; }
 
-/* 采购预测自定义表格铺满 */
-.rpt-forecast-grid { overflow-x: auto; }
+/* 采购预测自定义表格铺满（表格区独立滚动，窗口固定） */
+.rpt-forecast-grid { flex: 1; min-height: 0; overflow: auto; }
 .rpt-forecast-grid .drill-table { width: 100%; min-width: 900px; }

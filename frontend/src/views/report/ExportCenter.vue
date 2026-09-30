@@ -25,7 +25,7 @@
     </div>
 
     <div class="drill-card">
-      <div class="drill-scroll" style="max-height:calc(100vh - 240px);">
+      <div class="drill-scroll">
         <table class="drill-table">
           <thead>
             <tr>

@@ -210,6 +210,11 @@ public class CustomerSummaryDefinition implements ReportDefinition {
             sql.append(" AND d.warehouse = ? ");
             args.add(warehouse);
         }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append(" AND d.biz_type = ? ");
+            args.add(bizType);
+        }
     }
 
     private static void appendEq(ReportQueryRequest req, StringBuilder sql, List<Object> args,

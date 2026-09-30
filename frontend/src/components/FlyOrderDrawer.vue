@@ -22,6 +22,8 @@ const allGoods = ref([])
 const supplierList = ref([])
 const customerList = ref([])
 const salesmanList = ref([])
+// 飞单仓库：仅状态正常的虚拟仓（账面对转，不经实物仓）
+const warehouseList = ref([])
 
 const headerForm = ref({})
 const detailList = ref([])
@@ -74,6 +76,7 @@ function resetForm() {
     supplierCode: '', supplierName: '',
     customerCode: '', customerName: '',
     salesman: '',
+    warehouseCode: '', warehouseName: '',
     billDate: new Date().toISOString().slice(0, 10),
     remark: '',
   }
@@ -91,15 +94,19 @@ watch(() => props.visible, async (val) => {
 })
 
 async function loadBaseData() {
-  const [g, s, c] = await Promise.all([
+  const [g, s, c, w] = await Promise.all([
     // 飞单是销售性质：选品只列可售商品（类型 2/3/4 不可销）
     post('/base/goods/page', { pageNo: 1, pageSize: 2000, filters: { bizScene: 'sale' } }).catch(() => ({ records: [] })),
     post('/base/supplier/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
     post('/base/customer/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
+    post('/base/warehouse/page', { pageNo: 1, pageSize: 500, filters: {} }).catch(() => ({ records: [] })),
   ])
   allGoods.value = (g.records || []).filter(x => String(x.status || '').toUpperCase() !== 'STOPPED')
   supplierList.value = s.records || []
   customerList.value = c.records || []
+  // 只允许选择正常状态的虚拟仓
+  warehouseList.value = (w.records || []).filter(
+    x => x.warehouseType === '虚拟仓' && x.status === 'NORMAL')
 
   try {
     const sm = await post('/base/employee/salesmen', {})
@@ -128,6 +135,12 @@ function onCustomerChange(code) {
   if (hit?.salesman) headerForm.value.salesman = hit.salesman
   // 换客户 → 重新带出销售价
   detailList.value.forEach(r => { if (r.goodsCode) applySalesPrice(r) })
+}
+
+function onWarehouseChange(code) {
+  headerForm.value.warehouseCode = code
+  const hit = warehouseList.value.find(p => p.warehouseCode === code)
+  headerForm.value.warehouseName = hit?.warehouseName || ''
 }
 
 // ==================== 商品选择 ====================
@@ -321,6 +334,7 @@ async function doSave(andAudit = false) {
   if (!guard(andAudit ? '保存并审核' : '保存草稿')) return
   if (!headerForm.value.supplierCode) { alert('请选择供应商'); return }
   if (!headerForm.value.customerCode) { alert('请选择客户'); return }
+  if (!headerForm.value.warehouseCode) { alert('请选择仓库（仅可选择正常状态的虚拟仓）'); return }
   if (filledRows.value.length === 0) { alert('请至少添加一行商品'); return }
   for (const r of filledRows.value) {
     if (!r.qty || Number(r.qty) <= 0) { alert(`商品 ${r.goodsName} 数量必须大于 0`); return }
@@ -334,6 +348,8 @@ async function doSave(andAudit = false) {
       customerCode: headerForm.value.customerCode,
       customerName: headerForm.value.customerName,
       salesman: headerForm.value.salesman,
+      warehouseCode: headerForm.value.warehouseCode,
+      warehouseName: headerForm.value.warehouseName,
       billDate: headerForm.value.billDate,
       remark: headerForm.value.remark,
       details: filledRows.value.map(r => ({
@@ -395,6 +411,8 @@ async function loadEditData(row) {
       customerCode: detail.customerCode || '',
       customerName: detail.customerName || '',
       salesman: detail.salesman || '',
+      warehouseCode: detail.warehouseCode || '',
+      warehouseName: detail.warehouseName || '',
       billDate: detail.billDate || new Date().toISOString().slice(0, 10),
       remark: detail.remark || '',
     }
@@ -451,6 +469,15 @@ async function loadEditData(row) {
               <div class="fly-form-item">
                 <label>单据日期 <span class="req">*</span></label>
                 <input type="date" class="fly-input" v-model="headerForm.billDate">
+              </div>
+              <div class="fly-form-item">
+                <label>仓库 <span class="req">*</span></label>
+                <select class="fly-input" v-model="headerForm.warehouseCode"
+                        @change="onWarehouseChange($event.target.value)">
+                  <option value="">请选择（仅虚拟仓）</option>
+                  <option v-for="w in warehouseList" :key="w.warehouseCode"
+                          :value="w.warehouseCode">{{ w.warehouseName }}</option>
+                </select>
               </div>
               <div class="fly-form-item">
                 <label>供应商 <span class="req">*</span></label>

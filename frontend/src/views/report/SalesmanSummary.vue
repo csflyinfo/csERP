@@ -31,6 +31,14 @@
           <option v-for="w in warehouses" :key="w" :value="w">{{ w }}</option>
         </select>
       </div>
+      <div class="ff">
+        <label>业务类型</label>
+        <select v-model="filters.bizType" @change="onSearch">
+          <option value="">全部</option>
+          <option value="NORMAL">正常</option>
+          <option value="FLY_DIRECT">飞单直发</option>
+        </select>
+      </div>
       <template #actions>
         <button class="btn-primary" @click="onSearch">查询</button>
         <button class="btn-plain" @click="onReset">重置</button>
@@ -148,6 +156,7 @@ function onDrill({ row, col }) {
   if (f.department) q.department = f.department
   if (f.territory) q.territory = f.territory
   if (f.warehouse) q.warehouse = f.warehouse
+  if (f.bizType) q.bizType = f.bizType
   router.push({ path: '/report/salesman-goods-summary', query: q })
 }
 
@@ -158,6 +167,7 @@ function filterText() {
   if (f.salesman) parts.push(`业务员：${f.salesman}`)
   if (f.territory) parts.push(`区域：${f.territory}`)
   if (f.warehouse) parts.push(`仓库：${f.warehouse}`)
+  if (f.bizType) parts.push(`业务类型：${f.bizType === 'FLY_DIRECT' ? '飞单直发' : '正常'}`)
   return parts.join('；')
 }
 

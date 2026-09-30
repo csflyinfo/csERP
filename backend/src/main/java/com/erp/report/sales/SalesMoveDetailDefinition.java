@@ -49,6 +49,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
     public List<ReportColumnDef> columns() {
         return List.of(
                 ReportColumnDef.dim("billNo", "单据号"),
+                ReportColumnDef.dim("bizType", "业务类型"),
                 ReportColumnDef.dim("billDate", "单据日期"),
                 ReportColumnDef.dim("billType", "单据类型"),
                 ReportColumnDef.dim("sourceBillNo", "销售订单号"),
@@ -90,7 +91,8 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
             Map.entry("goods", "v.goods_code"),
             Map.entry("category", "g.category_name"),
             Map.entry("brand", "g.brand_name"),
-            Map.entry("storage", "g.storage_property"));
+            Map.entry("storage", "g.storage_property"),
+            Map.entry("bizType", "v.biz_type"));
 
     @Override
     public Plan build(ReportQueryRequest req) {
@@ -129,6 +131,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
                                DataScopeService.ScopeClause viewScope, String billType) {
         plan.detailSelect = """
                 SELECT v.bill_no AS bill_no, v.bill_date AS bill_date, v.bill_type AS bill_type,
+                       CASE WHEN v.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
                        v.source_bill_no AS source_bill_no, v.driver AS driver,
                        v.customer_code AS customer_code, v.customer_name AS customer_name,
                        v.salesman AS salesman, v.territory AS territory, v.route_line AS route_line,
@@ -222,6 +225,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         appendEq(req, plan, "territory", "v.territory");
         appendEq(req, plan, "routeLine", "v.route_line");
         appendEq(req, plan, "warehouse", "v.warehouse");
+        appendEq(req, plan, "bizType", "v.biz_type");
         String goods = req.text("goods");
         if (goods != null) {
             plan.fromWhere.append(" AND (v.goods_code LIKE ? OR v.goods_name LIKE ? OR g.barcode LIKE ?) ");
@@ -288,6 +292,10 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
                 case "storage" -> {
                     dims.append("       g.storage_property AS storage_property,\n");
                     groupBy.append("g.storage_property, ");
+                }
+                case "bizType" -> {
+                    dims.append("       CASE WHEN v.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,\n");
+                    groupBy.append("v.biz_type, ");
                 }
                 default -> { }
             }
@@ -458,6 +466,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         sb.append("         COALESCE(ob.territory, '') AS territory,\n");
         sb.append("         COALESCE(ob.route_line, '') AS route_line,\n");
         sb.append("         h.warehouse AS header_warehouse,\n");
+        sb.append("         h.biz_type AS biz_type,\n");
         sb.append("         (SELECT COUNT(*) FROM sales_receipt_detail d\n");
         sb.append("          LEFT JOIN rpt_dim_goods gg ON gg.goods_code = d.goods_code\n");
         sb.append("          WHERE d.receipt_id = h.receipt_id AND d.signed_qty > 0\n");
@@ -478,7 +487,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
                 "COALESCE(so.salesman, '')",
                 "COALESCE(NULLIF(h.sign_user, ''), h.driver, '')",
                 "COALESCE(ob.territory, '')", "COALESCE(ob.route_line, '')",
-                "h.warehouse");
+                "h.warehouse", "h.biz_type");
         hScope.appendTo(sb, args);
         return sb.toString();
     }
@@ -500,6 +509,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         sb.append("         COALESCE(ob.territory, '') AS territory,\n");
         sb.append("         COALESCE(ob.route_line, '') AS route_line,\n");
         sb.append("         h.warehouse AS header_warehouse,\n");
+        sb.append("         'NORMAL' AS biz_type,\n");
         sb.append("         (SELECT COUNT(*) FROM sales_return_inbound_detail d\n");
         sb.append("          LEFT JOIN rpt_dim_goods gg ON gg.goods_code = d.goods_code\n");
         sb.append("          WHERE d.inbound_id = h.inbound_id\n");
@@ -521,7 +531,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
                 "COALESCE(so.salesman, dp.default_owner, '')",
                 "COALESCE(ra.driver_name, '')",
                 "COALESCE(ob.territory, '')", "COALESCE(ob.route_line, '')",
-                "h.warehouse");
+                "h.warehouse", "'NORMAL'");
         hScope.appendTo(sb, args);
         return sb.toString();
     }
@@ -534,6 +544,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         sb.append("         hdr.source_bill_no, hdr.customer_code, hdr.customer_name,\n");
         sb.append("         hdr.salesman, hdr.driver, hdr.territory, hdr.route_line,\n");
         sb.append("         hdr.header_warehouse,\n");
+        sb.append("         hdr.biz_type,\n");
         sb.append("         d.goods_code, d.goods_name, d.unit_name AS order_unit,\n");
         sb.append("         d.signed_qty AS order_qty,\n");
         sb.append("         d.sign_amount AS raw_amount,\n");
@@ -576,6 +587,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         sb.append("         hdr.source_bill_no, hdr.customer_code, hdr.customer_name,\n");
         sb.append("         hdr.salesman, hdr.driver, hdr.territory, hdr.route_line,\n");
         sb.append("         hdr.header_warehouse,\n");
+        sb.append("         hdr.biz_type,\n");
         sb.append("         d.goods_code, d.goods_name, d.unit_name AS order_unit,\n");
         sb.append("         -d.qty AS order_qty,\n");
         sb.append("         -d.amount AS raw_amount,\n");
@@ -612,6 +624,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         return """
                 SELECT z.bill_no AS bill_no, z.bill_date AS bill_date,
                        CASE z.doc_type WHEN 'S' THEN '销售签收' WHEN 'R' THEN '销售退货' END AS bill_type,
+                       CASE WHEN z.biz_type = 'FLY_DIRECT' THEN '飞单直发' ELSE '正常' END AS biz_type,
                        z.source_bill_no AS source_bill_no,
                        z.driver AS driver,
                        z.customer_code AS customer_code, z.customer_name AS customer_name,
@@ -646,7 +659,7 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
                                           String customerCodeCol, String customerNameCol,
                                           String salesmanExpr, String driverExpr,
                                           String territoryExpr, String routeLineExpr,
-                                          String warehouseCol) {
+                                          String warehouseCol, String bizTypeExpr) {
         String billNo = req.text("billNo");
         if (billNo != null) {
             sql.append("  AND ").append(billNoCol).append(" LIKE ?\n");
@@ -688,6 +701,11 @@ public class SalesMoveDetailDefinition implements ReportDefinition {
         if (warehouse != null) {
             sql.append("  AND ").append(warehouseCol).append(" = ?\n");
             args.add(warehouse);
+        }
+        String bizType = req.text("bizType");
+        if (bizType != null) {
+            sql.append("  AND ").append(bizTypeExpr).append(" = ?\n");
+            args.add(bizType);
         }
     }
 

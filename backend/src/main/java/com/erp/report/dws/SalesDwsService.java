@@ -43,7 +43,7 @@ public class SalesDwsService {
                 INSERT INTO rpt_dws_sales_d
                     (bill_date, customer_code, customer_name, customer_level, territory,
                      route_line, salesman, goods_code, warehouse, goods_name, brand_name,
-                     category_name, storage_property,
+                     category_name, storage_property, biz_type,
                      signed_qty_base, signed_package_qty, signed_amount, signed_cost_amount,
                      return_qty_base, return_package_qty, return_amount, return_cost_amount,
                      updated_at)
@@ -52,6 +52,7 @@ public class SalesDwsService {
                        v.salesman, v.goods_code, v.warehouse,
                        MAX(dg.goods_name), MAX(dg.brand_name), MAX(dg.category_name),
                        MAX(dg.storage_property),
+                       COALESCE(MAX(v.biz_type), 'NORMAL'),
                        SUM(CASE WHEN v.base_qty > 0 THEN v.base_qty ELSE 0 END),
                        SUM(CASE WHEN v.base_qty > 0 AND COALESCE(dg.large_convert_qty,0) > 0
                                 THEN v.base_qty / dg.large_convert_qty
@@ -69,18 +70,19 @@ public class SalesDwsService {
                 LEFT JOIN rpt_dim_goods dg ON dg.goods_code = v.goods_code
                 LEFT JOIN base_customer cus ON cus.customer_code = v.customer_code
                 WHERE v.bill_date BETWEEN ? AND ?
-                GROUP BY v.bill_date, v.customer_code, v.salesman, v.goods_code, v.warehouse
+                GROUP BY v.bill_date, v.customer_code, v.salesman, v.goods_code, v.warehouse, v.biz_type
                 """, start, end);
 
         jdbc.update("DELETE FROM rpt_dws_sales_bill_d WHERE bill_date BETWEEN ? AND ?", start, end);
         int billRows = jdbc.update("""
                 INSERT INTO rpt_dws_sales_bill_d
-                    (bill_date, bill_no, bill_type, customer_code, customer_name,
+                    (bill_date, bill_no, bill_type, biz_type, customer_code, customer_name,
                      customer_level, territory, route_line, salesman, warehouse,
                      signed_qty_base, signed_amount, signed_cost_amount,
                      return_qty_base, return_amount, return_cost_amount, updated_at)
                 SELECT v.bill_date, v.bill_no,
                        CASE WHEN MIN(v.bill_type) = '销售签收' THEN 'SIGN' ELSE 'RETURN' END,
+                       COALESCE(MIN(v.biz_type), 'NORMAL'),
                        v.customer_code, MAX(v.customer_name),
                        MAX(cus.customer_level), MAX(cus.territory), MAX(cus.route_line),
                        v.salesman, MAX(v.warehouse),
